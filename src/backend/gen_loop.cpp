@@ -143,37 +143,9 @@ CounterRange CounterRangeOf(const Program& program, const Expr& e, TypeKind kind
     return r;
 }
 
-bool HasFor(const Program& program, ExprId id) {
-    if (id < 0) {
-        return false;
-    }
-    const Expr& e = ExprOf(program, id);
-    if (e.kind == ExprKind::For) {
-        return true;
-    }
-    if (HasFor(program, e.a) || HasFor(program, e.b) || HasFor(program, e.c)) {
-        return true;
-    }
-    if (e.kind == ExprKind::Do) {
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            if (HasFor(program, ListItem(program, e, i))) {
-                return true;
-            }
-        }
-    }
-    if (e.kind == ExprKind::Match) {
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            if (HasFor(program, program.clauses[e.first + i].body)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 // the counter in X, in Y, or in memory, whichever costs the fewest cycles (inner loops
-// weigh more, see Gen::cost). Memory is only a choice when the body has loops of its own,
-// which may want both registers.
+// weigh more, see Gen::cost). In memory it leaves both registers to the body: its own loops,
+// or an operation on two table reads (IndexedSecond).
 void ByteLoop(Gen& g, const ForParts& f, bool pin) {
     std::size_t mark = g.out->size();
     Gen start = g;
@@ -181,14 +153,10 @@ void ByteLoop(Gen& g, const ForParts& f, bool pin) {
     std::uint64_t best_cost = 0;
     std::vector<AsmItem> best_items;
     Gen best = g;
-    bool nested = HasFor(*g.program, f.body);
     for (int choice = 0; choice < 3; choice++) {
         bool memory = choice == 2;
         if (!memory && (!pin || start.pin[choice] >= 0)) {
             continue;
-        }
-        if (memory && found && !nested) {
-            break;
         }
         g = start;
         g.out->resize(mark);

@@ -216,6 +216,38 @@ bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst
     return true;
 }
 
+// (op first (at table i)) with i computed: i into X, then first into A while X keeps i, then
+// OP table,X, instead of first into a temporary and OP temporary. i now runs before first, so
+// neither may have effects; when first's code needs X, nothing is kept and this is false
+bool IndexedSecond(Gen& g, Op op, ExprId first, ExprId second, bool fits) {
+    const Program& program = *g.program;
+    if (g.pin[0] >= 0 || ExprOf(program, second).kind != ExprKind::Index ||
+        HasEffects(program, first) || HasEffects(program, second)) {
+        return false;
+    }
+    std::size_t mark = g.out->size();
+    Gen saved = g;
+    bool outer = g.violation;
+    g.violation = false;
+    Opnd b = Eval(g, second, nullptr);
+    bool indexed = b.size == 1 && b.b[0].kind == ByteKind::MemIdx && !b.index.is_reg;
+    if (indexed) {
+        LoadIndexReg(g, 0, b.index);
+        // X is held like a loop counter's register: code that writes it sets violation
+        g.pin[0] = static_cast<std::int32_t>(program.vars.size());
+        EvalA(g, first);
+        g.pin[0] = -1;
+    }
+    if (!indexed || (g.violation && !g.failed)) {
+        g.out->resize(mark);
+        g = saved;
+        return false;
+    }
+    Alu8(g, op, b, fits);
+    g.violation = outer;
+    return true;
+}
+
 } // namespace
 
 void CallRuntime(Gen& g, Runtime routine) {
@@ -245,6 +277,10 @@ void EvalArith8(Gen& g, const Expr& e) {
         if (a.size != 0 && !MayWriteOpnd(g, e.b, a) && Commutes(op)) {
             EvalA(g, e.b);
             Alu8(g, op, a, fits);
+            return;
+        }
+        if (IndexedSecond(g, op, e.a, e.b, fits) ||
+            (Commutes(op) && IndexedSecond(g, op, e.b, e.a, fits))) {
             return;
         }
         EvalA(g, e.a);

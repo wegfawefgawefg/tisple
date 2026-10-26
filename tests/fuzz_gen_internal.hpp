@@ -92,6 +92,8 @@ struct Gen {
     Rng side;
     // constant chains, as unrolled copies leave them: (+ (+ x 5) 3), (* (* x 3) 0)
     bool fold_shapes = false;
+    // an operation on two byte-table reads with computed indices, calls in them now and then
+    bool table_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -140,6 +142,8 @@ struct Gen {
     std::string ConstChain(T t, int depth);
     // p plus counts in a chain that stays where (+ p count) may go: (+ (+ p 1) 2)
     std::string ChainedPointer(const PtrInfo& p, int depth);
+    // (op (at a i) (at b j)) on u8 tables
+    std::string TwoReads(int depth);
     std::string IntExpr(T t, int depth);
     // a constant divisor: small odd and even ones, 128 and up, a few powers of two
     std::string Divisor(T t);

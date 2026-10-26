@@ -402,6 +402,34 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
     | 20000 fuzz programs (new generator) | 79714606 cycles | 78987892 cycles |
 
+17. Two table reads in one operation (2026-10-26). Each of plasma's 40
+    unrolled copies is `(| (at RAMP_LO (+ (at col k) top)) (at RAMP_HI (+ (at
+    col k) bottom)))`: the first read went to a temporary and came back for
+    the ORA (`LDA RAMP_LO,Y / STA t / ... / LDA RAMP_HI,Y / ORA t`), since
+    the row counter held X. Now an 8-bit operation whose second operand is a
+    table read with a computed index puts that index in X first, reads the
+    first operand into A while X is held like a loop counter's register, and
+    ends with `ORA RAMP_HI,X` (any of + - & | ^; for the ones that commute,
+    the other way round too). The index now runs first, so neither side may
+    have effects; when the first side needs X, nothing is kept. A u8 loop's
+    counter may now live in memory also when its body has no loops of its
+    own, which leaves both registers to the body; the cost decides, and it
+    does in plasma's row loop. Tests: tests/test_backend_tables.cpp (sums,
+    differences, ors, ands, xors of two reads for every byte, a read whose
+    index is a read, calls in either side that change what the other side
+    reads, the commuted form, and loops with the counter in memory). Without
+    the effects rule they fail, and so does the fuzz run: the generator
+    writes such operations, calls in the indices now and then, in one
+    program in eight (from the side stream; 84 of seeds 1 to 400 now differ
+    from before item 16).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | plasma's unrolled copy | 44 cycles, 28 bytes | 38 cycles, 24 bytes |
+    | plasma frames in 10 s | 205 | 231 (23.1 fps); code 1346 to 1191 bytes |
+    | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
+    | 20000 fuzz programs (generator with item 17's shapes) | 87088535 cycles | 86920245 cycles |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

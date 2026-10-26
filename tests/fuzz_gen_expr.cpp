@@ -315,6 +315,32 @@ std::string Gen::ConstChain(T t, int depth) {
     }
 }
 
+std::string Gen::TwoReads(int depth) {
+    static const char* const kOps[] = {"+", "-", "|", "&", "^"};
+    std::vector<const ArrayInfo*> tables;
+    for (const ArrayInfo* a : ArraysOf(T::U8, false)) {
+        if (a->count <= 256) {
+            tables.push_back(a);
+        }
+    }
+    if (tables.empty()) {
+        return Leaf(T::U8);
+    }
+    auto read = [&]() {
+        const ArrayInfo& a =
+            *tables[static_cast<std::size_t>(side.Below(static_cast<int>(tables.size())))];
+        std::string index = Index(a);
+        std::string call = side.Chance(30) ? Call(T::U8, depth) : "";
+        if (!call.empty()) {
+            std::string mask = std::to_string(a.count - 1);
+            index = "(& (+ " + call + " " + index + ") " + mask + ")";
+        }
+        return "(at " + a.name + " " + index + ")";
+    };
+    std::string first = read();
+    return std::string("(") + kOps[side.Below(5)] + " " + first + " " + read() + ")";
+}
+
 std::string Gen::ChainedPointer(const PtrInfo& p, int depth) {
     if (p.room) {
         int k1 = side.Below(128);
@@ -352,6 +378,9 @@ std::string Gen::IntExpr(T t, int depth) {
     }
     if (fold_shapes && side.Chance(12)) {
         return ConstChain(t, depth);
+    }
+    if (table_shapes && t == T::U8 && side.Chance(15)) {
+        return TwoReads(depth);
     }
     int pick = rng.Below(14);
     switch (pick) {

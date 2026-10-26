@@ -621,8 +621,9 @@ std::string GenerateProgram(std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.side.Next();
     }
-    // one program in eight
+    // each in one program in eight
     g.fold_shapes = g.side.Chance(12);
+    g.table_shapes = g.side.Chance(12);
     return g.Program();
 }
 

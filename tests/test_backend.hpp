@@ -66,5 +66,6 @@ void RunBackendPeepTests(TestResults& results);
 void RunBackendBindTests(TestResults& results);
 void RunBackendBuildTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
+void RunBackendTableTests(TestResults& results);
 
 } // namespace tisple_tests
