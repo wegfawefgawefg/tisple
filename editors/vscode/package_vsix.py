@@ -9,8 +9,8 @@ import zipfile
 here = os.path.dirname(os.path.abspath(__file__))
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "tisple.vsix")
 pkg = json.load(open(os.path.join(here, "package.json")))
-files = ["package.json", "extension.js", "language-configuration.json", "README.md",
-         "syntaxes/tisple.tmLanguage.json"]
+files = ["package.json", "extension.js", "index_client.js", "language.js",
+         "language-configuration.json", "README.md", "syntaxes/tisple.tmLanguage.json"]
 
 manifest = f"""<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">

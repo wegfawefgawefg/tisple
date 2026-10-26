@@ -1,8 +1,8 @@
 {
   "name": "tisple",
   "displayName": "Tisple ][",
-  "description": "Tisple ][ (.tsp): highlighting, errors, formatting and running on the built-in Apple IIe",
-  "version": "0.2.0",
+  "description": "Tisple ][ (.tsp): checker-driven highlighting, hover, go to definition, references, outline, errors as you type, formatting and running on the built-in Apple IIe",
+  "version": "0.3.0",
   "publisher": "tisple",
   "license": "GPL-3.0-or-later",
   "engines": {
@@ -40,7 +40,8 @@
           100
         ],
         "editor.formatOnSave": true,
-        "editor.defaultFormatter": "tisple.tisple"
+        "editor.defaultFormatter": "tisple.tisple",
+        "editor.semanticHighlighting.enabled": true
       }
     },
     "commands": [
