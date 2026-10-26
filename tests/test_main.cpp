@@ -1,5 +1,6 @@
 #include "check.hpp"
 #include "source_file.hpp"
+#include "test_backend.hpp"
 #include "test_check.hpp"
 #include "test_emu.hpp"
 #include "test_reader.hpp"
@@ -35,6 +36,8 @@ int main() {
     tisple_tests::RunLayoutTests(results);
     tisple_tests::RunInterpTests(results);
     tisple_tests::RunInterpArithTests(results);
+    tisple_tests::RunAsmTests(results);
+    tisple_tests::RunBackendTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;

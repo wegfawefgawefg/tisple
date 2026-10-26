@@ -1,0 +1,147 @@
+#include "backend/sim_run.hpp"
+
+namespace tisple {
+
+namespace {
+
+// the return address the harness pushes; reaching it means the code returned
+constexpr std::uint16_t kSentinel = 0xFFF0;
+
+std::uint8_t IoRead(void* ctx, std::uint16_t address) {
+    std::vector<IoAccess>& log = *static_cast<std::vector<IoAccess>*>(ctx);
+    std::uint8_t value = IoReadValue(address, log.size());
+    log.push_back(IoAccess{address, value, false});
+    return value;
+}
+
+void IoWrite(void* ctx, std::uint16_t address, std::uint8_t value) {
+    std::vector<IoAccess>& log = *static_cast<std::vector<IoAccess>*>(ctx);
+    log.push_back(IoAccess{address, value, true});
+}
+
+// JSR from nowhere: the next RTS lands on the sentinel
+void PushReturn(Machine& m, Regs& regs) {
+    std::uint16_t back = kSentinel - 1;
+    m.mem[0x100 + regs.s] = static_cast<std::uint8_t>(back >> 8);
+    regs.s = static_cast<std::uint8_t>(regs.s - 1);
+    m.mem[0x100 + regs.s] = static_cast<std::uint8_t>(back & 0xFF);
+    regs.s = static_cast<std::uint8_t>(regs.s - 1);
+}
+
+void Load(SimRunner& run, const Compiled& compiled) {
+    run.machine = std::make_unique<Machine>();
+    run.io.clear();
+    InitMachine(*run.machine);
+    LoadBytes(*run.machine, compiled.origin, compiled.image.data(), compiled.image.size());
+    IoHook hook;
+    hook.base = 0xC000;
+    hook.size = 0x1000;
+    hook.read = IoRead;
+    hook.write = IoWrite;
+    hook.ctx = &run.io;
+    SetIoHook(*run.machine, hook);
+}
+
+} // namespace
+
+std::uint8_t IoReadValue(std::uint16_t address, std::size_t index) {
+    return static_cast<std::uint8_t>((address * 7 + index * 13 + 0x5A) & 0xFF);
+}
+
+bool StartCompiled(SimRunner& run, const Compiled& compiled, std::string& error) {
+    Load(run, compiled);
+    Machine& m = *run.machine;
+    Regs regs;
+    regs.s = 0xFF;
+    PushReturn(m, regs);
+    regs.pc = compiled.origin;
+    SetRegs(m, regs);
+    RunOptions options;
+    options.stop_pc = compiled.entry_ready;
+    options.max_cycles = 10000000;
+    RunResult result = Run(m, options);
+    if (result.reason != StopReason::kStopAddress) {
+        error = std::string("startup stopped: ") + StopReasonName(result.reason);
+        return false;
+    }
+    return true;
+}
+
+SimCall CallCompiled(SimRunner& run, const Program& program, const Compiled& compiled,
+                     std::int32_t function, const std::vector<std::uint16_t>& args,
+                     std::uint64_t max_cycles) {
+    Machine& m = *run.machine;
+    const Function& fn = program.functions[static_cast<std::size_t>(function)];
+    for (std::size_t i = 0; i < args.size() && i < fn.params.size(); i++) {
+        std::int32_t param = fn.params[i];
+        std::uint16_t at = compiled.layout.vars[static_cast<std::size_t>(param)].address;
+        std::uint32_t size =
+            TypeOf(program, program.vars[static_cast<std::size_t>(param)].type).size;
+        m.mem[at] = static_cast<std::uint8_t>(args[i] & 0xFF);
+        if (size == 2) {
+            m.mem[static_cast<std::uint16_t>(at + 1)] = static_cast<std::uint8_t>(args[i] >> 8);
+        }
+    }
+    Regs regs = GetRegs(m);
+    PushReturn(m, regs);
+    regs.pc = compiled.function_address[static_cast<std::size_t>(function)];
+    SetRegs(m, regs);
+    RunOptions options;
+    options.stop_pc = kSentinel;
+    options.max_cycles = max_cycles;
+    RunResult result = Run(m, options);
+    SimCall call;
+    call.reason = result.reason;
+    call.returned = result.reason == StopReason::kStopAddress;
+    call.a = result.regs.a;
+    call.x = result.regs.x;
+    call.cycles = result.cycles;
+    return call;
+}
+
+SimMain RunCompiledMain(SimRunner& run, const Compiled& compiled, std::uint64_t max_cycles) {
+    Load(run, compiled);
+    Machine& m = *run.machine;
+    std::uint8_t pattern[256];
+    for (int i = 0; i < 256; i++) {
+        pattern[i] = static_cast<std::uint8_t>(i * 37 + 11);
+        m.mem[i] = pattern[i];
+    }
+    Regs regs;
+    regs.s = 0xFF;
+    PushReturn(m, regs);
+    regs.pc = compiled.origin;
+    SetRegs(m, regs);
+    SimMain out;
+    RunOptions options;
+    options.max_cycles = max_cycles;
+    options.stop_pc = compiled.entry_ready;
+    RunResult result = Run(m, options);
+    out.total_cycles = result.cycles;
+    if (result.reason != StopReason::kStopAddress) {
+        out.reason = result.reason;
+        return out;
+    }
+    options.stop_pc = compiled.after_main;
+    result = Run(m, options);
+    out.total_cycles += result.cycles;
+    out.main_cycles = result.cycles;
+    out.a = result.regs.a;
+    out.x = result.regs.x;
+    if (result.reason != StopReason::kStopAddress) {
+        out.reason = result.reason;
+        return out;
+    }
+    options.stop_pc = kSentinel;
+    result = Run(m, options);
+    out.total_cycles += result.cycles;
+    out.reason = result.reason;
+    out.finished = result.reason == StopReason::kStopAddress;
+    out.zp_restored = true;
+    for (int i = 0; i < 256; i++) {
+        out.zp_restored = out.zp_restored && m.mem[i] == pattern[i];
+    }
+    return out;
+}
+
+} // namespace tisple

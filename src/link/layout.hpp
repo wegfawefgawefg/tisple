@@ -24,9 +24,22 @@
 
 namespace tisple {
 
+// never chosen for automatic placement: zero page, stack, text page 1, hi-res page 1, I/O+ROM
+struct AddressRange {
+    std::uint32_t start = 0;
+    std::uint32_t end = 0; // one past
+};
+extern const AddressRange kReservedRanges[5];
+
 struct LayoutOptions {
     std::uint32_t data_start = 0x0C00; // first address for data
     std::uint32_t data_end = 0xC000;   // one past the last
+    // addresses the backend already chose (zero page, overlapped frames), by var id; -1 or
+    // missing: the layout places the var. Preset vars are not checked against each other,
+    // since overlapping frames share bytes on purpose.
+    std::vector<std::int32_t> preset;
+    // more ranges automatic and fixed placement must stay out of (code, frames)
+    std::vector<AddressRange> reserved;
 };
 
 struct VarPlace {
@@ -40,12 +53,9 @@ struct Layout {
     std::vector<VarPlace> vars; // by var id
 };
 
-// never chosen for automatic placement: zero page, stack, text page 1, hi-res page 1, I/O+ROM
-struct AddressRange {
-    std::uint32_t start = 0;
-    std::uint32_t end = 0; // one past
-};
-extern const AddressRange kReservedRanges[5];
+// every Var's shape (size, split, plane stride) with address 0: what code generation needs
+// before addresses exist. LayoutProgram gives the same shapes.
+bool ShapeProgram(const Program& program, Layout& out, std::vector<Diagnostic>& errors);
 
 // globals and const arrays first (in declaration order), then every function's
 // parameters and locals in a static frame of its own

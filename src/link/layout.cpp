@@ -134,6 +134,15 @@ void PlaceFixed(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
                      Hex(AlignUp(start, var.placement.boundary)));
         return;
     }
+    for (const AddressRange& range : pl.options->reserved) {
+        if (start < range.end && range.start < end) {
+            AddError(*pl.errors, var.loc,
+                     name + " (" + Hex(start) + "-" + Hex(end - 1) +
+                         ") overlaps the program's code or frames (" + Hex(range.start) + "-" +
+                         Hex(range.end - 1) + "); move it");
+            return;
+        }
+    }
     if (const Used* other = Overlap(pl, start, end)) {
         const Var& other_var = pl.program->vars[static_cast<std::size_t>(other->var)];
         AddError(*pl.errors, var.loc,
@@ -154,6 +163,11 @@ std::uint32_t NextCandidate(const Placer& pl, std::uint32_t start, const VarPlac
     }
     std::uint32_t end = start + place.size;
     for (const AddressRange& range : kReservedRanges) {
+        if (start < range.end && range.start < end) {
+            return AlignUp(range.end, align);
+        }
+    }
+    for (const AddressRange& range : pl.options->reserved) {
         if (start < range.end && range.start < end) {
             return AlignUp(range.end, align);
         }
@@ -195,6 +209,31 @@ void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
 
 } // namespace
 
+namespace {
+
+bool IsPreset(const LayoutOptions& options, std::size_t var) {
+    return var < options.preset.size() && options.preset[var] >= 0;
+}
+
+} // namespace
+
+bool ShapeProgram(const Program& program, Layout& out, std::vector<Diagnostic>& errors) {
+    out = Layout();
+    out.vars.resize(program.vars.size());
+    LayoutOptions options;
+    Placer pl;
+    pl.program = &program;
+    pl.options = &options;
+    pl.out = &out;
+    pl.errors = &errors;
+    std::size_t before = errors.size();
+    for (std::size_t i = 0; i < program.vars.size(); i++) {
+        bool plane = false;
+        Shape(pl, static_cast<std::int32_t>(i), out.vars[i], plane);
+    }
+    return errors.size() == before;
+}
+
 bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout& out,
                    std::vector<Diagnostic>& errors) {
     out = Layout();
@@ -212,9 +251,15 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
         Shape(pl, static_cast<std::int32_t>(i), out.vars[i], plane);
         per_plane[i] = plane;
     }
-    // fixed addresses first, so automatic placement flows around them
+    // backend choices first; they are not Used, so frames may share bytes
     for (std::size_t i = 0; i < program.vars.size(); i++) {
-        if (program.vars[i].placement.has_address) {
+        if (IsPreset(options, i)) {
+            out.vars[i].address = static_cast<std::uint16_t>(options.preset[i]);
+        }
+    }
+    // fixed addresses next, so automatic placement flows around them
+    for (std::size_t i = 0; i < program.vars.size(); i++) {
+        if (program.vars[i].placement.has_address && !IsPreset(options, i)) {
             PlaceFixed(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);
         }
     }
@@ -222,7 +267,8 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
         for (std::size_t i = 0; i < program.vars.size(); i++) {
             const Var& var = program.vars[i];
             bool global = var.function < 0;
-            if (var.placement.has_address || global != (pass == 0) || out.vars[i].size == 0) {
+            if (var.placement.has_address || IsPreset(options, i) || global != (pass == 0) ||
+                out.vars[i].size == 0) {
                 continue;
             }
             PlaceAuto(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);

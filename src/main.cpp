@@ -1,3 +1,4 @@
+#include "backend/build_command.hpp"
 #include "check/commands.hpp"
 #include "emu/sim_command.hpp"
 #include "interp/interp_command.hpp"
@@ -19,6 +20,8 @@ void PrintUsage() {
     std::printf("  check   check a program and its imports\n"
                 "  expand  print a program after macro expansion\n"
                 "  interp  run main in the reference interpreter (--max-steps N)\n");
+    std::printf("  build   compile to a 6502 binary (-o out.bin, --origin A, --asm)\n"
+                "  run     build and run main in the simulator (--max-cycles N)\n");
 }
 
 } // namespace
@@ -51,6 +54,13 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "interp") == 0) {
         return tisple::RunInterpCommand(argc, argv);
+    }
+
+    if (std::strcmp(argv[1], "build") == 0) {
+        return tisple::RunBuildCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "run") == 0) {
+        return tisple::RunRunCommand(argc, argv);
     }
 
     std::fprintf(stderr, "tisple: unknown command '%s'\n", argv[1]);
