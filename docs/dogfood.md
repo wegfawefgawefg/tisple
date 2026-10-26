@@ -5,10 +5,6 @@ entry says what happened and what it should do.
 
 ## Open
 
-3. The formatter puts a `const` table's type on its own line and packs the
-   values to 100 columns, losing hand grouping (8 row addresses per line in
-   lib/lores.tsp). Keep the type on the head line; maybe keep the author's
-   line breaks inside data lists.
 
 ## Fixed
 
@@ -31,6 +27,15 @@ entry says what happened and what it should do.
    `(p),Y`. Life, Snake, lib/lores.tsp and every example compile to the same
    bytes and the same listing as before (only the echoed source lines
    differ). The fuzz generator writes both spellings.
+3. The formatter puts a `const` table's type on its own line and packs the
+   values to 100 columns, losing hand grouping (8 row addresses per line in
+   lib/lores.tsp). Keep the type on the head line; maybe keep the author's
+   line breaks inside data lists.
+   Fixed 2026-10-26: `let` and `const` keep the type on the head line, and a
+   run of atoms in a list that takes several lines keeps the source's line
+   breaks (rule in design.md, Syntax). lores' ROW_START and hires_plot's
+   ROW_ADDR are 8 a line again. The format tests now cover programs/ and lib/
+   too.
 4. `(load (+ p (as u16 e)))` with `e : u8` and `p` in zero page computed a
    full 16-bit pointer sum per access (about 23 cycles) instead of `LDY e` /
    `LDA (p),Y`. Life's inner loop does 9 such reads per cell: about 520 cycles

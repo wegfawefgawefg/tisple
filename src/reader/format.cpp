@@ -305,7 +305,9 @@ bool IsPlainAtom(const Node& node) {
     return node.kind != NodeKind::List && node.kind != NodeKind::Keyword;
 }
 
-// head and first argument stay; lists get their own lines; atoms fill lines
+// head and first argument stay (and a declaration's type); lists get their own lines; atoms
+// fill lines, but an atom that starts a line in the source starts one here: a data table's
+// rows are the author's
 void EmitGeneral(Formatter& fm, const Node& list, std::uint32_t base, std::uint32_t trailing) {
     Open(fm, list, base, trailing);
     std::size_t count = list.items.size();
@@ -330,7 +332,9 @@ void EmitGeneral(Formatter& fm, const Node& list, std::uint32_t base, std::uint3
         bool same_line = false;
         if (UnitSize(list, i) == 1 && item.kind != NodeKind::Keyword && !NeedsOwnLine(fm, item) &&
             Fits(fm, item, item_trailing, true)) {
-            same_line = i == 1 || (plain && line_ends_in_atom);
+            bool declared_type = i == 2 && !broke && IsDeclaration(list);
+            bool fills = plain && line_ends_in_atom && !Notes(fm, item).line_before;
+            same_line = i == 1 || declared_type || fills;
         }
         if (!same_line) {
             EmitUnitLine(fm, list, i, indent, trailing, broke ? Blank::Source : Blank::Never);
