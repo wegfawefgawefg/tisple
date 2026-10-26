@@ -6,8 +6,9 @@ Foundation, either version 3 of the License, or (at your option) any later
 version. See LICENSE.
 
 Runtime exception: the code the Tisple compiler copies into the programs it
-produces (startup code and runtime routines) is additionally available under
-the MIT License below. Programs written in Tisple, and the binaries the
+produces (startup code and runtime routines), and the boot loader `tisple disk`
+writes onto disk images (src/disk/boot_loader.cpp), is additionally available
+under the MIT License below. Programs written in Tisple, and the binaries the
 compiler builds from them, belong to their authors and may use any license.
 That code must be original to Tisple, never derived from GPL sources.
 

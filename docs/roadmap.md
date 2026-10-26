@@ -56,6 +56,14 @@ images to fiddle with during development, then real hardware.
 5. Real hardware: the same disk images through a FloppyEmu-style drive or
    ADTPro.
 
+Status (2026-10-26, see `docs/disks.md`): the Disk II card (bit cells, two
+drives, reads, writes, write-back), `.dsk`/`.do`/`.po`/`.nib`, our boot ROM,
+self-booting disks (`tisple build --disk`, `tisple run --disk`,
+`tisple disk boot`), DOS 3.3 file commands and snapshots with disks are in.
+Self-booting disks boot with Apple's `Apple2e.rom` and `DISK2.rom` in the
+emulator; a2audit's language card and soft switch tests pass. Still to do:
+ProDOS file commands, aux memory (a2audit skips its test), real hardware.
+
 ### Mouse (owner, 2026-10-26)
 
 AppleMouse II card (slot 4 on a IIe; built in on a IIc). Programs call the

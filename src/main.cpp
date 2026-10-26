@@ -1,5 +1,6 @@
 #include "backend/build_command.hpp"
 #include "check/commands.hpp"
+#include "disk/disk_command.hpp"
 #include "emu/sim_command.hpp"
 #include "fuzz_gen.hpp"
 #include "gaps/gaps.hpp"
@@ -31,10 +32,13 @@ void PrintUsage() {
                 "  expand  print a program after macro expansion\n"
                 "  interp  run main in the reference interpreter (--max-steps N)\n"
                 "  index   names, types, definitions and errors as JSON, for editors (--stdin)\n");
-    std::printf("  build   compile to a 6502 binary (-o out.bin, --origin A, --asm)\n"
+    std::printf("  build   compile to a 6502 binary (-o out.bin, --origin A, --asm;\n"
+                "          --disk out.dsk for a disk that boots it)\n"
                 "  run     build and run on the apple iie (window; --frames N etc. headless;\n"
-                "          --sim for the bare simulator)\n");
-    std::printf("  machine run a raw binary in the built-in Apple IIe (--window, --screenshot)\n");
+                "          --sim for the bare simulator; --disk to boot it from a disk)\n");
+    std::printf("  machine run a raw binary in the built-in Apple IIe (--window, --screenshot;\n"
+                "          --disk a.dsk to boot a disk)\n"
+                "  disk    disk images: new, list, put, get, delete (DOS 3.3), boot\n");
     std::printf("  gaps    rank where the compiled code is worse than it could be (--superopt,\n"
                 "          --fuzz N for the fuzz generator's programs)\n");
 }
@@ -77,6 +81,16 @@ int main(int argc, char** argv) {
         return tisple::RunMachineCommand(argc - 2, argv + 2, kMachineWindow);
     }
 
+    if (std::strcmp(argv[1], "disk") == 0) {
+        return tisple::RunDiskCommand(argc, argv);
+    }
+    // --disk: the program on a disk that boots it
+    if (std::strcmp(argv[1], "build") == 0 && tisple::HasDiskFlag(argc, argv)) {
+        return tisple::RunBuildDiskCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "run") == 0 && tisple::HasDiskFlag(argc, argv)) {
+        return tisple::RunRunDiskCommand(argc, argv, kMachineWindow);
+    }
     if (std::strcmp(argv[1], "build") == 0) {
         return tisple::RunBuildCommand(argc, argv);
     }

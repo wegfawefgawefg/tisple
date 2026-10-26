@@ -33,6 +33,12 @@
 //   execute them); with a rom and no program loaded, they run as on the chip
 // - no interrupts; auxiliary memory, 80 columns and double-res are stubs (noted once)
 // - speaker: an ideal two-position cone, box-filtered, with a 35 Hz high-pass
+// - disk ii (disk2.hpp): 4 cycles a bit cell exactly (a real drive's 4 microseconds are
+//   about 4.08 cycles) and a constant 300 rpm; the sequencer by its behaviour, not Apple's
+//   state rom; the head moves at once (no settle time, no momentum, no quarter tracks; an
+//   odd half-track reads the track below); the drive is up to speed the moment the motor
+//   is on; a .nib track is 6656 bytes of 8 cells (no self-sync gaps)
+// - our disk ii boot rom (disk2_rom.cpp) waits for nothing, so it is for the emulator only
 
 #include "emu/machine.hpp"
 
@@ -157,6 +163,7 @@ struct VideoScan {
 enum class CardKind : uint8_t {
     kEmpty = 0,
     kTestCard, // registers and rom bytes the tests fill in
+    kDisk2,    // the disk ii controller and its two drives (disk2.cpp)
 };
 
 struct TestCardState {
@@ -166,10 +173,61 @@ struct TestCardState {
     uint32_t io_accesses = 0;
 };
 
+// disk ii. a track is the loop of bits the head sees, one bit cell per 4 cycles; a disk
+// byte is 8 cells (32 cycles) and a self-sync byte is $FF and two zero cells (40 cycles).
+// the image formats in src/disk/ turn files into these tracks and back.
+constexpr int kDiskTracks = 35;
+constexpr int kDiskHalfTracks = 80;    // the head can travel to track 39.5
+constexpr uint32_t kTrackBytes = 6656; // room for a .nib track, 53248 bits
+constexpr uint32_t kMaxTrackBits = kTrackBytes * 8;
+constexpr uint32_t kCyclesPerBitCell = 4;
+constexpr uint64_t kMotorOffDelay = 1000000; // the drive spins on about a second after "off"
+
+// where a disk came from, so write-back can save it in the same form
+enum class DiskFormat : uint8_t {
+    kNone = 0,
+    kDos,    // .dsk / .do: 140 KB in DOS 3.3 sector order
+    kProdos, // .po: 140 KB in ProDOS block order
+    kNib,    // .nib: 35 tracks of 6656 raw disk bytes
+};
+
+struct DiskTrack {
+    uint32_t bit_count = 0;         // the track's length in bit cells
+    uint8_t bits[kTrackBytes] = {}; // cell n is bits[n / 8], most significant bit first
+};
+
+struct DiskDrive {
+    DiskFormat format = DiskFormat::kNone; // kNone: no disk in the drive
+    bool write_protected = false;
+    bool dirty = false;      // written since inserted or saved
+    uint8_t half_track = 0;  // head position, 0 to kDiskHalfTracks - 1
+    uint32_t bit_pos = 0;    // the cell under the head
+    uint64_t spun_to = 0;    // cycle the disk has turned to (whole cells counted from here)
+    uint8_t head_window = 0; // the last four cells read, for the read amplifier's noise
+    DiskTrack tracks[kDiskTracks];
+};
+
+struct Disk2State {
+    uint8_t slot = 0;
+    uint8_t rom[256] = {}; // $Cn00: our boot rom, or the owner's DISK2.rom
+    bool motor_on = false;
+    uint64_t spin_until = 0;     // with the motor off, the drive still turns until this cycle
+    uint8_t drive = 0;           // the selected drive, 0 or 1
+    uint8_t magnets = 0;         // stepper phases 0-3 that are on, one bit each
+    bool q6 = false;             // load (write) or sense write protect (read)
+    bool q7 = false;             // write mode
+    uint8_t shift = 0;           // the sequencer's shift register
+    uint8_t latch = 0;           // the data register the cpu reads
+    int8_t latch_hold = 0;       // microseconds a finished nibble still stays in the latch
+    uint32_t noise = 0x2545F491; // random bits when the head sees no flux for a while
+    DiskDrive drives[2];
+};
+
 struct SlotCards {
     CardKind kind[8] = {};
     uint8_t expansion_slot = 0; // whose $C800 rom is selected; 0 for none
     TestCardState test_card;
+    Disk2State disk2; // one disk ii card, in disk2.slot
 };
 
 enum class MachineStop : uint8_t {
@@ -198,6 +256,9 @@ struct Apple2 {
     VideoScan video;
     SlotCards slots;
     bool direct_load = false; // stop on BRK, illegal opcodes and the entry's RTS
+    // reaching this pc means the program returned (0: no such place). a disk made by
+    // `tisple disk boot` returns there: its loader's call to the program comes back to it
+    uint16_t return_pc = 0;
     bool stopped = false;
     MachineStop stop_reason = MachineStop::kRunning;
     uint16_t stop_pc = 0;
@@ -268,7 +329,7 @@ void RenderScreen(const Apple2& a, VideoLook look, Framebuffer& fb); // CaptureS
 uint16_t ScannerAddress(const SoftSwitches& sw, uint64_t cycle);
 bool InVblank(uint64_t cycle);
 
-// snapshots
+// snapshots: the whole struct, disks included, with runs of zero bytes squeezed
 std::vector<uint8_t> SaveSnapshot(const Apple2& a);
 bool LoadSnapshot(Apple2& a, const uint8_t* bytes, size_t size, std::string& error);
 
