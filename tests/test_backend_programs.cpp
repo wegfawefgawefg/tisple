@@ -139,6 +139,10 @@ void TestLife(TestResults& results, std::uint64_t& step, std::uint64_t& draw,
     CheckDiff(results, d, "main.draw", {});
     draw = d.last_cycles;
     bytes = FunctionBytes(c, "main.step") + FunctionBytes(c, "main.draw");
+    // every cell is read and written through (p),Y with the column in Y: one LDY, before the
+    // column loop
+    CHECK(results, CountMn(c, "main.step", tisple::Mn::LDY) == 1);
+    CHECK(results, CountMn(c, "main.draw", tisple::Mn::LDY) == 1);
     for (int generation = 0; generation < 3; generation++) {
         CheckDiff(results, d, "main.step", {});
         CheckDiff(results, d, "main.swap", {});

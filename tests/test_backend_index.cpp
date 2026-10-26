@@ -10,21 +10,6 @@ namespace tisple_tests {
 
 namespace {
 
-// instructions of one mnemonic in a function's code
-int CountMn(const Compiled& c, const std::string& function, tisple::Mn mn) {
-    int count = 0;
-    for (const tisple::FunctionSpan& span : c.code.spans) {
-        if (span.name != function) {
-            continue;
-        }
-        for (std::size_t i = span.first; i < span.end; i++) {
-            const tisple::AsmItem& item = c.code.as.items[i];
-            count += item.kind == tisple::ItemKind::Ins && item.mn == mn ? 1 : 0;
-        }
-    }
-    return count;
-}
-
 // the index edges: 0, 1, 127, 128, 254, 255; every pointer low byte, so (p),Y crosses a
 // page for some of them
 void TestIndexEdges(TestResults& results) {
