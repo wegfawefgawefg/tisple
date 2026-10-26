@@ -1,6 +1,6 @@
 ; hi-res page 1: 280 x 192, 7 pixels per byte, rows interleaved in memory
 
-(const HGR_PAGE1 u16 0x2000)
+(import apple2 a2)
 
 ; start address of every row, split into low and high bytes.
 ; :boundary keeps each table inside one 256-byte page, so (at row_lo y)
@@ -14,11 +14,11 @@
 
 (fn init
     (for y 0 192
-        (let addr
-            (+ (+ HGR_PAGE1 (<< (u16 (& y 7)) 10))
+        (let start
+            (+ (+ a2.HGR_PAGE1 (<< (u16 (& y 7)) 10))
                 (+ (<< (u16 (& (>> y 3) 7)) 7) (* (u16 (>> y 6)) 40))))
-        (set (at row_lo y) (u8 addr))
-        (set (at row_hi y) (u8 (>> addr 8))))
+        (set (at row_lo y) (u8 start))
+        (set (at row_hi y) (u8 (>> start 8))))
     (let byte u8 0)
     (let bit u8 0)
     (for x 0 280
@@ -30,12 +30,12 @@
                 (set bit 0)
                 (set byte (+ byte 1))))))
 
-; any access to these soft switches flips them: graphics, full screen, page 1, hi-res
+; any access to these soft switches flips them
 (fn show
-    (io_read u8 0xC050)
-    (io_read u8 0xC052)
-    (io_read u8 0xC054)
-    (io_read u8 0xC057))
+    (io_read u8 a2.TXTCLR)
+    (io_read u8 a2.MIXCLR)
+    (io_read u8 a2.LOWSCR)
+    (io_read u8 a2.HIRES))
 
 ; xor one pixel, so drawing twice erases it
 (fn flip (args (x u16) (y u8))

@@ -196,8 +196,15 @@ int BodyHeaderCount(const Node& node) {
     }
     const std::string& head = node.items[0].text;
     if (head == "fn" || head == "macro") {
-        bool has_args = node.items.size() > 2 && HeadIs(node.items[2], "args");
-        return has_args ? 2 : 1;
+        // (fn name (args ...) (returns t) body ...), args and returns both optional
+        std::size_t header = 1;
+        if (node.items.size() > header + 1 && HeadIs(node.items[header + 1], "args")) {
+            header++;
+        }
+        if (node.items.size() > header + 1 && HeadIs(node.items[header + 1], "returns")) {
+            header++;
+        }
+        return static_cast<int>(header);
     }
     if (head == "if" || head == "while" || head == "match") {
         return 1;

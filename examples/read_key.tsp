@@ -1,14 +1,13 @@
 ; wait for a key and return its ASCII code
 
-(const KEYBOARD u16 0xC000)
-(const KEY_STROBE u16 0xC010)
+(import apple2 a2)
 
-; bit 7 of KEYBOARD is set while a key is waiting
-(fn key_ready
-    (>= (io_read u8 KEYBOARD) 0x80))
+; bit 7 of KBD is set while a key is waiting
+(fn key_ready (returns bool)
+    (>= (io_read u8 a2.KBD) 0x80))
 
-(fn read_key
+(fn read_key (returns u8)
     (while (not (key_ready)))
-    (let key (io_read u8 KEYBOARD))
-    (io_read u8 KEY_STROBE) ; clear the strobe so the next read waits again
+    (let key (io_read u8 a2.KBD))
+    (io_read u8 a2.KBDSTRB) ; clear the strobe so the next read waits again
     (& key 0x7F))

@@ -14,7 +14,7 @@
     `(for i# 0 ,n
         ,@body))
 
-(fn shuffle (args (a u8) (b u8))
+(fn shuffle (args (a u8) (b u8)) (returns u8)
     (let x a)
     (let y b)
     (swap x y)

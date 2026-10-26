@@ -27,10 +27,10 @@ A program is one or more `.tsp` files of top-level forms: `import`, `const`,
 (let sprites (array Sprite MAX_SPRITES))
 (let sprite_count u8 0)
 
-(fn spawn (args (x u8) (y u8))
+(fn spawn (args (x u8) (y u8)) (returns bool)
     (if (= sprite_count MAX_SPRITES)
         (return false))
-    (set (at sprites sprite_count) (Sprite x y true))
+    (set (at sprites sprite_count) (Sprite :x x :y y :active true))
     (set sprite_count (+ sprite_count 1))
     true)
 ```
@@ -60,13 +60,26 @@ whole program, so files are namespaces, not separate compilation units.
 - `tisple build main.tsp` follows imports to find every file.
 - Every top-level name is importable for now.
 - An import cycle is an error.
+- A local may not have the same name as an imported module, so `hgr.x` can
+  only mean one thing.
+
+### lib/apple2
+
+Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
+`SPKR`, `TXTCLR`, `HIRES`, ...), plus the screen pages. Write
+`(import apple2 a2)` and `a2.SPKR`; never type an I/O address by hand.
 
 ## Keywords
 
-`:name` marks a declaration option, and that is all it does: `:address`,
-`:align`, `:boundary` (and later `:in`) on `let`. Not values, not named
-arguments, not struct fields. Struct literals are positional:
-`(Sprite 10 20 true)`.
+`:name` does two things only:
+
+1. Declaration options on `let`: `:address`, `:align`, `:boundary` (later `:in`).
+2. Field names in struct literals: `(Sprite :x 10 :y 20 :active true)`. Every
+   field, in declared order, none left out. The names exist so a swapped
+   `x`/`y` is an error instead of a silent bug; there is no reordering and no
+   defaults.
+
+Not values, not named arguments.
 
 ## Types
 
@@ -91,9 +104,9 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
   widening zero-extends from unsigned and sign-extends from signed. Pointers
   convert only with `as`, so `(ptr ...)` is always a type.
 - A literal has no type of its own. It takes the type its context needs and is
-  an error if out of range (`(+ x 300)` with `x : u8` fails). With no context
-  (`(let n 5)`) it is `u8` if it fits, else `u16`. Negative literals default to
-  `i8`/`i16`.
+  an error if out of range (`(+ x 300)` with `x : u8` fails). A literal with no
+  context is an error: `(let n 5)` must be `(let n u8 5)`, and the same for
+  `const`.
 - Arithmetic wraps: `(+ 255 1)` at `u8` is `0`. Comparisons are signed for
   `i8`/`i16`, unsigned otherwise.
 - `*` exists at every width and compiles to a routine; `/` and `%` likewise,
@@ -108,8 +121,8 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | --- | --- |
 | `(const name type value)` | compile-time constant; `type` optional |
 | `(let name type value)` | variable; `type` or `value` may be omitted, not both |
-| `(set place value)` | assign to a name, `(at ...)` or `(. ...)` |
-| `(fn name (args (p t) ...) body ...)` | function; `args` omitted when none |
+| `(set place value)` | assign to a name, `s.x`, `(at ...)` or `(. ...)` |
+| `(fn name (args (p t) ...) (returns t) body ...)` | function; `args` omitted when none, `returns` omitted when it returns nothing |
 | `(if c then else)` | both arms one form; with `else` it has a value, without it is a statement |
 | `(do body ...)` | group forms; value is the last |
 | `(while c body ...)` | loop |
@@ -118,16 +131,25 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(return value)` / `(return)` / `(break)` / `(continue)` | early exits |
 | `(and a b)` `(or a b)` `(not a)` | short-circuit, on `bool` |
 | `(at arr i)` | array element; `i : u8` when the array has at most 256 elements |
-| `(. s name ...)` | struct field; chains, so `(. s pos x)` is `s.pos.x` |
+| `s.x` / `s.pos.x` | struct field of a named value |
+| `(. expr name ...)` | struct field of an expression, `(. (at sprites i) x)`; only when the base is not a plain name |
 | `(load p)` / `(store p v)` | read / write through a pointer; the only way to do either |
-| `(addr place)` | address of a variable, element or field |
+| `(addr_of place)` | address of a variable, element or field |
 | `(as (ptr t) n)` | the `u16` address `n` as a `(ptr t)`, and back with `(as u16 p)` |
-| `(io_read t addr)` / `(io_write addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
+| `(io_read t addr)` / `(io_write t addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
 
-A function's value is its last form, unless it ends in a statement, in which
-case it returns nothing. Return type is inferred from the last form and every
-`return`. Calls always use parentheses, `(read_key)`; only the declaration
-omits an empty `args`.
+A function returns a value only if it declares `(returns t)`. Its value is
+then its last form or a `(return v)`. Without `returns`, the last form's value
+is dropped and `(return)` takes no value. Calls always use parentheses,
+`(read_key)`; only the declaration omits an empty `args`.
+
+A dotted name means "look inside": a module (`hgr.plot`), an enum
+(`Action.fire`) or a struct value (`dot.x`). The checker resolves the first
+segment. Writing `(. dot x)` for a plain name is an error that says to write
+`dot.x`.
+
+Built-in names (`at`, `load`, `addr_of`, `as`, ...) cannot be used for
+variables, functions or fields; the error says to rename.
 
 Locals declared with `let` inside a body live to the end of the enclosing body.
 No shadowing in the same body.
@@ -196,6 +218,7 @@ Every error gives file:line:column, the offending form, and the fix as code:
 main.tsp:12:9: u8 + u16: types must match; write (+ (u16 a) b)
 main.tsp:4:1: this ( is never closed; its form starts here
 main.tsp:20:5: let declares a variable here, it has no body; put the body after it
+main.tsp:7:5: (Sprite :y 1 :x 2 ...) fields out of order; write (Sprite :x 2 :y 1 ...)
 ```
 
 `tisple build --asm` prints each function's generated 6502 code under its
@@ -219,6 +242,7 @@ Named regions, strings, function pointers, recursion, inline assembly,
 
 ## Open questions for the owner
 
-1. Settled 2026-10-26: field access is `(. s x)`.
-2. Settled 2026-10-26: `if` + `do`, no `when`/`unless`; `cond` only if else-if chains get ugly.
-3. Settled 2026-10-26: pointer arithmetic moves by elements; `(ptr u8)` for byte offsets.
+1. Array literal spelling: `(const ROW_ADDR (array u16 192) 0x2000 0x2400 ...)`,
+   values straight after the type (used in `examples/hires_plot.tsp`).
+2. Should `(array u16 n)` be stored as split low/high byte tables
+   automatically, like struct fields? Removes hand-made `row_lo`/`row_hi`.

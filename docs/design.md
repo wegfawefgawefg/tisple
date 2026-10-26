@@ -64,7 +64,7 @@ canonical result.
     (for i 0 count
         (store (+ dst i) value)))
 
-(fn read_key
+(fn read_key (returns u8)
     (let key (io_read u8 0xC000))
     (& key 0x7F))
 ```

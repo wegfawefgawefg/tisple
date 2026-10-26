@@ -8,10 +8,10 @@
 (let sprites (array Sprite MAX_SPRITES))
 (let sprite_count u8 0)
 
-(fn spawn (args (x u8) (y u8) (dx i8))
+(fn spawn (args (x u8) (y u8) (dx i8)) (returns bool)
     (if (= sprite_count MAX_SPRITES)
         (return false))
-    (set (at sprites sprite_count) (Sprite x y dx true))
+    (set (at sprites sprite_count) (Sprite :x x :y y :dx dx :active true))
     (set sprite_count (+ sprite_count 1))
     true)
 

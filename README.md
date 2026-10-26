@@ -4,7 +4,7 @@ A small typed Lisp for the Apple II, with an optimizing 6502 compiler that
 knows what your code costs in cycles before it runs.
 
 ```scheme
-(fn read_key
+(fn read_key (returns u8)
     (let key (io_read u8 0xC000))
     (& key 0x7F))
 ```

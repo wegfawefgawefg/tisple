@@ -11,9 +11,9 @@ syn case match
 syn match tisplePascal {\%(^\|[[:space:]()'`,@]\)\@<=\%([^[:space:]()";'`,]*[./]\)\?\u[[:alnum:]]*\l[[:alnum:]]*#\=\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleCaps {\%(^\|[[:space:]()'`,@]\)\@<=\%([^[:space:]()";'`,]*[./]\)\?\u[[:upper:][:digit:]_]*#\=\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleType {\%(^\|[[:space:]()'`,@]\)\@<=\%(u8\|i8\|u16\|i16\|bool\|ptr\|array\)\%($\|[[:space:]()";'`,]\)\@={
-syn match tispleBuiltin {\%(^\|[[:space:]()'`,@]\)\@<=\%(at\|load\|store\|addr\|io_read\|io_write\|not\|+\|-\|\*\|/\|%\|=\|!=\|<\|<=\|>\|>=\|&\||\|\^\|\~\|<<\|>>\)\%($\|[[:space:]()";'`,]\)\@={
+syn match tispleBuiltin {\%(^\|[[:space:]()'`,@]\)\@<=\%(at\|load\|store\|addr_of\|io_read\|io_write\|not\|+\|-\|\*\|/\|%\|=\|!=\|<\|<=\|>\|>=\|&\||\|\^\|\~\|<<\|>>\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleConstant {\%(^\|[[:space:]()'`,@]\)\@<=\%(true\|false\)\%($\|[[:space:]()";'`,]\)\@={
-syn match tispleSpecial {\%(^\|[[:space:]()'`,@]\)\@<=\%(fn\|let\|const\|struct\|enum\|if\|do\|while\|for\|match\|return\|break\|continue\|args\|set\|and\|or\|\.\|_\|as\|macro\|import\|quote\|quasiquote\|unquote\|unquote_splicing\)\%($\|[[:space:]()";'`,]\)\@={
+syn match tispleSpecial {\%(^\|[[:space:]()'`,@]\)\@<=\%(fn\|let\|const\|struct\|enum\|if\|do\|while\|for\|match\|return\|break\|continue\|args\|returns\|set\|and\|or\|\.\|_\|as\|macro\|import\|quote\|quasiquote\|unquote\|unquote_splicing\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleNumber {\%(^\|[[:space:]()'`,@]\)\@<=-\=\%(0[xX]\x\+\|0[bB][01]\+\|\d\+\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleKeyword {\%(^\|[[:space:]()'`,@]\)\@<=:[^[:space:]()";'`,]\+{
 syn match tispleQuote {,@\|['`,]{

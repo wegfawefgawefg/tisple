@@ -1,9 +1,9 @@
 ; square-wave tones on the speaker: every access to $C030 flips the cone
 
-(const SPEAKER u16 0xC030)
+(import apple2 a2)
 
 (fn click
-    (io_read u8 SPEAKER))
+    (io_read u8 a2.SPKR))
 
 ; half_period sets the pitch: each pass of the empty loop costs the same cycles
 (fn tone (args (cycles u16) (half_period u8))

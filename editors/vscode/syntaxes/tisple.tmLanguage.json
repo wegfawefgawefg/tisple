@@ -44,7 +44,7 @@
     },
     "special": {
       "name": "keyword.control.tisple",
-      "match": "(?<![^\\s()'`,@])(?:fn|let|const|struct|enum|if|do|while|for|match|return|break|continue|args|set|and|or|\\.|_|as|macro|import|quote|quasiquote|unquote|unquote_splicing)(?![^\\s()\";'`,])"
+      "match": "(?<![^\\s()'`,@])(?:fn|let|const|struct|enum|if|do|while|for|match|return|break|continue|args|returns|set|and|or|\\.|_|as|macro|import|quote|quasiquote|unquote|unquote_splicing)(?![^\\s()\";'`,])"
     },
     "type": {
       "name": "storage.type.tisple",
@@ -52,7 +52,7 @@
     },
     "builtin": {
       "name": "support.function.builtin.tisple",
-      "match": "(?<![^\\s()'`,@])(?:at|load|store|addr|io_read|io_write|not|\\+|-|\\*|\\/|%|=|!=|<|<=|>|>=|&|\\||\\^|~|<<|>>)(?![^\\s()\";'`,])"
+      "match": "(?<![^\\s()'`,@])(?:at|load|store|addr_of|io_read|io_write|not|\\+|-|\\*|\\/|%|=|!=|<|<=|>|>=|&|\\||\\^|~|<<|>>)(?![^\\s()\";'`,])"
     },
     "constant": {
       "name": "constant.language.tisple",
