@@ -1,0 +1,13 @@
+Tisple ][ is copyright 2026 Tisple contributors.
+
+Tisple is licensed under either the Apache License, Version 2.0, or the MIT
+License, at your option. Contributions intentionally submitted for inclusion
+in Tisple are accepted under the same terms unless explicitly stated otherwise.
+
+Tisple does not claim copyright over programs written by users or over the
+6502 binaries the compiler produces from them. Tisple-owned startup and
+runtime code included in those binaries remains available under Tisple's dual
+MIT OR Apache-2.0 license.
+
+Third-party components retain their own copyright and license terms:
+third_party/chips (floooh/chips, zlib license).

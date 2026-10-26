@@ -15,3 +15,8 @@ Status: early. Design and milestones in `docs/design.md`.
 cmake --preset dev && cmake --build --preset dev
 ./build-debug/tisple_tests
 ```
+
+## License
+
+MIT OR Apache-2.0, at your option. See `COPYRIGHT`, `LICENSE-MIT` and
+`LICENSE-APACHE`. `third_party/chips` keeps its zlib license.
