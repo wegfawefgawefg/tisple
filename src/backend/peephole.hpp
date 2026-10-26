@@ -9,6 +9,8 @@
 // - a store to a byte only this function reads (private_syms: its own locals and
 //   temporaries) goes when nothing reads it before the next store or the return
 //   (dead_stores.cpp)
+// - a CLC or SEC that finds the carry already so goes, and a CLC only the way into a loop
+//   needs moves before the loop (carry.cpp)
 // Values are only tracked for symbols (never for numbers, which is where I/O lives), and
 // any label, call or indexed store forgets what memory holds.
 
@@ -20,5 +22,7 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
               const std::vector<bool>& private_syms);
 // true if any store went
 bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& private_syms);
+// true if any CLC or SEC went or moved
+bool CarryPass(std::vector<AsmItem>& items);
 
 } // namespace tisple

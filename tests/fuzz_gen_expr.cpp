@@ -296,6 +296,9 @@ std::string Gen::IntExpr(T t, int depth) {
         return call.empty() ? Leaf(t) : call;
     }
     case 9: {
+        if (t == T::U8 && rng.Chance(25)) {
+            return SmallSum(depth);
+        }
         std::vector<const ArrayInfo*> arrs = ArraysOf(t, false);
         if (arrs.empty()) {
             return Leaf(t);
@@ -336,6 +339,17 @@ std::string Gen::Divisor(T t) {
         return std::to_string(1 << rng.Below(8));
     }
     return std::to_string(kUnsigned[rng.Below(16)]);
+}
+
+std::string Gen::SmallSum(int depth) {
+    auto at = [&]() {
+        if (rng.Chance(50)) {
+            return "(at sm " + std::to_string(rng.Below(4)) + ")";
+        }
+        return "(at sm (& " + NonLit(T::U8, 0) + " 31))";
+    };
+    std::string last = rng.Chance(40) ? std::to_string(rng.Below(250)) : Expr(T::U8, depth - 1);
+    return "(+ (+ " + at() + " " + at() + ") (+ " + at() + " " + last + "))";
 }
 
 std::string Gen::BoolExpr(int depth) {

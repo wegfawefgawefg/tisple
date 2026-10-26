@@ -26,6 +26,7 @@
 #include "backend/backend.hpp"
 #include "backend/effects.hpp"
 #include "backend/index_alias.hpp"
+#include "backend/ranges.hpp"
 
 #include <string>
 #include <vector>
@@ -80,11 +81,12 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
-    std::vector<std::uint32_t> fn_exprs;    // by function: expressions in its body
-    std::vector<bool> deref;                // by var: some load or store goes straight through it
-    std::vector<IndexAlias> aliases;        // by var: locals that only name a byte index
-    std::vector<bool> div_pairs;            // by expr: FindDivPairs
-    std::vector<DivRoutine> div_routines;   // the ones the code calls
+    std::vector<std::uint32_t> fn_exprs;  // by function: expressions in its body
+    std::vector<bool> deref;              // by var: some load or store goes straight through it
+    std::vector<IndexAlias> aliases;      // by var: locals that only name a byte index
+    std::vector<bool> div_pairs;          // by expr: FindDivPairs
+    std::vector<DivRoutine> div_routines; // the ones the code calls
+    ValueRanges ranges;
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
     std::int32_t rt_a = -1;                 // 2 bytes each
@@ -235,6 +237,10 @@ void Unsupported(Gen& g, ExprId id, const char* what);
 // ---- emission (gen_emit.cpp)
 
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value = AsmValue());
+// the last item leaves the carry clear for certain: a CLC, or an add marked as not carrying
+bool CarryClearNow(const Gen& g);
+// the largest value id can have (ranges.hpp)
+std::uint32_t MaxOf(const Gen& g, ExprId id);
 std::int32_t NewLabel(Gen& g);
 void PlaceLabel(Gen& g, std::int32_t label);
 // a label only forward branches over straight-line code reach, which leave X and Y alone:

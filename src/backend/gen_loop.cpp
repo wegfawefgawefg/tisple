@@ -69,6 +69,16 @@ bool IsImmZeroByte(const Opnd& o, int k) {
     return b.kind == ByteKind::Imm && b.value.sym < 0 && (b.value.offset & 0xFF) == 0;
 }
 
+// the branch just emitted goes back to the top of a u8 loop after comparing the counter,
+// one past its value in the body, with the end: the counter only ever counts up to the end
+// (the guard or the constant bounds saw start < end, and the body cannot write it), so going
+// back means counter < end, unsigned, and the carry is clear
+void MarkBackEdge(Gen& g, const ForParts& f) {
+    if (KindOf(*g.program, g.program->vars[static_cast<std::size_t>(f.var)].type) == TypeKind::U8) {
+        g.out->back().carry = Carry::Clear;
+    }
+}
+
 // the counter in register r; false (and nothing kept) if the body needed r
 bool TryPinned(Gen& g, const ForParts& f, int r) {
     std::size_t mark = g.out->size();
@@ -97,8 +107,11 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
         const ByteRef& b = f.end.b[0];
         Emit(g, r == 0 ? Mn::CPX : Mn::CPY, b.kind == ByteKind::Imm ? Mode::Imm : Mode::Abs,
              b.value);
+        Branch(g, Mn::BNE, top);
+        MarkBackEdge(g, f);
+    } else {
+        Branch(g, Mn::BNE, top);
     }
-    Branch(g, Mn::BNE, top);
     if (r == 1) {
         InitDerived(g, TakeDerived(g, f.var, init_at), init_at, AsmValue());
     }
@@ -291,11 +304,14 @@ void MemoryLoop(Gen& g, const ForParts& f) {
     PlaceLabel(g, next);
     if (f.size == 1) {
         RmwByte(g, Mn::INC, v, 0);
-        if (!IsImmZeroByte(f.end, 0)) {
-            LoadA(g, v, 0);
-            OpA(g, Mn::CMP, f.end, 0);
+        if (IsImmZeroByte(f.end, 0)) {
+            Branch(g, Mn::BNE, top);
+            return;
         }
+        LoadA(g, v, 0);
+        OpA(g, Mn::CMP, f.end, 0);
         Branch(g, Mn::BNE, top);
+        MarkBackEdge(g, f);
         return;
     }
     if (IsImmZeroByte(f.end, 0) && IsImmZeroByte(f.end, 1)) {

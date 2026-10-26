@@ -374,6 +374,7 @@ void FlowPass(Pass& p) {
                 }
                 if (!label_between) {
                     item.mn = InvertBranch(item.mn);
+                    item.carry = Carry::Unknown;
                     item.value = p.At(next).value;
                     p.Kill(next);
                     continue;
@@ -425,7 +426,8 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
         }
         items.swap(kept);
         bool stores = DropDeadStores(items, private_syms);
-        if (!p.changed && !stores) {
+        bool carry = CarryPass(items);
+        if (!p.changed && !stores && !carry) {
             return;
         }
     }

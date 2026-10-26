@@ -65,6 +65,51 @@ entry says what happened and what it should do.
    | gaps flagged: life, dot, sprites | 18.22%, 63.68%, 13.90% | the same (no division) |
    | gaps --fuzz 3000: runtime routines | 5.1% | 4.8% (the new generator) |
 
+6. Gap list item 2, carry facts (2026-10-26). A new peephole pass
+   (src/backend/carry.cpp) follows the carry along the function's control
+   flow: CLC and SEC that find it already so go, and a CLC right after a
+   label that every jump to the label brings clear (only falling in needs
+   it) moves before the label, out of the loop. Facts come from the
+   instructions (CLC, SEC, both edges of BCC and BCS, so the `CMP / BCS`
+   guard of a loop) and from code generation through `AsmItem::carry`: the
+   back edge of a u8 counted loop (`INX / CPX end / BNE`) leaves C clear,
+   since the counter only counts up to the end (not for signed counters,
+   which compare unsigned), and an add whose sum cannot pass 255 leaves C
+   clear, so the next add needs no CLC. Function starts and labels named by
+   jump tables or patched operands may have any carry.
+   Sums come from value ranges (src/backend/ranges.cpp): a global, constant
+   table or local of a byte type, or an array of them, whose every write is
+   known holds no more than the largest value written. Stores through
+   pointers count for every variable the pointer may reach under the
+   provenance rule, followed through lets, sets, arguments, returns, and
+   pointers kept in memory (arrays, struct fields, through pointers) lumped
+   together; a function the program never calls gets any pointers. A null
+   global pointer reaches nothing; one made with `as` only memory no
+   variable uses. Life's worlds only ever hold 0 and 1, so the neighbour sum
+   is `LDA (p),Y` then seven `ADC (p),Y` with one CLC before the row.
+   Tests: tests/test_backend_carry.cpp (sums over an array of 0 and 1 with
+   one 255 stored directly, through a pointer parameter, a returned pointer,
+   a struct field, an array of pointers, a pointer to a pointer and a global
+   pointer; a value just small enough and one 2 too big; a local set big in
+   a branch; signed counters, the carry set before a loop, variable ends,
+   break, continue, nested loops, a loop through 255, a jump table in the
+   body). Every one of those fails when the fact it checks is dropped from
+   the analysis. The fuzz generator has `sm`, an array of small values (0 to
+   3) stored directly and through pointers and read in sums of three, and in
+   a fifth of programs a store of 250 to 255 into it.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | life step (cycle report) | 180689 (94.1 a cell) | 154005 (80.2 a cell) |
+   | life draw | 46405 | 46421 (a BCC in the row multiply now crosses a page; same code) |
+   | sprite step over 32 | 942 | 878 |
+   | fill 8 KB | 156411 | 156409 |
+   | hgr rows, multiply, hi-res line | 54922, 572, 72373 | the same |
+   | Life generations in 10 M cycles | 43 | 49 |
+   | gaps flagged: life, dot, sprites | 18.22%, 63.68%, 13.90% | 7.64%, 63.68%, 7.73% |
+
+   Life's remaining CLCs are in `row_of`'s multiply by 42 (items 3 and 4).
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -152,11 +197,6 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-2. Carry facts. A counted loop's exit test (`CPX/CPY/CMP` then `BNE`, or
-   the `BCS` guard) leaves C clear in the body, so the first CLC there can
-   go: 6.7% of sprites, and the first of Life's 7. For the other 6, value
-   ranges for arrays whose every store is a small constant (world_a and
-   world_b only ever hold 0 and 1) show the sum can't carry: 10% of Life.
 3. Strength-reduce `(* y STRIDE)` on a loop counter, including through an
    inlined `row_of`. Keep the row pointer and add the stride each time:
    about 5% of Life.

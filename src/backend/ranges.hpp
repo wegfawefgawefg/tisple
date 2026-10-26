@@ -1,0 +1,41 @@
+#pragma once
+
+// Value ranges for code generation: the largest value an expression can have, so an add of
+// two small values needs no carry out (Life's neighbour sum of cells that are 0 or 1).
+//
+// A variable has a range when every write to it is known: a global, constant table or
+// local of a byte type (u8, i8, bool, an enum) or an array of them, not at an :address, and
+// for a global or address-taken local every store through a pointer that may reach it. Which
+// pointers may reach what follows the provenance rule (docs/language.md): a pointer made by
+// addr_of reaches only that variable, one made with `as` from a number reaches only memory
+// no variable uses, and arithmetic stays inside. Pointer values are followed through lets,
+// sets, arguments and returns; pointers kept in arrays, struct fields or memory are lumped
+// together. Indices stay inside their arrays (the backend assumes this everywhere).
+
+#include "check/program.hpp"
+
+#include <vector>
+
+namespace tisple {
+
+// what a pointer value may point into
+struct Targets {
+    bool any = false;        // any variable whose address is taken
+    bool undeclared = false; // memory no variable uses
+    std::vector<bool> vars;  // by var
+};
+
+struct ValueRanges {
+    std::vector<std::uint8_t> var_max; // by var: no byte of it holds more (255: anything)
+    std::vector<bool> candidate;       // by var: var_max is worked out from its writes
+    std::vector<Targets> var_targets;  // by var, for pointer variables
+    std::vector<Targets> ret_targets;  // by function returning a pointer
+    Targets heap;                      // pointers kept in memory
+};
+
+ValueRanges FindValueRanges(const Program& program);
+
+// the largest value id can have, as raw bits: up to 255 for 8-bit types, 65535 for 16-bit
+std::uint32_t ExprMax(const Program& program, const ValueRanges& ranges, ExprId id);
+
+} // namespace tisple

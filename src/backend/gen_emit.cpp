@@ -246,6 +246,21 @@ void LoadIndexConst(Gen& g, int reg, std::uint8_t value) {
 
 } // namespace
 
+bool CarryClearNow(const Gen& g) {
+    if (g.out->empty()) {
+        return false;
+    }
+    const AsmItem& last = g.out->back();
+    if (last.kind != ItemKind::Ins || IsBranch(last.mn)) {
+        return false;
+    }
+    return last.mn == Mn::CLC || last.carry == Carry::Clear;
+}
+
+std::uint32_t MaxOf(const Gen& g, ExprId id) {
+    return ExprMax(*g.program, g.be->ranges, id);
+}
+
 std::int32_t NewLabel(Gen& g) {
     return NewSym(*g.be, "L" + std::to_string(g.be->as.symbols.size()), SymRole::Label, -1);
 }

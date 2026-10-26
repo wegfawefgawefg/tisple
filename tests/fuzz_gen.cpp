@@ -272,6 +272,26 @@ std::string Gen::DivPair() {
     return text + " (set " + second + " (" + ops[1] + " " + x + " " + d + ")))";
 }
 
+std::string Gen::SmallStore() {
+    std::string k = std::to_string(rng.Below(4));
+    std::string index = "(& " + NonLit(T::U8, 1) + " 31)";
+    if (sm_big && rng.Chance(30)) {
+        k = std::to_string(250 + rng.Below(6));
+        index = std::to_string(rng.Below(4));
+    } else if (rng.Chance(20)) {
+        k = "(if " + Expr(T::Bool, 1) + " 1 0)";
+    }
+    switch (rng.Below(3)) {
+    case 0:
+        return "(set (at sm " + index + ") " + k + ")";
+    case 1:
+        return "(store (addr_of (at sm " + index + ")) " + k + ")";
+    default:
+        return "(store (+ (addr_of (at sm (& " + NonLit(T::U8, 1) + " 15))) (as u16 (& " +
+               NonLit(T::U8, 1) + " 15))) " + k + ")";
+    }
+}
+
 std::string Gen::RoomPointerLet() {
     // room for any byte count: the start is at most 255 into wb's 1024 bytes
     std::string p = Fresh("p");
@@ -351,6 +371,9 @@ std::string Gen::Stmt(int depth) {
     case 2:
     case 3:
     case 4: {
+        if (rng.Chance(10)) {
+            return SmallStore();
+        }
         T t = T::U8;
         std::string place = Place(t);
         return "(set " + place + " " + Expr(t, 3) + ")";
@@ -477,6 +500,8 @@ std::string Gen::Program() {
     target.count = 16;
     target.pointers = true;
     text += "(let pt (array u8 16))\n(let wb (array u8 1024))\n(let ww (array u16 512))\n";
+    text += "(let sm (array u8 32))\n";
+    sm_big = rng.Chance(20);
     arrays.push_back(target);
     ArrayInfo table;
     table.name = "KT";

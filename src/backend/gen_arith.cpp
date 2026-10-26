@@ -37,8 +37,9 @@ void AluByte(Gen& g, Op op, const Opnd& o, int k) {
     OpA(g, AluMn(op), o, k);
 }
 
-// A = A op b, 8-bit, skipping identities
-void Alu8(Gen& g, Op op, const Opnd& b) {
+// A = A op b, 8-bit, skipping identities. no_carry: the sum is known to stay below 256, so
+// the ADC leaves the carry clear (and the next one needs no CLC)
+void Alu8(Gen& g, Op op, const Opnd& b, bool no_carry = false) {
     int v = ImmByte(b, 0);
     if (v == 0 && (op == Op::Add || op == Op::Sub || op == Op::Or || op == Op::Xor)) {
         return;
@@ -46,12 +47,20 @@ void Alu8(Gen& g, Op op, const Opnd& b) {
     if (op == Op::And && v == 0xFF) {
         return;
     }
-    if (op == Op::Add) {
+    if (op == Op::Add && !CarryClearNow(g)) {
         Emit(g, Mn::CLC, Mode::Imp);
     } else if (op == Op::Sub) {
         Emit(g, Mn::SEC, Mode::Imp);
     }
     AluByte(g, op, b, 0);
+    if (op == Op::Add && no_carry) {
+        g.out->back().carry = Carry::Clear;
+    }
+}
+
+// the 8-bit sum of a and b stays below 256
+bool SumFits(const Gen& g, ExprId a, ExprId b) {
+    return MaxOf(g, a) + MaxOf(g, b) <= 0xFF;
 }
 
 // multiplying by a constant with at most this many set bits is inlined as shifts and adds
@@ -143,10 +152,13 @@ bool EvalChain8(Gen& g, const Expr& e) {
         first = 0;
     }
     EvalA(g, leaves[first]);
+    std::uint32_t sum = MaxOf(g, leaves[first]);
     for (std::size_t i = 0; i < leaves.size(); i++) {
-        if (i != first) {
-            Alu8(g, e.op, TrySimple(g, leaves[i]));
+        if (i == first) {
+            continue;
         }
+        sum += MaxOf(g, leaves[i]);
+        Alu8(g, e.op, TrySimple(g, leaves[i]), e.op == Op::Add && sum <= 0xFF);
     }
     return true;
 }
@@ -222,23 +234,24 @@ void EvalArith8(Gen& g, const Expr& e) {
         if (EvalChain8(g, e)) {
             return;
         }
+        bool fits = op == Op::Add && SumFits(g, e.a, e.b);
         Opnd b = TrySimple(g, e.b);
         if (b.size != 0) {
             EvalA(g, e.a);
-            Alu8(g, op, b);
+            Alu8(g, op, b, fits);
             return;
         }
         Opnd a = TrySimple(g, e.a);
         if (a.size != 0 && !MayWriteOpnd(g, e.b, a) && Commutes(op)) {
             EvalA(g, e.b);
-            Alu8(g, op, a);
+            Alu8(g, op, a, fits);
             return;
         }
         EvalA(g, e.a);
         Opnd ta = SpillA(g);
         EvalA(g, e.b);
         if (Commutes(op)) {
-            Alu8(g, op, ta);
+            Alu8(g, op, ta, fits);
             return;
         }
         Opnd tb = SpillA(g);
