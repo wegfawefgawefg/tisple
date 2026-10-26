@@ -313,8 +313,11 @@ Applied once the backend branch lands, so it doesn't conflict with it:
 - The return type is always the third item, `void` when nothing is returned,
   and `(returns t)` goes away: `(fn read_key () u8 ...)`.
 - `as` is the only conversion: `(as u16 y)`, `(as u8 addr)`,
-  `(as (ptr u8) addr)`, `(as u8 action)`. `(u8 x)`-style conversions go away,
-  so a type name heads a form only in a struct literal.
+  `(as (ptr u8) addr)`, `(as u8 action)`. `(u8 x)`-style conversions go away.
+- Struct literals are `(make Sprite :x 10 :y 20 :active true)`. With this and
+  `as`, a type never heads a form: the first word of every form is a special
+  form, built-in, macro or function, so macros and tools can tell any form
+  apart by its head alone.
 - Declarations stay `(let dog u8 5)`; `(u8 dog 5)` would clash with struct
   literals and make declarations hard to search for.
 - No multiple return values for now. The backend may return a `bool` in the
