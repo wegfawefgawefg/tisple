@@ -4,6 +4,7 @@
 (import apple2 a2)
 (import keys)
 (import lores)
+(import macros)
 (import tables)
 
 ; 128 + 127 sin(2 pi i / 256), rounded
@@ -39,9 +40,11 @@
         (let screen (ptr u8) (lores.row r))
         (let top u8 (at row (<< r 1)))
         (let bottom u8 (at row (+ (<< r 1) 1)))
-        (for x u8 0 40
-            (let c u8 (at col x))
-            (store (+ screen x) (| (at RAMP_LO (+ c top)) (at RAMP_HI (+ c bottom)))))))
+        ; 40 straight copies: (at col 5) is a fixed address and there is no loop counter.
+        ; 1 KB more code for 10% more frames than the loop (docs/benchmarks.md)
+        (macros.unroll x 0 40
+            (store (+ screen x)
+                (| (at RAMP_LO (+ (at col x) top)) (at RAMP_HI (+ (at col x) bottom)))))))
 
 (fn main () void
     (lores.show)

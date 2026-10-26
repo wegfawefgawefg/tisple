@@ -420,7 +420,8 @@ main.tsp:12:1: sprite BALL: row 1 is 3 wide, the first is 4 (in macro tables.spr
   a row.
 - `lib/macros`: `inc`, `dec`, and `(macros.unroll i start end body ...)`: the
   body once for each `i`, with `i` a literal in each copy, each copy in its own
-  `do`.
+  `do`. Plasma's draw loop unrolled goes from 18.3 to 20.1 frames a second,
+  for 1 KB of code (`docs/benchmarks.md`).
 
 What macros are for:
 
