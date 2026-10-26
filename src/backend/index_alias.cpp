@@ -133,7 +133,7 @@ bool EffectFreeParts(const Program& program, const Expr& form, ExprId parts[2]) 
 // a let read once, by a later form of its do before that form does anything, with nothing
 // in between changing what its value reads: the read can be the value itself
 void CheckForwardLet(const Program& program, const Expr& block, std::uint32_t at,
-                     std::vector<IndexAlias>& out) {
+                     std::vector<IndexAlias>& out, std::vector<std::int32_t>& reader_let) {
     const Expr& let = ExprOf(program, ListItem(program, block, at));
     TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(let.ref)].type);
     if (!IsScalarKind(kind) || kind == TypeKind::Ptr || HasEffects(program, let.a)) {
@@ -153,6 +153,8 @@ void CheckForwardLet(const Program& program, const Expr& block, std::uint32_t at
             if (in_parts) {
                 out[static_cast<std::size_t>(let.ref)].value = let.a;
                 out[static_cast<std::size_t>(let.ref)].forward = true;
+                reader_let[static_cast<std::size_t>(let.ref)] =
+                    form.kind == ExprKind::Let ? form.ref : -1;
             }
             return;
         }
@@ -214,6 +216,8 @@ std::vector<IndexAlias> FindIndexAliases(const Program& program) {
             shared[static_cast<std::size_t>(e.ref)] = true;
         }
     }
+    // the let whose value reads each forwarded let
+    std::vector<std::int32_t> reader_let(program.vars.size(), -1);
     for (const Expr& e : program.exprs) {
         if (e.kind != ExprKind::Do) {
             continue;
@@ -230,10 +234,25 @@ std::vector<IndexAlias> FindIndexAliases(const Program& program) {
             }
             CheckIndexLet(program, e, i, out);
             if (out[v].value < 0 && reads[v] == 1) {
-                CheckForwardLet(program, e, i, out);
+                CheckForwardLet(program, e, i, out, reader_let);
             }
         }
     }
+    // a forwarded let is read where its reader is. When that reader is itself a let read
+    // later as its value (an index alias or another forwarded let), the read moves later
+    // still, past forms the check never looked at: such a let runs after all.
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (std::size_t v = 0; v < out.size(); v++) {
+            std::int32_t reader = reader_let[v];
+            if (!out[v].forward || reader < 0 || out[static_cast<std::size_t>(reader)].value < 0) {
+                continue;
+            }
+            out[v] = IndexAlias();
+            changed = true;
+        }
+    }
+
     for (std::size_t v = 0; v < out.size(); v++) {
         out[v].index_only = out[v].value >= 0 && reads[v] == index_reads[v];
     }
