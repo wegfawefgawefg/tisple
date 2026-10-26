@@ -145,6 +145,102 @@ bool CheckCodeRange(std::uint32_t origin, std::uint32_t end, std::uint32_t limit
     return true;
 }
 
+// what one function's code added to the symbols' weights
+using WeightsAdded = std::vector<std::pair<std::int32_t, std::uint64_t>>;
+
+std::vector<std::uint64_t> Weights(const Backend& be) {
+    std::vector<std::uint64_t> out(be.info.size());
+    for (std::size_t s = 0; s < be.info.size(); s++) {
+        out[s] = be.info[s].weight;
+    }
+    return out;
+}
+
+WeightsAdded AddedSince(const Backend& be, const std::vector<std::uint64_t>& before) {
+    WeightsAdded out;
+    for (std::size_t s = 0; s < be.info.size(); s++) {
+        std::uint64_t old = s < before.size() ? before[s] : 0;
+        if (be.info[s].weight != old) {
+            out.push_back({static_cast<std::int32_t>(s), be.info[s].weight - old});
+        }
+    }
+    return out;
+}
+
+// the function whose entry label this symbol is, or -1
+std::int32_t FunctionOfSym(const Backend& be, std::int32_t sym) {
+    if (sym < 0) {
+        return -1;
+    }
+    const SymInfo& info = be.info[static_cast<std::size_t>(sym)];
+    if (info.role != SymRole::Label || info.owner < 0) {
+        return -1;
+    }
+    bool entry = be.fn_sym[static_cast<std::size_t>(info.owner)] == sym;
+    return entry ? info.owner : -1;
+}
+
+// by function: its code is in the binary. Main and every function its code (after
+// inlining) names, and theirs; with no main, or when asked, all of them
+std::vector<bool> KeptFunctions(const Backend& be, const BuildOptions& options) {
+    std::size_t count = be.program->functions.size();
+    std::int32_t main = be.program->main;
+    if (options.keep_all_functions || main < 0) {
+        return std::vector<bool>(count, true);
+    }
+    std::vector<bool> kept(count, false);
+    std::vector<std::int32_t> work = {main};
+    kept[static_cast<std::size_t>(main)] = true;
+    while (!work.empty()) {
+        std::int32_t f = work.back();
+        work.pop_back();
+        for (const AsmItem& item : be.code[static_cast<std::size_t>(f)]) {
+            std::int32_t callee = FunctionOfSym(be, item.value.sym);
+            if (callee < 0 || kept[static_cast<std::size_t>(callee)]) {
+                continue;
+            }
+            kept[static_cast<std::size_t>(callee)] = true;
+            work.push_back(callee);
+        }
+    }
+    return kept;
+}
+
+// a function no kept code calls: no code, no temporaries, its uses not counted when frames
+// pick zero page. Its params and locals stay, since inlined copies of it use them
+void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added) {
+    std::size_t f = static_cast<std::size_t>(function);
+    be.code[f].clear();
+    be.temp_size[f] = 0;
+    be.ptemp_size[f] = 0;
+    be.lptr_size[f] = 0;
+    for (const auto& [sym, weight] : added) {
+        be.info[static_cast<std::size_t>(sym)].weight -= weight;
+    }
+}
+
+// the runtime and division routines the kept code calls
+void FindUsedRoutines(Backend& be) {
+    std::vector<bool> named(be.info.size(), false);
+    for (const std::vector<AsmItem>& code : be.code) {
+        for (const AsmItem& item : code) {
+            if (item.value.sym >= 0) {
+                named[static_cast<std::size_t>(item.value.sym)] = true;
+            }
+        }
+    }
+    for (int r = 0; r < kRuntimeCount; r++) {
+        be.rt_used[r] = named[static_cast<std::size_t>(be.rt_sym[r])];
+    }
+    std::vector<DivRoutine> used;
+    for (const DivRoutine& r : be.div_routines) {
+        if (named[static_cast<std::size_t>(r.sym)]) {
+            used.push_back(r);
+        }
+    }
+    be.div_routines = used;
+}
+
 void Append(std::vector<AsmItem>& to, const std::vector<AsmItem>& from, Compiled& out,
             std::int32_t function, const std::string& name) {
     FunctionSpan span;
@@ -180,13 +276,23 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
         be.fn_exprs[f] = CountExprs(program, program.functions[f].body);
     }
     MakeSymbols(be);
+    std::vector<WeightsAdded> added(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {
+        std::vector<std::uint64_t> weights = Weights(be);
         GenFunction(be, static_cast<std::int32_t>(f));
         Peephole(be.as, be.code[f], PrivateSymbols(be, static_cast<std::int32_t>(f)));
+        added[f] = AddedSince(be, weights);
     }
     if (errors.size() != before) {
         return false;
     }
+    std::vector<bool> kept = KeptFunctions(be, options);
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (!kept[f]) {
+            DropFunction(be, static_cast<std::int32_t>(f), added[f]);
+        }
+    }
+    FindUsedRoutines(be);
     std::vector<AsmItem> runtime;
     EmitRuntime(be, runtime);
     EmitDivRoutines(be, runtime);
@@ -218,7 +324,9 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
     std::vector<AsmItem>& items = be.as.items;
     Append(items, startup, out, -1, "startup");
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+        if (kept[f]) {
+            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+        }
     }
     Append(items, runtime, out, -1, "runtime");
     Append(items, zp_image, out, -1, "zero-page image");
@@ -287,8 +395,10 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
 
     out.function_address.resize(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        out.function_address[f] =
-            static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(be.fn_sym[f])].value);
+        if (kept[f]) {
+            out.function_address[f] = static_cast<std::uint16_t>(
+                be.as.symbols[static_cast<std::size_t>(be.fn_sym[f])].value);
+        }
     }
     out.entry_ready =
         static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sp.ready_sym)].value);

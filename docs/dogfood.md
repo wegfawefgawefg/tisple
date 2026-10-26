@@ -327,6 +327,30 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | kernels, Life generations | 156409, 40138, 878, 572, 136984/41913, 65513, 55 | the same |
     | gaps flagged: sprites | 7.73% at 6 findings | 7.73% at 3 (the rest follow the data) |
 
+14. Uncalled functions in the binary (2026-10-26). `tisple build` kept the
+    code of every function, also those only inlined and those nothing calls
+    (dot's compile-time-only `row_start`, 108 bytes). Now only main and what
+    its code names after inlining, and theirs, are in the binary; the others
+    have no code, no temporaries, and their uses no longer compete for zero
+    page. Their parameters and locals stay, since inlined copies use them.
+    The runtime and division routines are the ones the kept code calls. With
+    no main (a library) every function stays. `BuildOptions::keep_all_functions`
+    keeps them all; the tests that call functions by address set it, and the
+    fuzz tests build like `tisple build` (`CompileMainText`). Tests:
+    tests/test_backend_build.cpp (an inlined-only function, a chain called
+    only from dead code, runtime only dead code used, a library).
+
+    | Program | Code before | Code after |
+    | --- | --- | --- |
+    | life | 1680 | 1063 |
+    | plasma | 1561 | 1346 |
+    | snake | 1383 | 1014 |
+    | dot | 580 | 395 |
+    | multi | 286 | 203 |
+    | keys | 263 | 160 |
+    | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
+    | plasma frames in 10 s | 201 | 200 (its tables moved: more indexed reads cross a page) |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

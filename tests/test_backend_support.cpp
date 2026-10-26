@@ -6,7 +6,7 @@ namespace tisple_tests {
 
 namespace {
 
-Compiled Finish(Built built) {
+Compiled Finish(Built built, bool keep_all_functions) {
     Compiled c;
     c.built = std::move(built);
     if (!c.built.ok) {
@@ -14,7 +14,9 @@ Compiled Finish(Built built) {
         return c;
     }
     std::vector<tisple::Diagnostic> errors;
-    c.ok = tisple::CompileProgram(c.built.program, tisple::BuildOptions(), c.code, errors);
+    tisple::BuildOptions options;
+    options.keep_all_functions = keep_all_functions;
+    c.ok = tisple::CompileProgram(c.built.program, options, c.code, errors);
     if (!c.ok) {
         c.errors = tisple::FormatDiagnostics(c.built.program.sources, errors);
     }
@@ -30,11 +32,15 @@ std::string Hex(std::uint32_t value) {
 } // namespace
 
 Compiled CompileText(const std::string& text, const std::vector<tisple::VirtualFile>& extra) {
-    return Finish(BuildText(text, extra));
+    return Finish(BuildText(text, extra), true);
+}
+
+Compiled CompileMainText(const std::string& text) {
+    return Finish(BuildText(text, {}), false);
 }
 
 Compiled CompileFile(const std::string& path) {
-    return Finish(BuildFile(path));
+    return Finish(BuildFile(path), true);
 }
 
 bool StartDiff(Diff& d, const Compiled& c) {

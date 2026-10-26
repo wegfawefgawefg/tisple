@@ -24,3 +24,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-26 | (draw loop reads (at col x) twice, no local c) | plasma | frames in 10 s | 183 (18.3 fps) |
 | 2026-10-26 | (that loop as macros.unroll x 0 40) | plasma | frames in 10 s | 201 (20.1 fps); code 481 to 1561 bytes |
 | 2026-10-26 | f5b7278 (macros + gap-fix backend) | plasma | frames in 10 s | 201 (20.1 fps) |
+| 2026-10-26 | (uncalled functions dropped) | life | generations in 10 s | 56; code 1680 to 1063 bytes |
+| 2026-10-26 | (uncalled functions dropped) | plasma | frames in 10 s | 200 (20.0 fps; its tables moved); code 1561 to 1346 bytes |

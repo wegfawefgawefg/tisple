@@ -28,6 +28,8 @@ namespace tisple {
 struct BuildOptions {
     std::uint16_t origin = 0x6000;
     std::uint32_t limit = 0x9600; // one past the last byte code and data may use
+    // keep the code of functions main never calls (tests call them by address)
+    bool keep_all_functions = false;
 };
 
 // where one function's code is in Compiled::as.items
@@ -44,7 +46,7 @@ struct Compiled {
     Layout layout;                   // every var's address; run the interpreter on it too
     Assembly as;                     // items with addresses, for listings
     std::vector<FunctionSpan> spans;
-    std::vector<std::uint16_t> function_address; // by function id
+    std::vector<std::uint16_t> function_address; // by function id; 0: dropped (never called)
     std::uint16_t entry_ready = 0; // zero page saved and initialised; next is JSR main
     std::uint16_t after_main = 0;  // main returned; zero page not restored yet
     std::uint16_t save_buffer = 0; // where zero page is saved

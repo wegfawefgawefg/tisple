@@ -47,7 +47,7 @@ void Report(const char* what, std::uint64_t seed, const std::string& text, const
 void FuzzOne(std::uint64_t seed, FuzzStats& stats) {
     std::string text = GenerateProgram(seed);
     stats.programs++;
-    Compiled c = CompileText(text);
+    Compiled c = CompileMainText(text);
     if (!c.built.ok) {
         stats.invalid++;
         Report("program does not check", seed, text, c.errors, stats.invalid);
@@ -92,7 +92,7 @@ bool DiffFile(TestResults& results) {
         CHECK(results, false);
         return true;
     }
-    Compiled c = CompileText(file.text);
+    Compiled c = CompileMainText(file.text);
     Diff d;
     bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
     std::printf("%s: %s\n", path, ok ? "same" : d.message.c_str());
@@ -116,7 +116,7 @@ void RunFarmPrograms(TestResults& results) {
         tisple::SourceFile file;
         std::string error;
         CHECK(results, tisple::LoadSourceFile(path, file, error));
-        Compiled c = CompileText(file.text);
+        Compiled c = CompileMainText(file.text);
         Diff d;
         d.in.max_steps = 300000;
         d.max_cycles = 40000000;

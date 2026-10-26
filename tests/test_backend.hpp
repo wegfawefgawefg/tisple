@@ -21,6 +21,9 @@ struct Compiled {
 
 Compiled CompileText(const std::string& text, const std::vector<tisple::VirtualFile>& extra = {});
 Compiled CompileFile(const std::string& path);
+// as `tisple build` compiles it: functions main never calls are left out, so only main can
+// be called (the others above keep every function, for calls by address)
+Compiled CompileMainText(const std::string& text);
 
 // the interpreter and the simulator side by side, calls made on both
 struct Diff {
@@ -61,5 +64,6 @@ void RunBackendReduceTests(TestResults& results);
 void RunBackendWideTests(TestResults& results);
 void RunBackendPeepTests(TestResults& results);
 void RunBackendBindTests(TestResults& results);
+void RunBackendBuildTests(TestResults& results);
 
 } // namespace tisple_tests
