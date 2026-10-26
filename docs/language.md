@@ -298,9 +298,32 @@ may point anywhere, a hi-res page included (`(let screen (array u8 8192)
 :address 0x2000)`); automatic placement never uses zero page, the stack, text
 page 1, hi-res page 1 or `$C000` and up.
 
+## Planned after the first backend (owner, 2026-10-26)
+
+- Function pointers, no closures: dispatch tables, per-object update
+  functions. Cheap on the 6502 (indirect `JMP` or push-address + `RTS`).
+- Tail calls: a call in tail position compiles to `JMP`, not `JSR` + `RTS`.
+  Backend only, no syntax.
+
+Ideas, in order of cost, taken up when real programs need them:
+
+1. Tail recursion as loops: a self-call in tail position jumps to the top, no
+   frame. Comes free with tail calls, so the no-recursion rule can relax for it.
+2. Recursion at compile time: pure functions called with constant arguments
+   run in the interpreter while compiling (`(fib 10)` becomes `55`). Comes
+   with computing macros.
+3. Bounded recursion: `:max_depth 16` on a function gives it 16 frames as
+   split tables indexed by depth in X (`LDA frame_x,X`); no hardware stack.
+   Going deeper stops with a clear error. For flood fill, tree walks, parsers.
+4. Downward-only lambdas: a lambda passed to a call and never stored is
+   compiled by specializing the callee per call site with the body inlined;
+   captured variables are slots in the caller's static frame. Overlaps with
+   computing macros; macros first, lambdas only if those prove clumsy.
+   Stored (escaping) closures need a heap and stay out.
+
 ## Out of the first subset
 
-Named regions, strings, function pointers, recursion, inline assembly. `/` and
+Named regions, strings, general recursion, inline assembly. `/` and
 `%` pass the checker and interpreter; the backend gets them later. All planned;
 none needed to prove the backend.
 
