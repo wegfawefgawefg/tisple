@@ -56,6 +56,20 @@ images to fiddle with during development, then real hardware.
 5. Real hardware: the same disk images through a FloppyEmu-style drive or
    ADTPro.
 
+### Mouse (owner, 2026-10-26)
+
+AppleMouse II card (slot 4 on a IIe; built in on a IIc). Programs call the
+card's firmware routines rather than the hardware.
+
+1. Emulate the card, borrowing AppleWin's mouse card code (GPL), with the real
+   `MouseInterface.rom` kept locally like the other ROMs. The window passes
+   the host mouse and buttons through.
+2. Firmware calls from Tisple: a way to jump into ROM with A, X and Y set and
+   read them back (the planned ROM-call / inline-assembly feature). The mouse
+   is its first user.
+3. `lib/mouse.tsp` wraps it. On real hardware the program needs a mouse card
+   or a IIc.
+
 ## 2. Programs
 
 Each is also a benchmark. Rough order:
