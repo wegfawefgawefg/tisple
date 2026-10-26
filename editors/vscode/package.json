@@ -1,11 +1,10 @@
 {
-  "name": "tisple-syntax",
+  "name": "tisple",
   "displayName": "Tisple ][",
-  "description": "Syntax highlighting for Tisple ][ (.tsp), a typed Lisp for the Apple II",
-  "version": "0.1.0",
+  "description": "Tisple ][ (.tsp): highlighting, errors, formatting and running on the built-in Apple IIe",
+  "version": "0.2.0",
   "publisher": "tisple",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-or-later",
   "engines": {
     "vscode": "^1.70.0"
   },
@@ -39,8 +38,52 @@
         "editor.insertSpaces": true,
         "editor.rulers": [
           100
-        ]
+        ],
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "tisple.tisple"
+      }
+    },
+    "commands": [
+      {
+        "command": "tisple.run",
+        "title": "Tisple: Run on Apple II",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "tisple.run",
+          "when": "editorLangId == tisple",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "tisple.run",
+        "key": "f5",
+        "when": "editorLangId == tisple"
+      }
+    ],
+    "configuration": {
+      "title": "Tisple",
+      "properties": {
+        "tisple.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the tisple binary. Empty: build-debug/tisple in a folder above the file, else tisple on PATH."
+        }
       }
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wegfawefgawefg/tisple.git"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:tisple",
+    "onCommand:tisple.run"
+  ]
 }
