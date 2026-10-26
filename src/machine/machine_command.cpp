@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 
 namespace tisple {
 
@@ -35,6 +36,7 @@ struct MachineArgs {
     bool window = false;
     int scale = 2;
     std::vector<ScreenshotArg> screenshots;
+    std::vector<std::pair<uint32_t, uint32_t>> peeks; // address, byte count
 };
 
 void PrintMachineUsage() {
@@ -50,6 +52,7 @@ void PrintMachineUsage() {
         "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color)\n"
         "  --rom F             a 12 or 16 KB rom image; with no program, reset through it\n"
         "  --load-snapshot F | --save-snapshot F   machine state in and out\n"
+        "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
         "numbers take $hex, 0xhex or decimal; a cycle may be given in frames as 30f\n"
         "exit code 3 when the program hits an illegal opcode or jumps into empty rom space\n");
@@ -184,6 +187,16 @@ bool ParseArgs(int argc, char** argv, bool want_program, MachineArgs& args) {
                 return false;
             }
             args.screenshots.push_back(shot);
+        } else if (std::strcmp(arg, "--peek") == 0 && has_value) {
+            std::string text = argv[++i];
+            size_t colon = text.find(':');
+            uint64_t count = 2;
+            if (!ParseNumber(text.substr(0, colon).c_str(), number) || number > 0xFFFF ||
+                (colon != std::string::npos &&
+                 (!ParseNumber(text.substr(colon + 1).c_str(), count) || count == 0))) {
+                return false;
+            }
+            args.peeks.push_back({static_cast<uint32_t>(number), static_cast<uint32_t>(count)});
         } else if (std::strcmp(arg, "--wav") == 0 && has_value) {
             args.wav = argv[++i];
         } else if (std::strcmp(arg, "--rom") == 0 && has_value) {
@@ -325,6 +338,18 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     if (seconds > 0 && run_cycles > 0) {
         double rate = static_cast<double>(run_cycles) / seconds;
         std::printf("speed: %.0fx real time (%.1f M cycles/s)\n", rate / kCpuHz, rate / 1e6);
+    }
+    for (const auto& peek : args.peeks) {
+        std::printf("peek $%04X:", peek.first);
+        for (uint32_t k = 0; k < peek.second; k++) {
+            std::printf(" %02X", PeekMemory(a, static_cast<uint16_t>(peek.first + k)));
+        }
+        if (peek.second == 2) {
+            std::printf("  (u16 %u)",
+                        PeekMemory(a, static_cast<uint16_t>(peek.first)) |
+                            (PeekMemory(a, static_cast<uint16_t>(peek.first + 1)) << 8));
+        }
+        std::printf("\n");
     }
     std::fputs(DescribeStubNotes(a.stub_notes).c_str(), stdout);
     if (!ok) {
