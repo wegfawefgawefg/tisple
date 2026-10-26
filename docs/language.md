@@ -6,6 +6,10 @@ Rule (owner, 2026-10-26): minimal. The goal is a compiler that is cheap to
 write and produces very fast Apple II code, not a pleasant general language. A
 feature earns its place only if it is cheap to compile or gives the optimizer
 or linker facts. No conveniences for their own sake.
+
+Most Tisple code will be written by Claude, so spellings come from Clojure or
+Rust where one exists, each thing has exactly one way to write it, and every
+diagnostic says what to write instead (see Diagnostics).
 This is the subset the checker, reference interpreter and first backend build
 against. Grow it when real programs need more.
 
@@ -177,6 +181,19 @@ runs before the checker, so nothing later sees a macro.
 - Arrays of structs are stored one array per field unless something takes an
   element's address; then they are packed.
 - `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes (settled).
+
+## Diagnostics
+
+Every error gives file:line:column, the offending form, and the fix as code:
+
+```text
+main.tsp:12:9: u8 + u16: types must match; write (+ (u16 a) b)
+main.tsp:4:1: this ( is never closed; its form starts here
+main.tsp:20:5: let declares a variable here, it has no body; put the body after it
+```
+
+`tisple build --asm` prints each function's generated 6502 code under its
+source line; `tisple expand` prints the program after macro expansion.
 
 ## Out of the first subset
 
