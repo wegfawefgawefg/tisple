@@ -255,6 +255,24 @@ entry says what happened and what it should do.
     | other kernels, Life generations | 156409, 878, 572, 65513, 55 | the same |
     | gaps flagged: life, dot, sprites | 0.76%, 53.95%, 7.73% | 0.76%, 53.97%, 7.73% |
 
+13. Gap list item 9, registers kept across indexed stores (2026-10-26). An
+    indexed store `STA arr,X` only changes arr (indices stay in bounds, as
+    the backend assumes everywhere), so both the code generator's index
+    tracker and the peephole's register pass now forget only what they knew
+    about arr, instead of everything in memory. sprites' spawn writes all
+    four fields of `(at sprites sprite_count)` with one `LDX sprite_count`
+    instead of four. Tests: in tests/test_backend_peep.cpp, an index kept
+    across stores into other arrays and a struct array, and an index that is
+    an element of the array it indexes (`(at a (at a 1))`), which the store
+    changes. The fuzz generator indexes byte arrays of 256 by their own
+    elements.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | sprites.spawn | 4 `LDX sprite_count` | 1 |
+    | kernels, Life generations | 156409, 40138, 878, 572, 136984/41913, 65513, 55 | the same |
+    | gaps flagged: sprites | 7.73% at 6 findings | 7.73% at 3 (the rest follow the data) |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -346,9 +364,10 @@ Cycles are per 10 M-cycle run unless noted.
    a)` copies a parameter the function then changes through x; seeing that
    the copy and the swap just rename bytes needs value numbering across
    lets, not inlining. (Inlined parameters are done, see Fixed 11.)
-9. Keep what registers hold across indexed stores that can't reach zero
-   page (`STA abs,X` with abs >= $100): sprites' spawn, and fuzz shapes
-   `TAX ; LDA abs,X` and `label ; LDA zp`.
+9. What registers hold after a label: `label ; LDA zp` in fuzz runs (0.10%)
+   needs the register tracker to merge what every way into the label
+   brings. (Indexed stores are done, see Fixed 13; `TAX ; LDA abs,X` in
+   fuzz runs is values that happen to equal their index.)
 
 ## Benchmarks
 

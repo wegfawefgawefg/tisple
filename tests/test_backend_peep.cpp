@@ -76,11 +76,35 @@ void TestFlagReloads(TestResults& results) {
     }
 }
 
+// an indexed store only changes its own array: an index register holding another byte keeps
+// it, one holding a byte of that array does not
+void TestIndexedStores(TestResults& results) {
+    CheckProgram(results,
+                 "(let a (array u8 8) (make (array u8 8) 0 1 2 3 4 5 6 7))\n"
+                 "(let b (array u8 8)) (let i u8 3)\n"
+                 "(struct S ((x u8) (y u8)))\n"
+                 "(let ss (array S 8))\n"
+                 "(fn f () u8\n"
+                 "    (set (at a i) 5)\n"
+                 "    (set (at b i) (at a i))\n"
+                 "    (set (at ss i) (make S :x (at a i) :y i))\n"
+                 "    (set (at a 2) 9)\n"
+                 "    (set i (& (at a i) 7))\n"
+                 "    (set (at a i) (+ (at b 3) i))\n"
+                 "    (set (at a (at a 1)) 3)\n"
+                 "    (set (at b (at a 1)) 1)\n"
+                 "    (set (at a (at a 4)) 6)\n"
+                 "    (set (at b (at a 4)) 2)\n"
+                 "    (+ (at b 6) (at ss 5 x)))",
+                 "t.f", {});
+}
+
 } // namespace
 
 void RunBackendPeepTests(TestResults& results) {
     TestDeadValues(results);
     TestFlagReloads(results);
+    TestIndexedStores(results);
 }
 
 } // namespace tisple_tests

@@ -190,6 +190,15 @@ std::string Gen::ByteForm() {
     if (rng.Chance(15)) {
         // a byte that stores through pointers into wb can change under a kept index
         v = "(at wb " + std::to_string(rng.Below(4)) + ")";
+    } else if (rng.Chance(10)) {
+        // an element of a byte array of 256, which may index that same array, and a store
+        // into it then changes the index
+        for (const ArrayInfo& a : arrays) {
+            if (a.elem == T::U8 && a.count == 256 && !a.is_const) {
+                v = "(at " + a.name + " " + std::to_string(rng.Below(4)) + ")";
+                break;
+            }
+        }
     }
     static const char* const kDeltas[] = {"1", "1", "2", "3", "200"};
     std::string k = kDeltas[rng.Below(5)];

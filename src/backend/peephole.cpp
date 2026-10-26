@@ -157,6 +157,36 @@ struct Tracker {
             }
         }
     }
+    // an indexed store into the array at sym (it stays inside: indices are in bounds)
+    void ForgetSym(std::int32_t sym) {
+        for (Content& c : reg) {
+            if (c.known && c.mem && c.v.sym == sym) {
+                c.known = false;
+            }
+        }
+        auto touches = [&](const std::pair<AsmValue, AsmValue>& entry) {
+            return entry.first.sym == sym || entry.second.sym == sym;
+        };
+        for (std::size_t i = mem_copy.size(); i-- > 0;) {
+            if (touches(mem_copy[i])) {
+                mem_copy.erase(mem_copy.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        }
+        for (std::size_t i = mem_const.size(); i-- > 0;) {
+            if (mem_const[i].first.sym == sym) {
+                mem_const.erase(mem_const.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        }
+    }
+    // a store that is not to a plain symbol byte
+    void ForgetStore(const AsmItem& item) {
+        bool indexed = item.mode == Mode::AbsX || item.mode == Mode::AbsY;
+        if (indexed && item.value.sym >= 0 && item.value.part == Part::Whole) {
+            ForgetSym(item.value.sym);
+            return;
+        }
+        ForgetMemory();
+    }
     // register r holds what the memory byte m holds: that byte, or one m is a copy of
     bool Holds(int r, const AsmValue& m) const {
         const Content& c = reg[r];
@@ -307,7 +337,7 @@ void RegisterPass(Pass& p) {
         r = StoreReg(mn);
         if (r >= 0) {
             if (!Trackable(*p.as, item.mode, item.value)) {
-                t.ForgetMemory();
+                t.ForgetStore(item);
                 continue;
             }
             t.ForgetByte(item.value);
@@ -361,7 +391,7 @@ void RegisterPass(Pass& p) {
             } else if (Trackable(*p.as, item.mode, item.value)) {
                 t.ForgetByte(item.value);
             } else {
-                t.ForgetMemory();
+                t.ForgetStore(item);
             }
             continue;
         case Mn::ADC:

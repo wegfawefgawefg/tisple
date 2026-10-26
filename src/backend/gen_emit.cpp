@@ -203,7 +203,16 @@ void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
         if (!c.known || !c.mem) {
             continue;
         }
-        bool hit = direct ? SameValue(c.v, value) : !pointer || PointerMayReach(g, c.v);
+        // an indexed store stays inside its array (indices are in bounds), a store through a
+        // pointer inside what the pointer may reach
+        bool hit = false;
+        if (direct) {
+            hit = SameValue(c.v, value);
+        } else if (pointer) {
+            hit = PointerMayReach(g, c.v);
+        } else {
+            hit = value.sym < 0 || value.sym == c.v.sym;
+        }
         if (hit) {
             c.known = false;
         }
