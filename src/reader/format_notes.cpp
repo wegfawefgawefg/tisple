@@ -1,0 +1,256 @@
+#include "reader/format_internal.hpp"
+
+namespace tisple {
+
+namespace {
+
+const std::string& Text(const Formatter& fm) {
+    return fm.file->text;
+}
+
+bool IsHorizontalSpace(char c) {
+    return IsSpaceChar(c) && c != '\n';
+}
+
+// two or more newlines between the previous token and offset
+bool BlankBefore(const Formatter& fm, std::uint32_t offset) {
+    const std::string& text = Text(fm);
+    int newlines = 0;
+    std::uint32_t p = offset;
+    while (p > 0 && IsSpaceChar(text[p - 1])) {
+        newlines += text[p - 1] == '\n' ? 1 : 0;
+        p--;
+    }
+    return p > 0 && newlines >= 2;
+}
+
+// nothing but spaces between the start of the line and offset
+bool StartsLine(const Formatter& fm, std::uint32_t offset) {
+    const std::string& text = Text(fm);
+    std::uint32_t p = offset;
+    while (p > 0 && IsHorizontalSpace(text[p - 1])) {
+        p--;
+    }
+    return p == 0 || text[p - 1] == '\n';
+}
+
+// offset of the last non-space character before offset
+std::uint32_t PreviousChar(const Formatter& fm, std::uint32_t offset) {
+    const std::string& text = Text(fm);
+    std::uint32_t p = offset;
+    while (p > 0 && IsSpaceChar(text[p - 1])) {
+        p--;
+    }
+    return p - 1;
+}
+
+// next token start after offset, skipping spaces and comments; size at the end
+std::uint32_t NextToken(const Formatter& fm, std::uint32_t offset) {
+    const std::string& text = Text(fm);
+    std::uint32_t p = offset;
+    while (p < text.size()) {
+        char c = text[p];
+        if (IsSpaceChar(c)) {
+            p++;
+        } else if (c == ';') {
+            while (p < text.size() && text[p] != '\n') {
+                p++;
+            }
+        } else {
+            break;
+        }
+    }
+    return static_cast<std::uint32_t>(p);
+}
+
+// the token a trailing comment pushes onto a new line: the next one after any ')',
+// unless another comment comes first (that comment already starts a new line)
+std::uint32_t BrokenToken(const Formatter& fm, std::uint32_t offset) {
+    const std::string& text = Text(fm);
+    std::uint32_t p = offset;
+    while (p < text.size() && (IsSpaceChar(text[p]) || text[p] == ')')) {
+        p++;
+    }
+    if (p < text.size() && text[p] == ';') {
+        return static_cast<std::uint32_t>(text.size());
+    }
+    return static_cast<std::uint32_t>(p);
+}
+
+const Node* Find(const std::unordered_map<std::uint32_t, const Node*>& map, std::uint32_t at) {
+    auto it = map.find(at);
+    return it == map.end() ? nullptr : it->second;
+}
+
+void Register(Formatter& fm, const Node& node, const Node* parent, std::uint32_t index) {
+    NodeNotes& notes = fm.notes[&node];
+    notes.parent = parent;
+    notes.index = index;
+    notes.blank_before = fm.keep_trivia && BlankBefore(fm, node.span.start);
+    // pre-order: the outermost node starting at an offset, the innermost ending there
+    // (',(a b)' and its list end together; a ')' belongs to the list)
+    fm.by_start.emplace(node.span.start, &node);
+    fm.by_end[node.span.end] = &node;
+    for (std::uint32_t i = 0; i < node.items.size(); i++) {
+        Register(fm, node.items[i], &node, i);
+    }
+}
+
+void AttachOwnLine(Formatter& fm, std::uint32_t comment) {
+    Span span = fm.tree->comments[comment];
+    std::uint32_t next = NextToken(fm, span.end);
+    if (next >= Text(fm).size()) {
+        fm.top_dangling.push_back(comment);
+        return;
+    }
+    if (Text(fm)[next] == ')') {
+        const Node* list = Find(fm.by_end, next + 1);
+        if (list) {
+            fm.notes[list].dangling.push_back(comment);
+        }
+        return;
+    }
+    const Node* node = Find(fm.by_start, next);
+    if (!node) {
+        return;
+    }
+    NodeNotes& notes = fm.notes[node];
+    if (notes.parent && notes.index == 0) {
+        // before the head: keep it with the '(' line instead
+        fm.notes[notes.parent].after_open.push_back(comment);
+        return;
+    }
+    notes.leading.push_back(comment);
+}
+
+void AttachTrailing(Formatter& fm, std::uint32_t comment) {
+    Span span = fm.tree->comments[comment];
+    std::uint32_t prev = PreviousChar(fm, span.start);
+    if (Text(fm)[prev] == '(') {
+        const Node* list = Find(fm.by_start, prev);
+        if (list) {
+            fm.notes[list].after_open.push_back(comment);
+        }
+        return;
+    }
+    const Node* before = Find(fm.by_end, prev + 1);
+    if (before) {
+        fm.notes[before].trailing.push_back(comment);
+    }
+    // the line ended here, so the next real token starts a new line
+    std::uint32_t next = BrokenToken(fm, span.end);
+    const Node* after = Find(fm.by_start, next);
+    if (after) {
+        fm.notes[after].break_before = true;
+    }
+}
+
+void ComputeFlat(Formatter& fm, const Node& node) {
+    NodeNotes& notes = fm.notes[&node];
+    if (node.kind != NodeKind::List) {
+        notes.flat_ok = true;
+        notes.flat_width = static_cast<std::uint32_t>(node.text.size());
+        return;
+    }
+    for (const Node& item : node.items) {
+        ComputeFlat(fm, item);
+    }
+    if (node.mark != QuoteMark::None && node.items.size() == 2) {
+        const NodeNotes& inner = fm.notes[&node.items[1]];
+        notes.flat_ok = inner.flat_ok;
+        notes.flat_width = inner.flat_width +
+                           static_cast<std::uint32_t>(std::string(QuoteMarkText(node.mark)).size());
+        return;
+    }
+
+    bool ok = notes.dangling.empty() && !HasBody(node);
+    std::uint32_t width = 2;
+    for (std::uint32_t i = 0; i < node.items.size(); i++) {
+        const NodeNotes& item = fm.notes[&node.items[i]];
+        ok = ok && item.flat_ok;
+        if (i > 0) {
+            ok = ok && !item.break_before && item.leading.empty();
+            width++;
+        }
+        width += item.flat_width;
+    }
+    notes.flat_ok = ok;
+    notes.flat_width = width;
+}
+
+bool IsIntegerType(const std::string& name) {
+    return name == "u8" || name == "i8" || name == "u16" || name == "i16";
+}
+
+bool HeadIs(const Node& node, const char* name) {
+    return node.kind == NodeKind::List && node.mark == QuoteMark::None && !node.items.empty() &&
+           node.items[0].kind == NodeKind::Symbol && node.items[0].text == name;
+}
+
+} // namespace
+
+int BodyHeaderCount(const Node& node) {
+    if (node.kind != NodeKind::List || node.mark != QuoteMark::None || node.items.empty() ||
+        node.items[0].kind != NodeKind::Symbol) {
+        return -1;
+    }
+    const std::string& head = node.items[0].text;
+    if (head == "fn" || head == "macro") {
+        bool has_args = node.items.size() > 2 && HeadIs(node.items[2], "args");
+        return has_args ? 2 : 1;
+    }
+    if (head == "if" || head == "while" || head == "match") {
+        return 1;
+    }
+    if (head == "for") {
+        // (for i start end ...) or (for i u8 start end ...)
+        bool typed = node.items.size() > 2 && node.items[2].kind == NodeKind::Symbol &&
+                     IsIntegerType(node.items[2].text);
+        return typed ? 4 : 3;
+    }
+    if (head == "do") {
+        return 0;
+    }
+    return -1;
+}
+
+bool HasBody(const Node& node) {
+    int header = BodyHeaderCount(node);
+    return header >= 0 && node.items.size() > static_cast<std::size_t>(header) + 1;
+}
+
+int OnePerLineKeep(const Node& node) {
+    if (HeadIs(node, "args")) {
+        return 0;
+    }
+    if (HeadIs(node, "enum") || HeadIs(node, "struct")) {
+        return 1;
+    }
+    return -1;
+}
+
+void BuildNotes(Formatter& fm) {
+    const std::vector<Node>& forms = fm.tree->forms;
+    for (std::uint32_t i = 0; i < forms.size(); i++) {
+        Register(fm, forms[i], nullptr, i);
+    }
+
+    if (fm.keep_trivia) {
+        const std::vector<Span>& comments = fm.tree->comments;
+        fm.comment_blank_before.resize(comments.size());
+        for (std::uint32_t i = 0; i < comments.size(); i++) {
+            fm.comment_blank_before[i] = BlankBefore(fm, comments[i].start);
+            if (StartsLine(fm, comments[i].start)) {
+                AttachOwnLine(fm, i);
+            } else {
+                AttachTrailing(fm, i);
+            }
+        }
+    }
+
+    for (const Node& form : forms) {
+        ComputeFlat(fm, form);
+    }
+}
+
+} // namespace tisple

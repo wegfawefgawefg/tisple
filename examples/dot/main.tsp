@@ -43,10 +43,14 @@
             (do
                 (hgr.flip (. dot x) (. dot y))
                 (match action
-                    (Action.left (if (> (. dot x) 0) (dec (. dot x))))
-                    (Action.right (if (< (. dot x) 279) (inc (. dot x))))
-                    (Action.up (if (> (. dot y) 0) (dec (. dot y))))
-                    (Action.down (if (< (. dot y) 191) (inc (. dot y))))
+                    (Action.left (if (> (. dot x) 0)
+                        (dec (. dot x))))
+                    (Action.right (if (< (. dot x) 279)
+                        (inc (. dot x))))
+                    (Action.up (if (> (. dot y) 0)
+                        (dec (. dot y))))
+                    (Action.down (if (< (. dot y) 191)
+                        (inc (. dot y))))
                     (_ (do)))
                 (hgr.flip (. dot x) (. dot y))
                 (click)))))

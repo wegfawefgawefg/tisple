@@ -50,4 +50,6 @@ file(GLOB_RECURSE TISPLE_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(tisple_tests ${TISPLE_TEST_SOURCES})
 target_link_libraries(tisple_tests PRIVATE tisple_core)
 target_include_directories(tisple_tests PRIVATE tests)
+# reader tests read examples/ and editors/ from the source tree
+target_compile_definitions(tisple_tests PRIVATE TISPLE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 tisple_warnings(tisple_tests)
