@@ -35,4 +35,5 @@ That code must be original to Tisple, never derived from GPL sources.
     USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Third-party components keep their own copyright and license terms, recorded
-in each folder under third_party/ (floooh/chips: zlib).
+in each folder under third_party/ (floooh/chips: zlib; code ported from AppleWin:
+GPL-2.0-or-later; Mii, used as a reference: MIT).

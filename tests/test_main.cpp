@@ -3,6 +3,7 @@
 #include "test_backend.hpp"
 #include "test_check.hpp"
 #include "test_emu.hpp"
+#include "test_machine.hpp"
 #include "test_reader.hpp"
 
 #include <cstdio>
@@ -24,6 +25,7 @@ int main() {
     // one line per test group
     tisple_tests::RunSourceFileTests(results);
     tisple_tests::RunEmuTests(results);
+    tisple_tests::RunMachineTests(results);
     tisple_tests::RunReaderTests(results);
     tisple_tests::RunFormatTests(results);
     tisple_tests::RunShowTests(results);

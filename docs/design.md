@@ -206,6 +206,7 @@ src/ir/             lowered program the backend works on
 src/backend/        isel, register/zero-page allocation, frames, cycle costs
 src/link/           placement, constraint checks, binary output
 src/emu/            cycle-exact 6502 core and test harness
+src/machine/        built-in Apple IIe: soft switches, video, speaker, window
 tests/              unit, round-trip, fuzz
 races/              drag racing against other compilers
 ```

@@ -1,0 +1,352 @@
+#include "machine/apple2.hpp"
+
+#include "emu/disasm.hpp"
+#include "machine/bus.hpp"
+
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <type_traits>
+
+namespace tisple {
+
+static_assert(std::is_trivially_copyable_v<Apple2>, "a snapshot is a struct copy");
+
+namespace {
+
+constexpr uint32_t kSnapshotMagic = 0x32415054; // "TPA2"
+constexpr uint32_t kSnapshotVersion = 1;
+
+struct SnapshotHeader {
+    uint32_t magic = kSnapshotMagic;
+    uint32_t version = kSnapshotVersion;
+    uint64_t size = sizeof(Apple2);
+};
+
+// opcodes that stop a direct-loaded program: BRK and the undocumented ones
+std::array<bool, 256> BuildStopTable() {
+    std::array<bool, 256> table = {};
+    for (int op = 0; op < 256; op++) {
+        table[op] = op == 0x00 || !IsDocumentedOpcode(static_cast<uint8_t>(op));
+    }
+    return table;
+}
+
+const std::array<bool, 256> kStopsDirectLoad = BuildStopTable();
+
+void Stop(Apple2& a, MachineStop reason, uint16_t pc, uint8_t opcode) {
+    a.stopped = true;
+    a.stop_reason = reason;
+    a.stop_pc = pc;
+    a.stop_opcode = opcode;
+}
+
+uint64_t NextKeyEvent(const Apple2& a) {
+    uint64_t next = a.keys.key_down ? a.keys.release_cycle : UINT64_MAX;
+    if (a.keys.queue_count > 0) {
+        uint64_t queued = a.keys.queue[a.keys.queue_head].cycle;
+        next = queued < next ? queued : next;
+    }
+    return next;
+}
+
+// video catch-up and scripted keys; returns the next cycle that needs a visit
+uint64_t ServiceEvents(Apple2& a) {
+    uint64_t now = a.cpu.cycles;
+    if (now >= a.video.next_check) {
+        CatchUpVideo(a, now);
+    }
+    Keyboard& k = a.keys;
+    if (k.key_down && now >= k.release_cycle) {
+        k.key_down = false;
+        k.release_cycle = UINT64_MAX;
+    }
+    while (k.queue_count > 0 && k.queue[k.queue_head].cycle <= now) {
+        PressKey(a, k.queue[k.queue_head].code);
+        k.release_cycle = now + kScriptedKeyHoldCycles;
+        k.queue_head = (k.queue_head + 1) % kMaxScheduledKeys;
+        k.queue_count--;
+    }
+    uint64_t keys = NextKeyEvent(a);
+    return keys < a.video.next_check ? keys : a.video.next_check;
+}
+
+// a pc at $C000 or above: the stop address, or rom space with nothing to run
+bool CheckHighPc(Apple2& a, uint16_t pc) {
+    if (pc == kStopAddress && a.direct_load) {
+        Stop(a, MachineStop::kReturned, pc, 0);
+        return true;
+    }
+    if (!CanExecute(a, pc)) {
+        Stop(a, MachineStop::kNoRom, pc, 0);
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+void PowerOn(Apple2& a) {
+    std::memset(static_cast<void*>(&a), 0, sizeof(Apple2));
+    a = Apple2{};
+    InitMachine(a.cpu);
+    InstallBus(a);
+    ResetSoftSwitches(a);
+    // a cleared text screen, as HOME leaves it
+    std::memset(a.cpu.mem + 0x0400, 0xA0, 0x0400);
+    a.video.next_check = 0;
+    CaptureScreen(a, a.video.live);
+    a.video.done = a.video.live;
+}
+
+std::unique_ptr<Apple2> NewApple2() {
+    auto a = std::make_unique<Apple2>();
+    PowerOn(*a);
+    return a;
+}
+
+bool LoadRom(Apple2& a, const uint8_t* bytes, size_t size, std::string& error) {
+    if (size != 0x3000 && size != 0x4000) {
+        error = "a rom image is 12 KB ($D000-$FFFF) or 16 KB ($C000-$FFFF), not " +
+                std::to_string(size) + " bytes";
+        return false;
+    }
+    std::memset(a.rom.bytes, 0, sizeof(a.rom.bytes));
+    std::memcpy(a.rom.bytes + (0x4000 - size), bytes, size);
+    a.rom.present = true;
+    a.rom.has_cx = size == 0x4000;
+    return true;
+}
+
+bool LoadProgram(Apple2& a, const uint8_t* bytes, size_t size, uint16_t origin,
+                 std::string& error) {
+    if (size == 0) {
+        error = "the program is empty";
+        return false;
+    }
+    if (origin + size > 0xC000) {
+        char text[96];
+        std::snprintf(text, sizeof(text), "%zu bytes at $%04X run past $BFFF into i/o space", size,
+                      origin);
+        error = text;
+        return false;
+    }
+    std::memcpy(a.cpu.mem + origin, bytes, size);
+    // the entry's RTS pulls $FFFE and continues at $FFFF, where we stop
+    a.cpu.mem[0x01FF] = kStopAddress >> 8;
+    a.cpu.mem[0x01FE] = (kStopAddress - 1) & 0xFF;
+    Regs regs;
+    regs.pc = origin;
+    regs.s = 0xFD;
+    regs.p = kFlagU | kFlagI;
+    SetRegs(a.cpu, regs);
+    // $C082: rom (or the no-rom pattern) reads, writes to $D000-$FFFF ignored
+    a.lc.bank2 = true;
+    a.lc.read_ram = false;
+    a.lc.write_enable = false;
+    a.lc.prewrite = false;
+    a.direct_load = true;
+    a.stopped = false;
+    a.stop_reason = MachineStop::kRunning;
+    return true;
+}
+
+void ResetApple2(Apple2& a) {
+    ResetSoftSwitches(a);
+    a.direct_load = false;
+    a.stopped = false;
+    a.stop_reason = MachineStop::kRunning;
+    // the chip's own reset sequence: 7 cycles, then the vector at $FFFC
+    m6502_desc_t desc = {};
+    a.cpu.pins = m6502_init(&a.cpu.cpu, &desc);
+    StepInstruction(a.cpu);
+}
+
+RunOutcome RunApple2(Apple2& a, uint64_t cycles) {
+    Machine& m = a.cpu;
+    uint64_t start = m.cycles;
+    uint64_t end = start + cycles;
+    RunOutcome out;
+    if (a.stopped) {
+        // the cpu is done but the clock and the screen go on
+        CatchUpVideo(a, end);
+        m.cycles = end;
+        out.reason = a.stop_reason;
+        out.pc = a.stop_pc;
+        out.cycles = cycles;
+        return out;
+    }
+    uint64_t next = ServiceEvents(a);
+    for (;;) {
+        if (m.cycles >= next || m.cycles >= end) {
+            if (m.cycles >= end) {
+                break;
+            }
+            next = ServiceEvents(a);
+        }
+        uint16_t pc = M6502_GET_ADDR(m.pins);
+        uint8_t opcode = 0;
+        if (pc < 0xC000) {
+            opcode = m.mem[pc];
+        } else {
+            if (CheckHighPc(a, pc)) {
+                break;
+            }
+            opcode = PeekMemory(a, pc);
+        }
+        if (a.direct_load && kStopsDirectLoad[opcode]) {
+            Stop(a, opcode == 0x00 ? MachineStop::kBrk : MachineStop::kIllegalOpcode, pc, opcode);
+            break;
+        }
+        StepInstruction(m);
+    }
+    CatchUpVideo(a, m.cycles);
+    out.reason = a.stopped ? a.stop_reason : MachineStop::kRunning;
+    out.pc = M6502_GET_ADDR(m.pins);
+    out.cycles = m.cycles - start;
+    return out;
+}
+
+const char* MachineStopName(MachineStop reason) {
+    switch (reason) {
+    case MachineStop::kReturned:
+        return "returned";
+    case MachineStop::kBrk:
+        return "BRK";
+    case MachineStop::kIllegalOpcode:
+        return "illegal opcode";
+    case MachineStop::kNoRom:
+        return "jumped into rom";
+    default:
+        return "running";
+    }
+}
+
+std::string DescribeStop(const Apple2& a) {
+    char text[128];
+    switch (a.stop_reason) {
+    case MachineStop::kReturned:
+        return "returned from the entry point";
+    case MachineStop::kBrk:
+        std::snprintf(text, sizeof(text), "BRK at $%04X", a.stop_pc);
+        return text;
+    case MachineStop::kIllegalOpcode:
+        std::snprintf(text, sizeof(text), "illegal opcode $%02X at $%04X", a.stop_opcode,
+                      a.stop_pc);
+        return text;
+    case MachineStop::kNoRom:
+        if (a.stop_pc < 0xC100) {
+            std::snprintf(text, sizeof(text), "jumped into i/o space at $%04X", a.stop_pc);
+        } else if (a.stop_pc < 0xD000) {
+            std::snprintf(text, sizeof(text), "jumped into empty slot rom at $%04X", a.stop_pc);
+        } else {
+            std::snprintf(text, sizeof(text), "jumped into ROM at $%04X (no rom loaded)",
+                          a.stop_pc);
+        }
+        return text;
+    default:
+        return "running";
+    }
+}
+
+std::string DescribeStubNotes(uint32_t notes) {
+    std::string text;
+    if ((notes & kNoteAuxMemory) != 0) {
+        text += "note: the program switched to auxiliary memory, which is not built yet; "
+                "main memory was used\n";
+    }
+    if ((notes & kNote80Columns) != 0) {
+        text += "note: the program turned on 80 columns, which is not built yet; showing "
+                "40 columns\n";
+    }
+    if ((notes & kNoteDoubleRes) != 0) {
+        text += "note: the program turned on double-res graphics, which is not built yet\n";
+    }
+    return text;
+}
+
+uint64_t Cycles(const Apple2& a) {
+    return a.cpu.cycles;
+}
+
+void PressKey(Apple2& a, uint8_t code) {
+    a.keys.latch = static_cast<uint8_t>(code | 0x80);
+    a.keys.key_down = true;
+    a.keys.release_cycle = UINT64_MAX;
+}
+
+void ReleaseKey(Apple2& a) {
+    a.keys.key_down = false;
+    a.keys.release_cycle = UINT64_MAX;
+}
+
+bool ScheduleKey(Apple2& a, uint64_t cycle, uint8_t code) {
+    Keyboard& k = a.keys;
+    if (k.queue_count == kMaxScheduledKeys) {
+        return false;
+    }
+    // keep the queue sorted by cycle: insert from the back
+    uint32_t i = k.queue_count;
+    while (i > 0) {
+        const ScheduledKey& prev = k.queue[(k.queue_head + i - 1) % kMaxScheduledKeys];
+        if (prev.cycle <= cycle) {
+            break;
+        }
+        k.queue[(k.queue_head + i) % kMaxScheduledKeys] = prev;
+        i--;
+    }
+    k.queue[(k.queue_head + i) % kMaxScheduledKeys] = {cycle, code};
+    k.queue_count++;
+    return true;
+}
+
+void SetPaddle(Apple2& a, int index, uint8_t value) {
+    if (index >= 0 && index < 4) {
+        a.game.paddle[index] = value;
+    }
+}
+
+void SetButton(Apple2& a, int index, bool down) {
+    if (index >= 0 && index < 3) {
+        a.game.button[index] = down;
+    }
+}
+
+uint64_t SpeakerToggleCycle(const Apple2& a, uint64_t n) {
+    return a.speaker.toggles[n % kSpeakerRingSize];
+}
+
+std::vector<uint8_t> SaveSnapshot(const Apple2& a) {
+    SnapshotHeader header;
+    std::vector<uint8_t> bytes(sizeof(header) + sizeof(Apple2));
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    std::memcpy(bytes.data() + sizeof(header), static_cast<const void*>(&a), sizeof(Apple2));
+    // pointers mean nothing outside this process: zero them in the saved copy
+    Apple2* saved = reinterpret_cast<Apple2*>(bytes.data() + sizeof(header));
+    saved->cpu.io = IoHook{};
+    saved->cpu.bus_log = nullptr;
+    m6502_snapshot_onsave(&saved->cpu.cpu);
+    return bytes;
+}
+
+bool LoadSnapshot(Apple2& a, const uint8_t* bytes, size_t size, std::string& error) {
+    SnapshotHeader header;
+    if (size != sizeof(header) + sizeof(Apple2)) {
+        error = "snapshot is the wrong size for this build";
+        return false;
+    }
+    std::memcpy(&header, bytes, sizeof(header));
+    if (header.magic != kSnapshotMagic || header.version != kSnapshotVersion ||
+        header.size != sizeof(Apple2)) {
+        error = "not a snapshot from this build";
+        return false;
+    }
+    m6502_t live_cpu = a.cpu.cpu;
+    std::memcpy(static_cast<void*>(&a), bytes + sizeof(header), sizeof(Apple2));
+    m6502_snapshot_onload(&a.cpu.cpu, &live_cpu);
+    a.cpu.bus_log = nullptr;
+    InstallBus(a);
+    return true;
+}
+
+} // namespace tisple
