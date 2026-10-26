@@ -42,7 +42,10 @@ tisple_warnings(tisple_core)
 # lib/ is where imports look after the entry file's folder
 target_compile_definitions(tisple_core PRIVATE TISPLE_LIB_DIR="${CMAKE_SOURCE_DIR}/lib")
 # vendored single-file C library: no warnings-as-errors for its one compile unit
-set_source_files_properties(src/emu/chips_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+set_source_files_properties(src/emu/chips_impl.cpp PROPERTIES COMPILE_OPTIONS "-w;-O2")
+# the simulator runs millions of cycles per test run (differential tests, fuzzing): optimise
+# it even in debug builds
+set_source_files_properties(src/emu/machine.cpp src/emu/harness.cpp PROPERTIES COMPILE_OPTIONS "-O2")
 
 add_executable(tisple src/main.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)

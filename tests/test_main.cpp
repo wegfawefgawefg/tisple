@@ -38,6 +38,8 @@ int main() {
     tisple_tests::RunInterpArithTests(results);
     tisple_tests::RunAsmTests(results);
     tisple_tests::RunBackendTests(results);
+    tisple_tests::RunBackendOpTests(results);
+    tisple_tests::RunBackendFuzzTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;

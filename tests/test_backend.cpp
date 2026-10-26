@@ -168,9 +168,25 @@ void TestIo(TestResults& results) {
                  "t.f", {});
 }
 
+// bugs the fuzzer found, smallest form
+void TestRegressions(TestResults& results) {
+    // fuzz seed 7177: a copy between two elements of one split field was dropped, because
+    // source and destination differed only in their index
+    CheckProgram(results,
+                 "(struct S (a u8) (b i16))\n"
+                 "(let sa (array S 8))\n"
+                 "(let g u8 3)\n"
+                 "(fn f\n"
+                 "    (set (. (at sa 5) b) 1234)\n"
+                 "    (set (. (at sa 2) a) 5)\n"
+                 "    (set (. (at sa (& g 7)) b) (. (at sa (& (. (at sa (& g 6)) a) 7)) b)))",
+                 "t.f", {});
+}
+
 } // namespace
 
 void RunBackendTests(TestResults& results) {
+    TestRegressions(results);
     TestScalars(results);
     TestBranches(results);
     TestLoops(results);

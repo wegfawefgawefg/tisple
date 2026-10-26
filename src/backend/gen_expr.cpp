@@ -17,8 +17,19 @@ bool SameByte(const ByteRef& a, const ByteRef& b) {
            a.value.part == b.value.part && a.y == b.y && a.y_index == b.y_index && a.reg == b.reg;
 }
 
+bool SameIndex(const Index& a, const Index& b) {
+    if (a.used != b.used) {
+        return false;
+    }
+    if (!a.used) {
+        return true;
+    }
+    return a.is_reg == b.is_reg && a.reg == b.reg && a.value.sym == b.value.sym &&
+           a.value.offset == b.value.offset && a.value.part == b.value.part;
+}
+
 bool SameOpnd(const Opnd& a, const Opnd& b) {
-    if (a.size != b.size || a.in_a != b.in_a) {
+    if (a.size != b.size || a.in_a != b.in_a || !SameIndex(a.index, b.index)) {
         return false;
     }
     for (int k = 0; k < a.size; k++) {
