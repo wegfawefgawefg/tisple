@@ -163,7 +163,9 @@ void ComputeFlat(Formatter& fm, const Node& node) {
         return;
     }
 
-    bool ok = notes.dangling.empty() && !HasBody(node);
+    // a match clause with several forms lays out as a body
+    bool clause_body = IsMatchClause(fm, node) && node.items.size() > 2;
+    bool ok = notes.dangling.empty() && !HasBody(node) && !clause_body;
     std::uint32_t width = 2;
     for (std::uint32_t i = 0; i < node.items.size(); i++) {
         const NodeNotes& item = fm.notes[&node.items[i]];
@@ -176,10 +178,6 @@ void ComputeFlat(Formatter& fm, const Node& node) {
     }
     notes.flat_ok = ok;
     notes.flat_width = width;
-}
-
-bool IsIntegerType(const std::string& name) {
-    return name == "u8" || name == "i8" || name == "u16" || name == "i16";
 }
 
 bool HeadIs(const Node& node, const char* name) {
@@ -195,25 +193,20 @@ int BodyHeaderCount(const Node& node) {
         return -1;
     }
     const std::string& head = node.items[0].text;
-    if (head == "fn" || head == "macro") {
-        // (fn name (args ...) (returns t) body ...), args and returns both optional
-        std::size_t header = 1;
-        if (node.items.size() > header + 1 && HeadIs(node.items[header + 1], "args")) {
-            header++;
-        }
-        if (node.items.size() > header + 1 && HeadIs(node.items[header + 1], "returns")) {
-            header++;
-        }
-        return static_cast<int>(header);
+    if (head == "fn") {
+        // (fn name (params) type body ...)
+        return 3;
+    }
+    if (head == "macro") {
+        // (macro name (params) template)
+        return 2;
     }
     if (head == "if" || head == "while" || head == "match") {
         return 1;
     }
     if (head == "for") {
-        // (for i start end ...) or (for i u8 start end ...)
-        bool typed = node.items.size() > 2 && node.items[2].kind == NodeKind::Symbol &&
-                     IsIntegerType(node.items[2].text);
-        return typed ? 4 : 3;
+        // (for i type start end body ...)
+        return 4;
     }
     if (head == "do") {
         return 0;
@@ -227,13 +220,34 @@ bool HasBody(const Node& node) {
 }
 
 int OnePerLineKeep(const Node& node) {
-    if (HeadIs(node, "args")) {
-        return 0;
-    }
     if (HeadIs(node, "enum") || HeadIs(node, "struct")) {
-        return 1;
+        return 2;
     }
     return -1;
+}
+
+bool IsParamList(const Formatter& fm, const Node& node) {
+    if (node.kind != NodeKind::List || node.mark != QuoteMark::None) {
+        return false;
+    }
+    auto it = fm.notes.find(&node);
+    if (it == fm.notes.end() || !it->second.parent || it->second.index != 2) {
+        return false;
+    }
+    const Node& parent = *it->second.parent;
+    return HeadIs(parent, "fn") || HeadIs(parent, "macro") || HeadIs(parent, "struct") ||
+           HeadIs(parent, "enum");
+}
+
+bool IsMatchClause(const Formatter& fm, const Node& node) {
+    if (node.kind != NodeKind::List || node.mark != QuoteMark::None || node.items.empty()) {
+        return false;
+    }
+    auto it = fm.notes.find(&node);
+    if (it == fm.notes.end() || !it->second.parent || it->second.index < 2) {
+        return false;
+    }
+    return HeadIs(*it->second.parent, "match");
 }
 
 void BuildNotes(Formatter& fm) {

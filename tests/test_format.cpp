@@ -52,28 +52,34 @@ bool FormatsTo(const std::string& text, const std::string& want) {
 }
 
 void TestBodyForms(TestResults& results) {
-    CHECK(results, Canonical("(fn fill (args (dst (ptr u8)) (count u16) (value u8))\n"
-                             "    (for i 0 count\n"
+    // name, parameters and return type stay on the head line
+    CHECK(results, Canonical("(fn fill ((dst (ptr u8)) (count u16) (value u8)) void\n"
+                             "    (for i u16 0 count\n"
                              "        (store (+ dst i) value)))\n"));
-    CHECK(results, Canonical("(fn read_key\n"
-                             "    (let key (io_read u8 0xC000))\n"
+    CHECK(results, Canonical("(fn read_key () u8\n"
+                             "    (let key u8 (io_read u8 0xC000))\n"
                              "    (bit_and key 0x7F))\n"));
+    CHECK(results, Canonical("(fn f () void)\n"));
     // if arms always get their own lines, even when short
-    CHECK(results,
-          FormatsTo("(fn f (if c (a) (b)))", "(fn f\n    (if c\n        (a)\n        (b)))\n"));
+    CHECK(results, FormatsTo("(fn f () void (if c (a) (b)))",
+                             "(fn f () void\n    (if c\n        (a)\n        (b)))\n"));
     CHECK(results, Canonical("(while (not (ready)))\n"));
     CHECK(results, Canonical("(do)\n"));
+    // a clause of one form that fits stays on one line; otherwise its body goes below
     CHECK(results, Canonical("(match a\n"
                              "    (Action.left (step 255))\n"
-                             "    (Action.fire (do\n"
+                             "    (Action.right\n"
+                             "        (if (< x 10)\n"
+                             "            (step 1)))\n"
+                             "    (Action.fire\n"
                              "        (shoot)\n"
-                             "        (click)))\n"
-                             "    (_ (do)))\n"));
+                             "        (click))\n"
+                             "    (_))\n"));
     // a body form as the last argument hangs off the head line
-    CHECK(results, Canonical("(let m (if (< a b)\n    a\n    b))\n"));
-    CHECK(results, Canonical("(macro swap (args a b)\n"
+    CHECK(results, Canonical("(let m u8 (if (< a b)\n    a\n    b))\n"));
+    CHECK(results, Canonical("(macro swap (a b)\n"
                              "    `(do\n"
-                             "        (let tmp# ,a)\n"
+                             "        (let tmp# u8 ,a)\n"
                              "        (set ,a ,b)\n"
                              "        (set ,b tmp#)))\n"));
 }
@@ -81,7 +87,7 @@ void TestBodyForms(TestResults& results) {
 void TestBreaking(TestResults& results) {
     std::string name(40, 'a');
     // general form: head and first argument stay, the rest go one per line at +4
-    CHECK(results, Canonical("(fn f\n"
+    CHECK(results, Canonical("(fn f () void\n"
                              "    (store (+ " +
                              name +
                              " 1)\n"
@@ -97,22 +103,25 @@ void TestBreaking(TestResults& results) {
     std::string table = Format("(const T (array u16 40)" + atoms + ")");
     CHECK(results, table.find("(const T\n    (array u16 40)\n    0x1000 0x1001") == 0);
     CHECK(results, Format(Mash(table)) == table);
-    // args breaks with every parameter on its own line
-    std::string long_args =
-        "(fn draw (args (dst (ptr u8)) (src (ptr u8)) (" + name + " u8) (count u8)) (copy))";
-    CHECK(results, FormatsTo(long_args, "(fn draw (args\n"
-                                        "        (dst (ptr u8))\n"
-                                        "        (src (ptr u8))\n"
-                                        "        (" +
-                                            name +
-                                            " u8)\n"
-                                            "        (count u8))\n"
-                                            "    (copy))\n"));
-    // enum and struct: one line when they fit, else one member per line
-    CHECK(results, Canonical("(enum Action none left right fire)\n"));
-    CHECK(results, Canonical("(struct Sprite (x u8) (y u8))\n"));
+    // a long parameter list keeps its first parameter, then one per line at +8
+    std::string long_params = "(fn draw ((dst (ptr u8)) (src (ptr u8)) (" + name +
+                              " u8) (count u8) (step u8)) void (copy))";
+    CHECK(results, FormatsTo(long_params, "(fn draw ((dst (ptr u8))\n"
+                                          "        (src (ptr u8))\n"
+                                          "        (" +
+                                              name +
+                                              " u8)\n"
+                                              "        (count u8)\n"
+                                              "        (step u8)) void\n"
+                                              "    (copy))\n"));
+    // enum and struct lists: like parameter lists
+    CHECK(results, Canonical("(enum Action (none left right fire))\n"));
+    CHECK(results, Canonical("(enum Key ((esc 0x1B) (space 0x20)))\n"));
+    CHECK(results, Canonical("(struct Sprite ((x u8) (y u8)))\n"));
     CHECK(results,
-          Canonical("(enum Big\n    " + name + "\n    " + name + "_b\n    " + name + "_c)\n"));
+          Canonical("(enum Big (" + name + "\n        " + name + "_b\n        " + name + "_c))\n"));
+    CHECK(results, Canonical("(struct Big ((" + name + " u8)\n        (" + name +
+                             "_b u16)\n        (" + name + "_c bool)))\n"));
     // a keyword and its value stay together
     CHECK(results, Canonical("(let " + name + "\n    (array u8 200)\n    :in " + name +
                              "\n    :align 256\n    :boundary 256)\n"));
@@ -124,22 +133,24 @@ void TestBreaking(TestResults& results) {
 
 void TestComments(TestResults& results) {
     // trailing comments stay on their line and force the break after them
-    CHECK(results, FormatsTo("(enum Command none left ; arrow\n fire)",
-                             "(enum Command\n    none\n    left ; arrow\n    fire)\n"));
+    CHECK(results, FormatsTo("(enum Command (none left ; arrow\n fire))",
+                             "(enum Command (none\n        left ; arrow\n        fire))\n"));
     // trailing comments on consecutive lines line up
-    CHECK(results, FormatsTo("(fn show\n (a) ; one\n (bbbb) ; two\n (c))\n",
-                             "(fn show\n    (a)    ; one\n    (bbbb) ; two\n    (c))\n"));
+    CHECK(results, FormatsTo("(fn show () void\n (a) ; one\n (bbbb) ; two\n (c))\n",
+                             "(fn show () void\n    (a)    ; one\n    (bbbb) ; two\n    (c))\n"));
     // a comment after the last item moves past the closing parens
-    CHECK(results, FormatsTo("(fn f\n (a) ; done\n)", "(fn f\n    (a)) ; done\n"));
+    CHECK(results, FormatsTo("(fn f () void\n (a) ; done\n)", "(fn f () void\n    (a)) ; done\n"));
     CHECK(results, FormatsTo("(a b ; c\n)", "(a b) ; c\n"));
     // own-line comments keep their place and indent
-    CHECK(results, FormatsTo("(fn f\n; first\n  (a)\n      ; second\n (b))",
-                             "(fn f\n    ; first\n    (a)\n    ; second\n    (b))\n"));
+    CHECK(results, FormatsTo("(fn f () void\n; first\n  (a)\n      ; second\n (b))",
+                             "(fn f () void\n    ; first\n    (a)\n    ; second\n    (b))\n"));
     // a comment before ')' stays inside, with ')' on its own line
-    CHECK(results, FormatsTo("(fn f\n (a)\n ; todo\n )", "(fn f\n    (a)\n    ; todo\n)\n"));
+    CHECK(results,
+          FormatsTo("(fn f () void\n (a)\n ; todo\n )", "(fn f () void\n    (a)\n    ; todo\n)\n"));
     // a comment right after '(' goes to the end of the head line
-    CHECK(results, FormatsTo("(fn ; c\n f\n (a))", "(fn ; c\n        f\n    (a))\n"));
-    CHECK(results, FormatsTo("( ; c\nfn f (a))", "(fn f ; c\n    (a))\n"));
+    CHECK(results,
+          FormatsTo("(fn ; c\n f () void\n (a))", "(fn ; c\n        f () void\n    (a))\n"));
+    CHECK(results, FormatsTo("( ; c\nfn f () void (a))", "(fn f () void ; c\n    (a))\n"));
     // file-level comments
     CHECK(results, FormatsTo("; top\n\n\n\n(a)\n; end", "; top\n\n(a)\n; end\n"));
     CHECK(results, FormatsTo("(a) ; x\n(b) ; y\n", "(a) ; x\n(b) ; y\n"));
@@ -147,23 +158,23 @@ void TestComments(TestResults& results) {
 
 void TestBlankLines(TestResults& results) {
     // single blank lines are kept, runs collapse, none at the start of a body
-    CHECK(results,
-          FormatsTo("(fn f\n\n (a)\n\n\n (b)\n (c))", "(fn f\n    (a)\n\n    (b)\n    (c))\n"));
+    CHECK(results, FormatsTo("(fn f () void\n\n (a)\n\n\n (b)\n (c))",
+                             "(fn f () void\n    (a)\n\n    (b)\n    (c))\n"));
     // multi-line top-level forms always get a blank line around them
-    CHECK(results, FormatsTo("(const A u8 1)\n(const B u8 2)\n(fn f (a))\n(fn g (b))",
-                             "(const A u8 1)\n(const B u8 2)\n\n(fn f\n    (a))\n\n"
-                             "(fn g\n    (b))\n"));
+    CHECK(results,
+          FormatsTo("(const A u8 1)\n(const B u8 2)\n(fn f () void (a))\n(fn g () void (b))",
+                    "(const A u8 1)\n(const B u8 2)\n\n(fn f () void\n    (a))\n\n"
+                    "(fn g () void\n    (b))\n"));
     // the blank goes above a form's leading comment
-    CHECK(results, FormatsTo("(const A u8 1)\n; about f\n(fn f (a))",
-                             "(const A u8 1)\n\n; about f\n(fn f\n    (a))\n"));
+    CHECK(results, FormatsTo("(const A u8 1)\n; about f\n(fn f () void (a))",
+                             "(const A u8 1)\n\n; about f\n(fn f () void\n    (a))\n"));
     CHECK(results, Format("") == "");
     CHECK(results, Format("\n\n") == "");
 }
 
 void TestQuoteMarks(TestResults& results) {
     CHECK(results, Canonical("(f 'x `(a ,b ,@c) (quote y))\n"));
-    CHECK(results,
-          FormatsTo("(macro m (args a) `(do ,a))", "(macro m (args a)\n    `(do\n        ,a))\n"));
+    CHECK(results, FormatsTo("(macro m (a) `(do ,a))", "(macro m (a)\n    `(do\n        ,a))\n"));
 }
 
 // all comment text without spaces: comments may join on one line, never get lost

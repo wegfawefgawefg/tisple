@@ -127,8 +127,8 @@ struct Gen {
     // pointers declared in scopes that ended
     void DropPointers();
     std::string Body(int depth, int count);
-    // statements as one form with no value, so arms never have to agree on a type
-    std::string Arm(int depth, int count);
+    // an if arm (clause false) or a match clause body whose value is dropped
+    std::string Arm(int depth, int count, bool clause);
     std::string LoopBody(int depth, bool is_while);
     std::string For(int depth);
     std::string While(int depth);

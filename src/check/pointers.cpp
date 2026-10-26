@@ -167,36 +167,85 @@ ExprId CheckAddrOf(Checker& ck, const Node& node) {
     return id;
 }
 
+namespace {
+
+// (as u8 x): integers and enum members to any integer type
+ExprId CheckIntegerAs(Checker& ck, const Node& node, TypeId to) {
+    const Node& arg = node.items[2];
+    std::string to_text = ShowType(ck, to);
+    if (IsBareLiteral(arg)) {
+        return Fail(ck, node,
+                    Show(node) +
+                        " converts nothing: a literal takes its type from where it is used; "
+                        "write " +
+                        arg.text);
+    }
+    ExprId a = CheckExpr(ck, arg, -1);
+    TypeId from = ExprType(ck, a);
+    if (from <= kErrorType) {
+        return ErrorExpr(ck, node);
+    }
+    TypeKind kind = Kind(ck, from);
+    if (kind == TypeKind::Ptr) {
+        if (to == kU16Type) {
+            ExprId id = AddExpr(ck, ExprKind::Reinterpret, to, node);
+            ExprAt(ck, id).a = a;
+            return id;
+        }
+        return Fail(ck, node,
+                    "a pointer converts only to u16; write (as " + to_text + " (as u16 " +
+                        Show(arg) + "))");
+    }
+    if (kind == TypeKind::Bool) {
+        return Fail(ck, node, "as converts integers, not bool; write (if " + Show(arg) + " 1 0)");
+    }
+    // an enum member converts to its number; nothing converts back
+    if (!IsIntegerKind(kind) && kind != TypeKind::Enum) {
+        return Fail(ck, node,
+                    "as converts integers, enums and pointers, not " + ShowType(ck, from));
+    }
+    ExprId id = AddExpr(ck, ExprKind::Convert, to, node);
+    ExprAt(ck, id).a = a;
+    return id;
+}
+
+} // namespace
+
 ExprId CheckAs(Checker& ck, const Node& node) {
-    const char* help = "as converts between u16 and pointers: (as (ptr u8) n) or (as u16 p); for "
-                       "integers write (u8 x)";
+    const char* help = "as takes a type and a value: (as u16 x), (as u8 Action.fire), "
+                       "(as (ptr u8) addr) or (as u16 p)";
     if (node.items.size() != 3) {
         return Fail(ck, node, help);
     }
-    TypeId to = ResolveType(ck, node.items[1]);
+    const Node& type_node = node.items[1];
+    if (type_node.kind == NodeKind::Symbol && type_node.text == "void") {
+        return Fail(ck, node, help);
+    }
+    TypeId to = ResolveType(ck, type_node);
     if (to == kErrorType) {
+        CheckExpr(ck, node.items[2], -1);
         return ErrorExpr(ck, node);
     }
-    const Node& value_node = node.items[2];
-    ExprId value = -1;
-    if (Kind(ck, to) == TypeKind::Ptr) {
-        value = CheckExpr(ck, value_node, kU16Type);
-        if (!RequireType(ck, value_node, value, kU16Type, "(as " + ShowType(ck, to) + " ...)")) {
-            return ErrorExpr(ck, node);
-        }
-    } else if (to == kU16Type) {
-        value = CheckExpr(ck, value_node, -1);
-        TypeId from = ExprType(ck, value);
-        if (from == kErrorType) {
-            return ErrorExpr(ck, node);
-        }
-        if (Kind(ck, from) != TypeKind::Ptr) {
-            return Fail(ck, node,
-                        "(as u16 x) takes a pointer; for an integer write (u16 " +
-                            Show(value_node) + ")");
-        }
-    } else {
+    TypeKind kind = Kind(ck, to);
+    if (IsIntegerKind(kind)) {
+        return CheckIntegerAs(ck, node, to);
+    }
+    if (kind == TypeKind::Enum) {
+        const EnumDecl& ed = ck.out->enums[static_cast<std::size_t>(TypeOf(*ck.out, to).decl)];
+        return Fail(ck, node,
+                    "nothing converts to an enum; name a member, as in " + ed.name + "." +
+                        ed.members[0].name + ", or match on the number");
+    }
+    if (kind == TypeKind::Bool) {
+        return Fail(ck, node, "nothing converts to bool; write (!= " + Show(node.items[2]) + " 0)");
+    }
+    if (kind != TypeKind::Ptr) {
         return Fail(ck, node, help);
+    }
+    const Node& value_node = node.items[2];
+    ExprId value = CheckExpr(ck, value_node, kU16Type);
+    if (!RequireType(ck, value_node, value, kU16Type, "(as " + ShowType(ck, to) + " ...)")) {
+        return ErrorExpr(ck, node);
     }
     ExprId id = AddExpr(ck, ExprKind::Reinterpret, to, node);
     ExprAt(ck, id).a = value;

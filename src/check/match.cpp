@@ -4,11 +4,39 @@ namespace tisple {
 
 namespace {
 
-ExprId CheckArmIn(Checker& ck, const Node& node, TypeId hint, bool statement) {
-    ck.at.scopes.emplace_back();
-    ExprId id = statement ? CheckStatement(ck, node) : CheckExpr(ck, node, hint);
-    ck.at.scopes.pop_back();
+// an arm of one form is that form; none or several make a do
+ExprId ArmExpr(Checker& ck, const Arm& arm, const std::vector<ExprId>& forms, TypeId type) {
+    if (forms.size() == 1) {
+        return forms[0];
+    }
+    ExprId id = AddExpr(ck, ExprKind::Do, type, *arm.owner);
+    ExprAt(ck, id).first = AddList(ck, forms);
+    ExprAt(ck, id).count = static_cast<std::uint32_t>(forms.size());
     return id;
+}
+
+// the forms before an arm's last, as statements, in the arm's scope (already open)
+std::vector<ExprId> LeadingForms(Checker& ck, const Arm& arm) {
+    std::vector<ExprId> forms;
+    for (std::size_t i = arm.first; i + 1 < arm.end; i++) {
+        forms.push_back(CheckStatement(ck, (*arm.items)[i]));
+    }
+    return forms;
+}
+
+// a dropped value: every form is a statement; never only when the arm cannot finish
+ExprId CheckStatementArm(Checker& ck, const Arm& arm, TypeId& type) {
+    ck.at.scopes.emplace_back();
+    std::vector<ExprId> forms;
+    for (std::size_t i = arm.first; i < arm.end; i++) {
+        forms.push_back(CheckStatement(ck, (*arm.items)[i]));
+    }
+    ck.at.scopes.pop_back();
+    type = kVoidType;
+    if (!forms.empty() && ExprType(ck, forms.back()) == kNeverType) {
+        type = kNeverType;
+    }
+    return ArmExpr(ck, arm, forms, type);
 }
 
 struct PatternResult {
@@ -105,19 +133,47 @@ void CheckCoverage(Checker& ck, const Node& node, TypeId type, const std::vector
 
 } // namespace
 
-TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
-                 std::vector<ExprId>& out, const Node& owner, const char* what) {
+TypeId CheckArms(Checker& ck, const std::vector<Arm>& arms, TypeId hint, bool used,
+                 std::vector<ExprId>& out, const char* what) {
     out.assign(arms.size(), -1);
+    if (!used) {
+        bool all_never = !arms.empty();
+        for (std::size_t i = 0; i < arms.size(); i++) {
+            TypeId type = kVoidType;
+            out[i] = CheckStatementArm(ck, arms[i], type);
+            all_never = all_never && type == kNeverType;
+        }
+        return all_never ? kNeverType : kVoidType;
+    }
+
+    // bare literals at the end of an arm wait for the type the other arms give
+    std::vector<std::vector<ExprId>> waiting(arms.size());
+    std::vector<bool> deferred(arms.size(), false);
     TypeId joint = -1;
     bool any_void = false;
     bool reported = false;
     std::size_t joint_arm = 0;
     for (std::size_t i = 0; i < arms.size(); i++) {
-        if (IsBareLiteral(*arms[i])) {
+        const Arm& arm = arms[i];
+        ck.at.scopes.emplace_back();
+        std::vector<ExprId> forms = LeadingForms(ck, arm);
+        if (arm.end == arm.first) {
+            ck.at.scopes.pop_back();
+            out[i] = ArmExpr(ck, arm, forms, kVoidType);
+            any_void = true;
             continue;
         }
-        out[i] = CheckArmIn(ck, *arms[i], hint, false);
-        TypeId type = ExprType(ck, out[i]);
+        const Node& last = (*arm.items)[arm.end - 1];
+        if (IsBareLiteral(last)) {
+            ck.at.scopes.pop_back();
+            waiting[i] = forms;
+            deferred[i] = true;
+            continue;
+        }
+        forms.push_back(CheckExpr(ck, last, hint));
+        ck.at.scopes.pop_back();
+        TypeId type = ExprType(ck, forms.back());
+        out[i] = ArmExpr(ck, arm, forms, type);
         if (type == kErrorType || type == kNeverType) {
             continue;
         }
@@ -135,10 +191,11 @@ TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
             TypeKind tk = KindOf(*ck.out, type);
             if (IsIntegerKind(jk) && IsIntegerKind(tk)) {
                 bool widen_first = KindBits(jk) < KindBits(tk);
-                fix = ", as in (" + ShowType(ck, widen_first ? type : joint) + " " +
-                      Show(*arms[widen_first ? joint_arm : i]) + ")";
+                const Arm& narrow = arms[widen_first ? joint_arm : i];
+                fix = ", as in (as " + ShowType(ck, widen_first ? type : joint) + " " +
+                      Show((*narrow.items)[narrow.end - 1]) + ")";
             }
-            Err(ck, *arms[i],
+            Err(ck, last,
                 std::string(what) + " arms give " + ShowType(ck, joint) + " and " +
                     ShowType(ck, type) + "; make them the same type" + fix);
             reported = true;
@@ -146,19 +203,24 @@ TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
     }
     TypeId literal_type = joint >= 0 ? joint : hint;
     for (std::size_t i = 0; i < arms.size(); i++) {
-        if (!IsBareLiteral(*arms[i])) {
+        if (!deferred[i]) {
             continue;
         }
+        const Arm& arm = arms[i];
+        const Node& last = (*arm.items)[arm.end - 1];
+        std::vector<ExprId>& forms = waiting[i];
         if (any_void) {
-            out[i] = CheckArmIn(ck, *arms[i], -1, true);
+            forms.push_back(CheckStatement(ck, last));
+            out[i] = ArmExpr(ck, arm, forms, kVoidType);
             continue;
         }
-        out[i] = CheckIntLiteral(ck, *arms[i], literal_type);
-        if (joint < 0 && ExprType(ck, out[i]) > kErrorType) {
-            joint = ExprType(ck, out[i]);
+        forms.push_back(CheckIntLiteral(ck, last, literal_type));
+        TypeId type = ExprType(ck, forms.back());
+        out[i] = ArmExpr(ck, arm, forms, type);
+        if (joint < 0 && type > kErrorType) {
+            joint = type;
         }
     }
-    (void)owner;
     if (reported) {
         return kErrorType;
     }
@@ -176,7 +238,7 @@ TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
     return kNeverType;
 }
 
-ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint) {
+ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint, bool used) {
     if (node.items.size() < 3) {
         return Fail(ck, node, "match needs a value and clauses; write (match x (0 a) (_ b))");
     }
@@ -195,14 +257,14 @@ ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint) {
     }
 
     std::vector<Clause> clauses;
-    std::vector<const Node*> bodies;
+    std::vector<Arm> arms;
     bool has_wildcard = false;
     bool ok = true;
     for (std::size_t i = 2; i < node.items.size(); i++) {
         const Node& clause_node = node.items[i];
-        if (clause_node.kind != NodeKind::List || clause_node.items.size() != 2) {
-            Err(ck, clause_node,
-                "a match clause is (pattern form); group several forms with (do ...)");
+        if (clause_node.kind != NodeKind::List || clause_node.mark != QuoteMark::None ||
+            clause_node.items.empty()) {
+            Err(ck, clause_node, "a match clause is (pattern body ...), like (0 (f)) or (_)");
             ok = false;
             continue;
         }
@@ -234,13 +296,13 @@ ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint) {
         clause.value = pattern.value;
         clause.loc = NodeLoc(ck, clause_node);
         clauses.push_back(clause);
-        bodies.push_back(&clause_node.items[1]);
+        arms.push_back(Arm{&clause_node.items, 1, clause_node.items.size(), &clause_node});
     }
     if (ok) {
         CheckCoverage(ck, node, type, clauses, has_wildcard);
     }
     std::vector<ExprId> out;
-    TypeId result = CheckArms(ck, bodies, hint, out, node, "match");
+    TypeId result = CheckArms(ck, arms, hint, used, out, "match");
     for (std::size_t i = 0; i < clauses.size(); i++) {
         clauses[i].body = out[i];
     }

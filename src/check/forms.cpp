@@ -4,11 +4,6 @@ namespace tisple {
 
 namespace {
 
-bool IsIntegerTypeName(const Node& node) {
-    return node.kind == NodeKind::Symbol &&
-           (node.text == "u8" || node.text == "i8" || node.text == "u16" || node.text == "i16");
-}
-
 // the smallest type a fix can suggest for (for i start end ...)
 const char* LoopTypeFor(std::int64_t start, std::int64_t end) {
     if (start < 0) {
@@ -43,9 +38,9 @@ bool IsStruct(const Checker& ck, TypeId type) {
     return type > kErrorType && KindOf(*ck.out, type) == TypeKind::Struct;
 }
 
-ExprId CheckArm(Checker& ck, const Node& node, TypeId hint, bool statement) {
+ExprId CheckStatementArm(Checker& ck, const Node& node) {
     ck.at.scopes.emplace_back();
-    ExprId id = statement ? CheckStatement(ck, node) : CheckExpr(ck, node, hint);
+    ExprId id = CheckStatement(ck, node);
     ck.at.scopes.pop_back();
     return id;
 }
@@ -58,11 +53,11 @@ std::string LetFix(const Checker& ck, const std::string& name, TypeId type) {
     }
     if (t.kind == TypeKind::Struct) {
         const StructDecl& sd = ck.out->structs[static_cast<std::size_t>(t.decl)];
-        std::string literal = "(" + sd.name;
+        std::string literal = "(make " + sd.name;
         for (const Field& field : sd.fields) {
             literal += " :" + field.name + " ...";
         }
-        return "write (let " + name + " " + literal + "))";
+        return "write (let " + name + " " + sd.name + " " + literal + "))";
     }
     std::string zero = "0";
     if (t.kind == TypeKind::Bool) {
@@ -87,14 +82,20 @@ ExprId CheckLetValue(Checker& ck, const Node& name, const Node& value, TypeId& t
         type = kErrorType;
         return Fail(ck, value,
                     "(let " + name.text + " " + value.text +
-                        "): the literal has no type; write (let " + name.text + " u8 " +
+                        "): let always states the type; write (let " + name.text + " u8 " +
                         value.text + ")");
     }
     ExprId init = CheckExpr(ck, value, type);
     if (type >= 0) {
         RequireType(ck, value, init, type, "let " + name.text);
     } else {
+        // the old (let name value): say what to write, then go on with the value's type
         type = ExprType(ck, init);
+        if (type > kErrorType && type != kVoidType && type != kNeverType) {
+            Err(ck, value,
+                "let always states the type; write (let " + name.text + " " + ShowType(ck, type) +
+                    " " + Show(value) + ")");
+        }
     }
     if (type == kVoidType || type == kNeverType) {
         Err(ck, value, Show(value) + " gives no value to start " + name.text + " with");
@@ -155,11 +156,11 @@ ExprId CheckLet(Checker& ck, const Node& node) {
     }
     if (positional.empty()) {
         return Fail(ck, node,
-                    "let " + name.text + " needs a type or a value; write (let " + name.text +
+                    "let " + name.text + " needs a type and a value; write (let " + name.text +
                         " u8 0)");
     }
     if (positional.size() > 2) {
-        return Fail(ck, node, "(let name type value) takes at most a type and a value");
+        return Fail(ck, node, "(let name type value) takes one type and one value");
     }
     bool name_ok = CheckLocalName(ck, name, "local");
     TypeId type = -1;
@@ -220,8 +221,7 @@ ExprId CheckSet(Checker& ck, const Node& node) {
     }
     if (root < 0 || !IsPlaceKind(expr.kind)) {
         return Fail(ck, place_node,
-                    "set needs a variable, s.x, (at ...) or (. ...); " + Show(place_node) +
-                        " is not one");
+                    "set needs a variable, s.x or (at ...); " + Show(place_node) + " is not one");
     }
     const Var& var = ck.out->vars[static_cast<std::size_t>(root)];
     if (var.kind == VarKind::ConstArray) {
@@ -246,7 +246,7 @@ ExprId CheckSet(Checker& ck, const Node& node) {
     return id;
 }
 
-ExprId CheckIf(Checker& ck, const Node& node, TypeId hint) {
+ExprId CheckIf(Checker& ck, const Node& node, TypeId hint, bool used) {
     if (node.items.size() != 3 && node.items.size() != 4) {
         return Fail(ck, node,
                     "if takes a condition and one or two arms; group forms with (do ...)");
@@ -255,15 +255,16 @@ ExprId CheckIf(Checker& ck, const Node& node, TypeId hint) {
     RequireType(ck, node.items[1], cond, kBoolType, "the if condition");
     ExprId id = -1;
     if (node.items.size() == 3) {
-        ExprId then = CheckArm(ck, node.items[2], -1, true);
+        ExprId then = CheckStatementArm(ck, node.items[2]);
         id = AddExpr(ck, ExprKind::If, kVoidType, node);
         ExprAt(ck, id).a = cond;
         ExprAt(ck, id).b = then;
         return id;
     }
-    std::vector<const Node*> arms = {&node.items[2], &node.items[3]};
+    std::vector<Arm> arms = {Arm{&node.items, 2, 3, &node.items[2]},
+                             Arm{&node.items, 3, 4, &node.items[3]}};
     std::vector<ExprId> out;
-    TypeId type = CheckArms(ck, arms, hint, out, node, "if");
+    TypeId type = CheckArms(ck, arms, hint, used, out, "if");
     id = AddExpr(ck, ExprKind::If, type, node);
     ExprAt(ck, id).a = cond;
     ExprAt(ck, id).b = out[0];
@@ -271,9 +272,9 @@ ExprId CheckIf(Checker& ck, const Node& node, TypeId hint) {
     return id;
 }
 
-ExprId CheckDo(Checker& ck, const Node& node, TypeId hint) {
+ExprId CheckDo(Checker& ck, const Node& node, TypeId hint, bool used) {
     ck.at.scopes.emplace_back();
-    ExprId id = CheckBody(ck, node.items, 1, hint, true, node);
+    ExprId id = CheckBody(ck, node.items, 1, hint, used, node);
     ck.at.scopes.pop_back();
     return id;
 }
@@ -297,11 +298,11 @@ ExprId CheckWhile(Checker& ck, const Node& node) {
 
 ExprId CheckFor(Checker& ck, const Node& node) {
     const std::vector<Node>& items = node.items;
-    bool typed = items.size() > 2 && IsIntegerTypeName(items[2]);
+    bool typed = items.size() > 2 && TryResolveType(ck, items[2]) >= 0;
     std::size_t at = typed ? 3 : 2;
     if (items.size() < at + 2 || items[1].kind != NodeKind::Symbol) {
         return Fail(ck, node,
-                    "for needs a name, a start and an end; write (for i u8 0 10 body ...)");
+                    "for needs a name, a type, a start and an end; write (for i u8 0 10 body ...)");
     }
     const Node& start_node = items[at];
     const Node& end_node = items[at + 1];
@@ -310,18 +311,25 @@ ExprId CheckFor(Checker& ck, const Node& node) {
     TypeId type = kErrorType;
     if (typed) {
         type = ResolveType(ck, items[2]);
-    } else if (!IsBareLiteral(start_node)) {
-        start = CheckExpr(ck, start_node, -1);
-        type = ExprType(ck, start);
-    } else if (!IsBareLiteral(end_node)) {
-        end = CheckExpr(ck, end_node, -1);
-        type = ExprType(ck, end);
-    } else {
+    } else if (IsBareLiteral(start_node) && IsBareLiteral(end_node)) {
         return Fail(ck, node,
-                    "(for " + items[1].text + " " + start_node.text + " " + end_node.text +
-                        " ...): the loop variable needs a type; write (for " + items[1].text + " " +
+                    "for always states the type; write (for " + items[1].text + " " +
                         LoopTypeFor(start_node.value, end_node.value) + " " + start_node.text +
                         " " + end_node.text + " ...)");
+    } else {
+        // the old (for i start end ...): say what to write, then go on with the type found
+        if (!IsBareLiteral(start_node)) {
+            start = CheckExpr(ck, start_node, -1);
+            type = ExprType(ck, start);
+        } else {
+            end = CheckExpr(ck, end_node, -1);
+            type = ExprType(ck, end);
+        }
+        if (type > kErrorType && IsIntegerKind(KindOf(*ck.out, type))) {
+            Err(ck, node,
+                "for always states the type; write (for " + items[1].text + " " +
+                    ShowType(ck, type) + " " + Show(start_node) + " " + Show(end_node) + " ...)");
+        }
     }
     if (type != kErrorType && !IsIntegerKind(KindOf(*ck.out, type))) {
         Err(ck, node, "for counts with an integer type, not " + ShowType(ck, type));
@@ -383,8 +391,8 @@ ExprId CheckReturn(Checker& ck, const Node& node) {
     if (node.items.size() == 2) {
         if (ret == kVoidType) {
             return Fail(ck, node,
-                        name + " has no (returns t), so it gives no value; write (return) or add "
-                               "(returns t) after its args");
+                        name + " returns void, so it gives no value; write (return) or give " +
+                            name + " a return type");
         }
         value = CheckExpr(ck, node.items[1], ret);
         RequireType(ck, node.items[1], value, ret, "the return value of " + name);

@@ -44,11 +44,11 @@
     },
     "special": {
       "name": "keyword.control.tisple",
-      "match": "(?<![^\\s()'`,@])(?:fn|let|const|struct|enum|if|do|while|for|match|return|break|continue|args|returns|set|and|or|\\.|_|as|macro|import|quote|quasiquote|unquote|unquote_splicing)(?![^\\s()\";'`,])"
+      "match": "(?<![^\\s()'`,@])(?:fn|let|const|struct|enum|if|do|while|for|match|return|break|continue|set|and|or|\\.|_|as|make|macro|import|quote|quasiquote|unquote|unquote_splicing)(?![^\\s()\";'`,])"
     },
     "type": {
       "name": "storage.type.tisple",
-      "match": "(?<![^\\s()'`,@])(?:u8|i8|u16|i16|bool|ptr|array)(?![^\\s()\";'`,])"
+      "match": "(?<![^\\s()'`,@])(?:u8|i8|u16|i16|bool|void|ptr|array)(?![^\\s()\";'`,])"
     },
     "builtin": {
       "name": "support.function.builtin.tisple",

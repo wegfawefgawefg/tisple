@@ -42,23 +42,23 @@ std::string ProgramFor(const char* type) {
     for (const OpCase& c : kOps) {
         std::string b_type = c.count ? "u8" : t;
         std::string ret = IsCompare(c.op) ? "bool" : t;
-        std::string args = "(args (a " + t + ") (b " + b_type + "))";
-        text += "(fn " + std::string(c.name) + " " + args + " (returns " + ret + ") (" + c.form +
-                " a b))\n";
+        std::string params = "((a " + t + ") (b " + b_type + "))";
+        text +=
+            "(fn " + std::string(c.name) + " " + params + " " + ret + " (" + c.form + " a b))\n";
         if (IsCompare(c.op)) {
-            text += "(fn br_" + std::string(c.name) + " " + args + " (returns u8) (if (" + c.form +
+            text += "(fn br_" + std::string(c.name) + " " + params + " u8 (if (" + c.form +
                     " a b) 7 9))\n";
         }
         std::string global = c.count ? "gc" : "gb";
-        text += "(fn mem_" + std::string(c.name) + " " + args + " (returns " + ret + ") (set " +
-                global + " b) (" + c.form + " (id a) " + global + "))\n";
+        text += "(fn mem_" + std::string(c.name) + " " + params + " " + ret + " (set " + global +
+                " b) (" + c.form + " (id a) " + global + "))\n";
     }
-    text += "(fn id (args (a " + t + ")) (returns " + t + ") a)\n";
-    text += "(fn bnot (args (a " + t + ")) (returns " + t + ") (~ a))\n";
-    text += "(fn to_u8 (args (a " + t + ")) (returns u8) (u8 a))\n";
-    text += "(fn to_i8 (args (a " + t + ")) (returns i8) (i8 a))\n";
-    text += "(fn to_u16 (args (a " + t + ")) (returns u16) (u16 a))\n";
-    text += "(fn to_i16 (args (a " + t + ")) (returns i16) (i16 a))\n";
+    text += "(fn id ((a " + t + ")) " + t + " a)\n";
+    text += "(fn bnot ((a " + t + ")) " + t + " (~ a))\n";
+    text += "(fn to_u8 ((a " + t + ")) u8 (as u8 a))\n";
+    text += "(fn to_i8 ((a " + t + ")) i8 (as i8 a))\n";
+    text += "(fn to_u16 ((a " + t + ")) u16 (as u16 a))\n";
+    text += "(fn to_i16 ((a " + t + ")) i16 (as i16 a))\n";
     return text;
 }
 
@@ -217,8 +217,8 @@ void TestConstants(TestResults& results, const char* type, TypeKind kind) {
             }
             std::string fn = std::string("k") + oc.name + "_" + std::to_string(cases.size());
             std::string ret = IsCompare(oc.op) ? "bool" : type;
-            text += "(fn " + fn + " (args (a " + type + ")) (returns " + ret + ") (" + oc.form +
-                    " a " + std::to_string(c) + "))\n";
+            text += "(fn " + fn + " ((a " + type + ")) " + ret + " (" + oc.form + " a " +
+                    std::to_string(c) + "))\n";
             std::uint16_t raw = static_cast<std::uint16_t>(c & (wide ? 0xFFFF : 0xFF));
             if (oc.count) {
                 raw = static_cast<std::uint16_t>(c);
@@ -227,8 +227,8 @@ void TestConstants(TestResults& results, const char* type, TypeKind kind) {
         }
     }
     // in place: the destination is also the operand
-    text += "(fn inplace (args (a " + std::string(type) + ")) (returns " + type +
-            ")\n"
+    text += "(fn inplace ((a " + std::string(type) + ")) " + type +
+            "\n"
             "    (set gx a) (set gx (* gx 3)) (set gx (<< gx 3)) (set gx (+ gx (>> gx 2))) gx)\n";
     Compiled c = CompileText(text);
     if (!c.ok) {

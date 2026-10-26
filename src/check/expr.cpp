@@ -51,7 +51,7 @@ ExprId CheckName(Checker& ck, const Node& node) {
         return Fail(ck, node, node.text + " is a function; call it: (" + node.text + " ...)");
     case NameKind::Struct:
         return Fail(ck, node,
-                    node.text + " is a type; build a value with (" + node.text +
+                    node.text + " is a type; build a value with (make " + node.text +
                         " :field value ...)");
     case NameKind::Enum:
         return Fail(ck, node, node.text + " is an enum; name a member, as in " + node.text + ".x");
@@ -92,7 +92,16 @@ ExprId CheckName(Checker& ck, const Node& node) {
     return value;
 }
 
-ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
+// (u8 x), (Sprite :x 1 ...): a type never heads a form
+std::string TypeHeadFix(const Node& node) {
+    std::string rest;
+    for (std::size_t i = 1; i < node.items.size(); i++) {
+        rest += " " + Show(node.items[i]);
+    }
+    return rest;
+}
+
+ExprId CheckList(Checker& ck, const Node& node, TypeId hint, bool used) {
     if (node.items.empty()) {
         return Fail(ck, node, "() is not a form; remove it");
     }
@@ -116,7 +125,9 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
         return CheckLogic(ck, node);
     }
     if (head == "u8" || head == "i8" || head == "u16" || head == "i16") {
-        return CheckConvert(ck, node, ResolveType(ck, head_node));
+        return Fail(ck, node,
+                    "a type never heads a form; to convert write (as " + head + TypeHeadFix(node) +
+                        ")");
     }
     if (head == "let") {
         return CheckLet(ck, node);
@@ -125,10 +136,10 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
         return CheckSet(ck, node);
     }
     if (head == "if") {
-        return CheckIf(ck, node, hint);
+        return CheckIf(ck, node, hint, used);
     }
     if (head == "do") {
-        return CheckDo(ck, node, hint);
+        return CheckDo(ck, node, hint, used);
     }
     if (head == "while") {
         return CheckWhile(ck, node);
@@ -137,7 +148,7 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
         return CheckFor(ck, node);
     }
     if (head == "match") {
-        return CheckMatch(ck, node, hint);
+        return CheckMatch(ck, node, hint, used);
     }
     if (head == "return") {
         return CheckReturn(ck, node);
@@ -163,6 +174,9 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
     if (head == "as") {
         return CheckAs(ck, node);
     }
+    if (head == "make") {
+        return CheckMake(ck, node);
+    }
     if (head == "io_read") {
         return CheckIoRead(ck, node);
     }
@@ -174,8 +188,12 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
         std::string fix = head == "const" ? "; use let here" : "; move it out of this function";
         return Fail(ck, node, head + " goes at top level" + fix);
     }
-    if (head == "args" || head == "returns" || head == "_" || head == "ptr" || head == "array" ||
-        head == "bool" || head == "quote" || head == "quasiquote" || head == "unquote" ||
+    if (head == "ptr" || head == "array" || head == "bool" || head == "void") {
+        return Fail(ck, node,
+                    Show(node) + ": a type never heads a form; convert with (as t x), build with "
+                                 "(make t ...)");
+    }
+    if (head == "_" || head == "quote" || head == "quasiquote" || head == "unquote" ||
         head == "unquote_splicing") {
         return Fail(ck, node, Show(node) + " is not a form here");
     }
@@ -187,7 +205,9 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
         return CheckCall(ck, node, ref.index);
     }
     if (ref.kind == NameKind::Struct && whole) {
-        return CheckStructLit(ck, node, StructType(ck, ref.index));
+        return Fail(ck, node,
+                    "a type never heads a form; to build a " + head + " write (make " + head +
+                        TypeHeadFix(node) + ")");
     }
     if (ref.kind == NameKind::Enum && whole) {
         return Fail(ck, node,
@@ -261,7 +281,7 @@ ExprId CheckExpr(Checker& ck, const Node& node, TypeId hint) {
     case NodeKind::String:
         return Fail(ck, node, "strings are not in this subset yet");
     case NodeKind::List:
-        return CheckList(ck, node, hint);
+        return CheckList(ck, node, hint, true);
     }
     return ErrorExpr(ck, node);
 }
@@ -269,6 +289,9 @@ ExprId CheckExpr(Checker& ck, const Node& node, TypeId hint) {
 ExprId CheckStatement(Checker& ck, const Node& node) {
     if (IsBareLiteral(node)) {
         return Fail(ck, node, node.text + " on its own does nothing; remove it");
+    }
+    if (node.kind == NodeKind::List) {
+        return CheckList(ck, node, -1, false);
     }
     return CheckExpr(ck, node, -1);
 }
@@ -286,8 +309,8 @@ bool RequireType(Checker& ck, const Node& node, ExprId expr, TypeId want, const 
     std::string fix;
     TypeKind gk = KindOf(*ck.out, got);
     TypeKind wk = KindOf(*ck.out, want);
-    if (IsIntegerKind(gk) && IsIntegerKind(wk)) {
-        fix = "; write (" + ShowType(ck, want) + " " + Show(node) + ")";
+    if ((IsIntegerKind(gk) || gk == TypeKind::Enum) && IsIntegerKind(wk)) {
+        fix = "; write (as " + ShowType(ck, want) + " " + Show(node) + ")";
     } else if (gk == TypeKind::Ptr && want == kU16Type) {
         fix = "; write (as u16 " + Show(node) + ")";
     } else if (IsIntegerKind(gk) && want == kBoolType) {
@@ -312,7 +335,7 @@ bool RequireStructSource(Checker& ck, const Node& node, ExprId expr) {
         return true;
     }
     Err(ck, node,
-        "a struct value comes from a struct literal, a variable, (at ...), a field or a load; "
+        "a struct value comes from (make ...), a variable, (at ...), a field or a load; "
         "set each case on its own instead, as in (if c (set s a) (set s b))");
     return false;
 }

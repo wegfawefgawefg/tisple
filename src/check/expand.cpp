@@ -64,7 +64,7 @@ bool ReadMacro(Expander& ex, std::int32_t module, const Node& form, MacroDef& de
     def.loc = LocOf(file, form);
     const std::vector<Node>& items = form.items;
     if (items.size() < 2 || items[1].kind != NodeKind::Symbol) {
-        Fail(ex, def.loc, "a macro needs a name; write (macro name (args a b) `(...))");
+        Fail(ex, def.loc, "a macro needs a name; write (macro name (a b) `(...))");
         return false;
     }
     def.name = items[1].text;
@@ -77,30 +77,37 @@ bool ReadMacro(Expander& ex, std::int32_t module, const Node& form, MacroDef& de
              "macro " + def.name + ": names are snake_case; write " + ToSnakeName(def.name));
         return false;
     }
-    std::size_t next = 2;
-    if (items.size() > next && HeadText(items[next]) == "args" &&
-        items[next].mark == QuoteMark::None) {
-        const Node& args = items[next];
-        if (args.items.size() == 1) {
-            Fail(ex, LocOf(file, args), "omit (args) when the macro takes no arguments");
+    // (macro name (a b) `(...)); the old (args a b) or no list at all gets a fix
+    const char* list_fix = "parameters are always a list now: write (macro ";
+    if (items.size() == 3 && HeadText(items[2]) == "quasiquote") {
+        Fail(ex, def.loc, list_fix + def.name + " () `(...))");
+        return false;
+    }
+    const Node& params = items[2];
+    if (params.kind != NodeKind::List || params.mark != QuoteMark::None ||
+        HeadText(params) == "args") {
+        std::string names;
+        for (std::size_t i = 1; HeadText(params) == "args" && i < params.items.size(); i++) {
+            names += (i == 1 ? "" : " ") + params.items[i].text;
+        }
+        Fail(ex, LocOf(file, params), list_fix + def.name + " (" + names + ") `(...))");
+        return false;
+    }
+    for (const Node& param : params.items) {
+        if (param.kind != NodeKind::Symbol || !IsSnakeName(param.text) ||
+            IsBuiltinName(param.text)) {
+            Fail(ex, LocOf(file, param),
+                 "macro parameters are plain snake_case names; write (macro " + def.name +
+                     " (a b) `(...))");
             return false;
         }
-        for (std::size_t i = 1; i < args.items.size(); i++) {
-            const Node& param = args.items[i];
-            if (param.kind != NodeKind::Symbol || !IsSnakeName(param.text) ||
-                IsBuiltinName(param.text)) {
-                Fail(ex, LocOf(file, param),
-                     "macro arguments are plain snake_case names; write (args a b)");
-                return false;
-            }
-            def.params.push_back(param.text);
-        }
-        next++;
+        def.params.push_back(param.text);
     }
+    std::size_t next = 3;
     if (items.size() != next + 1) {
         Fail(ex, def.loc,
-             "a macro body is one template; write (macro " + def.name + " " +
-                 (def.params.empty() ? "" : "(args " + ParamList(def) + ") ") + "`(...))");
+             "a macro body is one template; write (macro " + def.name + " (" + ParamList(def) +
+                 ") `(...))");
         return false;
     }
     const Node& body = items[next];
@@ -222,7 +229,7 @@ bool FillList(Expander& ex, Instance& in, const Node& t, Node& out) {
         const Node* arg = FindArg(in, item.items[1]);
         if (!arg) {
             Fail(ex, InstanceLoc(in),
-                 ",@ splices a macro argument; write ,@name with a name from (args " +
+                 ",@ splices a macro argument; write ,@name with a name from (" +
                      ParamList(*in.def) + ")");
             return false;
         }
@@ -243,7 +250,7 @@ bool Fill(Expander& ex, Instance& in, const Node& t, Node& out) {
         const Node* arg = FindArg(in, t.items[1]);
         if (!arg) {
             Fail(ex, InstanceLoc(in),
-                 "only a macro argument can be unquoted; write ,name with a name from (args " +
+                 "only a macro argument can be unquoted; write ,name with a name from (" +
                      ParamList(*in.def) + ")");
             return false;
         }
@@ -326,13 +333,8 @@ void ExpandChildren(Expander& ex, std::int32_t module, Node& node, int depth) {
         return;
     }
     if (head == "fn") {
-        for (std::size_t i = 2; i < node.items.size(); i++) {
-            const std::string& sub = HeadText(node.items[i]);
-            if (i <= 3 && (sub == "args" || sub == "returns")) {
-                continue;
-            }
-            ExpandNode(ex, module, node.items[i], depth);
-        }
+        // (fn name (params) type body ...): the parameter list holds no forms
+        ExpandItemsFrom(ex, module, node, 3, depth);
         return;
     }
     if (head == "match") {

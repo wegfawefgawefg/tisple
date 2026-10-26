@@ -52,7 +52,12 @@ void BuildNotes(Formatter& fm);
 // -1 when not a body form; otherwise how many items after the head stay on the head line
 int BodyHeaderCount(const Node& node);
 bool HasBody(const Node& node);
-// args, enum, struct: one line if it fits, else one item per line; returns items kept
+// enum, struct: name and member list stay on the head line; returns items kept
 int OnePerLineKeep(const Node& node);
+// the parameter list of fn or macro, or the member list of struct or enum: one line if it
+// fits, else the first item after '(' and one item per line
+bool IsParamList(const Formatter& fm, const Node& node);
+// (pattern form ...) inside a match: one line when it is one form that fits, else a body
+bool IsMatchClause(const Formatter& fm, const Node& node);
 
 } // namespace tisple

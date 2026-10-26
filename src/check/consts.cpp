@@ -27,27 +27,8 @@ bool FoldConstArray(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
                 ShowType(ck, elem));
         return false;
     }
-    std::size_t given = form.items.size() - 3;
-    if (given != array.count) {
-        Err(ck, form,
-            cd.name + " is " + ShowType(ck, type) + " but has " + std::to_string(given) +
-                " values; give exactly " + std::to_string(array.count));
-        return false;
-    }
-    std::uint32_t elem_size = TypeOf(*ck.out, elem).size;
     std::vector<std::uint8_t> bytes(array.size, 0);
-    bool ok = true;
-    for (std::size_t i = 0; i < given; i++) {
-        const Node& item = form.items[3 + i];
-        ExprId value = CheckExpr(ck, item, elem);
-        std::uint16_t raw = 0;
-        if (!RequireType(ck, item, value, elem, "an element of " + cd.name) ||
-            !FoldExpr(ck, value, raw)) {
-            ok = false;
-            continue;
-        }
-        PutBytes(bytes, static_cast<std::uint32_t>(i) * elem_size, elem_size, raw);
-    }
+    bool ok = FoldArrayLiteral(ck, form.items[3], type, cd.name, bytes, 0);
     Var var;
     var.name = ck.out->modules[static_cast<std::size_t>(cd.module)].name + "." + cd.name;
     var.kind = VarKind::ConstArray;
@@ -60,12 +41,22 @@ bool FoldConstArray(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
     return ok;
 }
 
-// form is the const without its placement options
+// (const T (array u8 3) 1 2 3): the old table spelling, values straight after the type
+std::string OldTableFix(const ConstDecl& cd, const Node& form) {
+    std::string type = Show(form.items[2]);
+    std::string values;
+    for (std::size_t i = 3; i < form.items.size() && i < 5; i++) {
+        values += " " + Show(form.items[i]);
+    }
+    return "write (const " + cd.name + " " + type + " (make " + type + values + " ...))";
+}
+
+// form is the const without its placement options: (const NAME type value)
 bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
     const std::vector<Node>& items = form.items;
     std::string fix = "write (const " + cd.name + " u8 0)";
     if (items.size() == 2) {
-        Err(ck, form, "const " + cd.name + " needs a value; " + fix);
+        Err(ck, form, "const " + cd.name + " needs a type and a value; " + fix);
         return false;
     }
     ExprId value = -1;
@@ -74,33 +65,44 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
         if (IsBareLiteral(items[2])) {
             Err(ck, items[2],
                 "(const " + cd.name + " " + items[2].text +
-                    "): the literal has no type; write (const " + cd.name + " u8 " + items[2].text +
-                    ")");
+                    "): const always states the type; write (const " + cd.name + " u8 " +
+                    items[2].text + ")");
             return false;
         }
         TypeId named = TryResolveType(ck, items[2]);
-        if (named > kErrorType && KindOf(*ck.out, named) == TypeKind::Array) {
-            return FoldConstArray(ck, cd, form, named);
-        }
         if (named >= 0) {
-            Err(ck, form, "const " + cd.name + " needs a value; " + fix);
+            std::string shown = "value";
+            if (named > kErrorType && KindOf(*ck.out, named) == TypeKind::Array) {
+                shown = "(make " + ShowType(ck, named) + " v0 v1 ...)";
+            }
+            Err(ck, form,
+                "const " + cd.name + " needs a value; write (const " + cd.name + " " +
+                    Show(items[2]) + " " + shown + ")");
             return false;
         }
         value = CheckExpr(ck, items[2], -1);
         type = ExprType(ck, value);
-    } else {
-        type = ResolveType(ck, items[2]);
-        if (type != kErrorType && KindOf(*ck.out, type) == TypeKind::Array) {
-            return FoldConstArray(ck, cd, form, type);
+        if (type > kErrorType) {
+            Err(ck, form,
+                "const always states the type; write (const " + cd.name + " " + ShowType(ck, type) +
+                    " " + Show(items[2]) + ")");
         }
-        if (items.size() != 4) {
-            Err(ck, form, "(const NAME type value) takes one value; " + fix);
-            return false;
-        }
-        value = CheckExpr(ck, items[3], type);
-        if (!RequireType(ck, items[3], value, type, "const " + cd.name)) {
-            return false;
-        }
+        return false;
+    }
+    type = ResolveType(ck, items[2]);
+    bool is_array = type != kErrorType && KindOf(*ck.out, type) == TypeKind::Array;
+    if (items.size() != 4) {
+        Err(ck, form,
+            is_array ? "a value is one form; " + OldTableFix(cd, form)
+                     : "(const NAME type value) takes one value; " + fix);
+        return false;
+    }
+    if (is_array) {
+        return FoldConstArray(ck, cd, form, type);
+    }
+    value = CheckExpr(ck, items[3], type);
+    if (!RequireType(ck, items[3], value, type, "const " + cd.name)) {
+        return false;
     }
     if (type == kErrorType) {
         return false;
@@ -183,7 +185,7 @@ void ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
     }
 }
 
-// placement options come last, as on let: (const T (array u8 3) 1 2 3 :align 256)
+// placement options come last, as on let: (const T (array u8 3) (make ...) :align 256)
 const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& holder) {
     std::size_t first = form.items.size();
     for (std::size_t i = 2; i < form.items.size(); i++) {
@@ -197,7 +199,7 @@ const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& hold
     for (std::size_t i = first; i < form.items.size(); i += 2) {
         const Node& key = form.items[i];
         if (key.kind != NodeKind::Keyword) {
-            Err(ck, key, "placement options come last, after every value");
+            Err(ck, key, "placement options come last, after the value");
             continue;
         }
         const Node* value = i + 1 < form.items.size() ? &form.items[i + 1] : nullptr;
@@ -392,9 +394,9 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
     TypeId type = -1;
     const Node* value_node = nullptr;
     if (positional.empty()) {
-        Err(ck, form, "let " + name + " needs a type or a value; write (let " + name + " u8 0)");
+        Err(ck, form, "let " + name + " needs a type; write (let " + name + " u8 0)");
     } else if (positional.size() > 2) {
-        Err(ck, form, "(let name type value) takes at most a type and a value");
+        Err(ck, form, "(let name type value) takes one type and one value");
     } else if (positional.size() == 2) {
         type = ResolveType(ck, *positional[0]);
         value_node = positional[1];
@@ -403,43 +405,40 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
         value_node = type >= 0 ? nullptr : positional[0];
     }
 
-    if (value_node) {
-        bool is_array = type > kErrorType && KindOf(*ck.out, type) == TypeKind::Array;
-        if (is_array) {
+    if (value_node && type < 0 && IsBareLiteral(*value_node)) {
+        Err(ck, *value_node,
+            "(let " + name + " " + value_node->text + "): let always states the type; write (let " +
+                name + " u8 " + value_node->text + ")");
+        type = kErrorType;
+    } else if (value_node && type < 0) {
+        // the old (let name value): say what to write
+        ExprId value = CheckExpr(ck, *value_node, -1);
+        type = ExprType(ck, value);
+        if (type > kErrorType && type != kVoidType && type != kNeverType) {
             Err(ck, *value_node,
-                "arrays start zeroed; fill " + name +
-                    " in a fn, or write (const NAME (array t n) v0 v1 ...)");
-        } else if (type < 0 && IsBareLiteral(*value_node)) {
-            Err(ck, *value_node,
-                "(let " + name + " " + value_node->text +
-                    "): the literal has no type; write (let " + name + " u8 " + value_node->text +
-                    ")");
+                "let always states the type; write (let " + name + " " + ShowType(ck, type) + " " +
+                    Show(*value_node) + ")");
+        } else {
             type = kErrorType;
+        }
+    } else if (value_node && type > kErrorType) {
+        std::vector<std::uint8_t> bytes(TypeOf(*ck.out, type).size, 0);
+        bool folded = false;
+        if (KindOf(*ck.out, type) == TypeKind::Array) {
+            folded = FoldArrayLiteral(ck, *value_node, type, name, bytes, 0);
         } else {
             ExprId value = CheckExpr(ck, *value_node, type);
-            if (type >= 0) {
-                RequireType(ck, *value_node, value, type, "let " + name);
-            } else {
-                type = ExprType(ck, value);
-            }
-            if (type == kVoidType || type == kNeverType) {
+            std::size_t before = ck.errors->size();
+            folded = RequireType(ck, *value_node, value, type, "let " + name) &&
+                     FoldInit(ck, value, bytes, 0);
+            if (!folded && ck.errors->size() == before) {
                 Err(ck, *value_node,
-                    Show(*value_node) + " gives no value to start " + name + " with");
-                type = kErrorType;
+                    "a top-level let starts with a constant value; set " + name +
+                        " at the start of main instead");
             }
-            if (type > kErrorType) {
-                std::vector<std::uint8_t> bytes(TypeOf(*ck.out, type).size, 0);
-                std::size_t before = ck.errors->size();
-                if (!FoldInit(ck, value, bytes, 0)) {
-                    if (ck.errors->size() == before) {
-                        Err(ck, *value_node,
-                            "a top-level let starts with a constant value; set " + name +
-                                " at the start of main instead");
-                    }
-                } else {
-                    var.init = bytes;
-                }
-            }
+        }
+        if (folded) {
+            var.init = bytes;
         }
     }
     var.type = type < 0 ? kErrorType : type;

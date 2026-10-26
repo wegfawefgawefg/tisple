@@ -57,8 +57,8 @@ void MacroTests(TestResults& results) {
     CHECK(results, CallOk(results, in, "macros.shuffle", {250, 10}) == 10);
     // the caller's own tmp is not captured by swap's tmp#
     Built hygiene =
-        BuildText("(macro swap (args a b) `(do (let tmp# ,a) (set ,a ,b) (set ,b tmp#)))\n"
-                  "(fn f (returns u8) (let tmp u8 1) (let other u8 2) (swap tmp other) "
+        BuildText("(macro swap (a b) `(do (let tmp# u8 ,a) (set ,a ,b) (set ,b tmp#)))\n"
+                  "(fn f () u8 (let tmp u8 1) (let other u8 2) (swap tmp other) "
                   "(- (* tmp 10) other))");
     StartInterp(in, hygiene);
     CHECK(results, CallOk(results, in, "t.f", {}) == 19);
@@ -170,23 +170,22 @@ void KeyboardTests(TestResults& results) {
 }
 
 void StopTests(TestResults& results) {
-    Built spin = BuildText("(fn main (while true))");
+    Built spin = BuildText("(fn main () void (while true))");
     tisple::Interp in;
     StartInterp(in, spin);
     in.max_steps = 1000;
     tisple::InterpResult result = tisple::CallFunction(in, spin.program.main, {});
     CHECK(results, result.kind == tisple::StopKind::StepLimit);
     CHECK(results, result.message == "step limit of 1000 reached");
-    Built divide = BuildText("(fn f (args (a u8) (b u8)) (returns u8) (/ a b))");
+    Built divide = BuildText("(fn f ((a u8) (b u8)) u8 (/ a b))");
     StartInterp(in, divide);
     result = tisple::CallFunction(in, tisple::FindFunction(divide.program, "t.f"), {7, 0});
     CHECK(results, result.kind == tisple::StopKind::Error && result.message == "division by zero");
-    CHECK(results, tisple::FormatLoc(divide.program.sources, result.loc) == "t.tsp:1:41");
+    CHECK(results, tisple::FormatLoc(divide.program.sources, result.loc) == "t.tsp:1:26");
 }
 
 void IoTests(TestResults& results) {
-    Built built =
-        BuildText("(fn f (returns u16) (io_write u16 0xC0F0 0x1234) (io_read u16 0xC0F2))");
+    Built built = BuildText("(fn f () u16 (io_write u16 0xC0F0 0x1234) (io_read u16 0xC0F2))");
     tisple::Interp in;
     StartInterp(in, built);
     std::vector<std::pair<std::uint16_t, int>> trace;
@@ -209,12 +208,12 @@ void IoTests(TestResults& results) {
 void SemanticsTests(TestResults& results) {
     tisple::Interp in;
     Built loops = BuildText(
-        "(fn every_byte (returns u16) (let n u16 0) (for i u8 0 256 (set n (+ n 1))) n)\n"
-        "(fn every_i8 (returns u16) (let n u16 0) (for i i8 -128 128 (set n (+ n 1))) n)\n"
-        "(fn empty (returns u16) (let n u16 0) (for i u8 5 3 (set n (+ n 1))) n)\n"
-        "(fn exits (returns u8) (let n u8 0)\n"
+        "(fn every_byte () u16 (let n u16 0) (for i u8 0 256 (set n (+ n 1))) n)\n"
+        "(fn every_i8 () u16 (let n u16 0) (for i i8 -128 128 (set n (+ n 1))) n)\n"
+        "(fn empty () u16 (let n u16 0) (for i u8 5 3 (set n (+ n 1))) n)\n"
+        "(fn exits () u8 (let n u8 0)\n"
         "    (for i u8 0 100 (if (= i 3) (continue)) (if (= i 6) (break)) (set n (+ n i))) n)\n"
-        "(fn counter (returns u8) (let s u8 0) (for i u8 250 255 (set s i)) s)");
+        "(fn counter () u8 (let s u8 0) (for i u8 250 255 (set s i)) s)");
     CHECK(results, loops.ok);
     StartInterp(in, loops);
     CHECK(results, CallOk(results, in, "t.every_byte", {}) == 256);
@@ -224,15 +223,16 @@ void SemanticsTests(TestResults& results) {
     CHECK(results, CallOk(results, in, "t.counter", {}) == 254);
 
     Built pointers = BuildText(
-        "(struct S (a u8) (b u16) (c u8))\n"
+        "(struct S ((a u8) (b u16) (c u8)))\n"
         "(let arr (array S 4))\n"
-        "(fn step (returns u16) (let p (addr_of (at arr 0))) (- (as u16 (+ p 3)) (as u16 p)))\n"
-        "(fn wide (returns u16) (let p (as (ptr u16) 0x1000)) (as u16 (+ p 5)))\n"
-        "(fn copy (returns u16) (store (addr_of (at arr 2)) (S :a 1 :b 0x2345 :c 3))\n"
-        "    (let s (at arr 2)) (let q (addr_of (at arr 1))) (store q (load (addr_of (at arr "
+        "(fn step () u16 (let p (ptr S) (addr_of (at arr 0))) (- (as u16 (+ p 3)) (as u16 p)))\n"
+        "(fn wide () u16 (let p (ptr u16) (as (ptr u16) 0x1000)) (as u16 (+ p 5)))\n"
+        "(fn copy () u16 (store (addr_of (at arr 2)) (make S :a 1 :b 0x2345 :c 3))\n"
+        "    (let s S (at arr 2)) (let q (ptr S) (addr_of (at arr 1))) (store q (load (addr_of (at "
+        "arr "
         "2))))\n"
-        "    (+ s.b (u16 (. (at arr 1) c))))\n"
-        "(fn frame (returns u8) (let y u8 0) (let r y) (set y 9) r)");
+        "    (+ s.b (as u16 (at arr 1 c))))\n"
+        "(fn frame () u8 (let y u8 0) (let r u8 y) (set y 9) r)");
     CHECK(results, pointers.ok);
     if (!pointers.ok) {
         std::fprintf(stderr, "%s", ErrorText(pointers).c_str());
@@ -251,10 +251,10 @@ void SemanticsTests(TestResults& results) {
     CHECK(results, in.memory[base + 8] == 1 && in.memory[base + 9] == 0x45 &&
                        in.memory[base + 10] == 0x23 && in.memory[base + 11] == 3);
 
-    Built shifts = BuildText("(fn lsr (args (x u8)) (returns u8) (>> x 1))\n"
-                             "(fn asr (args (x i8)) (returns i8) (>> x 1))\n"
-                             "(fn widen (args (x i8)) (returns u16) (u16 x))\n"
-                             "(fn narrow (args (x u16)) (returns i8) (i8 x))");
+    Built shifts = BuildText("(fn lsr ((x u8)) u8 (>> x 1))\n"
+                             "(fn asr ((x i8)) i8 (>> x 1))\n"
+                             "(fn widen ((x i8)) u16 (as u16 x))\n"
+                             "(fn narrow ((x u16)) i8 (as i8 x))");
     StartInterp(in, shifts);
     CHECK(results, CallOk(results, in, "t.lsr", {0x80}) == 0x40);
     CHECK(results, CallOk(results, in, "t.asr", {0x80}) == 0xC0);

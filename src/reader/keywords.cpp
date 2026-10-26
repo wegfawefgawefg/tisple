@@ -6,18 +6,22 @@ namespace {
 
 // keep in step with docs/language.md; editors/ is generated from these
 const char* const kSpecialForms[] = {
-    "fn",         "let",     "const",
-    "struct",     "enum",    "if",
-    "do",         "while",   "for",
-    "match",      "return",  "break",
-    "continue",   "args",    "returns",
-    "set",        "and",     "or",
-    ".",          "_",       "as",
-    "macro",      "import",  "quote",
-    "quasiquote", "unquote", "unquote_splicing",
+    "fn",       "let",
+    "const",    "struct",
+    "enum",     "if",
+    "do",       "while",
+    "for",      "match",
+    "return",   "break",
+    "continue", "set",
+    "and",      "or",
+    ".",        "_",
+    "as",       "make",
+    "macro",    "import",
+    "quote",    "quasiquote",
+    "unquote",  "unquote_splicing",
 };
 
-const char* const kTypeNames[] = {"u8", "i8", "u16", "i16", "bool", "ptr", "array"};
+const char* const kTypeNames[] = {"u8", "i8", "u16", "i16", "bool", "void", "ptr", "array"};
 
 const char* const kBuiltins[] = {
     "at", "load", "store", "addr_of", "io_read", "io_write", "not", "+", "-", "*", "/",  "%",

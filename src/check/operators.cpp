@@ -66,7 +66,8 @@ void CheckOperands(Checker& ck, const Node& node, Op op, TypeId hint, ExprId& a,
             std::string type = ShowType(ck, right_hint);
             b = Fail(ck, right,
                      right.text + " does not fit in " + type + "; write (" + node.items[0].text +
-                         " (" + WiderFor(right.value) + " " + Show(left) + ") " + right.text + ")");
+                         " (as " + WiderFor(right.value) + " " + Show(left) + ") " + right.text +
+                         ")");
             return;
         }
         b = CheckExpr(ck, right, right_hint);
@@ -89,8 +90,8 @@ void CheckOperands(Checker& ck, const Node& node, Op op, TypeId hint, ExprId& a,
             !LiteralFits(KindOf(*ck.out, tb), left.value)) {
             a = Fail(ck, left,
                      left.text + " does not fit in " + ShowType(ck, tb) + "; write (" +
-                         node.items[0].text + " " + left.text + " (" + WiderFor(left.value) + " " +
-                         Show(right) + "))");
+                         node.items[0].text + " " + left.text + " (as " + WiderFor(left.value) +
+                         " " + Show(right) + "))");
             return;
         }
         a = CheckExpr(ck, left, tb);
@@ -124,7 +125,7 @@ std::string KindWord(const Checker& ck, TypeId type) {
     return ShowType(ck, type);
 }
 
-// (+ (u16 a) b): widen the narrower side, or convert the right side to the left's type
+// (+ (as u16 a) b): widen the narrower side, or convert the right side to the left's type
 std::string MismatchFix(const Checker& ck, const Node& node, TypeId ta, TypeId tb) {
     TypeKind ka = KindOf(*ck.out, ta);
     TypeKind kb = KindOf(*ck.out, tb);
@@ -135,9 +136,9 @@ std::string MismatchFix(const Checker& ck, const Node& node, TypeId ta, TypeId t
         return "";
     }
     if (KindBits(ka) < KindBits(kb)) {
-        return "; write (" + head + " (" + ShowType(ck, tb) + " " + left + ") " + right + ")";
+        return "; write (" + head + " (as " + ShowType(ck, tb) + " " + left + ") " + right + ")";
     }
-    return "; write (" + head + " " + left + " (" + ShowType(ck, ta) + " " + right + "))";
+    return "; write (" + head + " " + left + " (as " + ShowType(ck, ta) + " " + right + "))";
 }
 
 // (<< x n): x any integer, n always u8
@@ -239,7 +240,7 @@ ExprId CheckBinary(Checker& ck, const Node& node, Op op, TypeId hint) {
         if (tb != kU16Type) {
             return Fail(ck, node.items[2],
                         "a pointer moves by a u16 count of elements; write (" + head + " " +
-                            Show(node.items[1]) + " (u16 " + Show(node.items[2]) + "))");
+                            Show(node.items[1]) + " (as u16 " + Show(node.items[2]) + "))");
         }
         ExprId id = AddExpr(ck, op == Op::Add ? ExprKind::PtrAdd : ExprKind::PtrSub, ta, node);
         Expr& expr = ExprAt(ck, id);
@@ -315,42 +316,6 @@ ExprId CheckLogic(Checker& ck, const Node& node) {
     ExprId id = AddExpr(ck, head == "and" ? ExprKind::And : ExprKind::Or, kBoolType, node);
     ExprAt(ck, id).a = a;
     ExprAt(ck, id).b = b;
-    return id;
-}
-
-ExprId CheckConvert(Checker& ck, const Node& node, TypeId to) {
-    const std::string& head = node.items[0].text;
-    if (node.items.size() != 2) {
-        return Fail(ck, node, head + " converts one value; write (" + head + " x)");
-    }
-    const Node& arg = node.items[1];
-    if (IsBareLiteral(arg)) {
-        return Fail(ck, node,
-                    Show(node) +
-                        " converts nothing: a literal takes its type from where it is "
-                        "used; write " +
-                        arg.text);
-    }
-    ExprId a = CheckExpr(ck, arg, -1);
-    TypeId from = ExprType(ck, a);
-    if (!IsTyped(from)) {
-        return ErrorExpr(ck, node);
-    }
-    TypeKind kind = KindOf(*ck.out, from);
-    if (kind == TypeKind::Ptr) {
-        return Fail(ck, node,
-                    head + " converts integers; for a pointer write (as u16 " + Show(arg) + ")");
-    }
-    if (kind == TypeKind::Bool) {
-        return Fail(ck, node,
-                    head + " converts integers, not bool; write (if " + Show(arg) + " 1 0)");
-    }
-    // an enum member converts to its number; nothing converts back
-    if (!IsIntegerKind(kind) && kind != TypeKind::Enum) {
-        return Fail(ck, node, head + " converts integers and enums, not " + KindWord(ck, from));
-    }
-    ExprId id = AddExpr(ck, ExprKind::Convert, to, node);
-    ExprAt(ck, id).a = a;
     return id;
 }
 

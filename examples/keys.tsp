@@ -2,13 +2,13 @@
 
 (import apple2 a2)
 
-(enum Command none left right fire quit)
+(enum Command (none left right fire quit))
 
 (let player_x u8 140)
 (let running bool true)
 
-(fn read_command (returns Command)
-    (let key (io_read u8 a2.KBD))
+(fn read_command () Command
+    (let key u8 (io_read u8 a2.KBD))
     (if (< key 0x80)
         (return Command.none))
     (io_read u8 a2.KBDSTRB)
@@ -19,19 +19,19 @@
         (a2.KEY_ESC Command.quit)
         (_ Command.none)))
 
-(fn shoot
+(fn shoot () void
     (io_read u8 a2.SPKR))
 
-(fn run (args (c Command))
+(fn run ((c Command)) void
     (match c
-        (Command.none (do))
+        (Command.none)
         (Command.left (set player_x (- player_x 1)))
         (Command.right (set player_x (+ player_x 1)))
-        (Command.fire (do
+        (Command.fire
             (shoot)
-            (shoot)))
+            (shoot))
         (Command.quit (set running false))))
 
-(fn main
+(fn main () void
     (while running
         (run (read_command))))

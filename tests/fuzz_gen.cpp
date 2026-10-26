@@ -54,9 +54,20 @@ std::string Gen::Body(int depth, int count) {
     return text.empty() ? " (do)" : text;
 }
 
-// statements as one form with no value, so arms never have to agree on a type
-std::string Gen::Arm(int depth, int count) {
-    return " (do" + Body(depth, count) + " (do))";
+// an if arm or a match clause body whose value is dropped: statements, or now and then a
+// value of any type, since only a used value needs arms of one type
+std::string Gen::Arm(int depth, int count, bool clause) {
+    if (rng.Chance(15)) {
+        return " " + NonLit(AnyType(), 2);
+    }
+    if (clause && rng.Chance(15)) {
+        return "";
+    }
+    std::string body = Body(depth, count);
+    if (clause || count == 1) {
+        return body;
+    }
+    return " (do" + body + ")";
 }
 
 std::string Gen::LoopBody(int depth, bool is_while) {
@@ -82,7 +93,7 @@ std::string Gen::For(int depth) {
     } else if (t == T::U8) {
         end = "(& " + NonLit(T::U8, 1) + " 7)";
     } else {
-        end = std::string("(") + Name(t) + " (& " + NonLit(T::U8, 1) + " 7))";
+        end = std::string("(as ") + Name(t) + " (& " + NonLit(T::U8, 1) + " 7))";
     }
     if (rng.Chance(20) && t == T::U8) {
         start = "(& " + NonLit(T::U8, 1) + " 3)";
@@ -110,7 +121,8 @@ std::string Gen::For(int depth) {
         std::string offset = NonLit(T::U8, 1);
         wide = i;
         wide_ptr = Fresh("wp");
-        prefix = "(do (let " + wide_ptr + " (addr_of (at wb (u16 (& " + offset + " 15))))) ";
+        prefix =
+            "(do (let " + wide_ptr + " (ptr u8) (addr_of (at wb (as u16 (& " + offset + " 15))))) ";
     }
     scopes.emplace_back();
     scopes.back().push_back(VarInfo{i, t, true});
@@ -138,7 +150,7 @@ std::string Gen::Match(int depth) {
     if (rng.Chance(40)) {
         std::string text = "(match " + NonLit(T::Enum, 1);
         for (int m = 0; m < kEnumMembers; m++) {
-            text += " (E.e" + std::to_string(m) + Arm(depth - 1, 1) + ")";
+            text += " (E.e" + std::to_string(m) + Arm(depth - 1, 1 + rng.Below(2), true) + ")";
         }
         return text + ")";
     }
@@ -147,13 +159,13 @@ std::string Gen::Match(int depth) {
     int clauses = 2 + rng.Below(6);
     int value = rng.Below(20);
     for (int c = 0; c < clauses; c++) {
-        text += " (" + std::to_string(value) + Arm(depth - 1, 1) + ")";
+        text += " (" + std::to_string(value) + Arm(depth - 1, 1 + rng.Below(2), true) + ")";
         value += dense ? 1 : 1 + rng.Below(40);
         if (value > 255) {
             break;
         }
     }
-    return text + " (_" + Arm(depth - 1, 1) + "))";
+    return text + " (_" + Arm(depth - 1, 1, true) + "))";
 }
 
 std::string Gen::PointerLet() {
@@ -166,16 +178,16 @@ std::string Gen::PointerLet() {
     std::string p = Fresh("p");
     std::string text;
     if (rng.Chance(30)) {
-        text = "(let " + p + " (addr_of (at sp (& " + NonLit(T::U8, 1) + " 3))))";
+        text = "(let " + p + " (ptr S) (addr_of (at sp (& " + NonLit(T::U8, 1) + " 3))))";
         ptrs.push_back(PtrInfo{p, T::U8, true, scopes.size()});
         return text;
     }
     const ArrayInfo& a = *arrs[static_cast<std::size_t>(rng.Below(static_cast<int>(arrs.size())))];
     std::string index = "(& " + NonLit(T::U8, 1) + " " + std::to_string(a.count / 2 - 1) + ")";
     if (a.count > 256) {
-        index = "(u16 " + index + ")";
+        index = "(as u16 " + index + ")";
     }
-    text = "(let " + p + " (addr_of (at " + a.name + " " + index + ")))";
+    text = "(let " + p + " (ptr " + Name(a.elem) + ") (addr_of (at " + a.name + " " + index + ")))";
     ptrs.push_back(PtrInfo{p, a.elem, false, scopes.size()});
     return text;
 }
@@ -185,8 +197,8 @@ std::string Gen::Store() {
         if (p.to_struct && rng.Chance(40)) {
             int f = rng.Below(4);
             if (rng.Chance(25)) {
-                return "(store " + p.name + " (S :a " + Expr(T::U8, 1) + " :b " + Expr(T::I16, 1) +
-                       " :c " + Expr(T::Bool, 1) + " :d " + Expr(T::U8, 1) + "))";
+                return "(store " + p.name + " (make S :a " + Expr(T::U8, 1) + " :b " +
+                       Expr(T::I16, 1) + " :c " + Expr(T::Bool, 1) + " :d " + Expr(T::U8, 1) + "))";
             }
             return std::string("(store ") + p.name + " " + kFields[f] + " " +
                    Expr(kFieldTypes[f], 2) + ")";
@@ -194,8 +206,9 @@ std::string Gen::Store() {
     }
     for (const PtrInfo& p : ptrs) {
         if (!p.to_struct && rng.Chance(60)) {
-            std::string target =
-                rng.Chance(50) ? p.name : "(+ " + p.name + " (u16 (& " + NonLit(T::U8, 1) + " 3)))";
+            std::string target = rng.Chance(50)
+                                     ? p.name
+                                     : "(+ " + p.name + " (as u16 (& " + NonLit(T::U8, 1) + " 3)))";
             return "(store " + target + " " + Expr(p.elem, 2) + ")";
         }
     }
@@ -248,10 +261,10 @@ std::string Gen::Stmt(int depth) {
     case 6:
     case 7:
         if (rng.Chance(50)) {
-            return "(if " + Expr(T::Bool, 2) + Arm(depth - 1, 1 + rng.Below(2)) + ")";
+            return "(if " + Expr(T::Bool, 2) + Arm(depth - 1, 1 + rng.Below(2), false) + ")";
         }
-        return "(if " + Expr(T::Bool, 2) + Arm(depth - 1, 1 + rng.Below(2)) +
-               Arm(depth - 1, 1 + rng.Below(2)) + ")";
+        return "(if " + Expr(T::Bool, 2) + Arm(depth - 1, 1 + rng.Below(2), false) +
+               Arm(depth - 1, 1 + rng.Below(2), false) + ")";
     case 8:
     case 9:
         return For(depth);
@@ -291,19 +304,13 @@ std::string Gen::Function(std::size_t index) {
     scopes.clear();
     ptrs.clear();
     scopes.emplace_back();
-    std::string text = "(fn " + fn.name;
-    if (!fn.params.empty()) {
-        text += " (args";
-        for (std::size_t p = 0; p < fn.params.size(); p++) {
-            std::string name = Fresh("a");
-            text += " (" + name + " " + Name(fn.params[p]) + ")";
-            scopes.back().push_back(VarInfo{name, fn.params[p], false});
-        }
-        text += ")";
+    std::string text = "(fn " + fn.name + " (";
+    for (std::size_t p = 0; p < fn.params.size(); p++) {
+        std::string name = Fresh("a");
+        text += std::string(p == 0 ? "" : " ") + "(" + name + " " + Name(fn.params[p]) + ")";
+        scopes.back().push_back(VarInfo{name, fn.params[p], false});
     }
-    if (fn.has_ret) {
-        text += std::string(" (returns ") + Name(fn.ret) + ")";
-    }
+    text += std::string(") ") + (fn.has_ret ? Name(fn.ret) : "void");
     // small functions get inlined, big ones called
     budget = fn.name != "main" && rng.Chance(40) ? 1 + rng.Below(2) : 6 + rng.Below(14);
     while (budget > 0) {
@@ -316,11 +323,11 @@ std::string Gen::Function(std::size_t index) {
 }
 
 std::string Gen::Program() {
-    std::string text = "(struct S (a u8) (b i16) (c bool) (d u8))\n(enum E";
+    std::string text = "(struct S ((a u8) (b i16) (c bool) (d u8)))\n(enum E (";
     for (int m = 0; m < kEnumMembers; m++) {
-        text += " e" + std::to_string(m);
+        text += std::string(m == 0 ? "" : " ") + "e" + std::to_string(m);
     }
-    text += ")\n";
+    text += "))\n";
     for (T t : {T::U8, T::I8, T::U16, T::I16, T::Bool, T::Enum}) {
         int count = 1 + rng.Below(3);
         for (int i = 0; i < count; i++) {
@@ -338,8 +345,18 @@ std::string Gen::Program() {
         a.elem = static_cast<T>(rng.Below(5));
         a.count = kCounts[rng.Below(6)];
         a.pointers = IsInt(a.elem) && a.count >= 8 && rng.Chance(40);
-        text +=
-            "(let " + a.name + " (array " + Name(a.elem) + " " + std::to_string(a.count) + "))\n";
+        std::string type =
+            std::string("(array ") + Name(a.elem) + " " + std::to_string(a.count) + ")";
+        std::string init;
+        if (a.count <= 16 && rng.Chance(40)) {
+            // a top-level array may start from a value
+            init = " (make " + type;
+            for (std::uint32_t k = 0; k < a.count; k++) {
+                init += " " + Literal(a.elem);
+            }
+            init += ")";
+        }
+        text += "(let " + a.name + " " + type + init + ")\n";
         arrays.push_back(a);
     }
     // one array of pointer targets always exists
@@ -355,14 +372,14 @@ std::string Gen::Program() {
     table.elem = T::U16;
     table.count = 8;
     table.is_const = true;
-    text += "(const KT (array u16 8)";
+    text += "(const KT (array u16 8) (make (array u16 8)";
     for (int i = 0; i < 8; i++) {
         text += " " + Literal(T::U16);
     }
-    text += ")\n";
+    text += "))\n";
     arrays.push_back(table);
     text += "(let sa (array S 8))\n(let sp (array S 4))\n";
-    text += "(let gs (S :a " + Literal(T::U8) + " :b " + Literal(T::I16) + " :c " +
+    text += "(let gs S (make S :a " + Literal(T::U8) + " :b " + Literal(T::I16) + " :c " +
             Literal(T::Bool) + " :d " + Literal(T::U8) + "))\n";
 
     int fn_count = 2 + rng.Below(4);

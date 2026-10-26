@@ -87,9 +87,31 @@ ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string
     return Fail(ck, node, sd.name + " has no field " + field + "; its fields are " + FieldList(sd));
 }
 
+namespace {
+
+// (at arr i x y): the element's field path
+ExprId AtPath(Checker& ck, const Node& node, ExprId element) {
+    ExprId value = element;
+    for (std::size_t i = 3; i < node.items.size(); i++) {
+        const Node& field = node.items[i];
+        if (field.kind != NodeKind::Symbol || field.text.find('.') != std::string::npos) {
+            return Fail(ck, field, "(at arr i field ...) takes plain field names, like x");
+        }
+        value = FieldAccess(ck, field, value, field.text);
+        if (ExprType(ck, value) == kErrorType) {
+            return value;
+        }
+    }
+    return value;
+}
+
+} // namespace
+
 ExprId CheckAt(Checker& ck, const Node& node) {
-    if (node.items.size() != 3) {
-        return Fail(ck, node, "at takes an array and an index; write (at arr i)");
+    if (node.items.size() < 3) {
+        return Fail(ck, node,
+                    "at takes an array, an index and maybe field names; write (at arr i) or "
+                    "(at arr i x)");
     }
     const Node& array_node = node.items[1];
     ExprId array = CheckExpr(ck, array_node, -1);
@@ -98,9 +120,13 @@ ExprId CheckAt(Checker& ck, const Node& node) {
         return ErrorExpr(ck, node);
     }
     if (Kind(ck, type) == TypeKind::Ptr) {
+        std::string path;
+        for (std::size_t i = 3; i < node.items.size(); i++) {
+            path += " " + Show(node.items[i]);
+        }
         return Fail(ck, node,
                     "at indexes arrays; through a pointer write (load (+ " + Show(array_node) +
-                        " " + Show(node.items[2]) + "))");
+                        " " + Show(node.items[2]) + ")" + path + ")");
     }
     if (Kind(ck, type) != TypeKind::Array) {
         return Fail(ck, array_node,
@@ -129,7 +155,7 @@ ExprId CheckAt(Checker& ck, const Node& node) {
     ExprId id = AddExpr(ck, ExprKind::Index, elem, node);
     ExprAt(ck, id).a = array;
     ExprAt(ck, id).b = index;
-    return id;
+    return AtPath(ck, node, id);
 }
 
 ExprId CheckDot(Checker& ck, const Node& node) {
@@ -145,21 +171,26 @@ ExprId CheckDot(Checker& ck, const Node& node) {
         fields += "." + field.text;
     }
     const Node& base_node = node.items[1];
-    // a template cannot glue ,s and .x into one symbol, so expanded code may write (. s x)
+    // a template cannot glue ,s and .x into one symbol, so only expanded code writes (. s x)
     if (base_node.kind == NodeKind::Symbol && node.expansion == 0) {
         return Fail(ck, node,
-                    Show(node) + " reads a field of a plain name; write " + base_node.text +
-                        fields);
+                    Show(node) + " is for macro templates; write " + base_node.text + fields);
     }
-    if (HeadName(base_node) == "load") {
-        std::string fix = "(load";
+    const std::string& base_head = HeadName(base_node);
+    if (base_head == "load" || (base_head == "at" && node.expansion == 0)) {
+        std::string fix = "(" + base_head;
         for (std::size_t i = 1; i < base_node.items.size(); i++) {
             fix += " " + Show(base_node.items[i]);
         }
         for (std::size_t i = 2; i < node.items.size(); i++) {
             fix += " " + node.items[i].text;
         }
-        return Fail(ck, node, Show(node) + " reads a field through a pointer; write " + fix + ")");
+        return Fail(ck, node, Show(node) + " is for macro templates; write " + fix + ")");
+    }
+    if (node.expansion == 0) {
+        return Fail(ck, node,
+                    Show(node) +
+                        " is for macro templates; write name.x, (at arr i x) or (load p x)");
     }
     ExprId base = CheckExpr(ck, base_node, -1);
     TypeId type = ExprType(ck, base);
@@ -262,85 +293,6 @@ ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function) {
     expr.ref = function;
     expr.first = AddList(ck, args);
     expr.count = static_cast<std::uint32_t>(args.size());
-    return id;
-}
-
-ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type) {
-    const StructDecl sd = ck.out->structs[static_cast<std::size_t>(TypeOf(*ck.out, type).decl)];
-    const std::string& head = node.items[0].text;
-    if (sd.fields.empty()) {
-        return ErrorExpr(ck, node);
-    }
-    std::vector<std::string> names;
-    std::vector<const Node*> values;
-    for (std::size_t i = 1; i < node.items.size(); i += 2) {
-        const Node& key = node.items[i];
-        if (key.kind != NodeKind::Keyword) {
-            return Fail(ck, key,
-                        "struct literals name every field: write (" + head + " :" +
-                            sd.fields[0].name + " value ...)");
-        }
-        if (i + 1 >= node.items.size()) {
-            return Fail(ck, key, key.text + " has no value; write " + key.text + " value");
-        }
-        std::string name = key.text.substr(1);
-        if (FindFieldIndex(*ck.out, type, name) < 0) {
-            return Fail(ck, key,
-                        sd.name + " has no field " + name + "; its fields are " + FieldList(sd));
-        }
-        for (const std::string& other : names) {
-            if (other == name) {
-                return Fail(ck, key, key.text + " is given twice; give each field once");
-            }
-        }
-        names.push_back(name);
-        values.push_back(&node.items[i + 1]);
-    }
-
-    std::vector<const Node*> ordered(sd.fields.size(), nullptr);
-    for (std::size_t i = 0; i < names.size(); i++) {
-        ordered[static_cast<std::size_t>(FindFieldIndex(*ck.out, type, names[i]))] = values[i];
-    }
-    std::string fix = "(" + head;
-    std::string missing;
-    for (std::size_t i = 0; i < sd.fields.size(); i++) {
-        fix += " :" + sd.fields[i].name + " " + (ordered[i] ? Show(*ordered[i]) : "...");
-        if (!ordered[i]) {
-            missing += (missing.empty() ? "" : ", ") + sd.fields[i].name;
-        }
-    }
-    fix += ")";
-    if (!missing.empty()) {
-        return Fail(ck, node,
-                    Show(node) + " is missing " + missing + "; name every field in order: " + fix);
-    }
-    bool in_order = true;
-    for (std::size_t i = 0; i < names.size(); i++) {
-        in_order = in_order && names[i] == sd.fields[i].name;
-    }
-    if (!in_order) {
-        return Fail(ck, node, Show(node) + " fields out of order; write " + fix);
-    }
-
-    std::vector<ExprId> fields;
-    for (std::size_t i = 0; i < sd.fields.size(); i++) {
-        TypeId field_type = sd.fields[i].type;
-        ExprId value = CheckExpr(ck, *ordered[i], field_type);
-        RequireType(ck, *ordered[i], value, field_type,
-                    "field " + sd.fields[i].name + " of " + sd.name);
-        if (Kind(ck, field_type) == TypeKind::Struct) {
-            RequireStructSource(ck, *ordered[i], value);
-        }
-        if (Kind(ck, field_type) == TypeKind::Array) {
-            Err(ck, *ordered[i],
-                "array fields start zeroed; leave the struct literal out and fill " +
-                    sd.fields[i].name + " with a for loop");
-        }
-        fields.push_back(value);
-    }
-    ExprId id = AddExpr(ck, ExprKind::StructLit, type, node);
-    ExprAt(ck, id).first = AddList(ck, fields);
-    ExprAt(ck, id).count = static_cast<std::uint32_t>(fields.size());
     return id;
 }
 

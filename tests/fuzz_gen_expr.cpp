@@ -119,7 +119,7 @@ std::string Gen::StructField(T t) {
     if (rng.Chance(40)) {
         return std::string("gs.") + field;
     }
-    return "(. (at sa (& " + NonLit(T::U8, 0) + " 7)) " + field + ")";
+    return "(at sa (& " + NonLit(T::U8, 0) + " 7) " + field + ")";
 }
 
 // never a bare literal: those need a type from their context
@@ -193,7 +193,7 @@ std::string Gen::PointerRead(T t, int depth) {
     if (rng.Chance(50)) {
         return "(load " + p + ")";
     }
-    return "(load (+ " + p + " (u16 (& " + NonLit(T::U8, depth - 1) + " 3))))";
+    return "(load (+ " + p + " (as u16 (& " + NonLit(T::U8, depth - 1) + " 3))))";
 }
 
 std::string Gen::IntExpr(T t, int depth) {
@@ -220,9 +220,9 @@ std::string Gen::IntExpr(T t, int depth) {
     case 5: {
         T from = kInts[rng.Below(4)];
         if (rng.Chance(15) && t == T::U8) {
-            return "(u8 " + NonLit(T::Enum, depth - 1) + ")";
+            return "(as u8 " + NonLit(T::Enum, depth - 1) + ")";
         }
-        return std::string("(") + Name(t) + " " + NonLit(from, depth - 1) + ")";
+        return std::string("(as ") + Name(t) + " " + NonLit(from, depth - 1) + ")";
     }
     case 6:
         return "(~ " + NonLit(t, depth - 1) + ")";
