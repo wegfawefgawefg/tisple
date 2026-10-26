@@ -34,7 +34,8 @@ struct Node {
     std::int64_t value = 0; // integers
     std::string bytes;      // strings, escapes decoded
     QuoteMark mark = QuoteMark::None;
-    std::vector<Node> items; // lists; a marked list is (quote_name form)
+    std::vector<Node> items;     // lists; a marked list is (quote_name form)
+    std::uint32_t expansion = 0; // 0: written in the source; n: made by macro call n - 1
 };
 
 // a whole file: top-level forms plus every comment's span, in source order

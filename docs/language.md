@@ -120,6 +120,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | Form | Meaning |
 | --- | --- |
 | `(const name type value)` | compile-time constant; `type` optional |
+| `(const NAME (array t n) v0 v1 ...)` | constant table: exactly `n` values straight after the type (settled 2026-10-26) |
 | `(let name type value)` | variable; `type` or `value` may be omitted, not both |
 | `(set place value)` | assign to a name, `s.x`, `(at ...)` or `(. ...)` |
 | `(fn name (args (p t) ...) (returns t) body ...)` | function; `args` omitted when none, `returns` omitted when it returns nothing |
@@ -146,7 +147,8 @@ is dropped and `(return)` takes no value. Calls always use parentheses,
 A dotted name means "look inside": a module (`hgr.plot`), an enum
 (`Action.fire`) or a struct value (`dot.x`). The checker resolves the first
 segment. Writing `(. dot x)` for a plain name is an error that says to write
-`dot.x`.
+`dot.x`. Code a macro made is exempt, since a template cannot glue `,s` and
+`.x` into one symbol: templates write `(. ,s x)` (owner, 2026-10-26).
 
 Built-in names (`at`, `load`, `addr_of`, `as`, ...) cannot be used for
 variables, functions or fields; the error says to rename.
@@ -239,8 +241,9 @@ hold. Named regions (`:in`) come later.
 
 ## Out of the first subset
 
-Named regions, strings, function pointers, recursion, inline assembly,
-`/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
+Named regions, strings, function pointers, recursion, inline assembly. `/` and
+`%` pass the checker and interpreter; the backend gets them later. All planned;
+none needed to prove the backend.
 
 ## Settled 2026-10-26
 

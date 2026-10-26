@@ -39,6 +39,8 @@ list(FILTER TISPLE_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
 add_library(tisple_core STATIC ${TISPLE_SOURCES})
 target_include_directories(tisple_core PUBLIC src third_party/chips)
 tisple_warnings(tisple_core)
+# lib/ is where imports look after the entry file's folder
+target_compile_definitions(tisple_core PRIVATE TISPLE_LIB_DIR="${CMAKE_SOURCE_DIR}/lib")
 # vendored single-file C library: no warnings-as-errors for its one compile unit
 set_source_files_properties(src/emu/chips_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
 

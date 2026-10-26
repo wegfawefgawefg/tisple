@@ -1,5 +1,6 @@
 #include "check.hpp"
 #include "source_file.hpp"
+#include "test_check.hpp"
 #include "test_emu.hpp"
 #include "test_reader.hpp"
 
@@ -25,6 +26,14 @@ int main() {
     tisple_tests::RunReaderTests(results);
     tisple_tests::RunFormatTests(results);
     tisple_tests::RunShowTests(results);
+    tisple_tests::RunCheckExampleTests(results);
+    tisple_tests::RunCheckNameTests(results);
+    tisple_tests::RunCheckTypeTests(results);
+    tisple_tests::RunCheckFormTests(results);
+    tisple_tests::RunExpandTests(results);
+    tisple_tests::RunLayoutTests(results);
+    tisple_tests::RunInterpTests(results);
+    tisple_tests::RunInterpArithTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;
