@@ -117,6 +117,16 @@ void GenIf(Gen& g, const Expr& e) {
 }
 
 void GenReturn(Gen& g, const Expr& e) {
+    if (!g.inlines.empty()) {
+        InlineCtx ctx = g.inlines.back(); // a copy: the value may inline more calls
+        if (e.a >= 0 && ctx.dst.size == 2) {
+            EvalInto(g, e.a, ctx.dst);
+        } else if (e.a >= 0) {
+            EvalA(g, e.a);
+        }
+        Jump(g, ctx.ret_label);
+        return;
+    }
     if (e.a >= 0) {
         std::uint32_t size = ExprSize(*g.program, e.a);
         if (size == 2) {

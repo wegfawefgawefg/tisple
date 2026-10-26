@@ -128,6 +128,24 @@ void TestCalls(TestResults& results) {
                  "t.f", {13});
 }
 
+// small functions are inlined: returns in the middle, returns whose value inlines more
+// calls (this crashed once), loops around inlined calls
+void TestInline(TestResults& results) {
+    CheckProgram(results,
+                 "(let g u8 0)\n"
+                 "(let out (array u8 16))\n"
+                 "(fn inc (args (x u16)) (returns u16) (+ x 1))\n"
+                 "(fn twice (args (x u16)) (returns u16)\n"
+                 "    (if (= x 0) (return (inc (inc (inc x)))))\n"
+                 "    (inc (inc x)))\n"
+                 "(fn put (args (i u8) (v u8)) (set (at out (& i 15)) v) (set g (+ g v)))\n"
+                 "(fn small (args (x u8)) (returns u8) (if (> x 9) (return 9)) x)\n"
+                 "(fn f (args (n u16)) (returns u16)\n"
+                 "    (for i u8 0 16 (put i (small i)))\n"
+                 "    (+ (twice n) (+ (twice 0) (u16 g))))",
+                 "t.f", {1000});
+}
+
 void TestMatch(TestResults& results) {
     const char* text =
         "(enum E a b c d e f g)\n"
@@ -240,6 +258,7 @@ void RunBackendTests(TestResults& results) {
     TestArrays(results);
     TestPointers(results);
     TestCalls(results);
+    TestInline(results);
     TestMatch(results);
     TestIo(results);
 }

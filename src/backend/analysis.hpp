@@ -31,6 +31,9 @@ bool ConstValue(const Program& program, ExprId id, std::uint16_t& value);
 // the same pure place or value, written the same way
 bool SameExpr(const Program& program, ExprId a, ExprId b);
 
+// how many expressions make up id (a size measure for inlining)
+std::uint32_t CountExprs(const Program& program, ExprId id);
+
 // pointer variables some load or store goes through directly: these live in zero page
 std::vector<bool> FindDerefPointers(const Program& program);
 

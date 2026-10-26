@@ -66,6 +66,7 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
+    std::vector<std::uint32_t> fn_exprs;    // by function: expressions in its body
     std::vector<bool> deref;                // by var: some load or store goes straight through it
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
@@ -138,6 +139,12 @@ struct LoopCtx {
     std::int32_t continue_label = -1;
 };
 
+// a call being inlined: its returns jump to ret_label with the value in A or in dst
+struct InlineCtx {
+    std::int32_t ret_label = -1;
+    Opnd dst; // 16-bit results
+};
+
 // a zero-page pointer kept at base + (i & $FF00) for a u16 loop counter i whose low byte
 // lives in Y, so base + i is (ptr),Y; it moves up a page when the counter's high byte does
 struct Derived {
@@ -169,6 +176,7 @@ struct Gen {
     int loop_depth = 0;
     int for_depth = 0;
     std::vector<LoopCtx> loops;
+    std::vector<InlineCtx> inlines;
     std::uint32_t temp_top = 0;
     std::uint32_t ptemp_top = 0;
     std::uint32_t last_file = 0xFFFFFFFF;

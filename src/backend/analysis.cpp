@@ -229,6 +229,15 @@ bool SameExpr(const Program& program, ExprId a, ExprId b) {
     }
 }
 
+std::uint32_t CountExprs(const Program& program, ExprId id) {
+    std::uint32_t count = 0;
+    AnyExpr(program, id, [&](const Expr&) {
+        count++;
+        return false;
+    });
+    return count;
+}
+
 std::vector<bool> FindDerefPointers(const Program& program) {
     std::vector<bool> deref(program.vars.size(), false);
     for (const Expr& e : program.exprs) {

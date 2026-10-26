@@ -4,6 +4,10 @@ namespace tisple {
 
 namespace {
 
+// functions this small (in expressions) are inlined at every call, this many deep at most
+constexpr std::uint32_t kMaxInlineExprs = 24;
+constexpr std::size_t kMaxInlineDepth = 4;
+
 const Expr& At(const Gen& g, ExprId id) {
     return ExprOf(*g.program, id);
 }
@@ -145,6 +149,31 @@ Opnd EvalConvert(Gen& g, const Expr& e, const Opnd* dst) {
     Emit(g, Mn::EOR, Mode::Imm, Num(0xFF));
     StoreA(g, d, 1);
     return d;
+}
+
+// the callee's body right here, its arguments already in its frame: no JSR or RTS, and a
+// loop around the call can keep its counter in a register
+Opnd InlineBody(Gen& g, const Function& fn, std::uint32_t size, const Opnd* dst) {
+    InlineCtx ctx;
+    ctx.ret_label = NewLabel(g);
+    bool wide = fn.ret != kVoidType && size == 2;
+    if (wide) {
+        ctx.dst = Dest16(g, dst);
+    }
+    g.inlines.push_back(ctx);
+    if (fn.ret == kVoidType || size == 0) {
+        GenStmt(g, fn.body);
+    } else if (size == 1) {
+        EvalA(g, fn.body);
+    } else {
+        EvalInto(g, fn.body, ctx.dst);
+    }
+    g.inlines.pop_back();
+    PlaceLabel(g, ctx.ret_label);
+    if (fn.ret == kVoidType || size == 0) {
+        return ImmOpnd(0, 1);
+    }
+    return wide ? ctx.dst : InA();
 }
 
 Opnd EvalIf(Gen& g, const Expr& e, const Opnd* dst) {
@@ -353,8 +382,12 @@ Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
             MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(param)]), pending[i].size, 1);
         CopyOpnd(g, pending[i], slot);
     }
-    Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->fn_sym[static_cast<std::size_t>(e.ref)]));
     std::uint32_t size = SizeOf(g, fn.ret);
+    if (g.be->fn_exprs[static_cast<std::size_t>(e.ref)] <= kMaxInlineExprs &&
+        g.inlines.size() < kMaxInlineDepth) {
+        return InlineBody(g, fn, size, dst);
+    }
+    Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->fn_sym[static_cast<std::size_t>(e.ref)]));
     if (fn.ret == kVoidType || size == 0) {
         return ImmOpnd(0, 1);
     }

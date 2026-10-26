@@ -304,7 +304,8 @@ std::string Gen::Function(std::size_t index) {
     if (fn.has_ret) {
         text += std::string(" (returns ") + Name(fn.ret) + ")";
     }
-    budget = 6 + rng.Below(14);
+    // small functions get inlined, big ones called
+    budget = fn.name != "main" && rng.Chance(40) ? 1 + rng.Below(2) : 6 + rng.Below(14);
     while (budget > 0) {
         text += "\n    " + Stmt(3);
     }
