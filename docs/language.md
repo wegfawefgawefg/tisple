@@ -218,6 +218,14 @@ Apple II. One feature instead of separate table, unroll and generics features.
 This is the old Lisp trick of writing the fast code as a generator: the
 program says what to compute, the macro writes out the straight-line code.
 
+Two levels, one syntax: code that runs on the Apple II is typed, static and
+non-recursive, because tags, a heap, closures and deep stacks are what make
+dynamic languages slow on a 1 MHz 6502. Code that runs in the compiler (macro
+bodies) uses the same forms, `fn`, `let`, `if`, `match`, with relaxed rules:
+any-size integers, lists, symbols, recursion, no annotations needed. A plain
+Tisple function like `row_start` can be called from a macro at compile time and
+also compiled for the Apple II.
+
 ```scheme
 (macro unroll (args n body)
     `(do ,@(repeat n body)))
