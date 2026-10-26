@@ -50,11 +50,12 @@ struct ConstInfo {
 struct MacroInfo {
     std::string name;
     std::int32_t module = -1;
-    Loc loc;  // the name
-    Loc form; // the whole (macro ...) form
-    std::vector<std::string> params;
+    Loc loc;                         // the name
+    Loc form;                        // the whole (macro ...) form
+    std::vector<std::string> params; // without the &
     std::vector<Loc> param_locs;
-    Node body; // the form inside the template's `
+    bool rest = false;      // the last parameter follows a &
+    std::vector<Node> body; // the forms after the parameter list
 };
 
 struct NameIndex {

@@ -5,9 +5,10 @@
 
 namespace tisple {
 
-// Common Lisp-style template macros, expanded tree to tree before checking.
+// Macros, expanded tree to tree before checking: a macro body is code that runs in the
+// compiler (src/macro/) and gives the forms to paste in.
 // Removes every (macro ...) form and replaces every call with its expansion.
-// Template forms get the call's span and an expansion id (Node::expansion), so
+// Forms a macro makes get the call's span and an expansion id (Node::expansion), so
 // errors point at the call and name the macro; argument forms keep their own spans.
 // names, when given, gets every macro, its parameters and every call's head (editor tools).
 bool ExpandProgram(LoadedProgram& program, std::vector<Diagnostic>& errors,

@@ -201,8 +201,9 @@ Definition Describe(const IndexBuilder& ib, const NameUse& use) {
     case NameUseKind::Macro: {
         const MacroInfo& info = ib.names->macros[i];
         std::string params;
-        for (const std::string& param : info.params) {
-            params += (params.empty() ? "" : " ") + param;
+        for (std::size_t p = 0; p < info.params.size(); p++) {
+            bool rest = info.rest && p + 1 == info.params.size();
+            params += (params.empty() ? "" : " ") + std::string(rest ? "& " : "") + info.params[p];
         }
         def.name = info.name;
         def.qualified = ModuleOf(ib, info.module) + "." + info.name;

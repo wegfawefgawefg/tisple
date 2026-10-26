@@ -103,16 +103,16 @@ EditorIndex IndexFile(const std::string& relative) {
 void DotTests(TestResults& results) {
     EditorIndex index = IndexFile("examples/dot/main.tsp");
     CHECK(results, index.errors.empty());
-    CHECK(results, index.sources.files.size() == 3);
+    CHECK(results, index.sources.files.size() == 4);
     const char* main = "dot/main.tsp";
     const char* hgr = "gfx/hgr.tsp";
     const Expect expects[] = {
         // (hgr.flip dot.x dot.y): module, function, global, field, global, field
-        {main, 36, 6, SymbolKind::Module, "module gfx/hgr", hgr, 1, 1},
-        {main, 36, 10, SymbolKind::Function, "fn flip ((x u16) (y u8)) void", hgr, 41, 5},
-        {main, 36, 15, SymbolKind::Global, "Dot", main, 10, 6},
-        {main, 36, 19, SymbolKind::Field, "field x u16 of Dot", main, 8, 15},
-        {main, 36, 25, SymbolKind::Field, "field y u8 of Dot", main, 8, 23},
+        {main, 35, 6, SymbolKind::Module, "module gfx/hgr", hgr, 1, 1},
+        {main, 35, 10, SymbolKind::Function, "fn flip ((x u16) (y u8)) void", hgr, 34, 5},
+        {main, 35, 15, SymbolKind::Global, "Dot", main, 10, 6},
+        {main, 35, 19, SymbolKind::Field, "field x u16 of Dot", main, 8, 15},
+        {main, 35, 25, SymbolKind::Field, "field y u8 of Dot", main, 8, 23},
         // (io_read u8 a2.KBD): a constant from lib/apple2
         {main, 19, 29, SymbolKind::Module, "module apple2", "lib/apple2.tsp", 1, 1},
         {main, 19, 32, SymbolKind::Constant, "u16 = 0xC000 (49152)", "lib/apple2.tsp", 6, 8},
@@ -122,16 +122,16 @@ void DotTests(TestResults& results) {
         {main, 20, 12, SymbolKind::Local, "u8", main, 19, 10},
         {main, 21, 17, SymbolKind::EnumType, "enum Action (none left right up down)", main, 6, 7},
         {main, 21, 24, SymbolKind::EnumMember, "Action.none = 0", main, 6, 15},
-        {main, 43, 29, SymbolKind::EnumMember, "Action.left = 1", main, 6, 20},
+        {main, 42, 29, SymbolKind::EnumMember, "Action.left = 1", main, 6, 20},
         {main, 18, 20, SymbolKind::EnumType, "enum Action (none left right up down)", main, 6, 7},
-        {main, 38, 29, SymbolKind::Function, "fn read_action () Action", main, 18, 5},
+        {main, 37, 29, SymbolKind::Function, "fn read_action () Action", main, 18, 5},
         // (make Dot :x 140 :y 96): the type and the field names
         {main, 10, 20, SymbolKind::StructType, "struct Dot ((x u16) (y u8))", main, 8, 9},
         {main, 10, 25, SymbolKind::Field, "field x u16 of Dot", main, 8, 15},
         // macros: the call, the argument, the parameters in the template
-        {main, 45, 30, SymbolKind::Macro, "macro dec (place)", main, 15, 8},
-        {main, 45, 34, SymbolKind::Global, "Dot", main, 10, 6},
-        {main, 45, 38, SymbolKind::Field, "field x u16 of Dot", main, 8, 15},
+        {main, 44, 30, SymbolKind::Macro, "macro dec (place)", main, 15, 8},
+        {main, 44, 34, SymbolKind::Global, "Dot", main, 10, 6},
+        {main, 44, 38, SymbolKind::Field, "field x u16 of Dot", main, 8, 15},
         {main, 16, 12, SymbolKind::Parameter, "parameter place of macro dec", main, 15, 13},
         {main, 12, 13, SymbolKind::Parameter, "parameter place of macro inc", main, 12, 13},
         // the language's own words
@@ -139,10 +139,20 @@ void DotTests(TestResults& results) {
         {main, 8, 17, SymbolKind::PrimitiveType, "u16", nullptr, 0, 0},
         {main, 13, 19, SymbolKind::Builtin, "(+ a b)", nullptr, 0, 0},
         // inside gfx/hgr
-        {hgr, 41, 12, SymbolKind::Parameter, "u16", hgr, 41, 12},
-        {hgr, 43, 55, SymbolKind::Parameter, "u16", hgr, 41, 12},
-        {hgr, 43, 10, SymbolKind::Local, "(ptr u8)", hgr, 43, 10},
-        {hgr, 20, 18, SymbolKind::Global, "(array u8 192)", hgr, 8, 6},
+        {hgr, 34, 12, SymbolKind::Parameter, "u16", hgr, 34, 12},
+        {hgr, 36, 38, SymbolKind::Parameter, "u16", hgr, 34, 12},
+        {hgr, 35, 10, SymbolKind::Local, "(ptr u8)", hgr, 35, 10},
+        // a table a macro made: declared where its name is written, in the macro call
+        {hgr, 35, 41, SymbolKind::Constant, "(array u16 192)", hgr, 14, 15},
+        {hgr, 14, 9, SymbolKind::Macro, "macro table (name type count f & options)",
+         "lib/tables.tsp", 7, 8},
+        // the function the table calls while compiling
+        {hgr, 14, 27, SymbolKind::Function, "fn row_start ((y u8)) u16", hgr, 8, 5},
+        // macro code: parameters inside and outside the template
+        {"lib/tables.tsp", 9, 43, SymbolKind::Parameter, "parameter f of macro table",
+         "lib/tables.tsp", 7, 31},
+        {"lib/tables.tsp", 14, 23, SymbolKind::Parameter, "parameter row of macro sprite_row",
+         "lib/tables.tsp", 13, 20},
     };
     for (const Expect& expect : expects) {
         CHECK(results, Matches(index, expect));
@@ -155,14 +165,14 @@ void DotTests(TestResults& results) {
     CHECK(results, key_use && !key_use->declaration);
 
     // hover text: the leading comment, and for lib constants the trailing one too
-    const Definition* flip = DefOf(index, TokenAt(index, main, 36, 10));
+    const Definition* flip = DefOf(index, TokenAt(index, main, 35, 10));
     CHECK(results, flip && flip->doc == "xor one pixel, so drawing twice erases it");
     CHECK(results, flip && !flip->library);
     const Definition* kbd = DefOf(index, TokenAt(index, main, 19, 32));
     CHECK(results,
           kbd && kbd->doc == "keyboard\n\nread: last key, bit 7 set while a new key waits");
     CHECK(results, kbd && kbd->library);
-    const Definition* x = DefOf(index, TokenAt(index, hgr, 41, 12));
+    const Definition* x = DefOf(index, TokenAt(index, hgr, 34, 12));
     CHECK(results, x && x->doc.empty());
 
     // the outline: top-level forms of main.tsp, struct fields and enum members inside

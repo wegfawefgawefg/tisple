@@ -250,8 +250,16 @@ Field and member lists have the parameter-list shape: one list after the name.
 
 ## Macros
 
-Common Lisp-style templates, decided 2026-10-26. Expansion is tree to tree and
-runs before the checker, so nothing later sees a macro.
+A macro is code that runs in the compiler and gives the forms to paste in.
+Templates were decided 2026-10-26, computing macros planned the same day
+(owner) and built right after the first backend. Expansion is tree to tree and
+runs before the checker, so nothing later sees a macro: the expanded code is
+ordinary Tisple, checked like hand-written code, and `tisple expand file.tsp`
+prints it through the formatter.
+
+This is the old Lisp trick of writing the fast code as a generator: the
+program says what to compute, the macro writes out the straight-line code. One
+feature instead of separate table, unroll and generics features.
 
 ```scheme
 (macro swap (a b)
@@ -259,45 +267,162 @@ runs before the checker, so nothing later sees a macro.
         (let tmp# u8 ,a)
         (set ,a ,b)
         (set ,b tmp#)))
+
+; 128 + 127 sin(2 pi i / 256), rounded
+(macro sine_byte (i)
+    (round (+ 128 (* 127 (sin (/ (* (* 2 pi) i) 256))))))
+
+; lib/tables
+(macro table (name type count f & options)
+    `(const ,name (array ,type ,count)
+        (make (array ,type ,count) ,@(map f (range 0 count)))
+        ,@options))
+
+(tables.table SINE u8 256 sine_byte)
 ```
 
-- `(macro name (params) template)`; the parameter list is `()` when empty.
-- `` ` `` quasiquote, `,` unquote, `,@` splice, `'` quote.
+- `(macro name (params) body ...)`; the parameter list is `()` when empty.
+  `(a b & more)` gives `more` the remaining arguments as a list (from
+  Clojure): a macro that takes a body or rows takes them this way.
+- The body is macro code, below. Its last form's value is the expansion, and it
+  must be forms: a float, a fn or nothing is an error at the call. A body that
+  is one quasiquote is a template and works exactly as templates always did.
+- `` ` `` quasiquote, `,` drops in any value (`,(len rows)`), `,@` splices a
+  list, `'` quote.
 - A symbol ending in `#` inside a template becomes a fresh unique name on
-  every expansion (from Clojure), so a caller's own `tmp` is never captured.
-- Arguments are unevaluated forms. First version: the body is one template.
-- Names the template writes resolve in the macro's own module, so a macro in
-  `gfx/hgr` can call `plot` and mean `hgr.plot` wherever it is used. Unquoted
-  arguments resolve where the macro is called (owner, 2026-10-26).
-- `tisple expand file.tsp` prints the expanded program through the formatter.
+  every call (from Clojure), so a caller's own `tmp` is never captured.
+- Names a template writes resolve in the macro's own module, so a macro in
+  `gfx/hgr` can call `plot` and mean `hgr.plot` wherever it is used. Argument
+  forms resolve where the macro is called (owner, 2026-10-26). A symbol made
+  with `symbol` resolves where its first part was written, so
+  `(symbol name "_x")` names something next to the caller's `name`.
 
-### Next: computing macros
+### Arguments: forms from code, values from macro code
 
-Planned right after the first backend (owner, 2026-10-26). A macro body runs
-in the compiler and returns the forms to paste in. Its values are integers of
-any size, symbols and lists, with a few list operations (`list`, `repeat`,
-`map`, `range`, ...). Recursion is fine there, since it never runs on the
-Apple II. One feature instead of separate table, unroll and generics features.
-This is the old Lisp trick of writing the fast code as a generator: the
-program says what to compute, the macro writes out the straight-line code.
+A macro called from Tisple code gets the argument forms, unevaluated. A macro
+called from macro code gets the argument values. Forms are values (symbols,
+integers, strings, keywords and lists of them), so it is one rule: the
+parameters hold what the caller had.
 
-Two levels, one syntax: code that runs on the Apple II is typed, static and
+So a compile-time helper is a macro too, and there is no separate helper form:
+`sine_byte` above is called by `map` with integers, and written in code,
+`(sine_byte 64)` pastes `255`. A `macro_fn` form was the alternative; it would
+be a second way to write a compile-time function that differs from a macro
+only in how arguments arrive, which the one-way rule rules out
+(implementation, 2026-10-26).
+
+### Macro code
+
+Two levels, one syntax. Code that runs on the Apple II is typed, static and
 non-recursive, because tags, a heap, closures and deep stacks are what make
-dynamic languages slow on a 1 MHz 6502. Code that runs in the compiler (macro
-bodies) uses the same forms, `fn`, `let`, `if`, `match`, with relaxed rules:
-any-size integers, lists, symbols, recursion, no annotations needed. A plain
-Tisple function like `row_start` can be called from a macro at compile time and
-also compiled for the Apple II.
+dynamic languages slow on a 1 MHz 6502. Macro code runs in the compiler and
+uses the same forms with relaxed rules: no types, 64-bit integers, floats,
+lists, symbols, closures and recursion.
 
-```scheme
-(macro unroll (n body)
-    `(do ,@(repeat n body)))
+| Form | Meaning |
+| --- | --- |
+| `(let x value)` / `(set x value)` | a local and assignment; no type: `(let x u8 5)` says to write `(let x 5)` |
+| `(if c then else)` `(do body ...)` `(while c body ...)` | as in Tisple; conditions are `true` or `false`, never numbers |
+| `(for i start end body ...)` | `i` from `start` up to, not including, `end`; no type |
+| `(match x (pattern body ...) ...)` | patterns are literals, `'symbol`, `true`, `false` and `_`; no match is an error |
+| `(return v)` `(break)` `(continue)` `(and a b)` `(or a b)` `(not a)` | as in Tisple |
+| `(fn (a b) body ...)` | a function value, no name and no types; it keeps the values it sees when made |
+| `(macro_name args ...)` | a macro, with values |
+| `(row_start 5)`, `MAX_X` | an ordinary Tisple `fn` or scalar `const`, see below |
 
-(macro row_table (name)
-    `(const ,name (array u16 192) (make (array u16 192) ,@(map row_start (range 0 192)))))
+Tisple-only forms (`const`, `make`, `at`, `as`, `load`, ...) in macro code are
+errors that say to build them in a template: `` `(make ...) ``.
+
+Values:
+
+- Integers are 64-bit signed, and an operation that does not fit is an error,
+  never a wrap (implementation, 2026-10-26: true big integers would need a
+  library or a hand-written one, and 64 bits holds every Apple II number many
+  times over). `/` truncates toward zero, `%` takes the dividend's sign, `>>`
+  is arithmetic, and shift counts are 0 to 63. Division by zero is an error.
+- Floats exist only at compile time, for tables like sines. `+ - * /` give a
+  float when either side is one; `pi`, `sin`, `cos`, `sqrt` and `(float n)`
+  make them. `floor`, and `round` (halves away from zero), give integers. A
+  float in the expansion is an error that says to round it. The reader has no
+  float literals: write `(/ 1 (float 2))`.
+- `true` and `false` paste as themselves; symbols, keywords and lists paste as
+  forms.
+- Strings exist only at compile time, as arguments and values (ASCII art,
+  text); a string that reaches code is an error from the checker.
+- `=` and `!=` compare any two values, lists item by item; `< <= > >=` compare
+  numbers.
+
+Library, in macro code only (Tisple code may still use these names):
+
+| Function | Gives |
+| --- | --- |
+| `(list a ...)` | a list |
+| `(len xs)` | items of a list, bytes of a string |
+| `(nth xs i)` `(head xs)` `(tail xs)` | an item, the first, all but the first; past the end is an error |
+| `(append xs ...)` | the lists joined |
+| `(map f xs)` | `(f x)` for each item; `f` is a macro, a fn, a function's name, or a `(fn (i) ...)` form passed as an argument |
+| `(range start end)` | integers from `start` up to, not including, `end`, like `for` |
+| `(repeat n x)` | `n` copies of `x` |
+| `(symbol part ...)` | a symbol of symbols, strings and integers joined: `(symbol 'sprite "_" 'x)` is `sprite_x` |
+| `(chars "text")` | the character codes |
+| `(kind x)` | `'int`, `'float`, `'bool`, `'symbol`, `'keyword`, `'string`, `'list` or `'fn` |
+| `(error part ...)` | stops with this message, at the call |
+| `sin cos sqrt floor round float pi` | see Values |
+
+A list holds at most 131072 items. Parameters and lets may not take a library
+name.
+
+### Tisple functions and constants at compile time
+
+Macro code can call an ordinary `fn` and read a scalar `const`. They run in
+the reference interpreter with their declared types, so `(row_start 200)`
+wraps exactly as on the Apple II, and the same function is also compiled for
+it (`examples/dot/gfx/hgr.tsp`). Arguments must fit the parameter types: `300`
+for a `u8` is an error that gives the range. Arguments and results are
+integers, bools, and pointers as integers; enums are not supported yet.
+
+Such a function may not use `io_read` or `io_write`, store through a pointer,
+or read or set a top-level `let` (it has a value only at run time); calling
+one that does is an error that says which. Constants, const tables and other
+functions are fine.
+
+The functions and constants are checked as a small program of their own, from
+every top-level declaration their names reach. Two limits: a declaration a
+top-level macro call makes (a `tables.table`) is not part of it, and a
+function used this way may not itself use a macro that makes a compile-time
+call.
+
+### Limits and errors
+
+One call from Tisple code may run 10,000,000 steps (every evaluated form, and
+every interpreter step of a typed call) and nest 200 calls deep. Past that the
+error is at the call and names the macro:
+
+```text
+main.tsp:4:1: macro spin ran more than 10000000 steps; is a loop missing its end? (in macro spin)
+main.tsp:6:1: macro deep nested more than 200 calls deep; does its recursion reach a base case? (in macro deep)
 ```
 
-What it is for:
+Every error in macro code is at the call, names the macro, and says where in
+the macro code it happened; `(error ...)` gives just its message:
+
+```text
+main.tsp:9:1: + takes integers, got the symbol a; macro code at main.tsp:3:5 (in macro scale)
+main.tsp:12:1: sprite BALL: row 1 is 3 wide, the first is 4 (in macro tables.sprite)
+```
+
+### In lib
+
+- `lib/tables`: `(tables.table NAME type count f options ...)` is
+  `(const NAME (array type count) (make (array type count) (f 0) (f 1) ...)
+  options ...)`. `(tables.sprite NAME row ...)` turns rows of `#` and `.` into
+  hi-res bytes: 7 pixels a byte, the low bit leftmost, `(width + 6) / 7` bytes
+  a row.
+- `lib/macros`: `inc`, `dec`, and `(macros.unroll i start end body ...)`: the
+  body once for each `i`, with `i` a literal in each copy, each copy in its own
+  `do`.
+
+What macros are for:
 
 1. Lookup tables: hi-res row addresses, `x / 7` and `x % 7`, masks, sine
    tables, squares tables for fast multiply.
@@ -405,9 +530,9 @@ Ideas, in order of cost, taken up when real programs need them:
 
 1. Tail recursion as loops: a self-call in tail position jumps to the top, no
    frame. Comes free with tail calls, so the no-recursion rule can relax for it.
-2. Recursion at compile time: pure functions called with constant arguments
-   run in the interpreter while compiling (`(fib 10)` becomes `55`). Comes
-   with computing macros.
+2. Recursion at compile time: done with computing macros. A recursive macro
+   runs while compiling, so `(fib 10)` with `fib` a macro becomes `55`; typed
+   functions called at compile time still follow the no-recursion rule.
 3. Downward-only lambdas: a lambda passed to a call and never stored is
    compiled by specializing the callee per call site with the body inlined;
    captured variables are slots in the caller's static frame. Overlaps with
@@ -421,5 +546,5 @@ computing macro can generate the stack if it gets repetitive (owner,
 
 ## Out of the first subset
 
-Named regions, strings, general recursion, inline assembly. All planned; none
-needed to prove the backend.
+Named regions, strings (they exist only in macro code), general recursion,
+inline assembly. All planned; none needed to prove the backend.
