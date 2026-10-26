@@ -8,3 +8,4 @@ tests/data/
 .claude/
 examples/**/*.bin
 editors/vscode/*.vsix
+programs/**/*.bin
