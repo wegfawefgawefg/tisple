@@ -179,9 +179,12 @@ races/              drag racing against other compilers
 
 ## Testing
 
-- Own 6502 core: load code, set registers/memory, run to a stop point under a
-  cycle limit, return state and cycle count. Validated against SingleStepTests
-  (65x02). Fast enough to run millions of fuzz cases.
+- 6502 core: floooh's chips `m6502.h`, vendored in `third_party/chips/`, behind
+  our wrapper in `src/emu/` (load, set registers, run to a stop point under a
+  cycle limit, return state and cycles; I/O hook for `$C000`-`$CFFF`). Passes
+  all 1.51M SingleStepTests cases for the 151 documented opcodes, bus cycles
+  included (`scripts/fetch_singlestep.sh` gets the data). About 166M simulated
+  cycles/s in release.
 - Reference interpreter runs the checked tree. Compiled output must match it on
   every test and on randomly generated programs.
 - Exhaustive tests for small operations (every `u8` pair for add/sub/compare).
@@ -221,7 +224,7 @@ makes, a fast build, and a colored viewer for reading `.tsp` files. Cycle
 reports come after the compiler works.
 
 1. Build and test runner (done: CMake + Ninja + ccache + lld, `tisple_tests`).
-2. 6502 simulator passing SingleStepTests with exact cycle counts; `tisple sim`.
+2. 6502 simulator passing SingleStepTests with exact cycle counts; `tisple sim` (done).
 3. Reader, formatter (`tisple fmt`), colored viewer (`tisple show`, editor
    syntax for VS Code and Neovim).
 4. Checker and reference interpreter for the core subset.
