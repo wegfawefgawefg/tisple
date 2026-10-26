@@ -30,3 +30,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-26 | (constant folding after unroll) | plasma | frames in 10 s | 205 (unrolled draw unchanged, 1129 bytes) |
 | 2026-10-26 | (two table reads: second index in X, ORA table,X) | plasma | frames in 10 s | 231 (23.1 fps); code 1346 to 1191 bytes |
 | 2026-10-26 | (byte expressions of loops stepped or hoisted) | plasma | frames in 10 s | 243 (24.3 fps) |
+| 2026-10-26 | db084d8 (backend items 14 to 20, main merged) | life | generations in 10 s | 56 |
+| 2026-10-26 | db084d8 (backend items 14 to 20, main merged) | plasma | frames in 10 s | 243 (24.3 fps); code 1203 bytes |
