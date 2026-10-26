@@ -30,6 +30,24 @@ there is nothing copyrighted to ship.
 - Real-machine check, a separate slow step: a disk image of the program run
   in Mii or MAME with real ROMs kept locally, never committed.
 
+### Accurate and instant (owner, 2026-10-26)
+
+The goal is perfectly accurate emulation with speed, snapshots and disk
+images to fiddle with during development, then real hardware.
+
+1. One machine, two starts: direct load (no ROM, instant, unit tests) and real
+   boot (a ROM file the owner supplies, kept outside the repo; the Disk II
+   card adapted from AppleWin; DOS 3.3 or ProDOS).
+2. Snapshots: the whole machine state is plain data (a few hundred KB). Boot
+   DOS once, snapshot at the prompt, restore in microseconds for every run.
+   Also for debugging: snapshot before a bug and rerun it.
+3. Disk tooling: `tisple disk` creates DOS 3.3 and ProDOS images and adds,
+   lists and extracts files; `tisple build` can write onto an image.
+4. Accuracy proved: Zellyn Hunter's a2audit disk passes in our machine; the
+   same programs in AppleWin or MAME give the same memory and screen.
+5. Real hardware: the same disk images through a FloppyEmu-style drive or
+   ADTPro.
+
 ## 2. Programs
 
 Each is also a benchmark. Rough order:
