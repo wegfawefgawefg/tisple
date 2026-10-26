@@ -17,11 +17,12 @@ there is nothing copyrighted to ship.
   cycles, for tests.
 - Video: text (our own Apple-like font), lo-res, hi-res with NTSC color
   artifacts, mixed mode, both pages.
-- Borrow, don't rewrite (owner, 2026-10-26): video and soft-switch code are
-  adapted from Mii (MIT, github.com/buserror/mii_emu) with attribution; Clock
-  Signal (MIT) is the behaviour reference. GPL emulators (AppleWin, LinApple,
-  izapple2) are never copied from. No Apple ROM or ROM-derived data (the
-  character font included) is ever committed.
+- Borrow, don't rewrite (owner, 2026-10-26): Tisple is GPL-3.0-or-later, so
+  machine code may be adapted from AppleWin (GPL-2.0-or-later; its NTSC.cpp
+  is the reference for hi-res colour), izapple2 (GPL-3.0), Mii and Clock
+  Signal (MIT), with attribution under third_party/. No Apple ROM or
+  ROM-derived data (the character font included) is ever committed. Code the
+  compiler emits into programs stays original (runtime exception).
 - Why a thin machine of our own at all: full emulators boot through Apple's
   ROM from a disk image, which means copyrighted ROMs and seconds of boot.
   Our programs never touch ROM or disk, so the part we need is small:

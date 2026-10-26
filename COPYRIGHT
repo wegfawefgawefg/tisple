@@ -1,13 +1,38 @@
 Tisple ][ is copyright 2026 Tisple contributors.
 
-Tisple is licensed under either the Apache License, Version 2.0, or the MIT
-License, at your option. Contributions intentionally submitted for inclusion
-in Tisple are accepted under the same terms unless explicitly stated otherwise.
+Tisple is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE.
 
-Tisple does not claim copyright over programs written by users or over the
-6502 binaries the compiler produces from them. Tisple-owned startup and
-runtime code included in those binaries remains available under Tisple's dual
-MIT OR Apache-2.0 license.
+Runtime exception: the code the Tisple compiler copies into the programs it
+produces (startup code and runtime routines) is additionally available under
+the MIT License below. Programs written in Tisple, and the binaries the
+compiler builds from them, belong to their authors and may use any license.
+That code must be original to Tisple, never derived from GPL sources.
 
-Third-party components retain their own copyright and license terms:
-third_party/chips (floooh/chips, zlib license).
+    MIT License
+
+    Copyright (c) 2026 Tisple contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to permit
+    persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+    NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Third-party components keep their own copyright and license terms, recorded
+in each folder under third_party/ (floooh/chips: zlib).
