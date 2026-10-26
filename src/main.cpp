@@ -1,6 +1,8 @@
 #include "backend/build_command.hpp"
 #include "check/commands.hpp"
 #include "emu/sim_command.hpp"
+#include "fuzz_gen.hpp"
+#include "gaps/gaps.hpp"
 #include "ide/index.hpp"
 #include "interp/interp_command.hpp"
 #include "machine/machine_command.hpp"
@@ -33,6 +35,8 @@ void PrintUsage() {
                 "  run     build and run on the apple iie (window; --frames N etc. headless;\n"
                 "          --sim for the bare simulator)\n");
     std::printf("  machine run a raw binary in the built-in Apple IIe (--window, --screenshot)\n");
+    std::printf("  gaps    rank where the compiled code is worse than it could be (--superopt,\n"
+                "          --fuzz N for the fuzz generator's programs)\n");
 }
 
 } // namespace
@@ -78,6 +82,9 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "run") == 0) {
         return tisple::RunRunCommand(argc, argv, kMachineWindow);
+    }
+    if (std::strcmp(argv[1], "gaps") == 0) {
+        return tisple::RunGapsCommand(argc, argv, tisple_tests::GenerateProgram);
     }
 
     std::fprintf(stderr, "tisple: unknown command '%s'\n", argv[1]);

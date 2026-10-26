@@ -3,6 +3,7 @@
 #include "test_backend.hpp"
 #include "test_check.hpp"
 #include "test_emu.hpp"
+#include "test_gaps.hpp"
 #include "test_ide.hpp"
 #include "test_machine.hpp"
 #include "test_reader.hpp"
@@ -46,6 +47,8 @@ int main() {
     tisple_tests::RunBackendIndexTests(results);
     tisple_tests::RunBackendProgramTests(results);
     tisple_tests::RunBackendFuzzTests(results);
+    tisple_tests::RunGapsTests(results);
+    tisple_tests::RunSuperoptTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;

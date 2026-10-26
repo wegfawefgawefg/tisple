@@ -48,9 +48,15 @@ set_source_files_properties(src/emu/chips_impl.cpp PROPERTIES COMPILE_OPTIONS "-
 # the simulator runs millions of cycles per test run (differential tests, fuzzing): optimise
 # it even in debug builds
 set_source_files_properties(src/emu/machine.cpp src/emu/harness.cpp PROPERTIES COMPILE_OPTIONS "-O2")
+# the gap finder traces every instruction and the superoptimizer runs millions of candidate
+# sequences: optimise them too
+file(GLOB TISPLE_FAST_SOURCES CONFIGURE_DEPENDS src/superopt/*.cpp src/gaps/profile.cpp)
+set_source_files_properties(${TISPLE_FAST_SOURCES} PROPERTIES COMPILE_OPTIONS "-O2")
 
-add_executable(tisple src/main.cpp)
+# the fuzz generator lives with the tests; `tisple gaps --fuzz` uses it too
+add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
+target_include_directories(tisple PRIVATE tests)
 tisple_warnings(tisple)
 
 # `tisple machine --window`: SDL3 from the system, on by default when it is found

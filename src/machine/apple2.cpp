@@ -163,6 +163,10 @@ void ResetApple2(Apple2& a) {
 }
 
 RunOutcome RunApple2(Apple2& a, uint64_t cycles) {
+    return RunApple2Traced(a, cycles, nullptr, nullptr);
+}
+
+RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, void* trace_ctx) {
     Machine& m = a.cpu;
     uint64_t start = m.cycles;
     uint64_t end = start + cycles;
@@ -197,6 +201,9 @@ RunOutcome RunApple2(Apple2& a, uint64_t cycles) {
         if (a.direct_load && kStopsDirectLoad[opcode]) {
             Stop(a, opcode == 0x00 ? MachineStop::kBrk : MachineStop::kIllegalOpcode, pc, opcode);
             break;
+        }
+        if (trace != nullptr) {
+            trace(trace_ctx, m);
         }
         StepInstruction(m);
     }
