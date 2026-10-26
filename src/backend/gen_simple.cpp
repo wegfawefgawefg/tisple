@@ -107,6 +107,7 @@ Opnd ByteShift(Gen& g, const Expr& e) {
 } // namespace
 
 Opnd TrySimple(Gen& g, ExprId id) {
+    id = ForwardTarget(g, id);
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
     if (IsScalarKind(KindOf(*g.program, e.type)) && ConstValue(*g.program, id, c)) {

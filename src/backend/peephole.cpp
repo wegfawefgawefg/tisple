@@ -406,9 +406,63 @@ void FlowPass(Pass& p) {
     }
 }
 
+// ---- stores nothing reads
+
+bool IsStore(Mn mn) {
+    return mn == Mn::STA || mn == Mn::STX || mn == Mn::STY;
+}
+
+// a store to a byte of the function's own that no instruction reads goes. Bytes are read
+// one by one (sym + offset, plain modes) or all at once (indexed, indirect, or the address
+// taken with #<sym).
+void DeadStorePass(Pass& p, const std::vector<bool>& private_syms) {
+    std::vector<std::pair<std::int32_t, std::int32_t>> read_bytes;
+    std::vector<bool> read_all(private_syms.size(), false);
+    for (std::size_t i = 0; i < p.items->size(); i++) {
+        const AsmItem& item = p.At(i);
+        if (p.dead[i] || item.kind != ItemKind::Ins || item.value.sym < 0 ||
+            item.mode == Mode::Rel) {
+            continue;
+        }
+        std::size_t sym = static_cast<std::size_t>(item.value.sym);
+        if (sym >= private_syms.size() || !private_syms[sym]) {
+            continue;
+        }
+        bool plain = item.mode == Mode::Abs || item.mode == Mode::Zp;
+        if (plain && IsStore(item.mn)) {
+            continue;
+        }
+        if (plain && item.value.part == Part::Whole) {
+            read_bytes.push_back({item.value.sym, item.value.offset});
+        } else {
+            read_all[sym] = true;
+        }
+    }
+    for (std::size_t i = 0; i < p.items->size(); i++) {
+        const AsmItem& item = p.At(i);
+        bool plain = item.mode == Mode::Abs || item.mode == Mode::Zp;
+        if (p.dead[i] || item.kind != ItemKind::Ins || !IsStore(item.mn) || !plain ||
+            item.value.sym < 0) {
+            continue;
+        }
+        std::size_t sym = static_cast<std::size_t>(item.value.sym);
+        if (sym >= private_syms.size() || !private_syms[sym] || read_all[sym]) {
+            continue;
+        }
+        bool read = false;
+        for (const auto& byte : read_bytes) {
+            read = read || (byte.first == item.value.sym && byte.second == item.value.offset);
+        }
+        if (!read) {
+            p.Kill(i);
+        }
+    }
+}
+
 } // namespace
 
-void Peephole(const Assembly& as, std::vector<AsmItem>& items) {
+void Peephole(const Assembly& as, std::vector<AsmItem>& items,
+              const std::vector<bool>& private_syms) {
     for (int round = 0; round < kMaxRounds; round++) {
         Pass p;
         p.as = &as;
@@ -416,7 +470,9 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items) {
         p.dead.assign(items.size(), false);
         FlowPass(p);
         RegisterPass(p);
+        DeadStorePass(p, private_syms);
         if (!p.changed) {
+
             return;
         }
         std::vector<AsmItem> kept;

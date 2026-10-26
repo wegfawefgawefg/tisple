@@ -62,8 +62,9 @@ bool GenStep(Gen& g, const Opnd& d, bool up) {
 }
 
 void GenLet(Gen& g, const Expr& e) {
-    if (g.be->aliases[static_cast<std::size_t>(e.ref)].index_only) {
-        return; // every read is an index that reads the value itself (index_alias.hpp)
+    const IndexAlias& alias = g.be->aliases[static_cast<std::size_t>(e.ref)];
+    if (alias.index_only || alias.forward) {
+        return; // every read reads the value itself (index_alias.hpp)
     }
     const Var& var = g.program->vars[static_cast<std::size_t>(e.ref)];
 

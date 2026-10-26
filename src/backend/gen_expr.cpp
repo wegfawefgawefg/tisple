@@ -267,6 +267,7 @@ void EvalA(Gen& g, ExprId id) {
 }
 
 Opnd Eval(Gen& g, ExprId id, const Opnd* dst) {
+    id = ForwardTarget(g, id);
     const Expr& e = At(g, id);
     if (e.type == kNeverType || e.type == kVoidType) {
         GenStmt(g, id);

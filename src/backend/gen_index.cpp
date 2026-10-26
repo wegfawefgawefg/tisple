@@ -203,6 +203,17 @@ ExprId AliasTarget(const Gen& g, ExprId id) {
     return id;
 }
 
+ExprId ForwardTarget(const Gen& g, ExprId id) {
+    for (int depth = 0; depth < kMaxIndexDepth; depth++) {
+        const Expr& e = At(g, id);
+        if (e.kind != ExprKind::VarRef || !g.be->aliases[static_cast<std::size_t>(e.ref)].forward) {
+            return id;
+        }
+        id = g.be->aliases[static_cast<std::size_t>(e.ref)].value;
+    }
+    return id;
+}
+
 bool ByteIndexOf(Gen& g, ExprId id, ByteIndex& out) {
     return ByteIndexAt(g, id, 0, out);
 }

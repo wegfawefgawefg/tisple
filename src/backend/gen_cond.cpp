@@ -259,6 +259,7 @@ bool IsComparison(Op op) {
 } // namespace
 
 void GenBranch(Gen& g, ExprId id, bool when, std::int32_t label) {
+    id = ForwardTarget(g, id);
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
     if (ConstValue(*g.program, id, c)) {
@@ -304,6 +305,7 @@ void GenBranch(Gen& g, ExprId id, bool when, std::int32_t label) {
 }
 
 void CondToA(Gen& g, ExprId id) {
+    id = ForwardTarget(g, id);
     std::uint16_t c = 0;
     if (ConstValue(*g.program, id, c)) {
         Emit(g, Mn::LDA, Mode::Imm, Num(c != 0 ? 1 : 0));

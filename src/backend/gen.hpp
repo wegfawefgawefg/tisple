@@ -315,6 +315,8 @@ struct ByteIndex {
 
 // id, or the value of the index alias it names
 ExprId AliasTarget(const Gen& g, ExprId id);
+// id, or the value of the forwarded let it reads
+ExprId ForwardTarget(const Gen& g, ExprId id);
 bool ByteIndexOf(Gen& g, ExprId id, ByteIndex& out);
 // INX/INY or DEX/DEY reach it
 bool IsSmallDelta(std::uint8_t delta);

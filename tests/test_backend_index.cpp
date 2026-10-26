@@ -246,6 +246,55 @@ void TestIndexLets(TestResults& results) {
     CHECK(results, k >= 0 && aliases[static_cast<std::size_t>(k)].value < 0);
 }
 
+// lets read once move to their read: lazily under and/or, never past a write to what they
+// read
+void TestForwardLets(TestResults& results) {
+    const char* text = "(let buf (array u8 16))\n"
+                       "(let g u8 0)\n"
+                       "(let h u16 0)\n"
+                       "(fn f ((x u8)) u16\n"
+                       "    (for i u8 0 16 (set (at buf i) (+ i x)))\n"
+                       "    (let p (ptr u8) (addr_of (at buf 2)))\n"
+                       "    (let lazy u8 (load (+ p (as u16 x))))\n"
+                       "    (let flag bool (< (load p) 9))\n"
+                       "    (if (or (= x 1) (and flag (= lazy 3))) (set g (+ g 1)))\n"
+                       "    (let old u8 (load p))\n"
+                       "    (store p 99)\n"
+                       "    (set g (+ g old))\n"
+                       "    (let y u8 (+ x 1))\n"
+                       "    (set x 5)\n"
+                       "    (set g (+ g y))\n"
+                       "    (let arm u8 (load (+ p 1)))\n"
+                       "    (if (> x 3) (set g (+ g arm)))\n"
+                       "    (let wide u16 (+ (as u16 g) 300))\n"
+                       "    (store (+ p 2) (as u8 (>> wide 1)))\n"
+                       "    (let looped u8 (at buf 5))\n"
+                       "    (for i u8 0 3 (set h (+ h (as u16 looped))))\n"
+                       "    (+ h (as u16 g)))";
+    Compiled c = CompileText(text);
+    Diff d;
+    if (!StartDiff(d, c)) {
+        std::fprintf(stderr, "forward lets: %s\n", d.message.c_str());
+        CHECK(results, false);
+        return;
+    }
+    for (int x : {0, 1, 2, 3, 7, 200}) {
+        CheckDiff(results, d, "t.f", {static_cast<std::uint16_t>(x)});
+    }
+    const tisple::Program& program = c.built.program;
+    std::vector<tisple::IndexAlias> aliases = tisple::FindIndexAliases(program);
+    auto forward = [&](const char* name) {
+        for (std::size_t v = 0; v < program.vars.size(); v++) {
+            if (program.vars[v].name == name) {
+                return aliases[v].forward;
+            }
+        }
+        return false;
+    };
+    CHECK(results, forward("lazy") && forward("flag") && forward("wide"));
+    CHECK(results, !forward("old") && !forward("y") && !forward("arm") && !forward("looped"));
+}
+
 // a run of + over plain reads goes once through A, with one leaf that needs code first
 void TestChains(TestResults& results) {
     const char* text = "(let a (array u8 8))\n"
@@ -278,6 +327,7 @@ void RunBackendIndexTests(TestResults& results) {
     TestIndexLoops(results);
     TestYReuse(results);
     TestIndexLets(results);
+    TestForwardLets(results);
     TestChains(results);
 }
 

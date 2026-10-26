@@ -58,13 +58,9 @@ bool AliasForm(const Program& program, ExprId id, std::vector<std::int32_t>& var
 }
 
 // a let in a do whose later forms keep it and what it reads unchanged
-void CheckLet(const Program& program, const Expr& block, std::uint32_t at,
-              std::vector<IndexAlias>& out) {
+void CheckIndexLet(const Program& program, const Expr& block, std::uint32_t at,
+                   std::vector<IndexAlias>& out) {
     const Expr& let = ExprOf(program, ListItem(program, block, at));
-    const Var& var = program.vars[static_cast<std::size_t>(let.ref)];
-    if (var.kind != VarKind::Local || var.address_taken || let.a < 0) {
-        return;
-    }
     std::vector<std::int32_t> vars;
     if (!AliasForm(program, let.a, vars)) {
         return;
@@ -81,24 +77,122 @@ void CheckLet(const Program& program, const Expr& block, std::uint32_t at,
     out[static_cast<std::size_t>(let.ref)].value = let.a;
 }
 
+void CollectVars(const Program& program, ExprId id, std::vector<std::int32_t>& vars) {
+    if (id < 0) {
+        return;
+    }
+    const Expr& e = ExprOf(program, id);
+    if (e.kind == ExprKind::VarRef) {
+        vars.push_back(e.ref);
+    }
+    CollectVars(program, e.a, vars);
+    CollectVars(program, e.b, vars);
+    CollectVars(program, e.c, vars);
+    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            CollectVars(program, ListItem(program, e, i), vars);
+        }
+    }
+    if (e.kind == ExprKind::Match) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            CollectVars(program, program.clauses[e.first + i].body, vars);
+        }
+    }
+}
+
+// the parts of a form that run before it has any effect of its own, if they have none
+bool EffectFreeParts(const Program& program, const Expr& form, ExprId parts[2]) {
+    parts[0] = -1;
+    parts[1] = -1;
+    switch (form.kind) {
+    case ExprKind::Let:
+    case ExprKind::Return:
+        parts[0] = form.a;
+        break;
+    case ExprKind::Set:
+    case ExprKind::Store:
+    case ExprKind::StoreField:
+        parts[0] = form.a;
+        parts[1] = form.b;
+        break;
+    case ExprKind::If:
+        parts[0] = form.a; // the condition, before either arm
+        break;
+    default:
+        return false;
+    }
+    for (int i = 0; i < 2; i++) {
+        ExprId part = parts[i];
+        if (part >= 0 && HasEffects(program, part)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// a let read once, by a later form of its do before that form does anything, with nothing
+// in between changing what its value reads: the read can be the value itself
+void CheckForwardLet(const Program& program, const Expr& block, std::uint32_t at,
+                     std::vector<IndexAlias>& out) {
+    const Expr& let = ExprOf(program, ListItem(program, block, at));
+    TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(let.ref)].type);
+    if (!IsScalarKind(kind) || kind == TypeKind::Ptr || HasEffects(program, let.a)) {
+        return;
+    }
+    std::vector<std::int32_t> vars;
+    CollectVars(program, let.a, vars);
+    bool loads = HasLoads(program, let.a);
+    for (std::uint32_t i = at + 1; i < block.count; i++) {
+        const Expr& form = ExprOf(program, ListItem(program, block, i));
+        ExprId parts[2];
+        bool here = ReadsVar(program, ListItem(program, block, i), let.ref);
+        if (here) {
+            bool in_parts = EffectFreeParts(program, form, parts) &&
+                            (ReadsVar(program, parts[0], let.ref) ||
+                             (parts[1] >= 0 && ReadsVar(program, parts[1], let.ref)));
+            if (in_parts) {
+                out[static_cast<std::size_t>(let.ref)].value = let.a;
+                out[static_cast<std::size_t>(let.ref)].forward = true;
+            }
+            return;
+        }
+        ExprId between = ListItem(program, block, i);
+        if (loads && HasWrites(program, between)) {
+            return;
+        }
+        for (std::int32_t v : vars) {
+            if (MayWriteVar(program, between, v)) {
+                return;
+            }
+        }
+    }
+}
+
 } // namespace
 
 std::vector<IndexAlias> FindIndexAliases(const Program& program) {
     std::vector<IndexAlias> out(program.vars.size());
-    for (const Expr& e : program.exprs) {
-        if (e.kind != ExprKind::Do) {
-            continue;
-        }
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            if (ExprOf(program, ListItem(program, e, i)).kind == ExprKind::Let) {
-                CheckLet(program, e, i, out);
-            }
-        }
-    }
-    // reads of each var, and of those the ones that index a pointer or an array
+    // reads of each var, and of those the ones that index a pointer or an array; a var read
+    // through an expression with two parents is left alone
     std::vector<std::uint32_t> reads(program.vars.size(), 0);
     std::vector<std::uint32_t> index_reads(program.vars.size(), 0);
+    std::vector<std::uint32_t> parents(program.exprs.size(), 0);
     for (const Expr& e : program.exprs) {
+        for (ExprId child : {e.a, e.b, e.c}) {
+            if (child >= 0) {
+                parents[static_cast<std::size_t>(child)]++;
+            }
+        }
+        if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+            for (std::uint32_t i = 0; i < e.count; i++) {
+                parents[static_cast<std::size_t>(ListItem(program, e, i))]++;
+            }
+        }
+        if (e.kind == ExprKind::Match) {
+            for (std::uint32_t i = 0; i < e.count; i++) {
+                parents[static_cast<std::size_t>(program.clauses[e.first + i].body)]++;
+            }
+        }
         if (e.kind == ExprKind::VarRef) {
             reads[static_cast<std::size_t>(e.ref)]++;
         }
@@ -111,6 +205,33 @@ std::vector<IndexAlias> FindIndexAliases(const Program& program) {
         }
         if (index >= 0 && ExprOf(program, index).kind == ExprKind::VarRef) {
             index_reads[static_cast<std::size_t>(ExprOf(program, index).ref)]++;
+        }
+    }
+    std::vector<bool> shared(program.vars.size(), false);
+    for (std::size_t i = 0; i < program.exprs.size(); i++) {
+        const Expr& e = program.exprs[i];
+        if (e.kind == ExprKind::VarRef && parents[i] > 1) {
+            shared[static_cast<std::size_t>(e.ref)] = true;
+        }
+    }
+    for (const Expr& e : program.exprs) {
+        if (e.kind != ExprKind::Do) {
+            continue;
+        }
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            const Expr& let = ExprOf(program, ListItem(program, e, i));
+            if (let.kind != ExprKind::Let || let.a < 0) {
+                continue;
+            }
+            std::size_t v = static_cast<std::size_t>(let.ref);
+            const Var& var = program.vars[v];
+            if (var.kind != VarKind::Local || var.address_taken || shared[v]) {
+                continue;
+            }
+            CheckIndexLet(program, e, i, out);
+            if (out[v].value < 0 && reads[v] == 1) {
+                CheckForwardLet(program, e, i, out);
+            }
         }
     }
     for (std::size_t v = 0; v < out.size(); v++) {
