@@ -1,0 +1,374 @@
+#include "check/checker.hpp"
+
+namespace tisple {
+
+namespace {
+
+bool IsIntegerTypeName(const Node& node) {
+    return node.kind == NodeKind::Symbol &&
+           (node.text == "u8" || node.text == "i8" || node.text == "u16" || node.text == "i16");
+}
+
+// the smallest type a fix can suggest for (for i start end ...)
+const char* LoopTypeFor(std::int64_t start, std::int64_t end) {
+    if (start < 0) {
+        return start >= -128 && end <= 128 ? "i8" : "i16";
+    }
+    return end <= 256 ? "u8" : "u16";
+}
+
+const std::string& FunctionName(const Checker& ck) {
+    return ck.function_forms[static_cast<std::size_t>(ck.at.function)]->items[1].text;
+}
+
+std::int32_t NewLocal(Checker& ck, const Node& name, TypeId type, bool loop_var) {
+    Var var;
+    var.name = name.text;
+    var.kind = VarKind::Local;
+    var.type = type;
+    var.module = ck.at.module;
+    var.function = ck.at.function;
+    var.loc = NodeLoc(ck, name);
+    var.loop_var = loop_var;
+    std::int32_t id = AddVar(ck, var);
+    ck.out->functions[static_cast<std::size_t>(ck.at.function)].locals.push_back(id);
+    return id;
+}
+
+bool IsArray(const Checker& ck, TypeId type) {
+    return type > kErrorType && KindOf(*ck.out, type) == TypeKind::Array;
+}
+
+bool IsStruct(const Checker& ck, TypeId type) {
+    return type > kErrorType && KindOf(*ck.out, type) == TypeKind::Struct;
+}
+
+ExprId CheckArm(Checker& ck, const Node& node, TypeId hint, bool statement) {
+    ck.at.scopes.emplace_back();
+    ExprId id = statement ? CheckStatement(ck, node) : CheckExpr(ck, node, hint);
+    ck.at.scopes.pop_back();
+    return id;
+}
+
+// the start value of a let: checks it against the declared type, or infers one
+ExprId CheckLetValue(Checker& ck, const Node& name, const Node& value, TypeId& type) {
+    if (IsArray(ck, type)) {
+        return Fail(ck, value,
+                    "arrays start zeroed and are copied element by element; fill " + name.text +
+                        " with a for loop");
+    }
+    if (type < 0 && IsBareLiteral(value)) {
+        type = kErrorType;
+        return Fail(ck, value,
+                    "(let " + name.text + " " + value.text +
+                        "): the literal has no type; write (let " + name.text + " u8 " +
+                        value.text + ")");
+    }
+    ExprId init = CheckExpr(ck, value, type);
+    if (type >= 0) {
+        RequireType(ck, value, init, type, "let " + name.text);
+    } else {
+        type = ExprType(ck, init);
+    }
+    if (type == kVoidType || type == kNeverType) {
+        Err(ck, value, Show(value) + " gives no value to start " + name.text + " with");
+        type = kErrorType;
+    }
+    if (IsArray(ck, type)) {
+        Err(ck, value,
+            "arrays are copied element by element; declare (let " + name.text + " " +
+                ShowType(ck, type) + ") and fill it with a for loop");
+        type = kErrorType;
+    }
+    if (IsStruct(ck, type)) {
+        RequireStructSource(ck, value, init);
+    }
+    return init;
+}
+
+} // namespace
+
+ExprId CheckBody(Checker& ck, const std::vector<Node>& items, std::size_t first, TypeId hint,
+                 bool want_value, const Node& owner) {
+    std::vector<ExprId> forms;
+    for (std::size_t i = first; i < items.size(); i++) {
+        bool last = i + 1 == items.size();
+        if (last && want_value) {
+            forms.push_back(CheckExpr(ck, items[i], hint));
+        } else {
+            forms.push_back(CheckStatement(ck, items[i]));
+        }
+    }
+    TypeId type = kVoidType;
+    if (want_value && !forms.empty()) {
+        type = ExprType(ck, forms.back());
+    }
+    ExprId id = AddExpr(ck, ExprKind::Do, type, owner);
+    ExprAt(ck, id).first = AddList(ck, forms);
+    ExprAt(ck, id).count = static_cast<std::uint32_t>(forms.size());
+    return id;
+}
+
+ExprId CheckLet(Checker& ck, const Node& node) {
+    if (ck.at.function < 0) {
+        return Fail(ck, node, "let declares a variable; it cannot be part of a constant value");
+    }
+    if (node.items.size() < 2 || node.items[1].kind != NodeKind::Symbol) {
+        return Fail(ck, node, "let needs a name; write (let n u8 0)");
+    }
+    const Node& name = node.items[1];
+    std::vector<const Node*> positional;
+    for (std::size_t i = 2; i < node.items.size(); i++) {
+        if (node.items[i].kind == NodeKind::Keyword) {
+            return Fail(ck, node.items[i],
+                        "placement options (:address, :align, :boundary) are for top-level lets; "
+                        "move " +
+                            name.text + " out of the function");
+        }
+        positional.push_back(&node.items[i]);
+    }
+    if (positional.empty()) {
+        return Fail(ck, node,
+                    "let " + name.text + " needs a type or a value; write (let " + name.text +
+                        " u8 0)");
+    }
+    if (positional.size() > 2) {
+        return Fail(ck, node, "(let name type value) takes at most a type and a value");
+    }
+    bool name_ok = CheckLocalName(ck, name, "local");
+    TypeId type = -1;
+    const Node* value = nullptr;
+    if (positional.size() == 2) {
+        type = ResolveType(ck, *positional[0]);
+        value = positional[1];
+    } else {
+        type = TryResolveType(ck, *positional[0]);
+        value = type >= 0 ? nullptr : positional[0];
+    }
+    ExprId init = -1;
+    if (value) {
+        init = CheckLetValue(ck, name, *value, type);
+    }
+    if (type < 0) {
+        type = kErrorType;
+    }
+    std::int32_t var = NewLocal(ck, name, type, false);
+    if (name_ok) {
+        ck.at.scopes.back().entries.push_back(ScopeEntry{name.text, var});
+    }
+    ExprId id = AddExpr(ck, ExprKind::Let, kVoidType, node);
+    ExprAt(ck, id).ref = var;
+    ExprAt(ck, id).a = init;
+    return id;
+}
+
+ExprId CheckSet(Checker& ck, const Node& node) {
+    if (node.items.size() != 3) {
+        return Fail(ck, node, "set takes a place and a value; write (set x 1)");
+    }
+    const Node& place_node = node.items[1];
+    ExprId place = CheckExpr(ck, place_node, -1);
+    const Expr& expr = ExprAt(ck, place);
+    TypeId type = expr.type;
+    if (type == kErrorType) {
+        CheckExpr(ck, node.items[2], -1);
+        return ErrorExpr(ck, node);
+    }
+    if (expr.kind == ExprKind::Literal) {
+        return Fail(ck, place_node, Show(place_node) + " is a constant; it cannot be set");
+    }
+    bool through_load = false;
+    std::int32_t root = PlaceRoot(ck, place, through_load);
+    if (through_load || expr.kind == ExprKind::Load) {
+        return Fail(ck, place_node,
+                    "set does not write through pointers; write (store p value) with the whole "
+                    "value");
+    }
+    if (root < 0 || !IsPlaceKind(expr.kind)) {
+        return Fail(ck, place_node,
+                    "set needs a variable, s.x, (at ...) or (. ...); " + Show(place_node) +
+                        " is not one");
+    }
+    const Var& var = ck.out->vars[static_cast<std::size_t>(root)];
+    if (var.kind == VarKind::ConstArray) {
+        return Fail(ck, place_node, Show(place_node) + " is part of a constant; it cannot be set");
+    }
+    if (var.loop_var && expr.kind == ExprKind::VarRef) {
+        return Fail(ck, place_node,
+                    "the loop variable " + var.name +
+                        " is read-only; copy it into a let to change it");
+    }
+    if (IsArray(ck, type)) {
+        return Fail(ck, node, "arrays are copied element by element; use a for loop");
+    }
+    ExprId value = CheckExpr(ck, node.items[2], type);
+    RequireType(ck, node.items[2], value, type, "set " + Show(place_node));
+    if (IsStruct(ck, type)) {
+        RequireStructSource(ck, node.items[2], value);
+    }
+    ExprId id = AddExpr(ck, ExprKind::Set, kVoidType, node);
+    ExprAt(ck, id).a = place;
+    ExprAt(ck, id).b = value;
+    return id;
+}
+
+ExprId CheckIf(Checker& ck, const Node& node, TypeId hint) {
+    if (node.items.size() != 3 && node.items.size() != 4) {
+        return Fail(ck, node,
+                    "if takes a condition and one or two arms; group forms with (do ...)");
+    }
+    ExprId cond = CheckExpr(ck, node.items[1], kBoolType);
+    RequireType(ck, node.items[1], cond, kBoolType, "the if condition");
+    ExprId id = -1;
+    if (node.items.size() == 3) {
+        ExprId then = CheckArm(ck, node.items[2], -1, true);
+        id = AddExpr(ck, ExprKind::If, kVoidType, node);
+        ExprAt(ck, id).a = cond;
+        ExprAt(ck, id).b = then;
+        return id;
+    }
+    std::vector<const Node*> arms = {&node.items[2], &node.items[3]};
+    std::vector<ExprId> out;
+    TypeId type = CheckArms(ck, arms, hint, out, node, "if");
+    id = AddExpr(ck, ExprKind::If, type, node);
+    ExprAt(ck, id).a = cond;
+    ExprAt(ck, id).b = out[0];
+    ExprAt(ck, id).c = out[1];
+    return id;
+}
+
+ExprId CheckDo(Checker& ck, const Node& node, TypeId hint) {
+    ck.at.scopes.emplace_back();
+    ExprId id = CheckBody(ck, node.items, 1, hint, true, node);
+    ck.at.scopes.pop_back();
+    return id;
+}
+
+ExprId CheckWhile(Checker& ck, const Node& node) {
+    if (node.items.size() < 2) {
+        return Fail(ck, node, "while needs a condition; write (while c body ...)");
+    }
+    ExprId cond = CheckExpr(ck, node.items[1], kBoolType);
+    RequireType(ck, node.items[1], cond, kBoolType, "the while condition");
+    ck.at.loop_depth++;
+    ck.at.scopes.emplace_back();
+    ExprId body = CheckBody(ck, node.items, 2, -1, false, node);
+    ck.at.scopes.pop_back();
+    ck.at.loop_depth--;
+    ExprId id = AddExpr(ck, ExprKind::While, kVoidType, node);
+    ExprAt(ck, id).a = cond;
+    ExprAt(ck, id).b = body;
+    return id;
+}
+
+ExprId CheckFor(Checker& ck, const Node& node) {
+    const std::vector<Node>& items = node.items;
+    bool typed = items.size() > 2 && IsIntegerTypeName(items[2]);
+    std::size_t at = typed ? 3 : 2;
+    if (items.size() < at + 2 || items[1].kind != NodeKind::Symbol) {
+        return Fail(ck, node,
+                    "for needs a name, a start and an end; write (for i u8 0 10 body ...)");
+    }
+    const Node& start_node = items[at];
+    const Node& end_node = items[at + 1];
+    ExprId start = -1;
+    ExprId end = -1;
+    TypeId type = kErrorType;
+    if (typed) {
+        type = ResolveType(ck, items[2]);
+    } else if (!IsBareLiteral(start_node)) {
+        start = CheckExpr(ck, start_node, -1);
+        type = ExprType(ck, start);
+    } else if (!IsBareLiteral(end_node)) {
+        end = CheckExpr(ck, end_node, -1);
+        type = ExprType(ck, end);
+    } else {
+        return Fail(ck, node,
+                    "(for " + items[1].text + " " + start_node.text + " " + end_node.text +
+                        " ...): the loop variable needs a type; write (for " + items[1].text + " " +
+                        LoopTypeFor(start_node.value, end_node.value) + " " + start_node.text +
+                        " " + end_node.text + " ...)");
+    }
+    if (type != kErrorType && !IsIntegerKind(KindOf(*ck.out, type))) {
+        Err(ck, node, "for counts with an integer type, not " + ShowType(ck, type));
+        type = kErrorType;
+    }
+    if (start < 0) {
+        start = CheckExpr(ck, start_node, type);
+    }
+    RequireType(ck, start_node, start, type, "the start of the loop");
+    bool through_max = false;
+    if (end < 0 && IsBareLiteral(end_node) && type != kErrorType) {
+        // (for i u8 0 256 ...) runs through 255: the end may be one past the largest value
+        std::int64_t past = KindBits(KindOf(*ck.out, type)) == 8 ? 256 : 65536;
+        if (IsSignedKind(KindOf(*ck.out, type))) {
+            past /= 2;
+        }
+        through_max = end_node.value == past;
+    }
+    if (!through_max) {
+        if (end < 0) {
+            end = CheckExpr(ck, end_node, type);
+        }
+        RequireType(ck, end_node, end, type, "the end of the loop");
+    } else {
+        end = -1;
+    }
+
+    ck.at.scopes.emplace_back();
+    std::int32_t var = NewLocal(ck, items[1], type, true);
+    if (CheckLocalName(ck, items[1], "loop variable")) {
+        ck.at.scopes.back().entries.push_back(ScopeEntry{items[1].text, var});
+    }
+    ck.at.loop_depth++;
+    ExprId body = CheckBody(ck, items, at + 2, -1, false, node);
+    ck.at.loop_depth--;
+    ck.at.scopes.pop_back();
+    ExprId id = AddExpr(ck, ExprKind::For, kVoidType, node);
+    Expr& expr = ExprAt(ck, id);
+    expr.ref = var;
+    expr.a = start;
+    expr.b = end;
+    expr.c = body;
+    return id;
+}
+
+ExprId CheckReturn(Checker& ck, const Node& node) {
+    if (ck.at.function < 0) {
+        return Fail(ck, node, "return is only inside a fn");
+    }
+    TypeId ret = ck.out->functions[static_cast<std::size_t>(ck.at.function)].ret;
+    const std::string& name = FunctionName(ck);
+    ExprId value = -1;
+    if (node.items.size() > 2) {
+        return Fail(ck, node, "return takes at most one value");
+    }
+    if (node.items.size() == 1 && ret != kVoidType && ret != kErrorType) {
+        return Fail(ck, node, name + " returns " + ShowType(ck, ret) + "; write (return value)");
+    }
+    if (node.items.size() == 2) {
+        if (ret == kVoidType) {
+            return Fail(ck, node,
+                        name + " has no (returns t), so it gives no value; write (return) or add "
+                               "(returns t) after its args");
+        }
+        value = CheckExpr(ck, node.items[1], ret);
+        RequireType(ck, node.items[1], value, ret, "the return value of " + name);
+    }
+    ExprId id = AddExpr(ck, ExprKind::Return, kNeverType, node);
+    ExprAt(ck, id).a = value;
+    return id;
+}
+
+ExprId CheckLoopExit(Checker& ck, const Node& node, bool is_break) {
+    const char* name = is_break ? "break" : "continue";
+    if (node.items.size() != 1) {
+        return Fail(ck, node, std::string(name) + " takes nothing; write (" + name + ")");
+    }
+    if (ck.at.loop_depth == 0) {
+        return Fail(ck, node, std::string(name) + " is only inside while or for");
+    }
+    return AddExpr(ck, is_break ? ExprKind::Break : ExprKind::Continue, kNeverType, node);
+}
+
+} // namespace tisple

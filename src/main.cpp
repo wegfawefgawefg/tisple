@@ -1,4 +1,6 @@
+#include "check/commands.hpp"
 #include "emu/sim_command.hpp"
+#include "interp/interp_command.hpp"
 #include "reader/commands.hpp"
 
 #include <cstdio>
@@ -14,6 +16,9 @@ void PrintUsage() {
                 "  fmt     format .tsp files (-w rewrites, --check fails if unformatted)\n"
                 "  show    print a .tsp file with line numbers and colors\n"
                 "  gen-editors <dir>  regenerate the editor grammars\n");
+    std::printf("  check   check a program and its imports\n"
+                "  expand  print a program after macro expansion\n"
+                "  interp  run main in the reference interpreter (--max-steps N)\n");
 }
 
 } // namespace
@@ -36,6 +41,16 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "gen-editors") == 0) {
         return tisple::RunGenEditorsCommand(argc, argv);
+    }
+
+    if (std::strcmp(argv[1], "check") == 0) {
+        return tisple::RunCheckCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "expand") == 0) {
+        return tisple::RunExpandCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "interp") == 0) {
+        return tisple::RunInterpCommand(argc, argv);
     }
 
     std::fprintf(stderr, "tisple: unknown command '%s'\n", argv[1]);

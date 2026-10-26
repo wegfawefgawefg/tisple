@@ -4,6 +4,6 @@
 
 (fn main
     (gr.show)
-    (for y 0 48
-        (for x 0 40
+    (for y u8 0 48
+        (for x u8 0 40
             (gr.plot x y (& (+ x y) 15)))))

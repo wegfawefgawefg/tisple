@@ -11,7 +11,7 @@
 
 ; body is a list of forms, spliced into the loop
 (macro times (args n body)
-    `(for i# 0 ,n
+    `(for i# u8 0 ,n
         ,@body))
 
 (fn shuffle (args (a u8) (b u8)) (returns u8)
