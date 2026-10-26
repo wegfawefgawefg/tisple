@@ -61,7 +61,7 @@ if unwise.
 | --- | --- |
 | `(const name type value)` | compile-time constant; `type` optional |
 | `(let name type value)` | variable; `type` or `value` may be omitted, not both |
-| `(set place value)` | assign to a name, `(at ...)`, `(field ...)` or `(load ...)` |
+| `(set place value)` | assign to a name, `(at ...)`, `(. ...)` or `(load ...)` |
 | `(fn name (args (p t) ...) body ...)` | function; `args` omitted when none |
 | `(if c then else)` | expression; both arms one form, same type |
 | `(when c body ...)` / `(unless c body ...)` | statement, no value |
@@ -71,7 +71,7 @@ if unwise.
 | `(return value)` / `(break)` / `(continue)` | early exits |
 | `(and a b)` `(or a b)` `(not a)` | short-circuit, on `bool` |
 | `(at arr i)` | array element; `i : u8` when the array has at most 256 elements |
-| `(field s name)` | struct field |
+| `(. s name ...)` | struct field; chains, so `(. s pos x)` is `s.pos.x` |
 | `(load p)` / `(store p v)` | through a pointer |
 | `(addr place)` | address of a variable, element or field |
 | `(io_read t addr)` / `(io_write addr v)` | hardware access, never dropped, merged or reordered |
@@ -102,7 +102,6 @@ macros, modules, `/` and `%`. All planned; none needed to prove the backend.
 
 ## Open questions for the owner
 
-1. `(field s x)` is long for the most common operation. A shorter spelling,
-   e.g. `s.x` read as one symbol, would read better.
+1. Settled 2026-10-26: field access is `(. s x)`.
 2. `if` with single-form arms plus `do`, versus `cond` or `when`/`unless` only.
 3. Pointer arithmetic by elements (C-like) or by bytes.
