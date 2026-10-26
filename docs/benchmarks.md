@@ -18,3 +18,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-26 | f3fe505 | life | generations in 10 M cycles | 43 |
 | 2026-10-26 | 73b02ee | plasma | frames in 10 s (10.23 M cycles) | 140 (14 fps) |
 | 2026-10-26 | (plasma 256-entry ramps) | plasma | frames in 10 s | 177 (17.7 fps) |
+| 2026-10-26 | 6d9e7a4 | life | generations in 10 s | 56 |
+| 2026-10-26 | 6d9e7a4 | plasma | frames in 10 s | 184 (18.4 fps) |
