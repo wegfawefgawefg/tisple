@@ -191,7 +191,7 @@ ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint);
 TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
                  std::vector<ExprId>& out, const Node& owner, const char* what);
 
-// access and calls (access.cpp)
+// access and calls (access.cpp; load, store, addr_of and as in pointers.cpp)
 ExprId CheckAt(Checker& ck, const Node& node);
 ExprId CheckDot(Checker& ck, const Node& node);
 ExprId CheckLoad(Checker& ck, const Node& node);
