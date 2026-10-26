@@ -38,6 +38,10 @@ struct RaceResult {
     std::vector<std::uint8_t> executed; // 65536 flags: an opcode ran at this address
 };
 
+// FILE@ADDR (split at the last @, ADDR as $hex, 0xhex or decimal): the file's bytes at
+// ADDR; false with the error set when it cannot be read or does not fit below $10000
+bool ReadPatchArg(const char* text, RacePatch& out, std::string& error);
+
 // runs the machine as loaded; memory is left as the kernel left it
 RaceResult RunRace(Machine& m, const RaceOptions& options);
 

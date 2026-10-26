@@ -38,7 +38,8 @@ void PrintGapsUsage() {
         "         --only NAME (functions whose name contains NAME),\n"
         "         --verbose (each search on stderr), --print (--fuzz: print the program of\n"
         "         --seed, to build and read it as t.tsp),\n"
-        "         --origin A\n");
+        "         --origin A, --patch FILE@ADDR (--sim: memory written before main, the\n"
+        "         inputs a race kernel runs on)\n");
 }
 
 bool ParseNumber(const char* text, std::uint64_t& out) {
@@ -74,6 +75,14 @@ bool ParseArgs(int argc, char** argv, GapsArgs& args) {
             o.run.bare = true;
         } else if (std::strcmp(arg, "--only") == 0 && i + 1 < argc) {
             o.only = argv[++i];
+        } else if (std::strcmp(arg, "--patch") == 0 && i + 1 < argc) {
+            RacePatch patch;
+            std::string error;
+            ok = ReadPatchArg(argv[++i], patch, error);
+            if (!ok) {
+                std::fprintf(stderr, "tisple gaps: %s\n", error.c_str());
+            }
+            o.run.patches.push_back(patch);
         } else if (std::strcmp(arg, "--print") == 0) {
             args.print_source = true;
         } else if (std::strcmp(arg, "--verbose") == 0) {
@@ -121,6 +130,10 @@ bool ParseArgs(int argc, char** argv, GapsArgs& args) {
         if (!ok) {
             return false;
         }
+    }
+    if (!args.options.run.patches.empty() && (!args.options.run.bare || args.fuzz > 0)) {
+        std::fprintf(stderr, "tisple gaps: --patch needs --sim and a program\n");
+        return false;
     }
     return (args.path != nullptr) != (args.fuzz > 0);
 }

@@ -3,6 +3,7 @@
 
     races/run.sh [--kernels a,b] [--compilers cc65,tisple] [--jobs N] [--variants]
                  [--update-doc]
+    races/run.sh --gaps [--kernels a,b]
 
 Each build is run by `tisple race`: the binary's own startup runs, the inputs are written
 when main is entered, and the cycles from main's first instruction to its RTS are the
@@ -195,6 +196,30 @@ def variants_table(kernel, results):
     return "\n".join(lines)
 
 
+def run_gaps(chosen, top):
+    """tisple gaps on each Tisple kernel, one at a time, on the race's inputs, into
+    races/out/gaps/<kernel>.txt"""
+    os.makedirs(os.path.join(OUT, "gaps"), exist_ok=True)
+    for k in chosen:
+        src = os.path.join(toolchains.kernel_dir(k), "kernel.tsp")
+        cmd = [toolchains.tisple_binary(), "gaps", src, "--sim", "--top", str(top)]
+        inputs = kernel_specs.make_inputs(k)
+        for buf in k.buffers:
+            path = os.path.join(OUT, "gaps", "%s_%s.bin" % (k.name, buf.name))
+            write_file(path, encode(buf, inputs[buf.name], "planar"))
+            cmd += ["--patch", "%s@0x%04X" % (path, buf.address)]
+        try:
+            out = toolchains.run(cmd, toolchains.REPO, "tisple gaps")
+        except toolchains.BuildError as e:
+            out = str(e)
+        path = os.path.join(OUT, "gaps", k.name + ".txt")
+        with open(path, "w") as f:
+            f.write(out)
+        summary = [l for l in out.splitlines() if l.startswith("could save")]
+        print("gaps %s: %s (%s)" % (k.name, summary[0] if summary else "no summary",
+                                    os.path.relpath(path, toolchains.REPO)))
+
+
 def update_doc(text):
     with open(DOC) as f:
         doc = f.read()
@@ -212,11 +237,16 @@ def main():
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--variants", action="store_true", help="every setting, not just the best")
     parser.add_argument("--update-doc", action="store_true", help="rewrite the tables in docs/races.md")
+    parser.add_argument("--gaps", action="store_true",
+                        help="only run tisple gaps on the Tisple kernels (races/out/gaps/)")
     args = parser.parse_args()
     compilers = [c for c in args.compilers.split(",") if c]
     chosen = kernel_specs.KERNELS
     if args.kernels:
         chosen = [kernel_specs.by_name(n) for n in args.kernels.split(",")]
+    if args.gaps:
+        run_gaps(chosen, 12)
+        return 0
 
     jobs = [(k, v) for k in chosen for v in toolchains.variants_for(k, compilers)]
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:

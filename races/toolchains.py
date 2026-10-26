@@ -85,14 +85,17 @@ def kernel_dir(kernel):
 
 
 def variants_for(kernel, compilers):
-    # kernel.c, then other ways to write it in C: lib.c through the C library, ...
-    sources = sorted((s for s in os.listdir(kernel_dir(kernel)) if s.endswith(".c")),
-                     key=lambda s: (s != "kernel.c", s))
+    # kernel.c and kernel.tsp, then other ways to write it: lib.c through the C library,
+    # unroll.tsp with macros.unroll, ...
+    files = os.listdir(kernel_dir(kernel))
+    sources = sorted((s for s in files if s.endswith(".c")), key=lambda s: (s != "kernel.c", s))
+    tisple_sources = sorted((s for s in files if s.endswith(".tsp")),
+                            key=lambda s: (s != "kernel.tsp", s))
     has_multibyte = any(b.is_multibyte() for b in kernel.buffers)
     out = []
     for compiler in compilers:
         if compiler == "tisple":
-            out.append(Variant("tisple", [], "const", "kernel.tsp"))
+            out += [Variant("tisple", [], "const", s) for s in tisple_sources]
             continue
         for source in sources:
             if compiler == "cc65":
@@ -252,11 +255,13 @@ def _nm_objects(nm_text):
             symbols.append((int(parts[0], 16), int(parts[1], 16), parts[2], parts[3]))
         elif len(parts) == 3:
             symbols.append((int(parts[0], 16), None, parts[1], parts[2]))
-    text = [s for s in symbols if s[2] in "tT"]
+    text = [s for s in symbols if s[2] in "tTW"]  # W: weak routines like __memset
+    starts = sorted(set(s[0] for s in symbols))
     objects = []
-    for i, (address, size, _kind, name) in enumerate(text):
+    for address, size, _kind, name in text:
         if size is None or size == 0:
-            later = [s[0] for s in text[i + 1:] if s[0] > address]
+            # an assembly routine without a size: up to the next symbol of any kind
+            later = [a for a in starts if a > address]
             if not later:
                 continue
             size = later[0] - address

@@ -3,6 +3,8 @@
 #include "emu/disasm.hpp"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace tisple {
 
@@ -54,7 +56,48 @@ void ApplyPatches(Machine& m, const RaceOptions& options) {
     }
 }
 
+bool ParseAddress(const char* text, std::uint16_t& out) {
+    int base = 0;
+    if (text[0] == '$') {
+        text++;
+        base = 16;
+    }
+    char* end = nullptr;
+    unsigned long long number = std::strtoull(text, &end, base);
+    if (*text == '\0' || *end != '\0' || number > 0xFFFF) {
+        return false;
+    }
+    out = static_cast<std::uint16_t>(number);
+    return true;
+}
+
 } // namespace
+
+bool ReadPatchArg(const char* text, RacePatch& out, std::string& error) {
+    const char* at = std::strrchr(text, '@');
+    if (at == nullptr || at == text || !ParseAddress(at + 1, out.address)) {
+        error = std::string("expected FILE@ADDR, got ") + text;
+        return false;
+    }
+    std::string path(text, static_cast<std::size_t>(at - text));
+    std::FILE* file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) {
+        error = "cannot read " + path;
+        return false;
+    }
+    out.bytes.clear();
+    std::uint8_t chunk[4096];
+    std::size_t got = 0;
+    while ((got = std::fread(chunk, 1, sizeof(chunk), file)) > 0) {
+        out.bytes.insert(out.bytes.end(), chunk, chunk + got);
+    }
+    std::fclose(file);
+    if (out.address + out.bytes.size() > 0x10000) {
+        error = path + " does not fit at " + (at + 1);
+        return false;
+    }
+    return true;
+}
 
 RaceResult RunRace(Machine& m, const RaceOptions& options) {
     RaceResult result;

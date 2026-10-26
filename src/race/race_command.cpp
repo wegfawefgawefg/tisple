@@ -12,14 +12,8 @@ namespace tisple {
 
 namespace {
 
-struct FileAt {
-    std::string path;
-    std::uint16_t address = 0;
-};
-
 struct RaceArgs {
-    std::vector<FileAt> loads;
-    std::vector<FileAt> patches;
+    std::vector<RacePatch> loads;
     RaceOptions options;
     bool has_start = false;
     bool has_entry = false;
@@ -59,14 +53,16 @@ bool ParseAddress(const char* text, std::uint16_t& out) {
     return true;
 }
 
-// FILE@ADDR, split at the last @
-bool ParseFileAt(const char* text, FileAt& out) {
-    const char* at = std::strrchr(text, '@');
-    if (at == nullptr || at == text) {
+// a FILE@ADDR flag's value; prints why when it cannot be read
+bool ReadFileArg(const char* value, std::vector<RacePatch>& out) {
+    RacePatch patch;
+    std::string error;
+    if (!ReadPatchArg(value, patch, error)) {
+        std::fprintf(stderr, "tisple race: %s\n", error.c_str());
         return false;
     }
-    out.path.assign(text, static_cast<std::size_t>(at - text));
-    return ParseAddress(at + 1, out.address);
+    out.push_back(patch);
+    return true;
 }
 
 bool ParseOne(int argc, char** argv, int& i, RaceArgs& args) {
@@ -75,15 +71,12 @@ bool ParseOne(int argc, char** argv, int& i, RaceArgs& args) {
         return false;
     }
     const char* value = argv[++i];
-    FileAt file;
     std::uint64_t number = 0;
-    if (std::strcmp(arg, "--load") == 0 && ParseFileAt(value, file)) {
-        args.loads.push_back(file);
-        return true;
+    if (std::strcmp(arg, "--load") == 0) {
+        return ReadFileArg(value, args.loads);
     }
-    if (std::strcmp(arg, "--patch") == 0 && ParseFileAt(value, file)) {
-        args.patches.push_back(file);
-        return true;
+    if (std::strcmp(arg, "--patch") == 0) {
+        return ReadFileArg(value, args.options.patches);
     }
     if (std::strcmp(arg, "--start") == 0) {
         args.has_start = true;
@@ -117,20 +110,6 @@ bool ParseArgs(int argc, char** argv, RaceArgs& args) {
     return !args.loads.empty() && args.has_start && args.has_entry;
 }
 
-bool ReadFile(const std::string& path, std::vector<std::uint8_t>& bytes) {
-    std::FILE* file = std::fopen(path.c_str(), "rb");
-    if (file == nullptr) {
-        return false;
-    }
-    std::uint8_t chunk[4096];
-    std::size_t got = 0;
-    while ((got = std::fread(chunk, 1, sizeof(chunk), file)) > 0) {
-        bytes.insert(bytes.end(), chunk, chunk + got);
-    }
-    std::fclose(file);
-    return true;
-}
-
 bool WriteFile(const std::string& path, const void* data, std::size_t size) {
     std::FILE* file = std::fopen(path.c_str(), "wb");
     if (file == nullptr) {
@@ -138,20 +117,6 @@ bool WriteFile(const std::string& path, const void* data, std::size_t size) {
     }
     bool ok = std::fwrite(data, 1, size, file) == size;
     return std::fclose(file) == 0 && ok;
-}
-
-// reads a FILE@ADDR that must fit below $10000
-bool ReadFileAt(const FileAt& file, std::vector<std::uint8_t>& bytes) {
-    if (!ReadFile(file.path, bytes)) {
-        std::fprintf(stderr, "tisple race: cannot read %s\n", file.path.c_str());
-        return false;
-    }
-    if (file.address + bytes.size() > 0x10000) {
-        std::fprintf(stderr, "tisple race: %s does not fit at $%04X\n", file.path.c_str(),
-                     file.address);
-        return false;
-    }
-    return true;
 }
 
 bool WriteOutputs(const RaceArgs& args, const Machine& m, const RaceResult& result) {
@@ -179,20 +144,8 @@ int RunRaceCommand(int argc, char** argv) {
     }
     auto machine = std::make_unique<Machine>();
     InitMachine(*machine);
-    for (const FileAt& load : args.loads) {
-        std::vector<std::uint8_t> bytes;
-        if (!ReadFileAt(load, bytes)) {
-            return 1;
-        }
-        LoadBytes(*machine, load.address, bytes.data(), bytes.size());
-    }
-    for (const FileAt& patch_file : args.patches) {
-        RacePatch patch;
-        patch.address = patch_file.address;
-        if (!ReadFileAt(patch_file, patch.bytes)) {
-            return 1;
-        }
-        args.options.patches.push_back(patch);
+    for (const RacePatch& load : args.loads) {
+        LoadBytes(*machine, load.address, load.bytes.data(), load.bytes.size());
     }
 
     RaceResult result = RunRace(*machine, args.options);

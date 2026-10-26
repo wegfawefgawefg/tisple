@@ -134,6 +134,11 @@ Each is also a benchmark. Rough order:
    hand-written assembly and with cc65, LLVM-MOS and Oscar64. A change that
    makes a kernel slower fails the build.
 
+Status (2026-10-26): the race against the three C compilers is in (`races/`,
+`docs/races.md`): 13 kernels, timed and checked in our simulator. Tisple wins 1, Oscar64
+8, cc65 3 (with its assembly library), LLVM-MOS 1; `docs/races.md` ranks the backend
+work that closes the gap. No build-failing budgets yet.
+
 "Optimal" is provable only for small pieces; for whole programs the bar is the
 best hand-written assembly.
 
