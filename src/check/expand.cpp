@@ -84,6 +84,12 @@ bool ReadMacro(Expander& ex, std::int32_t module, const Node& form, MacroDef& de
         Fail(ex, def.loc, list_fix + def.name + " () `(...))");
         return false;
     }
+    if (items.size() < 3) {
+        Fail(ex, def.loc,
+             "a macro needs parameters and a template; write (macro " + def.name +
+                 " (a b) `(...))");
+        return false;
+    }
     const Node& params = items[2];
     if (params.kind != NodeKind::List || params.mark != QuoteMark::None ||
         HeadText(params) == "args") {

@@ -97,10 +97,7 @@ void AddKeywordTokens(IndexBuilder& ib) {
     const Sources& sources = ib.program->sources;
     for (std::uint32_t f = 0; f < sources.files.size(); f++) {
         const SourceFile& file = sources.files[f];
-        std::vector<Token> tokens;
-        std::vector<ReadError> ignored;
-        LexRecovering(file, tokens, ignored);
-        for (const Token& lexed : tokens) {
+        for (const Token& lexed : ib.lexed[f]) {
             if (lexed.kind != TokenKind::Symbol) {
                 continue;
             }
@@ -208,8 +205,15 @@ void IndexProgram(const std::string& entry_path, const LoadOptions& options, Edi
         // the entry could not be read: its errors still need a file to point at
         out.sources.files.push_back(SourceFileFromText(entry_path, ""));
     }
-    IndexTemplates(ib);
+    for (const SourceFile& file : out.sources.files) {
+        std::vector<ReadError> ignored;
+        ib.lexed.emplace_back();
+        LexRecovering(file, ib.lexed.back(), ignored);
+    }
+    std::vector<ModuleScopeMap> scopes = CollectModuleScopes(ib);
+    IndexTemplates(ib, scopes);
     AddImportUses(ib);
+    IndexLeftovers(ib, scopes);
     AddUseTokens(ib);
     AddKeywordTokens(ib);
     SortTokens(out);

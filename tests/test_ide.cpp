@@ -241,6 +241,8 @@ void BrokenTests(TestResults& results) {
         {"t.tsp", 6, 21, SymbolKind::Global, "Dot", "t.tsp", 2, 6},
         {"t.tsp", 6, 25, SymbolKind::Field, "field x u16 of Dot", "t.tsp", 1, 15},
         {"t.tsp", 8, 10, SymbolKind::Local, "u8", "t.tsp", 6, 10},
+        // the checker gives up on (nope a) at its head; the argument is still found
+        {"t.tsp", 8, 18, SymbolKind::Local, "u8", "t.tsp", 6, 10},
     };
     for (const Expect& expect : expects) {
         CHECK(results, Matches(index, expect));
@@ -248,6 +250,28 @@ void BrokenTests(TestResults& results) {
     CHECK(results, TokenAt(index, "t.tsp", 8, 13) == nullptr); // nope resolves to nothing
     std::string json = tisple::IndexJson(index);
     CHECK(results, json.find("\"message\":\"unknown function nope\"") != std::string::npos);
+
+    // half typed: a call short of its arguments and an if short of its arms still index
+    tisple::LoadOptions typing;
+    typing.lib_dir = "lib0";
+    typing.files.push_back(tisple::VirtualFile{"t.tsp", "(struct Dot ((x u16) (y u8)))\n"
+                                                        "(let dot Dot (make Dot :x 1 :y 2))\n"
+                                                        "(fn two ((a u16) (b u8)) void)\n"
+                                                        "(fn main () void\n"
+                                                        "    (let k u8 1)\n"
+                                                        "    (two dot.x\n"
+                                                        "    (if (< k\n"});
+    EditorIndex typed;
+    tisple::IndexProgram("t.tsp", typing, typed);
+    const Expect typed_expects[] = {
+        {"t.tsp", 6, 6, SymbolKind::Function, "fn two ((a u16) (b u8)) void", "t.tsp", 3, 5},
+        {"t.tsp", 6, 10, SymbolKind::Global, "Dot", "t.tsp", 2, 6},
+        {"t.tsp", 6, 14, SymbolKind::Field, "field x u16 of Dot", "t.tsp", 1, 15},
+        {"t.tsp", 7, 12, SymbolKind::Local, "u8", "t.tsp", 5, 10},
+    };
+    for (const Expect& expect : typed_expects) {
+        CHECK(results, Matches(typed, expect));
+    }
 
     // an entry that cannot be read still gives JSON with its error
     EditorIndex missing;
@@ -291,6 +315,7 @@ void TimingTests(TestResults& results) {
                     .count() /
                 runs;
     // a few ms in a debug build; the bound leaves room for a loaded machine
+    std::printf("index: examples/dot/main.tsp in %.1f ms (load, expand, check, JSON)\n", ms);
     CHECK(results, ms < 100.0);
     CHECK(results, tokens > 0);
 }
