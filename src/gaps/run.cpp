@@ -40,6 +40,10 @@ bool RunMainBare(const Compiled& compiled, const ProfileRunOptions& options, Pro
         return false;
     }
     Machine& m = *run.machine;
+    // the inputs, written where tisple race writes them: the startup is done
+    for (const RacePatch& patch : options.patches) {
+        LoadBytes(m, patch.address, patch.bytes.data(), patch.bytes.size());
+    }
     SetBusLog(m, &p.bus);
     RunOptions ro;
     ro.stop_pc = compiled.after_main;

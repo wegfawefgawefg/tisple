@@ -10,3 +10,5 @@ examples/**/*.bin
 editors/vscode/*.vsix
 programs/**/*.bin
 disks/
+races/out/
+__pycache__/

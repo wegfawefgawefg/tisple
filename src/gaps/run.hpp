@@ -8,15 +8,18 @@
 
 #include "backend/backend.hpp"
 #include "gaps/profile.hpp"
+#include "race/race.hpp"
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace tisple {
 
 struct ProfileRunOptions {
     std::uint64_t max_cycles = 10000000;
     bool bare = false;                  // the bare simulator, not the Apple IIe
+    std::vector<RacePatch> patches;     // bare with a main: written just before main runs
     std::uint64_t call_cycles = 500000; // no main: the cap for one call
     std::uint64_t seed = 1;             // no main: the arguments
 };

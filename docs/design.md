@@ -289,7 +289,7 @@ reports come after the compiler works.
 6. Field-split struct arrays, static frames, zero-page allocation.
 7. Computing macros (compile-time evaluation): tables, sprites, generics, unrolling.
 8. `--cycles` reports.
-9. First race against cc65 and LLVM-MOS on three kernels.
+9. First race against cc65, LLVM-MOS and Oscar64 (done: 13 kernels, `docs/races.md`).
 10. Full Apple II: a hi-res demo booting in a headless emulator.
 
 ## Open decisions
