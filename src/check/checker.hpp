@@ -223,6 +223,8 @@ bool FoldArrayLiteral(Checker& ck, const Node& value, TypeId type, const std::st
                       std::vector<std::uint8_t>& bytes, std::uint32_t offset);
 ExprId CheckIoRead(Checker& ck, const Node& node);
 ExprId CheckIoWrite(Checker& ck, const Node& node);
+// (jsr addr (a v) (x v) (y v)): a machine-code call; its value is A afterwards
+ExprId CheckJsr(Checker& ck, const Node& node);
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function);
 // (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);

@@ -195,6 +195,14 @@ bool RangeRound(const Program& program, ValueRanges& r) {
                 raise_targets(PointsTo(program, r, e.a), m);
                 return;
             }
+            case ExprKind::Jsr:
+                // machine code may change any global, and anything a pointer reaches
+                for (std::size_t v = 0; v < program.vars.size(); v++) {
+                    if (program.vars[v].function < 0 || program.vars[v].address_taken) {
+                        raise(v, 0xFF);
+                    }
+                }
+                return;
             case ExprKind::IoWrite: {
                 std::uint16_t address = 0;
                 if (!ConstValue(program, e.a, address)) {

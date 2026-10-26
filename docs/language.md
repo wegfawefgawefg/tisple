@@ -169,6 +169,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(load p x)` / `(store p x v)` | a field of the struct `p` points to; chains like `(load p pos x)` |
 | `(addr_of place)` | address of a variable, element or field |
 | `(io_read t addr)` / `(io_write t addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
+| `(jsr addr (a v) (x v) (y v))` | call machine code (ROM, card firmware) with registers set; gives A after; see Machine code |
 
 The parameter list is always written, `()` when empty, and the return type is
 always the third item, `void` when nothing is returned:
@@ -477,6 +478,36 @@ The layout checks the one case it can see: a constant `(as (ptr t) n)` whose
 Declare the screen as a variable and write `(addr_of (at screen i))`, or leave
 it undeclared and use `as`; not both.
 
+## Machine code
+
+Owner, 2026-10-26: programs call ROM and card firmware (the mouse first) with one form, and
+there is no inline assembler.
+
+```scheme
+(jsr read_entry (x cn) (y n0)) ; READMOUSE with X = $Cn, Y = $n0
+(jsr 0xFBDD)                   ; the monitor ROM's BELL1; its A is dropped
+```
+
+- `addr` is a `u16`. The register pairs are optional, each at most once, in the order
+  `a`, `x`, `y`, each a `u8`. The value is A after the call, a `u8`; it may be dropped.
+- The address, then the register values, are worked out in the order written; then A, X
+  and Y are set and the JSR runs. A constant address is a plain `JSR`; a computed one is
+  stored into the `JSR`'s own operand first (programs run from RAM).
+- To the optimiser it is I/O and a store through an unknown pointer at once: never
+  dropped, merged or moved, every register and flag clobbered, and what the code knew about
+  registers forgotten.
+- The routine may change any top-level `let`, any variable whose address is taken, and
+  memory the program does not declare (screen holes, soft switches); it never changes a
+  local whose address is not taken. It must return with `RTS`, the stack as it found it and
+  decimal mode off, and leave zero page alone: Tisple keeps variables in all of it. So
+  monitor routines that use zero page (`COUT` at `$FDED` among them) need care.
+- The reference interpreter cannot run machine code: a `jsr` stops it with "jsr needs the
+  machine", so a function that uses one cannot run at compile time, and the fuzz generator
+  never writes one. Test such code in the emulator (`tisple run`).
+- Spelling: the 6502's own mnemonic, since that is exactly what it compiles to; the
+  registers are `(name value)` pairs because keywords are never named arguments (see
+  Keywords), and their fixed order keeps one way to write each call.
+
 ## Diagnostics
 
 Every error gives file:line:column, the offending form, and the fix as code:
@@ -548,4 +579,5 @@ computing macro can generate the stack if it gets repetitive (owner,
 ## Out of the first subset
 
 Named regions, strings (they exist only in macro code), general recursion,
-inline assembly. All planned; none needed to prove the backend.
+inline assembly. All planned; none needed to prove the backend. `jsr` (Machine code)
+calls code that already exists; it is not an inline assembler.

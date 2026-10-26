@@ -161,6 +161,8 @@ enum class ExprKind : std::uint8_t {
     Call,        // ref: function, list: arguments
     IoRead,      // a: u16 address; type u8 or u16
     IoWrite,     // a: address, b: value, value: bytes (1 or 2)
+    Jsr,         // a: u16 address, b: A's value or -1, c: JsrRegs or -1; type u8 (A after)
+    JsrRegs,     // only as a Jsr's c: a: X's value or -1, b: Y's value or -1; type void
     StructLit,   // list: one value per field, in order
     If,          // a: cond, b: then, c: else or -1
     Do,          // list: forms; value is the last

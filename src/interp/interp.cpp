@@ -367,6 +367,12 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
         return EvalIo(in, e);
+    case ExprKind::JsrRegs: // only read through its Jsr
+    case ExprKind::Jsr:
+        // machine code runs only on the 6502: in the emulator, or on a real Apple II
+        Stop(in, StopKind::Error,
+             "jsr needs the machine: the interpreter cannot run 6502 code; use tisple run", e.loc);
+        return 0;
     case ExprKind::StructLit:
         for (std::uint32_t i = 0; i < e.count && in.flow == Flow::Normal; i++) {
             Eval(in, in.program->lists[e.first + i]);

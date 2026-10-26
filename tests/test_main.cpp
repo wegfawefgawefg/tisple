@@ -54,6 +54,7 @@ int main() {
     tisple_tests::RunBackendWideTests(results);
     tisple_tests::RunBackendPeepTests(results);
     tisple_tests::RunBackendBindTests(results);
+    tisple_tests::RunBackendJsrTests(results);
     tisple_tests::RunBackendProgramTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);

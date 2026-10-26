@@ -247,6 +247,9 @@ void GenStmt(Gen& g, ExprId id) {
     case ExprKind::Call:
         EvalCall(g, id, nullptr);
         break;
+    case ExprKind::Jsr:
+        EvalJsr(g, id);
+        break;
     default:
         // a value nobody uses: only its effects matter
         if (HasEffects(*g.program, id)) {

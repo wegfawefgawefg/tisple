@@ -15,6 +15,8 @@
 //   it is written, so overlapping copies through pointers are well defined.
 // - io_read and io_write go only to IoHooks, never to memory; a u16 access is the low byte
 //   at addr, then the high byte at addr + 1.
+// - jsr stops the run with an Error ("jsr needs the machine"): machine code runs only on
+//   the 6502.
 // - Every evaluated expression is one step; past max_steps the run stops with StepLimit.
 //   Division by zero gives what the backend's routine gives (check/arith.hpp) and goes on.
 // - A global with :address and no value is never written at the start: it holds whatever

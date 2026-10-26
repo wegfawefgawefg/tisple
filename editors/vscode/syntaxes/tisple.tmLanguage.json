@@ -52,7 +52,7 @@
     },
     "builtin": {
       "name": "support.function.builtin.tisple",
-      "match": "(?<![^\\s()'`,@])(?:at|load|store|addr_of|io_read|io_write|not|\\+|-|\\*|\\/|%|=|!=|<|<=|>|>=|&|\\||\\^|~|<<|>>)(?![^\\s()\";'`,])"
+      "match": "(?<![^\\s()'`,@])(?:at|load|store|addr_of|io_read|io_write|jsr|not|\\+|-|\\*|\\/|%|=|!=|<|<=|>|>=|&|\\||\\^|~|<<|>>)(?![^\\s()\";'`,])"
     },
     "constant": {
       "name": "constant.language.tisple",

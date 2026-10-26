@@ -427,6 +427,8 @@ Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t co
                   const Opnd* dst);
 // io_read or io_write as a statement
 void GenIo(Gen& g, ExprId id);
+// (jsr ...): the registers set, the call, A after it (gen_jsr.cpp)
+Opnd EvalJsr(Gen& g, ExprId id);
 
 // ---- conditions (gen_cond.cpp)
 

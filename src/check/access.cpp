@@ -264,6 +264,69 @@ ExprId CheckIoWrite(Checker& ck, const Node& node) {
     return id;
 }
 
+namespace {
+
+const char* const kJsrShape = "write (jsr addr (a v) (x v) (y v)), each register at most once, in "
+                              "that order";
+
+// 0, 1, 2 for a, x, y; -1 for anything else
+int JsrRegister(const Node& pair) {
+    if (pair.kind != NodeKind::List || pair.items.size() != 2 ||
+        pair.items[0].kind != NodeKind::Symbol) {
+        return -1;
+    }
+    const std::string& name = pair.items[0].text;
+    if (name == "a") {
+        return 0;
+    }
+    if (name == "x") {
+        return 1;
+    }
+    return name == "y" ? 2 : -1;
+}
+
+} // namespace
+
+ExprId CheckJsr(Checker& ck, const Node& node) {
+    if (node.items.size() < 2 || node.items.size() > 5) {
+        return Fail(ck, node,
+                    std::string("jsr takes an address and up to three registers; ") + kJsrShape);
+    }
+    ExprId address = CheckExpr(ck, node.items[1], kU16Type);
+    bool ok = RequireType(ck, node.items[1], address, kU16Type, "the jsr address");
+    ExprId regs[3] = {-1, -1, -1};
+    int last = -1;
+    for (std::size_t i = 2; i < node.items.size(); i++) {
+        const Node& pair = node.items[i];
+        int reg = JsrRegister(pair);
+        if (reg < 0) {
+            return Fail(ck, pair, Show(pair) + " is not a register; " + kJsrShape);
+        }
+        if (reg <= last) {
+            return Fail(ck, pair, Show(pair) + " is out of order or repeated; " + kJsrShape);
+        }
+        last = reg;
+        static const char* const kNames[] = {"the jsr register a", "the jsr register x",
+                                             "the jsr register y"};
+        regs[reg] = CheckExpr(ck, pair.items[1], kU8Type);
+        ok = RequireType(ck, pair.items[1], regs[reg], kU8Type, kNames[reg]) && ok;
+    }
+    if (!ok) {
+        return ErrorExpr(ck, node);
+    }
+    ExprId xy = -1;
+    if (regs[1] >= 0 || regs[2] >= 0) {
+        xy = AddExpr(ck, ExprKind::JsrRegs, kVoidType, node);
+        ExprAt(ck, xy).a = regs[1];
+        ExprAt(ck, xy).b = regs[2];
+    }
+    ExprId id = AddExpr(ck, ExprKind::Jsr, kU8Type, node);
+    ExprAt(ck, id).a = address;
+    ExprAt(ck, id).b = regs[0];
+    ExprAt(ck, id).c = xy;
+    return id;
+}
+
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function) {
     const Function& fn = ck.out->functions[static_cast<std::size_t>(function)];
     const std::string& head = node.items[0].text;
