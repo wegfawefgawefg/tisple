@@ -257,6 +257,23 @@ bool CarryClearNow(const Gen& g) {
     return last.mn == Mn::CLC || last.carry == Carry::Clear;
 }
 
+bool AHoldsByte(const Gen& g, const Opnd& o, int k) {
+    const ByteRef& b = o.b[k];
+    if (o.in_a || b.kind != ByteKind::Mem || b.value.sym < 0) {
+        return false;
+    }
+    for (std::size_t i = g.out->size(); i-- > 0;) {
+        const AsmItem& item = (*g.out)[i];
+        if (item.kind == ItemKind::Note) {
+            continue;
+        }
+        bool access = item.kind == ItemKind::Ins && (item.mn == Mn::STA || item.mn == Mn::LDA) &&
+                      (item.mode == Mode::Abs || item.mode == Mode::Zp);
+        return access && SameValue(item.value, b.value);
+    }
+    return false;
+}
+
 std::uint32_t MaxOf(const Gen& g, ExprId id) {
     return ExprMax(*g.program, g.be->ranges, id);
 }

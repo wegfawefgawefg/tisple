@@ -64,6 +64,16 @@ void TestAdds(TestResults& results) {
                             "(+ (<< w 8) (as u16 (as u8 (>> w 8))))",
                             "(+ (as u16 x) (<< (as u16 x) 8))",
                         });
+    // the second operand just computed in A: commuted adds, ands, ors and xors
+    CheckForms(results, {
+                            "(+ w (* (as u16 x) 42))",
+                            "(+ (| w 3) (<< (as u16 x) 3))",
+                            "(& w (+ (as u16 x) 0x0F0F))",
+                            "(^ (* (as u16 x) 3) w)",
+                            "(| v (- w (as u16 x)))",
+                            "(+ (* (as u16 x) 5) (* (as u16 x) 7))",
+                            "(- w (* (as u16 x) 9))",
+                        });
     // into destinations that are operands: w's bytes swapped, a byte passed in place
     CheckProgram(results,
                  "(let w u16 0x1234) (let v u16 0xABCD) (let s u16 0)\n"

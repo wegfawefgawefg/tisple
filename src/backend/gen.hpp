@@ -250,6 +250,8 @@ void Unsupported(Gen& g, ExprId id, const char* what);
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value = AsmValue());
 // the last item leaves the carry clear for certain: a CLC, or an add marked as not carrying
 bool CarryClearNow(const Gen& g);
+// A holds byte k of o: the last instruction stored it there or loaded it from there
+bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
 std::int32_t NewLabel(Gen& g);

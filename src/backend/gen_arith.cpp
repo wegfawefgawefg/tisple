@@ -304,32 +304,36 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
     }
     bool carry = false;
     for (int k = 0; k < 2; k++) {
-        int v = ImmByte(b, k);
+        // A already holds b's byte (just stored or loaded): add a to it instead
+        bool flip = Commutes(op) && AHoldsByte(g, b, k) && !IsImm(b);
+        const Opnd& x = flip ? b : a;
+        const Opnd& y = flip ? a : b;
+        int v = ImmByte(y, k);
         switch (op) {
         case Op::Add:
         case Op::Sub:
             if (!carry && v == 0) {
-                LoadA(g, a, k);
+                LoadA(g, x, k);
                 break;
             }
-            if (!carry && op == Op::Add && ImmByte(a, k) == 0) {
-                LoadA(g, b, k);
+            if (!carry && op == Op::Add && ImmByte(x, k) == 0) {
+                LoadA(g, y, k);
                 break;
             }
-            LoadA(g, a, k);
+            LoadA(g, x, k);
             if (!carry) {
                 Emit(g, op == Op::Add ? Mn::CLC : Mn::SEC, Mode::Imp);
                 carry = true;
             }
-            AluByte(g, op, b, k);
+            AluByte(g, op, y, k);
             break;
         case Op::And:
             if (v == 0) {
                 Emit(g, Mn::LDA, Mode::Imm, Num(0));
             } else {
-                LoadA(g, a, k);
+                LoadA(g, x, k);
                 if (v != 0xFF) {
-                    AluByte(g, op, b, k);
+                    AluByte(g, op, y, k);
                 }
             }
             break;
@@ -337,16 +341,16 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
             if (v == 0xFF) {
                 Emit(g, Mn::LDA, Mode::Imm, Num(0xFF));
             } else {
-                LoadA(g, a, k);
+                LoadA(g, x, k);
                 if (v != 0) {
-                    AluByte(g, op, b, k);
+                    AluByte(g, op, y, k);
                 }
             }
             break;
         default:
-            LoadA(g, a, k);
+            LoadA(g, x, k);
             if (v != 0) {
-                AluByte(g, op, b, k);
+                AluByte(g, op, y, k);
             }
             break;
         }

@@ -238,6 +238,23 @@ entry says what happened and what it should do.
     | Life generations in 10 M cycles | 54 | 55 |
     | gaps flagged: life, dot, sprites | 0.78%, 53.95%, 7.73% | 0.76%, 53.95%, 7.73% |
 
+12. Gap list item 8, commuted adds (2026-10-26). A 16-bit add, and, or or
+    xor whose second operand's byte the last instruction just stored from
+    A (or loaded into it) works on that byte in A and reads the first
+    operand instead: `STA t / LDA a / CLC / ADC t` is `CLC / ADC a`, and the
+    store goes when nothing else reads t. Subtraction keeps its order.
+    Tests: in tests/test_backend_wide.cpp, sums, ands, ors and xors of a
+    variable and a value just computed, for every u8, and subtractions;
+    commuting a subtraction fails them.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | hgr row tables | 43594, 169 bytes | 40138, 157 bytes |
+    | life step | 137101 | 136984 |
+    | life draw | 41909 | 41913 (2 instructions fewer, but Life's worlds moved 40 bytes down and draw's rows cross 16 more pages) |
+    | other kernels, Life generations | 156409, 878, 572, 65513, 55 | the same |
+    | gaps flagged: life, dot, sprites | 0.76%, 53.95%, 7.73% | 0.76%, 53.97%, 7.73% |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -329,9 +346,6 @@ Cycles are per 10 M-cycle run unless noted.
    a)` copies a parameter the function then changes through x; seeing that
    the copy and the swap just rename bytes needs value numbering across
    lets, not inlining. (Inlined parameters are done, see Fixed 11.)
-8. Commuted adds. For `(+ a b)` with b just computed in A, add a to it
-   instead of storing b and reloading a: 3 cycles each, proved, in Life's
-   and hgr.init's row arithmetic.
 9. Keep what registers hold across indexed stores that can't reach zero
    page (`STA abs,X` with abs >= $100): sprites' spawn, and fuzz shapes
    `TAX ; LDA abs,X` and `label ; LDA zp`.

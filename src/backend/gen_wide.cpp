@@ -66,11 +66,13 @@ Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst) {
         if (from[0] != From::Number && MayChangeRead(g, named, 0, d, 1)) {
             d = NewTemp(g, 2);
         }
-        LoadA(g, a, 1);
+        // A may already hold b's byte: add a to it instead
+        bool flip = AHoldsByte(g, b, 1);
+        LoadA(g, flip ? b : a, 1);
         if (!CarryClearNow(g)) {
             Emit(g, Mn::CLC, Mode::Imp);
         }
-        OpA(g, Mn::ADC, b, 1);
+        OpA(g, Mn::ADC, flip ? a : b, 1);
         StoreA(g, d, 1);
     }
     Opnd r = d;
