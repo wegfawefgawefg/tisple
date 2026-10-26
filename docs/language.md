@@ -6,8 +6,9 @@ against. Grow it when real programs need more.
 
 ## Program
 
-A program is one or more `.tsp` files of top-level forms: `const`, `let`,
-`struct`, `enum`, `fn`. Order does not matter at top level. `main` is the entry point.
+A program is one or more `.tsp` files of top-level forms: `import`, `const`,
+`let`, `struct`, `enum`, `fn`, `macro`. Order does not matter at top level.
+`main` in the entry file is the entry point.
 
 ```scheme
 (const max_sprites u8 32)
@@ -20,10 +21,43 @@ A program is one or more `.tsp` files of top-level forms: `const`, `let`,
 (fn spawn (args (x u8) (y u8))
     (if (= sprite_count max_sprites)
         (return false))
-    (set (at sprites sprite_count) (sprite (x x) (y y) (active true)))
+    (set (at sprites sprite_count) (sprite :x x :y y :active true))
     (set sprite_count (+ sprite_count 1))
     true)
 ```
+
+## Files and modules
+
+Multi-file programs are core (owner, 2026-10-26). The compiler always sees the
+whole program, so files are namespaces, not separate compilation units.
+
+```scheme
+; gfx/hgr.tsp
+(fn plot (args (x u16) (y u8))
+    ...)
+
+; main.tsp
+(import gfx/hgr)
+(import sound/speaker :as spk)
+
+(fn main
+    (hgr.plot 10 20)
+    (spk.click))
+```
+
+- Import paths are relative to the project root (the entry file's folder),
+  then `lib/` for the bundled Apple II library. The last segment is the
+  prefix (`hgr.plot`); `:as` renames it.
+- `tisple build main.tsp` follows imports to find every file.
+- Every top-level name is importable for now.
+- An import cycle is an error.
+
+## Keywords
+
+*Proposed*: `:name` is a keyword, syntax only, never a runtime value. Used for
+struct literals `(sprite :x 10 :y 20)`, declaration options
+`(let t (array u8 200) :in tables :align 16)`, import options `:as`, and later
+named arguments.
 
 ## Types
 
@@ -142,7 +176,7 @@ runs before the checker, so nothing later sees a macro.
 ## Out of the first subset
 
 Placement controls, strings, function pointers, recursion, inline assembly,
-modules, `/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
+`/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
 
 ## Open questions for the owner
 
