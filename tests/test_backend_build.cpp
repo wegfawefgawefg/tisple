@@ -99,11 +99,28 @@ void TestLibraryKeepsAll(TestResults& results) {
     CHECK(results, built.code_bytes == c.code.code_bytes);
 }
 
+// jsr runs machine code: folding, hoisting and table reads never drop it or move it (the
+// interpreter cannot run it, so these check the code)
+void TestJsrStays(TestResults& results) {
+    Compiled c =
+        CompileText("(let g u8 0)\n(let lo (array u8 256))\n"
+                    "(fn f () u8 (+ (* (jsr 0xFBDD) 0) 1))\n"
+                    "(fn h () u8 (& (jsr 0x0300) 0))\n"
+                    "(fn k () void (for x u8 0 4 (set g (+ (* (jsr 0x0300) 3) (* x 3)))))\n"
+                    "(fn m () u8 (| (at lo (+ (jsr 0x0300) g)) (at lo (+ g 1))))");
+    CHECK(results, c.ok);
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::JSR) == 1);
+    CHECK(results, CountMn(c, "t.h", tisple::Mn::JSR) == 1);
+    CHECK(results, CountMn(c, "t.k", tisple::Mn::JSR) == 1);
+    CHECK(results, CountMn(c, "t.m", tisple::Mn::JSR) == 1);
+}
+
 } // namespace
 
 void RunBackendBuildTests(TestResults& results) {
     TestDroppedFunctions(results);
     TestLibraryKeepsAll(results);
+    TestJsrStays(results);
 }
 
 } // namespace tisple_tests
