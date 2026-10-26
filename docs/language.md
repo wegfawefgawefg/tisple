@@ -304,6 +304,17 @@ Named regions, strings, function pointers, recursion, inline assembly. `/` and
 `%` pass the checker and interpreter; the backend gets them later. All planned;
 none needed to prove the backend.
 
+## Pending change (owner, 2026-10-26)
+
+Applied once the backend branch lands, so it doesn't conflict with it:
+
+- The parameter list is always written, `()` when empty, and `args` goes away:
+  `(fn flip ((x u16) (y u8)) void ...)`, `(macro inc (place) ...)`.
+- The return type is always the third item, `void` when nothing is returned,
+  and `(returns t)` goes away: `(fn read_key () u8 ...)`.
+- No multiple return values for now. The backend may return a `bool` in the
+  carry flag, the ROM's own convention, with no syntax change.
+
 ## Settled 2026-10-26
 
 - Array literals: `(const ROW_ADDR (array u16 192) 0x2000 0x2400 ...)`, values
