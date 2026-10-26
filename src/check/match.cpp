@@ -109,6 +109,7 @@ TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
     TypeId joint = -1;
     bool any_void = false;
     bool reported = false;
+    std::size_t joint_arm = 0;
     for (std::size_t i = 0; i < arms.size(); i++) {
         if (IsBareLiteral(*arms[i])) {
             continue;
@@ -124,13 +125,20 @@ TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
         }
         if (joint < 0) {
             joint = type;
+            joint_arm = i;
         } else if (type != joint && !reported) {
+            // the fix widens the narrower arm
+            std::string fix;
+            TypeKind jk = KindOf(*ck.out, joint);
+            TypeKind tk = KindOf(*ck.out, type);
+            if (IsIntegerKind(jk) && IsIntegerKind(tk)) {
+                bool widen_first = KindBits(jk) < KindBits(tk);
+                fix = ", as in (" + ShowType(ck, widen_first ? type : joint) + " " +
+                      Show(*arms[widen_first ? joint_arm : i]) + ")";
+            }
             Err(ck, *arms[i],
                 std::string(what) + " arms give " + ShowType(ck, joint) + " and " +
-                    ShowType(ck, type) + "; make them the same type" +
-                    (IsIntegerKind(KindOf(*ck.out, joint)) && IsIntegerKind(KindOf(*ck.out, type))
-                         ? ", as in (" + ShowType(ck, joint) + " " + Show(*arms[i]) + ")"
-                         : ""));
+                    ShowType(ck, type) + "; make them the same type" + fix);
             reported = true;
         }
     }

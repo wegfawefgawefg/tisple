@@ -284,15 +284,15 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
     for (std::size_t i = 0; i < ck.consts.size(); i++) {
         EvalConst(ck, static_cast<std::int32_t>(i));
     }
+    ck.body_starts.resize(out.functions.size());
+    for (std::size_t i = 0; i < out.functions.size(); i++) {
+        ReadSignature(ck, static_cast<std::int32_t>(i));
+    }
     std::size_t var_count = out.vars.size();
     for (std::size_t i = 0; i < var_count; i++) {
         if (ck.global_forms[i] != nullptr) {
             ResolveGlobal(ck, static_cast<std::int32_t>(i));
         }
-    }
-    ck.body_starts.resize(out.functions.size());
-    for (std::size_t i = 0; i < out.functions.size(); i++) {
-        ReadSignature(ck, static_cast<std::int32_t>(i));
     }
     for (std::size_t i = 0; i < out.functions.size(); i++) {
         CheckFunctionBody(ck, static_cast<std::int32_t>(i));

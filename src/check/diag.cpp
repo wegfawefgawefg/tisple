@@ -24,10 +24,15 @@ std::string FormatDiagnostic(const Sources& sources, const Diagnostic& diagnosti
     // the span points at the outermost call the user wrote; name every macro on the way
     std::uint32_t expansion = diagnostic.loc.expansion;
     std::string chain;
+    std::string last;
     while (expansion != 0 && expansion <= sources.expansions.size()) {
         const Expansion& entry = sources.expansions[expansion - 1];
-        chain += chain.empty() ? " (in macro " : " from macro ";
-        chain += entry.macro;
+        // a macro that expands to itself is named once
+        if (entry.macro != last) {
+            chain += chain.empty() ? " (in macro " : " from macro ";
+            chain += entry.macro;
+            last = entry.macro;
+        }
         expansion = entry.call.expansion;
     }
     if (!chain.empty()) {

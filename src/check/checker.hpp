@@ -161,6 +161,15 @@ bool RequireType(Checker& ck, const Node& node, ExprId expr, TypeId want, const 
 bool IsPlaceKind(ExprKind kind);
 bool RequireStructSource(Checker& ck, const Node& node, ExprId expr);
 
+// operators and conversions (operators.cpp)
+bool FindBinaryOp(const std::string& name, Op& op);
+void LiteralRange(TypeKind kind, std::int64_t& low, std::int64_t& high);
+bool LiteralFits(TypeKind kind, std::int64_t value);
+ExprId CheckBinary(Checker& ck, const Node& node, Op op, TypeId hint);
+ExprId CheckUnary(Checker& ck, const Node& node, TypeId hint);
+ExprId CheckLogic(Checker& ck, const Node& node);
+ExprId CheckConvert(Checker& ck, const Node& node, TypeId to);
+
 // forms (forms.cpp)
 // forms from items[first] on, as a Do, in the current scope (callers push one)
 ExprId CheckBody(Checker& ck, const std::vector<Node>& items, std::size_t first, TypeId hint,

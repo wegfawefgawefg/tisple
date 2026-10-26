@@ -78,7 +78,15 @@ bool IsSnakeName(std::string_view name) {
 }
 
 bool IsTypeName(std::string_view name) {
-    return IsPascalCase(name);
+    if (name.empty() || !IsUpper(name[0])) {
+        return false;
+    }
+    for (char c : name) {
+        if (!IsUpper(c) && !IsLower(c) && !IsDigit(c)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool IsConstantName(std::string_view name) {
@@ -123,9 +131,6 @@ std::string ToTypeName(std::string_view name) {
     }
     if (out.empty() || !IsUpper(out[0])) {
         out = "T" + out;
-    }
-    if (!IsPascalCase(out)) {
-        out += "Type";
     }
     return out;
 }
