@@ -427,7 +427,8 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
         items.swap(kept);
         bool stores = DropDeadStores(items, private_syms);
         bool carry = CarryPass(items);
-        if (!p.changed && !stores && !carry) {
+        bool values = DropDeadValues(as, items);
+        if (!p.changed && !stores && !carry && !values) {
             return;
         }
     }

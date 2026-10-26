@@ -173,6 +173,26 @@ entry says what happened and what it should do.
    | gaps on hgr.init (of a 10 M-cycle dot run) | 2880 cycles at 7 sites | 2112 at 5 |
    | gaps flagged: life, dot, sprites | 0.78%, 63.68%, 7.73% | 0.78%, 63.73%, 7.73% |
 
+9. Gap list item 5, dead loads and ALU results (2026-10-26). A peephole
+   pass (src/backend/dead_regs.cpp) runs liveness of A, X, Y and the N, Z,
+   C, V flags backwards over the function until it settles, and drops an
+   instruction whose only effect is registers and flags that are all dead
+   before their next write. Reads that may be I/O never go (numbers,
+   symbols at $C000 and up, anything through a pointer), nor stores, stack
+   or memory read-modify-writes; a call, a return or a jump out of the
+   function reads everything. Tests: tests/test_backend_peep.cpp (unused
+   I/O reads, direct, through a pointer made from a number and as u16;
+   flags read after labels and calls; an unused pointer let leaves no
+   load). Dropping the I/O rule or the branches' use of Z fails the tests
+   and hundreds of fuzz programs.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | kernels, Life generations | (item 4) | the same: none has a dead value |
+   | 300 fuzz programs (default run) | 791262 cycles | 772479 cycles |
+   | gaps --fuzz 3000: dead values | 0.65% | 0.16% |
+   | gaps --fuzz 3000: compiled code flagged | 7.63% | 7.00% |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -260,9 +280,6 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-5. A register-liveness pass in the peephole: drop loads and ALU results
-   whose register and flags are both dead before the next write. This is
-   0.7% of fuzz runs and the most common exact superoptimizer result.
 6. Reloads made only for flags. When the flags already follow A, as after
    an LDA or ALU op, drop them. Otherwise test the flags another way
    (`AND #$FF`, 2 cycles). Top load shape in fuzz runs; dot's main loop.
