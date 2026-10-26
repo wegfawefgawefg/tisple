@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <unistd.h>
 
 namespace tisple_tests {
 
@@ -178,7 +179,9 @@ void TestSpeakerWav(TestResults& results) {
     }
     CHECK(results, crossings >= 990 && crossings <= 1010);
 
-    std::string path = (std::filesystem::temp_directory_path() / "tisple_test.wav").string();
+    // one file per process: test runs in parallel (the fuzz farm) must not share it
+    std::string name = "tisple_test_" + std::to_string(getpid()) + ".wav";
+    std::string path = (std::filesystem::temp_directory_path() / name).string();
     std::string error;
     CHECK(results, tisple::WriteWav(path, samples, error));
     CHECK(results, std::filesystem::file_size(path) == 44 + samples.size() * 2);
