@@ -269,6 +269,21 @@ void TestRegressions(TestResults& results) {
                  "    (set g0 5)\n"
                  "    (set h b))",
                  "t.f", {});
+    // fuzz seeds 3002869864, 7003579163, 1003065560 and 5 more: a 16-bit shift by 5 to 7
+    // writes its result's high byte before it reads the source's; the source was an element
+    // of the same array by a variable index, or the same bytes through a pointer, and was
+    // not seen to overlap
+    CheckProgram(results,
+                 "(let gs u8 2)\n"
+                 "(let w u16 0x1234)\n"
+                 "(let arr (array u16 4) (make (array u16 4) 13487 60195 47343 28371))\n"
+                 "(fn f () u16\n"
+                 "    (set (at arr 2) (<< (at arr (& gs 3)) 5))\n"
+                 "    (set (at arr 1) (>> (at arr (& (+ gs 255) 3)) 6))\n"
+                 "    (let p (ptr u16) (addr_of w))\n"
+                 "    (set w (<< (load p) 6))\n"
+                 "    (+ w (at arr 2)))",
+                 "t.f", {});
     // u16 loops in every shape: page crossing, ending on a page, through the top
     CheckProgram(results,
                  "(let wb (array u8 1024))\n"

@@ -79,8 +79,12 @@ bool IsMemoryByte(const ByteRef& b) {
     return b.kind == ByteKind::Mem || b.kind == ByteKind::MemIdx || b.kind == ByteKind::IndY;
 }
 
-// could byte x of src and byte y of dst be the same memory (no pointer reaches a temporary)
-bool MaySameByte(const Opnd& src, const ByteRef& x, const Opnd& dst, const ByteRef& y) {
+// could byte x of src and byte y of dst be the same memory (no pointer reaches a temporary).
+// same_pos: the two bytes sit at the same position of their values. Pointers are aligned to
+// what they were made from, so a byte read through one can only be another position's byte
+// of a value when src moves bytes.
+bool MaySameByte(const Gen& g, const Opnd& src, const ByteRef& x, const Opnd& dst,
+                 const ByteRef& y, bool same_pos) {
     if (!IsMemoryByte(x) || !IsMemoryByte(y)) {
         return false;
     }
@@ -88,7 +92,16 @@ bool MaySameByte(const Opnd& src, const ByteRef& x, const Opnd& dst, const ByteR
         return x.kind == y.kind && x.value.sym == y.value.sym && x.value.offset == y.value.offset;
     }
     if (x.kind == ByteKind::IndY || y.kind == ByteKind::IndY) {
-        return src.moved;
+        if (!same_pos && !src.moved) {
+            return false;
+        }
+        if (x.kind == ByteKind::IndY && y.kind == ByteKind::IndY) {
+            return true;
+        }
+        return PointerMayReach(g, x.kind == ByteKind::IndY ? y.value : x.value);
+    }
+    if (x.kind == ByteKind::MemIdx || y.kind == ByteKind::MemIdx) {
+        return x.value.sym == y.value.sym; // any element of the same array
     }
     return x.value.sym == y.value.sym && x.value.offset == y.value.offset;
 }
@@ -127,7 +140,8 @@ bool MayChangeRead(const Gen& g, const Opnd& src, int x, const Opnd& dst, int y)
     if (src.in_a) {
         return false;
     }
-    return MaySameByte(src, src.b[x], dst, dst.b[y]) || MayMoveAddress(g, src, src.b[x], dst.b[y]);
+    return MaySameByte(g, src, src.b[x], dst, dst.b[y], x == y) ||
+           MayMoveAddress(g, src, src.b[x], dst.b[y]);
 }
 
 bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst) {
@@ -136,7 +150,7 @@ bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst) {
     }
     // dst byte 0 is written before src byte 1 is read: (<< x 8) reads a moved byte, and
     // (at a (as u8 v)) into v reads its index again
-    return (src.moved && MaySameByte(src, src.b[1], dst, dst.b[0])) ||
+    return (src.moved && MaySameByte(g, src, src.b[1], dst, dst.b[0], false)) ||
            MayMoveAddress(g, src, src.b[1], dst.b[0]);
 }
 
