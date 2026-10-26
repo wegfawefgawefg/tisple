@@ -247,6 +247,12 @@ void TestPlacements(TestResults& results) {
     CHECK(results, StartDiff(d, c));
     CheckDiff(results, d, "t.f", {});
     CheckDiff(results, d, "t.f", {});
+    // an :address global with no value is not in the file, so loading leaves it alone
+    Compiled untouched = CompileText("(let buf (array u8 64) :address 0x7000)\n"
+                                     "(let kept (array u8 4) :address 0x7100)\n"
+                                     "(let x u8 3)\n"
+                                     "(fn f () u8 (+ x (at buf 1)))");
+    CHECK(results, untouched.ok && untouched.code.origin + untouched.code.image.size() < 0x7000);
     // a code/data overlap is an error, not a silent clobber
     Compiled clash = CompileText("(let x u8 :address 0x6002)\n(fn f () void (set x 1))");
     CHECK(results, !clash.ok && clash.errors.find("overlaps the program") != std::string::npos);

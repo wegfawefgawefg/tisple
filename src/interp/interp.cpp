@@ -267,12 +267,9 @@ std::uint16_t EvalBinary(Interp& in, const Expr& e) {
     if (in.flow != Flow::Normal) {
         return 0;
     }
+    // a division by zero has a defined result (check/arith.hpp), so it does not stop
     bool div_by_zero = false;
-    std::uint16_t value = EvalBinaryOp(e.op, TypeAt(in, At(in, e.a).type).kind, a, b, div_by_zero);
-    if (div_by_zero) {
-        Stop(in, StopKind::Error, "division by zero", e.loc);
-    }
-    return value;
+    return EvalBinaryOp(e.op, TypeAt(in, At(in, e.a).type).kind, a, b, div_by_zero);
 }
 
 std::uint16_t EvalIo(Interp& in, const Expr& e) {

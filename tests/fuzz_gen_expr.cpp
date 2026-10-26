@@ -215,6 +215,11 @@ std::string Gen::IntExpr(T t, int depth) {
         return std::string("(") + (rng.Chance(50) ? "<<" : ">>") + " " + NonLit(t, depth - 1) +
                " " + Count() + ")";
     case 4:
+        // mostly odd divisors; now and then any, zero included, which has a defined result
+        if (rng.Chance(20)) {
+            return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
+                   " " + Expr(t, depth - 1) + ")";
+        }
         return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
                " (| " + NonLit(t, depth - 1) + " 1))";
     case 5: {

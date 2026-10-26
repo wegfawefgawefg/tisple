@@ -238,7 +238,10 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
         }
         WriteVarInit(program, out.layout, static_cast<std::int32_t>(v), memory);
         bool in_file = place.address >= options.origin && place.address < data_end;
-        if (program.vars[v].function < 0 && in_file && place.size > 0) {
+        // an :address global with no value is left as memory holds it, like a screen
+        const Var& var = program.vars[v];
+        bool untouched = var.placement.has_address && var.init.empty();
+        if (var.function < 0 && in_file && place.size > 0 && !untouched) {
             image_end = std::max(image_end, place.address + place.size);
         }
     }

@@ -16,7 +16,9 @@
 // - io_read and io_write go only to IoHooks, never to memory; a u16 access is the low byte
 //   at addr, then the high byte at addr + 1.
 // - Every evaluated expression is one step; past max_steps the run stops with StepLimit.
-//   Division by zero stops with Error.
+//   Division by zero gives what the backend's routine gives (check/arith.hpp) and goes on.
+// - A global with :address and no value is never written at the start: it holds whatever
+//   memory held (zero in a fresh interpreter), as on the machine.
 
 #include "check/program.hpp"
 #include "link/layout.hpp"

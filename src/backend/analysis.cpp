@@ -99,9 +99,6 @@ bool HasEffects(const Program& program, ExprId id) {
         case ExprKind::While:
         case ExprKind::For:
             return true;
-        case ExprKind::Binary:
-            // a division by zero stops the interpreter, so keep it
-            return e.op == Op::Div || e.op == Op::Mod;
         default:
             return false;
         }

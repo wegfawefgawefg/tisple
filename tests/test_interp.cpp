@@ -177,11 +177,13 @@ void StopTests(TestResults& results) {
     tisple::InterpResult result = tisple::CallFunction(in, spin.program.main, {});
     CHECK(results, result.kind == tisple::StopKind::StepLimit);
     CHECK(results, result.message == "step limit of 1000 reached");
-    Built divide = BuildText("(fn f ((a u8) (b u8)) u8 (/ a b))");
+    // division by zero does not stop: x / 0 is all ones (1 for a negative signed x), x % 0 is x
+    Built divide = BuildText("(fn f ((a u8) (b u8)) u8 (/ a b))\n"
+                             "(fn g ((a i16) (b i16)) i16 (+ (/ a b) (% a b)))");
     StartInterp(in, divide);
-    result = tisple::CallFunction(in, tisple::FindFunction(divide.program, "t.f"), {7, 0});
-    CHECK(results, result.kind == tisple::StopKind::Error && result.message == "division by zero");
-    CHECK(results, tisple::FormatLoc(divide.program.sources, result.loc) == "t.tsp:1:26");
+    CHECK(results, CallOk(results, in, "t.f", {7, 0}) == 0xFF);
+    CHECK(results, CallOk(results, in, "t.g", {0xFFF6, 0}) == 0xFFF7);
+    CHECK(results, CallOk(results, in, "t.g", {10, 0}) == 9);
 }
 
 void IoTests(TestResults& results) {

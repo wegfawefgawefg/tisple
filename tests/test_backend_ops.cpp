@@ -149,9 +149,7 @@ void TestType(TestResults& results, const char* type, TypeKind kind) {
                 bs.push_back(0xFF);
             }
             for (std::uint16_t b : bs) {
-                if ((oc.op == Op::Div || oc.op == Op::Mod) && b == 0) {
-                    continue;
-                }
+                // b == 0 included: division by zero has a defined result
                 bool by_zero = false;
                 std::uint16_t want = tisple::EvalBinaryOp(oc.op, kind, a, b, by_zero) & mask;
                 run.Expect(oc.name, a, b, want);
@@ -209,9 +207,6 @@ void TestConstants(TestResults& results, const char* type, TypeKind kind) {
     std::vector<Case> cases;
     for (const OpCase& oc : kOps) {
         for (std::int32_t c : constants) {
-            if ((oc.op == Op::Div || oc.op == Op::Mod) && c == 0) {
-                continue;
-            }
             if (oc.count && (c < 0 || c > 20)) {
                 continue;
             }
