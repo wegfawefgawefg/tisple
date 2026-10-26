@@ -7,6 +7,7 @@
 #include "test_gaps.hpp"
 #include "test_ide.hpp"
 #include "test_machine.hpp"
+#include "test_race.hpp"
 #include "test_reader.hpp"
 
 #include <cstdio>
@@ -59,6 +60,7 @@ int main() {
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);
     tisple_tests::RunSuperoptTests(results);
+    tisple_tests::RunRaceTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;
