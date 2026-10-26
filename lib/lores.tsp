@@ -52,3 +52,10 @@
     (if (= (& y 1) 0)
         (store p (| (& old 0xF0) color))
         (store p (| (& old 0x0F) (<< color 4)))))
+
+; the color of block x, y
+(fn get ((x u8) (y u8)) u8
+    (let b u8 (load (+ (row (>> y 1)) (as u16 x))))
+    (if (= (& y 1) 0)
+        (& b 0x0F)
+        (>> b 4)))
