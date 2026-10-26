@@ -89,7 +89,15 @@ void LoopTests(TestResults& results) {
     ExpectError(results, "(fn f ((n u16)) void (for i u8 0 n))",
                 "t.tsp:1:34: the end of the loop needs a u8 but n is u16; write (as u8 n)");
     ExpectError(results, "(fn f () void (for i u8 0 257))",
-                "t.tsp:1:27: 257 does not fit in u8 (0 to 255)");
+                "t.tsp:1:27: 257 does not fit in u8, the loop's type; write (for i u16 0 257 ...)");
+    ExpectError(
+        results, "(fn f () void (for i i8 -1 200))",
+        "t.tsp:1:28: 200 does not fit in i8, the loop's type; write (for i i16 -1 200 ...)");
+    // a one-armed if is a statement: as a value it is one error, not one about its arm too
+    ExpectError(results, "(fn f ((x u8)) u8 (let k u8 (if (= x 0) 1)) k)",
+                "t.tsp:1:29: an if without an else gives no value; write (if (= x 0) 1 other)");
+    CHECK(results, ErrorText(BuildText("(fn f ((x u8)) u8 (let k u8 (if (= x 0) 1)) k)"))
+                           .find("does nothing") == std::string::npos);
     ExpectError(results, "(fn f ((b bool)) void (for i b true))",
                 "t.tsp:1:23: for counts with an integer type, not bool");
     // (for i u8 0 256 ...) covers every byte

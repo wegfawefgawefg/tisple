@@ -1,6 +1,7 @@
 #include "reader/format.hpp"
 #include "test_reader.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <random>
 
@@ -100,9 +101,9 @@ void TestBreaking(TestResults& results) {
     for (int i = 0; i < 40; i++) {
         atoms += " 0x" + std::to_string(1000 + i);
     }
-    std::string table = Format("(const T (array u16 40)" + atoms + ")");
-    CHECK(results, table.find("(const T\n    (array u16 40)\n    0x1000 0x1001") == 0);
-    CHECK(results, Format(Mash(table)) == table);
+    std::string run = Format("(f (array u16 40)" + atoms + ")");
+    CHECK(results, run.find("(f (array u16 40)\n    0x1000 0x1001") == 0);
+    CHECK(results, Format(Mash(run)) == run);
     // a long parameter list keeps its first parameter, then one per line at +8
     std::string long_params = "(fn draw ((dst (ptr u8)) (src (ptr u8)) (" + name +
                               " u8) (count u8) (step u8)) void (copy))";
@@ -122,13 +123,46 @@ void TestBreaking(TestResults& results) {
           Canonical("(enum Big (" + name + "\n        " + name + "_b\n        " + name + "_c))\n"));
     CHECK(results, Canonical("(struct Big ((" + name + " u8)\n        (" + name +
                              "_b u16)\n        (" + name + "_c bool)))\n"));
-    // a keyword and its value stay together
-    CHECK(results, Canonical("(let " + name + "\n    (array u8 200)\n    :in " + name +
+    // a keyword and its value stay together; a declaration's type stays on the head line
+    CHECK(results, Canonical("(let " + name + " (array u8 200)\n    :in " + name +
                              "\n    :align 256\n    :boundary 256)\n"));
+    CHECK(results, FormatsTo("(const " + name + "\n (array u8 2)\n (make (array u8 2) 1 2))",
+                             "(const " + name + " (array u8 2) (make (array u8 2) 1 2))\n"));
+    CHECK(results, FormatsTo("(let " + name + "\n u8\n (+ " + name + " " + name + "))",
+                             "(let " + name + " u8\n    (+ " + name + " " + name + "))\n"));
     // closing parens count toward the 100 columns
     std::string fits(92, 'x');
     CHECK(results, Canonical("(a (b " + fits + "))\n"));
     CHECK(results, Format("(a (b " + fits + "x))").find('\n') < 20);
+}
+
+// a run of atoms keeps the author's line breaks: a data table's rows mean something
+void TestDataLists(TestResults& results) {
+    std::string table = "(const ROW (array u16 12)\n"
+                        "    (make (array u16 12)\n"
+                        "        0x0400 0x0480 0x0500 0x0580\n"
+                        "        0x0600 0x0680 0x0700 0x0780\n"
+                        "\n"
+                        "        0x0428 0x04A8 0x0528 0x05A8)\n"
+                        "    :boundary 256)\n";
+    CHECK(results, FormatsTo(table, table));
+    // with no breaks to keep, as from a mashed line, the values fill lines to 100 columns
+    CHECK(results, FormatsTo(Mash(table), "(const ROW (array u16 12)\n"
+                                          "    (make (array u16 12)\n"
+                                          "        0x0400 0x0480 0x0500 0x0580 0x0600 0x0680 "
+                                          "0x0700 0x0780 0x0428 0x04A8 0x0528 0x05A8)\n"
+                                          "    :boundary 256)\n"));
+    // a row too long for one line fills on from where it breaks
+    std::string atoms;
+    for (int i = 0; i < 30; i++) {
+        atoms += " 0x" + std::to_string(1000 + i);
+    }
+    std::string long_row = Format("(f g\n 1 2\n" + atoms + ")");
+    CHECK(results, long_row.find("(f g\n    1 2\n    0x1000 0x1001") == 0);
+    CHECK(results, long_row.find("0x1012\n    0x1013 0x1014") != std::string::npos);
+    CHECK(results, std::count(long_row.begin(), long_row.end(), '\n') == 5);
+    // a list that fits on one line is one line: only long runs keep their breaks
+    CHECK(results, FormatsTo("(f 1\n 2\n 3)", "(f 1 2 3)\n"));
 }
 
 void TestComments(TestResults& results) {
@@ -240,7 +274,9 @@ void TestExamples(TestResults& results) {
         ReadError error;
         CHECK(results, tisple::FormatSource(file, formatted, error) && formatted == file.text);
 
-        // mashed onto one line it formats like the file minus comments and blank lines
+        // mashed onto one line it formats like the file minus comments, blank lines and the
+        // author's line breaks in runs of atoms (a data table's rows): the mashed text has
+        // none of them, so both pack the values to 100 columns
         Tree tree;
         CHECK(results, tisple::ReadTree(file, tree, error));
         std::string plain = tisple::FormatTree(file, tree, false);
@@ -292,6 +328,8 @@ std::string RandomProgram(std::mt19937& rng) {
             out += "\n; own line\n";
         } else if (gap == 2) {
             out += "\n\n";
+        } else if (gap == 3) {
+            out += "\n";
         } else {
             out += " ";
         }
@@ -330,6 +368,7 @@ void TestRandomPrograms(TestResults& results) {
 void RunFormatTests(TestResults& results) {
     TestBodyForms(results);
     TestBreaking(results);
+    TestDataLists(results);
     TestComments(results);
     TestBlankLines(results);
     TestQuoteMarks(results);

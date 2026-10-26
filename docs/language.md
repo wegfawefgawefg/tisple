@@ -121,7 +121,8 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 ## Integers
 
 - No implicit widening or promotion. Both sides of `+`, `=`, `<` and so on must
-  have the same type. `(+ (as u16 a) b)` widens `a` explicitly.
+  have the same type. `(+ (as u16 a) b)` widens `a` explicitly. The one
+  exception is a pointer's count: `(+ p x)` takes a `u8` or `u16` `x`.
 - `as` is the only conversion: `(as u16 y)`, `(as u8 addr)`. Narrowing
   truncates; widening zero-extends from unsigned and sign-extends from signed.
   An enum member converts to its number, `(as u8 Action.fire)`; nothing
@@ -330,6 +331,8 @@ because a macro emits Tisple, not instructions.
   takes an element's address; then they are packed (little-endian). Either way
   `(at arr i)` with `i : u8` is one or two `LDA abs,X`.
 - `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes (settled).
+  `n` is `u8` or `u16`; a `u8` count is `(as u16 n)` written short, since
+  `(load (+ p x))` with `x : u8` is the 6502's `LDA (p),Y` (2026-10-26).
 
 ### Pointer provenance
 

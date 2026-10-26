@@ -140,7 +140,7 @@ void DotTests(TestResults& results) {
         {main, 13, 19, SymbolKind::Builtin, "(+ a b)", nullptr, 0, 0},
         // inside gfx/hgr
         {hgr, 41, 12, SymbolKind::Parameter, "u16", hgr, 41, 12},
-        {hgr, 43, 62, SymbolKind::Parameter, "u16", hgr, 41, 12},
+        {hgr, 43, 55, SymbolKind::Parameter, "u16", hgr, 41, 12},
         {hgr, 43, 10, SymbolKind::Local, "(ptr u8)", hgr, 43, 10},
         {hgr, 20, 18, SymbolKind::Global, "(array u8 192)", hgr, 8, 6},
     };

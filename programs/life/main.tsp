@@ -37,7 +37,7 @@
     (for y u8 1 49
         (let r (ptr u8) (row_of cur y))
         (for x u8 1 41
-            (store (+ r (as u16 x)) (if (< (random) 80)
+            (store (+ r x) (if (< (random) 80)
                 LIVE
                 DEAD)))))
 
@@ -48,17 +48,14 @@
         (let below (ptr u8) (row_of cur (+ y 1)))
         (let out (ptr u8) (row_of next y))
         (for x u8 1 41
-            (let l u16 (as u16 (- x 1)))
-            (let c u16 (as u16 x))
-            (let r u16 (as u16 (+ x 1)))
             (let n u8
                 (+
-                    (+ (+ (load (+ above l)) (load (+ above c)))
-                        (+ (load (+ above r)) (load (+ here l))))
-                    (+ (+ (load (+ here r)) (load (+ below l)))
-                        (+ (load (+ below c)) (load (+ below r))))))
-            (let alive u8 (load (+ here c)))
-            (store (+ out c) (if (or (= n 3) (and (= n 2) (= alive LIVE)))
+                    (+ (+ (load (+ above (- x 1))) (load (+ above x)))
+                        (+ (load (+ above (+ x 1))) (load (+ here (- x 1)))))
+                    (+ (+ (load (+ here (+ x 1))) (load (+ below (- x 1))))
+                        (+ (load (+ below x)) (load (+ below (+ x 1)))))))
+            (let alive u8 (load (+ here x)))
+            (store (+ out x) (if (or (= n 3) (and (= n 2) (= alive LIVE)))
                 LIVE
                 DEAD)))))
 
@@ -69,9 +66,9 @@
         (let top (ptr u8) (row_of cur (+ (<< r 1) 1)))
         (let bottom (ptr u8) (row_of cur (+ (<< r 1) 2)))
         (for x u8 0 40
-            (let c u16 (as u16 (+ x 1)))
-            (store (+ screen (as u16 x))
-                (| (at TOP_COLOR (load (+ top c))) (at BOTTOM_COLOR (load (+ bottom c))))))))
+            (store (+ screen x)
+                (| (at TOP_COLOR (load (+ top (+ x 1))))
+                    (at BOTTOM_COLOR (load (+ bottom (+ x 1)))))))))
 
 (fn swap () void
     (let t (ptr u8) cur)

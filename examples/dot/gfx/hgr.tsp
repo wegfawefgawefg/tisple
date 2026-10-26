@@ -40,5 +40,5 @@
 ; xor one pixel, so drawing twice erases it
 (fn flip ((x u16) (y u8)) void
     (let row u16 (| (<< (as u16 (at row_hi y)) 8) (as u16 (at row_lo y))))
-    (let p (ptr u8) (as (ptr u8) (+ row (as u16 (at col_byte x)))))
+    (let p (ptr u8) (+ (as (ptr u8) row) (at col_byte x)))
     (store p (^ (load p) (at col_bit x))))

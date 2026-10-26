@@ -159,10 +159,12 @@ std::string SourcePath(const std::string& relative) {
 
 std::vector<std::string> ExampleFiles() {
     std::vector<std::string> paths;
-    for (const auto& entry :
-         std::filesystem::recursive_directory_iterator(SourcePath("examples"))) {
-        if (entry.is_regular_file() && entry.path().extension() == ".tsp") {
-            paths.push_back(entry.path().string());
+    for (const char* folder : {"examples", "programs", "lib"}) {
+        for (const auto& entry :
+             std::filesystem::recursive_directory_iterator(SourcePath(folder))) {
+            if (entry.is_regular_file() && entry.path().extension() == ".tsp") {
+                paths.push_back(entry.path().string());
+            }
         }
     }
     std::sort(paths.begin(), paths.end());

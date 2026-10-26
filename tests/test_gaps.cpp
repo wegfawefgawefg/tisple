@@ -156,7 +156,7 @@ void TestLifeCarries(TestResults& results) {
     int step_carries = 0;
     for (const tisple::Finding& f : gaps.findings) {
         if (f.pattern == tisple::Pattern::kFlagAlready && f.function == "main.step" &&
-            f.text == "CLC" && f.source.find(":54:") != std::string::npos) {
+            f.text == "CLC" && f.source.find("(let n u8") != std::string::npos) {
             step_carries++;
         }
     }

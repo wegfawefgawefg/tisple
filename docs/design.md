@@ -111,8 +111,15 @@ Formatter rules (`tisple fmt`, implemented in `src/reader/format.cpp`):
 - Everything else stays on one line when it fits in 100 columns, closing
   parentheses included. Otherwise the head and the first argument stay (the
   first argument goes down too if it does not fit), each remaining list
-  argument gets its own line at +4, and runs of atoms fill lines (data tables
-  stay compact).
+  argument gets its own line at +4, and runs of atoms fill lines.
+- Declarations (`let`, `const`) keep the type on the head line with the name,
+  even a list type: `(const ROW_START (array u16 24)`, then the value at +4.
+- Data lists: in a list that takes several lines, a run of atoms keeps the
+  author's line breaks, because a table's layout means something (8 row
+  addresses a line in `lib/lores.tsp`). An atom that starts a line in
+  the source starts one in the output; the others fill the line to 100
+  columns. A list that fits on one line still goes on one line, and with no
+  breaks to keep (a mashed line) the values pack.
 - A body form as the last argument hangs off the head line when the head line
   fits: `(let m u8 (if c` then arms at +4.
 - Parameter lists (`fn`, `macro`) and field and member lists (`struct`, `enum`)
@@ -135,8 +142,9 @@ Formatter rules (`tisple fmt`, implemented in `src/reader/format.cpp`):
   together.
 - Output ends with one newline. Formatting is idempotent, keeps the tree, and a
   program mashed onto one line formats to the same text as the hand-laid-out
-  one (minus comments and blank lines); `tisple_tests` checks all three on
-  every file in `examples/` and on random programs.
+  one minus comments, blank lines and the line breaks in data lists;
+  `tisple_tests` checks all three on every file in `examples/`, `programs/`
+  and `lib/` and on random programs.
 
 An indentation-only syntax (wisp, SRFI 119; Racket's Rhombus) could be added
 later as a second reader producing the same tree. Not planned.

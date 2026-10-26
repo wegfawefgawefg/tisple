@@ -222,7 +222,9 @@ std::string Gen::ByteIndex(int depth) {
         }
     }
     if (pick < 7) {
-        return "(as u16 " + ByteForm() + ")";
+        // a u8 count is (as u16 count) written short: both spellings must compile the same
+        std::string byte = ByteForm();
+        return pick % 2 == 1 ? byte : "(as u16 " + byte + ")";
     }
     if (pick < 8) {
         return std::to_string(rng.Below(256));

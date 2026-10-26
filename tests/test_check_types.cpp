@@ -1,5 +1,8 @@
 #include "test_check.hpp"
 
+#include <algorithm>
+#include <cstdio>
+
 namespace tisple_tests {
 
 namespace {
@@ -26,11 +29,80 @@ void OperatorTests(TestResults& results) {
                 "t.tsp:1:21: not works on bool, not u8; write (= x 0)");
     ExpectError(results, "(fn f ((x u8)) bool (and x true))",
                 "t.tsp:1:26: and needs a bool but x is u8; write (!= x 0)");
-    // pointer arithmetic moves by elements, with a u16 count
-    ExpectError(results, "(fn f ((p (ptr u8)) (n u8)) (ptr u8) (+ p n))",
-                "t.tsp:1:43: a pointer moves by a u16 count of elements; write (+ p (as u16 n))");
+    // pointer arithmetic moves by elements, with a u8 or u16 count
+    ExpectError(results, "(fn f ((p (ptr u8)) (n i8)) (ptr u8) (+ p n))",
+                "t.tsp:1:43: a pointer moves by a u8 or u16 count of elements; n is i8; write "
+                "(+ p (as u16 n))");
+    ExpectError(results, "(fn f ((p (ptr u8)) (n i16)) (ptr u8) (- p n))",
+                "t.tsp:1:44: a pointer moves by a u8 or u16 count of elements; n is i16; write "
+                "(- p (as u16 n))");
     ExpectError(results, "(fn f ((p (ptr u8))) (ptr u8) (+ 1 p))",
                 "t.tsp:1:31: the pointer goes first; write (+ p 1)");
+}
+
+// (+ p x) with x : u8 is the tree (+ p (as u16 x)) gives: a Convert to u16 under the PtrAdd
+void PointerCountTests(TestResults& results) {
+    Built built = BuildText("(fn f ((p (ptr u16)) (x u8)) (ptr u16) (- (+ p x) (+ x 1)))");
+    CHECK(results, built.ok);
+    int widened = 0;
+    for (const tisple::Expr& expr : built.program.exprs) {
+        if (expr.kind != tisple::ExprKind::PtrAdd && expr.kind != tisple::ExprKind::PtrSub) {
+            continue;
+        }
+        const tisple::Expr& count = built.program.exprs[static_cast<std::size_t>(expr.b)];
+        const tisple::Expr& inner = built.program.exprs[static_cast<std::size_t>(count.a)];
+        bool ok = count.kind == tisple::ExprKind::Convert && count.type == tisple::kU16Type &&
+                  inner.type == tisple::kU8Type;
+        widened += ok ? 1 : 0;
+    }
+    CHECK(results, widened == 2);
+    // the u8 sum wraps before it widens, as in (as u16 (+ x 1))
+    tisple::Interp in;
+    StartInterp(in, built);
+    CHECK(results, CallOk(results, in, "t.f", {0x1000, 255}) == 0x1000 + 2 * 255);
+    CHECK(results, CallOk(results, in, "t.f", {0x1000, 3}) == 0x1000 - 2);
+}
+
+// a literal in a value slot takes the slot's type
+void ValueSlotTests(TestResults& results) {
+    Built built = BuildText("(struct S ((x u8) (y u16)))\n"
+                            "(enum E (a b))\n"
+                            "(let g (array u8 4))\n"
+                            "(let s S)\n"
+                            "(let t (array u16 2) (make (array u16 2) 1 0x1234))\n"
+                            "(fn h ((a u8) (b u16) (e E)) u16\n"
+                            "    (if (= a 0)\n"
+                            "        (return 0x1234))\n"
+                            "    b)\n"
+                            "(fn f ((x u8)) void\n"
+                            "    (let p (ptr u8) (addr_of (at g 0)))\n"
+                            "    (let q (ptr S) (addr_of s))\n"
+                            "    (store p 0)\n"
+                            "    (store (+ p x) 0xFF)\n"
+                            "    (store q y 300)\n"
+                            "    (store q (make S :x 1 :y 2))\n"
+                            "    (set s (make S :x 1 :y 0x1234))\n"
+                            "    (io_write u16 0xC030 0)\n"
+                            "    (h 1 2 E.b)\n"
+                            "    (match (load p)\n"
+                            "        (1 (store p 2))\n"
+                            "        (_)))");
+    CHECK(results, built.ok);
+    if (!built.ok) {
+        std::fprintf(stderr, "%s", ErrorText(built).c_str());
+    }
+    // a bad pointer or place is the only error: its literal value does not add one
+    Built bad = BuildText("(fn f ((p (ptr u8)) (n i8)) void\n"
+                          "    (store (+ p n) 0)\n"
+                          "    (set nope 1)\n"
+                          "    (store nope 2)\n"
+                          "    (let v u8 (as Nope 3)))");
+    std::string errors = ErrorText(bad);
+    CHECK(results, errors.find("no type") == std::string::npos);
+    CHECK(results, std::count(errors.begin(), errors.end(), '\n') == 4);
+    if (std::count(errors.begin(), errors.end(), '\n') != 4) {
+        std::fprintf(stderr, "%s", errors.c_str());
+    }
 }
 
 void LiteralTests(TestResults& results) {
@@ -137,6 +209,8 @@ void StructTests(TestResults& results) {
 
 void RunCheckTypeTests(TestResults& results) {
     OperatorTests(results);
+    PointerCountTests(results);
+    ValueSlotTests(results);
     LiteralTests(results);
     ConversionTests(results);
     CallTests(results);

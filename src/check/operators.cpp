@@ -141,6 +141,13 @@ std::string MismatchFix(const Checker& ck, const Node& node, TypeId ta, TypeId t
     return "; write (" + head + " " + left + " (as " + ShowType(ck, ta) + " " + right + "))";
 }
 
+// (+ p x) with x : u8 is (+ p (as u16 x)): the same Convert node, so the backend sees one tree
+ExprId WidenCount(Checker& ck, const Node& count_node, ExprId count) {
+    ExprId id = AddExpr(ck, ExprKind::Convert, kU16Type, count_node);
+    ExprAt(ck, id).a = count;
+    return id;
+}
+
 // (<< x n): x any integer, n always u8
 ExprId CheckShift(Checker& ck, const Node& node, Op op, TypeId hint) {
     const std::string& head = node.items[0].text;
@@ -237,9 +244,13 @@ ExprId CheckBinary(Checker& ck, const Node& node, Op op, TypeId hint) {
     }
     TypeKind ka = KindOf(*ck.out, ta);
     if ((op == Op::Add || op == Op::Sub) && ka == TypeKind::Ptr) {
-        if (tb != kU16Type) {
+        if (tb == kU8Type) {
+            b = WidenCount(ck, node.items[2], b);
+        } else if (tb != kU16Type) {
+            // OperandKindOk let only integers through: i8 or i16 here
             return Fail(ck, node.items[2],
-                        "a pointer moves by a u16 count of elements; write (" + head + " " +
+                        "a pointer moves by a u8 or u16 count of elements; " + Show(node.items[2]) +
+                            " is " + ShowType(ck, tb) + "; write (" + head + " " +
                             Show(node.items[1]) + " (as u16 " + Show(node.items[2]) + "))");
         }
         ExprId id = AddExpr(ck, op == Op::Add ? ExprKind::PtrAdd : ExprKind::PtrSub, ta, node);

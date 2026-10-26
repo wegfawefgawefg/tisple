@@ -19,6 +19,7 @@ struct NodeNotes {
     std::vector<std::uint32_t> dangling;   // own-line comments before ')'
     bool break_before = false;             // a trailing comment ended the line before this node
     bool blank_before = false;             // blank line right before the node itself
+    bool line_before = false;              // the node starts a line in the source
     bool flat_ok = true;                   // may print on one line
     std::uint32_t flat_width = 0;
 };
@@ -59,5 +60,7 @@ int OnePerLineKeep(const Node& node);
 bool IsParamList(const Formatter& fm, const Node& node);
 // (pattern form ...) inside a match: one line when it is one form that fits, else a body
 bool IsMatchClause(const Formatter& fm, const Node& node);
+// let and const: the name and the type stay on the head line, even a type like (array u8 4)
+bool IsDeclaration(const Node& node);
 
 } // namespace tisple

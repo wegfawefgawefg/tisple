@@ -12,7 +12,7 @@ void RunReaderTests(TestResults& results);
 void RunFormatTests(TestResults& results);
 void RunShowTests(TestResults& results);
 
-// every .tsp under examples/, sorted
+// every .tsp under examples/, programs/ and lib/, sorted
 std::vector<std::string> ExampleFiles();
 std::string SourcePath(const std::string& relative);
 tisple::SourceFile Text(const std::string& text);

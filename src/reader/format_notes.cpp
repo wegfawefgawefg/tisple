@@ -87,6 +87,7 @@ void Register(Formatter& fm, const Node& node, const Node* parent, std::uint32_t
     notes.parent = parent;
     notes.index = index;
     notes.blank_before = fm.keep_trivia && BlankBefore(fm, node.span.start);
+    notes.line_before = fm.keep_trivia && StartsLine(fm, node.span.start);
     // pre-order: the outermost node starting at an offset, the innermost ending there
     // (',(a b)' and its list end together; a ')' belongs to the list)
     fm.by_start.emplace(node.span.start, &node);
@@ -248,6 +249,10 @@ bool IsMatchClause(const Formatter& fm, const Node& node) {
         return false;
     }
     return HeadIs(*it->second.parent, "match");
+}
+
+bool IsDeclaration(const Node& node) {
+    return HeadIs(node, "let") || HeadIs(node, "const");
 }
 
 void BuildNotes(Formatter& fm) {

@@ -5,19 +5,63 @@ entry says what happened and what it should do.
 
 ## Open
 
+From a scan of Life, Snake, dot, the other examples and the libraries
+(2026-10-26). Library and language ideas, not decided.
+
+5. Every program reads the keyboard the same way: `(io_read u8 a2.KBD)`,
+   return when it is under 0x80, `(io_read u8 a2.KBDSTRB)`, `(& key 0x7F)`
+   (Life, Snake, dot, keys, read_key). A `read_key` in lib/apple2 that gives
+   0 when no key is waiting would do, once a call that inlines costs nothing.
+6. Life and Snake carry the same 16-bit xorshift `random`. A lib/random
+   would share it.
+7. `inc` and `dec` macros are written again in dot and macros. Macros
+   import like everything else, so a library could hold them, and `when`
+   too: a one-armed `if` with several forms needs `(if c (do a b))` (6 in
+   Life, Snake and dot). Snake's step also nests `(if a (do ...) (if b
+   ...))` for lack of `else if`; a match on named constants covers some of
+   those.
+8. examples/dot/gfx/hgr.tsp splits the row addresses into row_lo and
+   row_hi by hand and joins them with `(| (<< (as u16 (at row_hi y)) 8)
+   (as u16 (at row_lo y)))`. An `(array u16 192)` is already stored as
+   two byte tables, so `(at row_start y)` would say it directly. Left as it
+   is because the interpreter, backend and gap finder tests use the two
+   tables.
+9. Backend: `(let l u8 (- x 1))` and then `(+ above l)` (and the same for
+   draw's `c`) compiles to 12 more bytes in Life than `(+ above (- x 1))`;
+   the byte-index
+   tracking doesn't see through a u8 let the way it does through
+   `(let l u16 (as u16 (- x 1)))`.
+
+## Fixed
+
 1. `(store p 0)`: the literal gets no type, yet `(as u8 0)` is rejected as
    converting nothing. The stored value should take the pointer's element
    type as context, like `set` does. (lib/lores.tsp `clear`)
+   Fixed 2026-10-26. The value already took the element type; the real
+   pointer was `(store (+ p x) 0)` with `x : u8`, where the bad count made
+   the pointer an error and the value was then checked with no type at all,
+   so a second error blamed the literal. A value whose place or pointer
+   failed (store, set, `as` with an unknown type) is now checked quietly.
+   Every value slot gives a literal its type: store and field store (the
+   element or field type), `set`, io_write, match patterns, array and struct
+   values, call arguments, `return` (tests in test_check_types.cpp).
 2. `(+ p x)` with `x : u8` must be written `(+ p (as u16 x))`. A `u8` index on
    a pointer is the most common 6502 idiom (`LDA (p),Y`); allow `u8` and `u16`
    counts directly.
+   Fixed 2026-10-26 in the checker: a `u8` count gets the same Convert node
+   `(as u16 x)` makes, so the backend sees the tree it already turns into
+   `(p),Y`. Life, Snake, lib/lores.tsp and every example compile to the same
+   bytes and the same listing as before (only the echoed source lines
+   differ). The fuzz generator writes both spellings.
 3. The formatter puts a `const` table's type on its own line and packs the
    values to 100 columns, losing hand grouping (8 row addresses per line in
    lib/lores.tsp). Keep the type on the head line; maybe keep the author's
    line breaks inside data lists.
-
-## Fixed
-
+   Fixed 2026-10-26: `let` and `const` keep the type on the head line, and a
+   run of atoms in a list that takes several lines keeps the source's line
+   breaks (rule in design.md, Syntax). lores' ROW_START and hires_plot's
+   ROW_ADDR are 8 a line again. The format tests now cover programs/ and lib/
+   too.
 4. `(load (+ p (as u16 e)))` with `e : u8` and `p` in zero page computed a
    full 16-bit pointer sum per access (about 23 cycles) instead of `LDY e` /
    `LDA (p),Y`. Life's inner loop does 9 such reads per cell: about 520 cycles
@@ -28,6 +72,16 @@ entry says what happened and what it should do.
    `p + x - 1` reads through a loop pointer `p - 1` set once per row, so the
    inner loop has no LDY at all. `(let l u16 (as u16 (- x 1)))` lets that only
    index cost nothing. Step is 94 cycles a cell, draw 24 (cycle report).
+   Since item 2, Life writes `(load (+ above (- x 1)))` with no index lets:
+   the same instructions, 6 bytes less frame.
+
+10. Found in the same scan and fixed 2026-10-26. `(let k u8 (if c 1))` gave
+    two errors, "1 on its own does nothing" and "gives no value"; it is now
+    one: an if without an else gives no value, write `(if c 1 other)`.
+    `(for i u8 0 300)` said only that 300 does not fit in u8; it now says to
+    write `(for i u16 0 300 ...)`. dot's hgr.flip and multi's lores.plot
+    built a pointer as `(as (ptr u8) (+ row (as u16 x)))`; they now write
+    `(+ (as (ptr u8) row) x)`, the same code.
 
 ## Gap finder (2026-10-26)
 
