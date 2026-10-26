@@ -50,6 +50,7 @@ void RunAsmTests(TestResults& results);
 void RunBackendTests(TestResults& results);
 void RunBackendOpTests(TestResults& results);
 void RunBackendProgramTests(TestResults& results);
+void RunBackendIndexTests(TestResults& results);
 void RunBackendFuzzTests(TestResults& results);
 
 } // namespace tisple_tests

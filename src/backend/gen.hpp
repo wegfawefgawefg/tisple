@@ -374,7 +374,6 @@ void CondToA(Gen& g, ExprId id);
 
 void GenStmt(Gen& g, ExprId id);
 void GenFor(Gen& g, const Expr& e);
-
 void GenWhile(Gen& g, const Expr& e);
 void GenMatch(Gen& g, const Expr& e, const Opnd* dst, bool value);
 void GenSet(Gen& g, ExprId place, ExprId value);

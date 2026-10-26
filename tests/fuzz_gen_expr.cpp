@@ -72,7 +72,7 @@ std::string Gen::Index(const ArrayInfo& a) {
         return std::to_string(rng.Below(static_cast<int>(a.count)));
     }
     if (a.count == 256) {
-        return NonLit(T::U8, 1);
+        return rng.Chance(40) ? ByteForm() : NonLit(T::U8, 1);
     }
     return "(& " + NonLit(T::U8, 1) + " " + std::to_string(a.count - 1) + ")";
 }
@@ -165,7 +165,7 @@ std::string Gen::CallText(const FnInfo& fn, int depth) {
     return text + ")";
 }
 
-std::string Gen::Pointer(T t) {
+const PtrInfo* Gen::Pointer(T t) {
     std::vector<const PtrInfo*> found;
     for (const PtrInfo& p : ptrs) {
         if (!p.to_struct && p.elem == t) {
@@ -173,9 +173,61 @@ std::string Gen::Pointer(T t) {
         }
     }
     if (found.empty()) {
-        return "";
+        return nullptr;
     }
-    return found[static_cast<std::size_t>(rng.Below(static_cast<int>(found.size())))]->name;
+    return found[static_cast<std::size_t>(rng.Below(static_cast<int>(found.size())))];
+}
+
+std::string Gen::PointerCount(const PtrInfo& p, int depth) {
+    if (p.room) {
+        return ByteIndex(depth);
+    }
+    return "(as u16 (& " + NonLit(T::U8, depth - 1) + " 3))";
+}
+
+std::string Gen::ByteForm() {
+    std::string v = !counter.empty() && rng.Chance(50) ? counter : Var(T::U8);
+    if (rng.Chance(15)) {
+        // a byte that stores through pointers into wb can change under a kept index
+        v = "(at wb " + std::to_string(rng.Below(4)) + ")";
+    }
+    static const char* const kDeltas[] = {"1", "1", "2", "3", "200"};
+    std::string k = kDeltas[rng.Below(5)];
+    switch (rng.Below(5)) {
+    case 0:
+    case 1:
+        return v;
+    case 2:
+        return "(+ " + v + " " + k + ")";
+    case 3:
+        return "(- " + v + " " + k + ")";
+    default:
+        return "(+ " + k + " " + v + ")";
+    }
+}
+
+std::string Gen::ByteIndex(int depth) {
+    int pick = rng.Below(10);
+    if (pick < 2) {
+        std::vector<std::string> lets;
+        for (const auto& scope : scopes) {
+            for (const VarInfo& v : scope) {
+                if (v.small) {
+                    lets.push_back(v.name);
+                }
+            }
+        }
+        if (!lets.empty()) {
+            return lets[static_cast<std::size_t>(rng.Below(static_cast<int>(lets.size())))];
+        }
+    }
+    if (pick < 7) {
+        return "(as u16 " + ByteForm() + ")";
+    }
+    if (pick < 8) {
+        return std::to_string(rng.Below(256));
+    }
+    return "(as u16 " + NonLit(T::U8, depth - 1) + ")";
 }
 
 std::string Gen::PointerRead(T t, int depth) {
@@ -186,14 +238,14 @@ std::string Gen::PointerRead(T t, int depth) {
             }
         }
     }
-    std::string p = Pointer(t);
-    if (p.empty()) {
+    const PtrInfo* p = Pointer(t);
+    if (!p) {
         return "";
     }
-    if (rng.Chance(50)) {
-        return "(load " + p + ")";
+    if (rng.Chance(p->room ? 20 : 50)) {
+        return "(load " + p->name + ")";
     }
-    return "(load (+ " + p + " (as u16 (& " + NonLit(T::U8, depth - 1) + " 3))))";
+    return "(load (+ " + p->name + " " + PointerCount(*p, depth) + "))";
 }
 
 std::string Gen::IntExpr(T t, int depth) {

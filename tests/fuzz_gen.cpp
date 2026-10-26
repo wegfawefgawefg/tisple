@@ -124,9 +124,17 @@ std::string Gen::For(int depth) {
         prefix =
             "(do (let " + wide_ptr + " (ptr u8) (addr_of (at wb (as u16 (& " + offset + " 15))))) ";
     }
+    std::string outer_counter = counter;
+    if (t == T::U8) {
+        counter = i;
+    }
     scopes.emplace_back();
     scopes.back().push_back(VarInfo{i, t, true});
     std::string body = LoopBody(depth, false);
+    if (t == T::U8 && rng.Chance(60)) {
+        body = " " + RoomStmt() + body;
+    }
+    counter = outer_counter;
     wide = outer_wide;
     wide_ptr = outer_ptr;
     scopes.pop_back();
@@ -175,6 +183,9 @@ std::string Gen::PointerLet() {
             arrs.push_back(&a);
         }
     }
+    if (rng.Chance(35)) {
+        return RoomPointerLet();
+    }
     std::string p = Fresh("p");
     std::string text;
     if (rng.Chance(30)) {
@@ -206,13 +217,56 @@ std::string Gen::Store() {
     }
     for (const PtrInfo& p : ptrs) {
         if (!p.to_struct && rng.Chance(60)) {
-            std::string target = rng.Chance(50)
+            std::string target = rng.Chance(p.room ? 20 : 50)
                                      ? p.name
-                                     : "(+ " + p.name + " (as u16 (& " + NonLit(T::U8, 1) + " 3)))";
+                                     : "(+ " + p.name + " " + PointerCount(p, 2) + ")";
             return "(store " + target + " " + Expr(p.elem, 2) + ")";
         }
     }
     return "";
+}
+
+std::string Gen::RoomPointerLet() {
+    // room for any byte count: the start is at most 255 into wb's 1024 bytes
+    std::string p = Fresh("p");
+    // now and then right at the bytes byte indices read, (at wb 0) to (at wb 3)
+    std::string start =
+        rng.Chance(30) ? std::to_string(rng.Below(4)) : "(as u16 " + NonLit(T::U8, 1) + ")";
+    std::string text = "(let " + p + " (ptr u8) (addr_of (at wb " + start + ")))";
+    ptrs.push_back(PtrInfo{p, T::U8, false, scopes.size(), true});
+    return text;
+}
+
+std::string Gen::RoomStmt() {
+    std::vector<const PtrInfo*> room;
+    for (const PtrInfo& p : ptrs) {
+        if (p.room) {
+            room.push_back(&p);
+        }
+    }
+    if (room.empty()) {
+        return RoomPointerLet();
+    }
+    const PtrInfo& p = *room[static_cast<std::size_t>(rng.Below(static_cast<int>(room.size())))];
+    std::string target = "(+ " + p.name + " " + ByteIndex(2) + ")";
+    if (rng.Chance(50)) {
+        return "(store " + target + " " + Expr(T::U8, 2) + ")";
+    }
+    std::vector<const VarInfo*> vars = VarsOf(T::U8, true);
+    const std::string& v =
+        vars[static_cast<std::size_t>(rng.Below(static_cast<int>(vars.size())))]->name;
+    return "(set " + v + " (+ " + v + " (load " + target + ")))";
+}
+
+std::string Gen::IndexLet() {
+    std::string name = Fresh("ix");
+    std::string value = ByteForm();
+    if (rng.Chance(30)) {
+        scopes.back().push_back(VarInfo{name, T::U8, true, false});
+        return "(let " + name + " u8 " + value + ")";
+    }
+    scopes.back().push_back(VarInfo{name, T::U16, true, true});
+    return "(let " + name + " u16 (as u16 " + value + "))";
 }
 
 std::string Gen::WideStmt() {
@@ -235,7 +289,11 @@ std::string Gen::Stmt(int depth) {
     switch (pick) {
     case 0:
     case 1: {
+        if (rng.Chance(25)) {
+            return IndexLet();
+        }
         T t = AnyType();
+
         std::string name = Fresh("l");
         std::string text = std::string("(let ") + name + " " + Name(t) + " " + Expr(t, 3) + ")";
         scopes.back().push_back(VarInfo{name, t, false});
@@ -311,6 +369,10 @@ std::string Gen::Function(std::size_t index) {
         scopes.back().push_back(VarInfo{name, fn.params[p], false});
     }
     text += std::string(") ") + (fn.has_ret ? Name(fn.ret) : "void");
+    if (rng.Chance(50)) {
+        text += "\n    " + RoomPointerLet();
+    }
+
     // small functions get inlined, big ones called
     budget = fn.name != "main" && rng.Chance(40) ? 1 + rng.Below(2) : 6 + rng.Below(14);
     while (budget > 0) {

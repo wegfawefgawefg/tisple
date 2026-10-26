@@ -41,6 +41,7 @@ int main() {
     tisple_tests::RunAsmTests(results);
     tisple_tests::RunBackendTests(results);
     tisple_tests::RunBackendOpTests(results);
+    tisple_tests::RunBackendIndexTests(results);
     tisple_tests::RunBackendProgramTests(results);
     tisple_tests::RunBackendFuzzTests(results);
 
