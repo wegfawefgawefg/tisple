@@ -2,7 +2,7 @@
 
 (const TEXT_PAGE1 u16 0x0400)
 
-; text rows are interleaved: 8 groups of 3 rows, 40 bytes each
+; text rows are interleaved: 8 blocks of 128 bytes, each holding rows n, n+8, n+16
 (fn row_base (args (row u8))
     (+ (+ TEXT_PAGE1 (<< (u16 (& row 7)) 7)) (* (u16 (>> row 3)) 40)))
 
