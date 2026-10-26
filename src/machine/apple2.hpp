@@ -230,6 +230,9 @@ void ResetApple2(Apple2& a);
 
 // running
 RunOutcome RunApple2(Apple2& a, uint64_t cycles);
+// the same, calling trace before each instruction (registers' pc is the one about to run)
+using MachineTraceFn = void (*)(void* ctx, const Machine& m);
+RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, void* trace_ctx);
 const char* MachineStopName(MachineStop reason);
 std::string DescribeStop(const Apple2& a); // "BRK at $6012", "jumped into rom at $FDED", ...
 std::string DescribeStubNotes(uint32_t notes);
