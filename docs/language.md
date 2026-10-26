@@ -18,7 +18,7 @@ A program is one or more `.tsp` files of top-level forms: `const`, `let`,
 (let sprite_count u8 0)
 
 (fn spawn (args (x u8) (y u8))
-    (when (= sprite_count max_sprites)
+    (if (= sprite_count max_sprites)
         (return false))
     (set (at sprites sprite_count) (sprite (x x) (y y) (active true)))
     (set sprite_count (+ sprite_count 1))
@@ -63,8 +63,7 @@ if unwise.
 | `(let name type value)` | variable; `type` or `value` may be omitted, not both |
 | `(set place value)` | assign to a name, `(at ...)`, `(. ...)` or `(load ...)` |
 | `(fn name (args (p t) ...) body ...)` | function; `args` omitted when none |
-| `(if c then else)` | expression; both arms one form, same type |
-| `(when c body ...)` / `(unless c body ...)` | statement, no value |
+| `(if c then else)` | both arms one form; with `else` it has a value, without it is a statement |
 | `(do body ...)` | group forms; value is the last |
 | `(while c body ...)` | loop |
 | `(for i start end body ...)` | `i` from `start` up to, not including, `end` |
@@ -103,5 +102,5 @@ macros, modules, `/` and `%`. All planned; none needed to prove the backend.
 ## Open questions for the owner
 
 1. Settled 2026-10-26: field access is `(. s x)`.
-2. `if` with single-form arms plus `do`, versus `cond` or `when`/`unless` only.
+2. Settled 2026-10-26: `if` + `do`, no `when`/`unless`; `cond` only if else-if chains get ugly.
 3. Pointer arithmetic by elements (C-like) or by bytes.
