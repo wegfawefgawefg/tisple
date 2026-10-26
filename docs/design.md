@@ -80,15 +80,51 @@ Settled:
 - Local and return types are inferred. Parameters are typed.
 - The formatter is designed with the grammar, not after it.
 
-*Proposed* formatter rules:
+Reader: a symbol is any run of characters other than whitespace, parentheses,
+`;`, `"` and the quote marks (so `+`, `<=`, `&`, `|`, `.`, `hgr.plot` and
+`gfx/hgr` are all symbols); `#` may only end a name (`tmp#`). `:name` is a
+keyword atom. Integers are decimal, `0x` hex or `0b` binary, optionally
+negative. Strings are one line, with escapes
+`\n \t \r \0 \\ \" \xHH`. Quote marks read as lists (`'x` is `(quote x)`,
+`` `x `` quasiquote, `,x` unquote, `,@x` unquote_splicing), must touch their
+form, and print back as marks. Comments run from `;` to the end of the line;
+they live beside the tree, not in it.
 
-- Body forms (`fn`, `if`, `for`, `while`, `struct`, ...) always put their body
-  on new lines, indented 4. Like braces on every `if`: no one-line bodies.
-- Other forms stay on one line when they fit in 100 columns. Otherwise the head
-  and first argument stay, and each remaining argument goes on its own line,
-  indented 4.
-- Comments (`;`) and single blank lines between forms are kept.
-- Formatting twice gives the same text.
+Formatter rules (`tisple fmt`, implemented in `src/reader/format.cpp`):
+
+- Every line is indented a multiple of 4, measured from the line where the form
+  starts, not from its parenthesis.
+- Body forms always put their body on new lines at +4, like braces on every
+  `if`: `fn` and `macro` (name and `args` stay on the head line), `if` (the
+  condition stays; both arms are body), `while`, `match` (each clause a line),
+  `for` (`i`, the optional type, start and end stay), `do`. With no body they
+  stay on one line: `(while (not (key_ready)))`, `(do)`.
+- Everything else stays on one line when it fits in 100 columns, closing
+  parentheses included. Otherwise the head and the first argument stay (the
+  first argument goes down too if it does not fit), each remaining list
+  argument gets its own line at +4, and runs of atoms fill lines (data tables
+  stay compact).
+- A body form as the last argument hangs off the head line when the head line
+  fits: `(let m (if c` then arms at +4; `(Action.fire (do` then the body.
+- `args`, `enum` and `struct`: one line if it fits, else one parameter, member
+  or field per line at +4 (`args` goes down to +8 inside a long `fn` header).
+- A `:keyword` and its value stay together on one line.
+- A header item that cannot stay on the head line (a comment forced it down)
+  goes to +8, so it never looks like body.
+- Comments: an own-line comment stays above the form it precedes, at that
+  form's indent; a trailing comment stays at the end of its line and forces
+  a break after it; closing parentheses move in front of it, `(a)) ; done`.
+  Consecutive trailing comments line up when that stays inside 100 columns. A
+  comment right after `(` moves to the end of that line. A comment before `)`
+  stays inside, and the `)` goes on its own line.
+- Blank lines: one blank line is kept where the source had one or more, never
+  directly after a head line. Top-level forms that take several lines always
+  get a blank line on both sides; one-line forms (`const` groups) may stay
+  together.
+- Output ends with one newline. Formatting is idempotent, keeps the tree, and a
+  program mashed onto one line formats to the same text as the hand-laid-out
+  one (minus comments and blank lines); `tisple_tests` checks all three on
+  every file in `examples/` and on random programs.
 
 An indentation-only syntax (wisp, SRFI 119; Racket's Rhombus) could be added
 later as a second reader producing the same tree. Not planned.
@@ -223,7 +259,7 @@ reports come after the compiler works.
 1. Build and test runner (done: CMake + Ninja + ccache + lld, `tisple_tests`).
 2. 6502 simulator passing SingleStepTests with exact cycle counts; `tisple sim` (done).
 3. Reader, formatter (`tisple fmt`), colored viewer (`tisple show`, editor
-   syntax for VS Code and Neovim).
+   syntax for VS Code and Neovim) (done).
 4. Checker and reference interpreter for the core subset.
 5. Plain backend: compiled programs run in the simulator and match the
    interpreter under fuzzing.
