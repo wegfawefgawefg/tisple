@@ -10,8 +10,10 @@
 //
 // the ntsc table carries filter state from one entry to the next (as AppleWin does), so a
 // steady color comes out a little different at each of the 4 phases: fine stripes every 4
-// dots. the flat look avoids that: a dot's color is the last 4 dots, rotated back by the
-// phase to one of 16 steady patterns, each colored by the ntsc table averaged over phases.
+// dots, and colors smear for a few dots where patterns meet. the flat look skips the signal
+// altogether, like an rgb monitor: lo-res blocks get their color outright, hi-res follows
+// the usual idealized rules, and text is plain white. its colors are the ntsc table's own,
+// averaged over the 4 phases, so the looks agree on what each color is.
 // text glyphs come from our own font (font.cpp), not Apple's character rom.
 
 #include "machine/apple2.hpp"
@@ -30,7 +32,9 @@ constexpr int kSequences = 4096;
 struct NtscTables {
     uint32_t hue[kPhases][kSequences];
     uint32_t mono[kSequences];
-    uint32_t flat[kPhases][16]; // by phase and the last 4 dots
+    uint32_t flat[kPhases][16]; // steady color by phase and the last 4 dots
+    uint32_t lores[16];         // by nibble
+    uint32_t hires[2][2];       // a lone on pixel, by palette bit and column parity
 };
 
 // a second-order iir section; AppleWin keeps these as statics, so their state runs on from
@@ -163,6 +167,19 @@ void BuildFlatTable(NtscTables& t) {
             t.flat[k][w] = steady[RotateLeft4(w, 4 - k)];
         }
     }
+    // a lo-res nibble's 4 dots start at phase 0 on even columns (odd ones are shifted to
+    // match), lowest bit first, so after them the window is the nibble reversed at phase 3
+    for (int n = 0; n < 16; n++) {
+        int reversed = ((n & 1) << 3) | ((n & 2) << 1) | ((n & 4) >> 1) | ((n & 8) >> 3);
+        t.lores[n] = t.flat[3][reversed];
+    }
+    // a lone hi-res pixel is 2 dots, at phase 0-1 on even columns and 2-3 on odd, one dot
+    // later with bit 7 set; seen after its second dot the window is 0b0011
+    for (int palette = 0; palette < 2; palette++) {
+        for (int parity = 0; parity < 2; parity++) {
+            t.hires[palette][parity] = t.flat[(palette + 2 * parity + 1) & 3][3];
+        }
+    }
 }
 
 const NtscTables& Tables() {
@@ -194,7 +211,6 @@ struct LineState {
     const NtscTables* tables = nullptr;
     uint32_t* row = nullptr;
     bool color = false;
-    bool flat = false;
     int out = 0;
     int phase = 0;
     uint16_t signal = 0;
@@ -203,10 +219,7 @@ struct LineState {
 
 void PushDot(LineState& s, uint16_t dot) {
     s.signal = static_cast<uint16_t>(((s.signal << 1) | dot) & 0xFFF);
-    uint32_t pixel = s.tables->mono[s.signal];
-    if (s.color) {
-        pixel = s.flat ? s.tables->flat[s.phase][s.signal & 15] : s.tables->hue[s.phase][s.signal];
-    }
+    uint32_t pixel = s.color ? s.tables->hue[s.phase][s.signal] : s.tables->mono[s.signal];
     if (s.out >= 0 && s.out < kScreenWidth) {
         s.row[s.out] = pixel;
     }
@@ -232,12 +245,88 @@ uint16_t TextBits(uint8_t byte, bool altchar, int glyph_row, bool flash_inverse)
     return kDouble[dots & 0x7F];
 }
 
+// the flat look: no signal, every dot set straight from the bytes
+void RenderLineFlat(const VideoFrame& frame, int line, uint32_t* row) {
+    const NtscTables& t = Tables();
+    const uint32_t kBlack = 0xFF000000u;
+    const uint32_t kWhite = 0xFFFFFFFFu;
+    bool color = frame.burst[line];
+    for (int i = 0; i < kScreenWidth; i++) {
+        row[i] = kBlack;
+    }
+    // the line's 280 hi-res pixels and their palette bits, so neighbours can be seen
+    // across bytes; columns in other modes read as off
+    bool on[282] = {};
+    uint8_t palette[282] = {};
+    for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
+        if ((frame.modes[line][col] & 0x03) != kVideoHires) {
+            continue;
+        }
+        uint8_t byte = frame.bytes[line][col];
+        for (int bit = 0; bit < 7; bit++) {
+            on[1 + col * 7 + bit] = (byte & (1 << bit)) != 0;
+            palette[1 + col * 7 + bit] = static_cast<uint8_t>(byte >> 7);
+        }
+    }
+    for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
+        uint8_t byte = frame.bytes[line][col];
+        uint8_t mode = frame.modes[line][col];
+        uint32_t* out = row + col * 14;
+        if ((mode & 0x03) == kVideoText) {
+            uint16_t bits =
+                TextBits(byte, (mode & kVideoAltChar) != 0, line & 7, frame.flash_inverse);
+            for (int i = 0; i < 14; i++) {
+                out[i] = ((bits >> i) & 1) != 0 ? kWhite : kBlack;
+            }
+            continue;
+        }
+        if ((mode & 0x03) == kVideoLores) {
+            uint8_t nibble = (byte >> (line & 4)) & 0x0F;
+            uint32_t fill = color ? t.lores[nibble] : kBlack;
+            if (!color) {
+                // no burst: show the dot pattern in white, like a mono monitor
+                uint16_t pattern = static_cast<uint16_t>((nibble * 0x1111) >> ((col & 1) * 2));
+                for (int i = 0; i < 14; i++) {
+                    out[i] = ((pattern >> i) & 1) != 0 ? kWhite : kBlack;
+                }
+                continue;
+            }
+            for (int i = 0; i < 14; i++) {
+                out[i] = fill;
+            }
+            continue;
+        }
+        // hi-res: two on pixels side by side are white, a lone one takes its column's color,
+        // and an off pixel between two on ones fills with their color; bit 7 shifts a dot
+        for (int bit = 0; bit < 7; bit++) {
+            int x = 1 + col * 7 + bit;
+            int parity = (x - 1) & 1;
+            uint32_t pixel = kBlack;
+            if (on[x]) {
+                bool white = !color || on[x - 1] || on[x + 1];
+                pixel = white ? kWhite : t.hires[palette[x]][parity];
+            } else if (color && on[x - 1] && on[x + 1]) {
+                pixel = t.hires[palette[x - 1]][parity ^ 1];
+            }
+            int dot = (x - 1) * 2 + palette[x];
+            for (int i = 0; i < 2; i++) {
+                if (dot + i < kScreenWidth) {
+                    row[dot + i] = pixel;
+                }
+            }
+        }
+    }
+}
+
 void RenderLine(const VideoFrame& frame, int line, VideoLook look, uint32_t* row) {
+    if (look == VideoLook::kColor) {
+        RenderLineFlat(frame, line, row);
+        return;
+    }
     LineState s;
     s.tables = &Tables();
     s.row = row;
     s.color = frame.burst[line] && look != VideoLook::kMono;
-    s.flat = look == VideoLook::kColor;
     // the color filter lags two dots; AppleWin starts colored lines two dots early
     s.out = s.color ? -2 : 0;
     for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
