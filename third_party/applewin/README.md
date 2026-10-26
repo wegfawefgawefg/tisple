@@ -35,7 +35,20 @@ keep their attribution in the file headers:
   (`Code62`, `Decode62`, the sector order tables) for the 6-and-2 layout; the
   code is our own from Beneath Apple DOS.
 
-Not used: AppleWin's disk boot code or firmware. Our disk ii boot rom
+- `src/machine/mouse.cpp`: the AppleMouse II card after `source/MouseInterface.cpp`
+  (based on Kyle Kim's Apple in PC mousecard.cpp, reused in AppleWin with his
+  permission): the 6805's side of the protocol (port B bits 4 and 5 strobing
+  bytes, 6 and 7 answering, bits 1-3 paging the 2 KB rom into `$Cn00`), each
+  command's byte count and answer, and the clamping. The 6821 follows
+  `source/6821.cpp` (VICE's mc6821.c, Andreas Boose, GPL-2.0-or-later, with
+  AppleWin's changes). Our CLAMPMOUSE takes signed bounds instead of AppleWin's
+  Blazing Paddles fix, and HOMEMOUSE goes to the window's corner as Apple
+  documents it.
+
+Not used: AppleWin's disk boot code or firmware, and its copy of
+`MouseInterface.rom`. Our mouse firmware (`src/machine/mouse_rom.cpp`) is
+original; the owner's copy of Apple's is only read from
+`~/.local/share/tisple/roms/` and never committed. Our disk ii boot rom
 (`src/machine/disk2_rom.cpp`) and the self-booting disk's loader
 (`src/disk/boot_loader.cpp`) are original.
 

@@ -39,6 +39,9 @@
 //   odd half-track reads the track below); the drive is up to speed the moment the motor
 //   is on; a .nib track is 6656 bytes of 8 cells (no self-sync gaps)
 // - our disk ii boot rom (disk2_rom.cpp) waits for nothing, so it is for the emulator only
+// - mouse card (mouse.hpp): no interrupts (polled mode only), the 6805 by its protocol as
+//   AppleWin models it, answering at once; our own firmware talks to it through an extra
+//   port the real card lacks
 
 #include "emu/machine.hpp"
 
@@ -164,6 +167,7 @@ enum class CardKind : uint8_t {
     kEmpty = 0,
     kTestCard, // registers and rom bytes the tests fill in
     kDisk2,    // the disk ii controller and its two drives (disk2.cpp)
+    kMouse,    // the applemouse ii interface card (mouse.cpp)
 };
 
 struct TestCardState {
@@ -223,11 +227,64 @@ struct Disk2State {
     DiskDrive drives[2];
 };
 
+// applemouse ii (mouse.hpp has the model). positions are the 6805's signed 16-bit numbers
+constexpr uint32_t kMouseRomBytes = 2048; // eight 256-byte pages, one at a time at $Cn00
+constexpr uint32_t kMaxScheduledMouse = 1024;
+
+// scripted input: from this cycle the mouse is at x, y (then clamped) with the button so
+struct ScheduledMouse {
+    uint64_t cycle = 0;
+    int32_t x = 0;
+    int32_t y = 0;
+    bool button = false;
+};
+
+// the card's 6821 between the 6502 and the 6805: port A data, port B handshake and rom page
+struct MousePia {
+    uint8_t pra = 0;
+    uint8_t ddra = 0;
+    uint8_t cra = 0;
+    uint8_t prb = 0;
+    uint8_t ddrb = 0;
+    uint8_t crb = 0;
+    uint8_t in_a = 0; // what the 6805 drives on port A
+    uint8_t in_b = 0; // and on port B
+};
+
+struct MouseCardState {
+    uint8_t slot = 0;
+    bool real_rom = false;            // the owner's MouseInterface.rom, else ours
+    uint8_t rom[kMouseRomBytes] = {}; // ours fills the first page only
+    bool button = false;              // the host's button, down now
+    int32_t x = 0;                    // the 6805's position and clamping window
+    int32_t y = 0;
+    int32_t min_x = 0;
+    int32_t max_x = 1023;
+    int32_t min_y = 0;
+    int32_t max_y = 1023;
+    uint8_t mode = 0;         // SETMOUSE's mode byte
+    bool read_button = false; // the button at the last READMOUSE
+    bool moved = false;       // since the last READMOUSE
+    uint8_t data[5] = {};     // our firmware's port: registers 9-13
+    // the 6805's side of the pia protocol (adapted from AppleWin's MouseInterface.cpp)
+    MousePia pia;
+    uint8_t port_a = 0;     // the last byte the 6502 put out on port A
+    uint8_t port_b = 0x40;  // the 6805's view of port B: page bits 1-3, ready 6-7
+    uint8_t buffer[8] = {}; // a command byte and its data bytes
+    uint8_t buffer_pos = 0;
+    uint8_t data_len = 1;
+    uint32_t accesses = 0; // i/o accesses, for the status line
+    ScheduledMouse queue[kMaxScheduledMouse] = {};
+    uint32_t queue_head = 0;
+    uint32_t queue_count = 0;
+};
+
 struct SlotCards {
     CardKind kind[8] = {};
     uint8_t expansion_slot = 0; // whose $C800 rom is selected; 0 for none
     TestCardState test_card;
-    Disk2State disk2; // one disk ii card, in disk2.slot
+    Disk2State disk2;     // one disk ii card, in disk2.slot
+    MouseCardState mouse; // one mouse card, in mouse.slot
 };
 
 enum class MachineStop : uint8_t {

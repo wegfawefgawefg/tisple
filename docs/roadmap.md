@@ -78,6 +78,36 @@ card's firmware routines rather than the hardware.
 3. `lib/mouse.tsp` wraps it. On real hardware the program needs a mouse card
    or a IIc.
 
+Status (2026-10-26): all three are in, with `programs/paint` as the demo.
+
+- The card (`src/machine/mouse.hpp` has the interface it emulates) is in slot 4
+  for `tisple machine` and `tisple run`, with our own firmware
+  (`src/machine/mouse_rom.cpp`): SETMOUSE, SERVEMOUSE, READMOUSE, CLEARMOUSE,
+  POSMOUSE, CLAMPMOUSE, HOMEMOUSE, INITMOUSE through the offsets at
+  `$Cn12-$Cn19`, the identification bytes, and the screen holes. Polled mode
+  only: no interrupts. `--mouse-rom MouseInterface.rom` uses Apple's firmware
+  instead, against an emulated 6821 and AppleWin's model of the 6805's
+  protocol; it calls the monitor's IORTS, so it also needs `--rom Apple2e.rom`.
+  `tests/test_machine_mouse.cpp` runs the same checks on both firmwares.
+- `--mouse "cycle:x,y,button;..."` scripts it for headless runs; cycles take
+  the `f` frame suffix like `--keys`.
+- The window: the pointer's motion over the window moves the mouse, one hi-res
+  pixel per two screen pixels at scale 1. A click into the window captures the
+  pointer (hidden and held, that click only captures); then motion and the
+  left button go to the card until Esc (which the Apple does not see) or losing
+  focus releases it.
+- `(jsr addr (a v) (x v) (y v))` calls machine code (`docs/language.md`,
+  Machine code); `lib/mouse.tsp` finds the card in slots 1-7 and calls it with
+  X = `$Cn` and Y = `$n0`. `lib/hgr.tsp` has the hi-res tables, plot, flip and
+  line the paint program draws with.
+
+```sh
+tisple run programs/paint/main.tsp --window      # click in, hold the button to draw
+tisple run programs/paint/main.tsp --window \
+    --rom ~/.local/share/tisple/roms/Apple2e.rom \
+    --mouse-rom ~/.local/share/tisple/roms/MouseInterface.rom
+```
+
 ## 2. Programs
 
 Each is also a benchmark. Rough order:

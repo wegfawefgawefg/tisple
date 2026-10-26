@@ -75,8 +75,7 @@ std::uint32_t ExprSize(const Program& program, ExprId id) {
 bool HasWrites(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         return e.kind == ExprKind::Call || e.kind == ExprKind::Store ||
-               e.kind == ExprKind::StoreField || e.kind == ExprKind::Set ||
-               e.kind == ExprKind::Jsr;
+               e.kind == ExprKind::StoreField || e.kind == ExprKind::Set || e.kind == ExprKind::Jsr;
     });
 }
 

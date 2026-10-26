@@ -44,11 +44,10 @@ void ExpectCode(TestResults& results, const Compiled& c, const std::string& func
 // $0300: STA $0340; STX $0341; STY $0342; INC $0343; LDX #$77; LDY #$77; LDA $0343; RTS
 //        keeps the registers it got, counts its calls, clobbers X and Y, returns the count
 // $0320: CLC; ADC #1; LDX #$55; LDY #$66; RTS   gives A + 1
-const std::uint8_t kRoutines[] = {0x8D, 0x40, 0x03, 0x8E, 0x41, 0x03, 0x8C, 0x42, 0x03,
-                                  0xEE, 0x43, 0x03, 0xA2, 0x77, 0xA0, 0x77, 0xAD, 0x43,
-                                  0x03, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x69, 0x01, 0xA2,
-                                  0x55, 0xA0, 0x66, 0x60};
+const std::uint8_t kRoutines[] = {0x8D, 0x40, 0x03, 0x8E, 0x41, 0x03, 0x8C, 0x42, 0x03, 0xEE,
+                                  0x43, 0x03, 0xA2, 0x77, 0xA0, 0x77, 0xAD, 0x43, 0x03, 0x60,
+                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x18, 0x69, 0x01, 0xA2, 0x55, 0xA0, 0x66, 0x60};
 
 struct JsrRun {
     Compiled c;
@@ -197,9 +196,10 @@ void TestJsrInterp(TestResults& results) {
     }
     tisple::Interp in;
     StartInterp(in, built);
-    tisple::InterpResult r = tisple::CallFunction(in, tisple::FindFunction(built.program, "t.f"), {});
-    CHECK(results, r.kind == tisple::StopKind::Error &&
-                       r.message.find("jsr needs the machine") == 0);
+    tisple::InterpResult r =
+        tisple::CallFunction(in, tisple::FindFunction(built.program, "t.f"), {});
+    CHECK(results,
+          r.kind == tisple::StopKind::Error && r.message.find("jsr needs the machine") == 0);
     // the fuzz generator never writes one: the interpreter is its oracle
     bool none = true;
     for (std::uint64_t seed = 0; seed < 500 && none; seed++) {
