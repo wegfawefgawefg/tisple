@@ -14,9 +14,11 @@
 //   with the element size in bytes in `value`. Field keeps the field's byte offset in the
 //   packed struct layout in `value`; the layout maps it to an address (see link/layout.hpp).
 // - Places (set targets, addr_of operands) are VarRef, Index and Field chains rooted at a Var.
-//   Load may also be the base of Field or Index when reading.
-// - Struct values only appear as places, Load, or StructLit (in set, let, store, field
-//   values and top-level initializers). Arrays are never copied as values.
+//   Memory behind a pointer is reached only by Load/Store and LoadField/StoreField (a constant
+//   offset from the pointer: LDY #off / LDA (p),Y). A Load or LoadField may be the base of
+//   Index when reading.
+// - Struct values only appear as places, Load/LoadField, or StructLit (in set, let, store,
+//   field values and top-level initializers). Arrays are never copied as values.
 // - Initial values of Vars are bytes in packed order (fields in order, u16 low byte first).
 
 #include "check/diag.hpp"
@@ -145,6 +147,8 @@ enum class ExprKind : std::uint8_t {
     Field,       // a: struct place or Load, ref: field index, value: packed offset
     Load,        // a: pointer
     Store,       // a: pointer, b: value
+    LoadField,   // (load p pos x): a: pointer, value: byte offset of the field, type: the field's
+    StoreField,  // (store p pos x v): a: pointer, b: value, value: byte offset, ref: field TypeId
     AddrOf,      // a: place
     Unary,       // op, a
     Binary,      // op, a, b; comparisons have type bool, operand type is exprs[a].type
@@ -166,7 +170,7 @@ enum class ExprKind : std::uint8_t {
     Return,      // a: value or -1
     Break,
     Continue,
-    Let, // ref: var, a: initial value or -1 (zero)
+    Let, // ref: var, a: initial value (locals always have one)
     Set, // a: place, b: value
 };
 

@@ -17,8 +17,7 @@ bool IsConstScalar(const Checker& ck, TypeId type) {
     return type != kErrorType && IsScalarKind(KindOf(*ck.out, type));
 }
 
-bool FoldConstArray(Checker& ck, ConstDecl& cd, TypeId type) {
-    const Node& form = *cd.form;
+bool FoldConstArray(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
     const Type& array = TypeOf(*ck.out, type);
     TypeId elem = array.elem;
     if (!IsConstScalar(ck, elem)) {
@@ -61,8 +60,8 @@ bool FoldConstArray(Checker& ck, ConstDecl& cd, TypeId type) {
     return ok;
 }
 
-bool FoldConstForm(Checker& ck, ConstDecl& cd) {
-    const Node& form = *cd.form;
+// form is the const without its placement options
+bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
     const std::vector<Node>& items = form.items;
     std::string fix = "write (const " + cd.name + " u8 0)";
     if (items.size() == 2) {
@@ -79,7 +78,11 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd) {
                     ")");
             return false;
         }
-        if (TryResolveType(ck, items[2]) >= 0) {
+        TypeId named = TryResolveType(ck, items[2]);
+        if (named > kErrorType && KindOf(*ck.out, named) == TypeKind::Array) {
+            return FoldConstArray(ck, cd, form, named);
+        }
+        if (named >= 0) {
             Err(ck, form, "const " + cd.name + " needs a value; " + fix);
             return false;
         }
@@ -88,7 +91,7 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd) {
     } else {
         type = ResolveType(ck, items[2]);
         if (type != kErrorType && KindOf(*ck.out, type) == TypeKind::Array) {
-            return FoldConstArray(ck, cd, type);
+            return FoldConstArray(ck, cd, form, type);
         }
         if (items.size() != 4) {
             Err(ck, form, "(const NAME type value) takes one value; " + fix);
@@ -180,6 +183,29 @@ void ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
     }
 }
 
+// placement options come last, as on let: (const T (array u8 3) 1 2 3 :align 256)
+const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& holder) {
+    std::size_t first = form.items.size();
+    for (std::size_t i = 2; i < form.items.size(); i++) {
+        if (form.items[i].kind == NodeKind::Keyword) {
+            first = i;
+            break;
+        }
+    }
+    trimmed = form;
+    trimmed.items.resize(first);
+    for (std::size_t i = first; i < form.items.size(); i += 2) {
+        const Node& key = form.items[i];
+        if (key.kind != NodeKind::Keyword) {
+            Err(ck, key, "placement options come last, after every value");
+            continue;
+        }
+        const Node* value = i + 1 < form.items.size() ? &form.items[i + 1] : nullptr;
+        ReadOption(ck, holder, key, value);
+    }
+    return first < form.items.size() ? &form.items[first] : nullptr;
+}
+
 } // namespace
 
 void EvalConst(Checker& ck, std::int32_t index) {
@@ -198,9 +224,20 @@ void EvalConst(Checker& ck, std::int32_t index) {
     }
     cd.state = Progress::Busy;
     Context saved = SwitchContext(ck, cd.module, -1);
-    bool ok = FoldConstForm(ck, cd);
-    RestoreContext(ck, std::move(saved));
+    Node trimmed;
+    Var holder;
+    const Node* option = SplitOptions(ck, *cd.form, trimmed, holder);
+    bool ok = FoldConstForm(ck, cd, trimmed);
     ConstDecl& done = ck.consts[static_cast<std::size_t>(index)];
+    if (ok && done.var >= 0) {
+        ck.out->vars[static_cast<std::size_t>(done.var)].placement = holder.placement;
+    } else if (ok && option) {
+        Err(ck, *option,
+            "placement options are for const tables and top-level lets; " + done.name +
+                " is a single value with no address");
+        ok = false;
+    }
+    RestoreContext(ck, std::move(saved));
     if (done.state == Progress::Busy) {
         done.state = ok ? Progress::Done : Progress::Failed;
     }

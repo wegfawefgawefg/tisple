@@ -13,10 +13,10 @@
         (return Command.none))
     (io_read u8 a2.KBDSTRB)
     (match (& key 0x7F)
-        (0x08 Command.left)  ; left arrow
-        (0x15 Command.right) ; right arrow
-        (0x20 Command.fire)  ; space
-        (0x1B Command.quit)  ; escape
+        (a2.KEY_LEFT Command.left)
+        (a2.KEY_RIGHT Command.right)
+        (a2.KEY_SPACE Command.fire)
+        (a2.KEY_ESC Command.quit)
         (_ Command.none)))
 
 (fn shoot

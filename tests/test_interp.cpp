@@ -119,8 +119,10 @@ void HgrTests(TestResults& results) {
     CHECK(results, ReadElement(in, dot, col_byte, 7) == 1 && ReadElement(in, dot, col_bit, 7) == 1);
     // ROW_ADDR is stored as split low and high tables
     const tisple::VarPlace& rows = plot.layout.vars[static_cast<std::size_t>(row_addr)];
-    CHECK(results, rows.split && table.memory[rows.address + 8] == 0x80 &&
-                       table.memory[rows.address + 192 + 8] == 0x20);
+    // with :boundary 256 each table gets a page of its own
+    CHECK(results, rows.split && rows.plane_stride == 256 && rows.address % 256 + 192 <= 256);
+    CHECK(results,
+          table.memory[rows.address + 8] == 0x80 && table.memory[rows.address + 256 + 8] == 0x20);
 
     // flip sets one pixel, and again clears it
     CallOk(results, in, "gfx/hgr.flip", {8, 1});
@@ -230,7 +232,7 @@ void SemanticsTests(TestResults& results) {
         "    (let s (at arr 2)) (let q (addr_of (at arr 1))) (store q (load (addr_of (at arr "
         "2))))\n"
         "    (+ s.b (u16 (. (at arr 1) c))))\n"
-        "(fn zeroed (returns u8) (let y u8) (let r y) (set y 9) r)");
+        "(fn frame (returns u8) (let y u8 0) (let r y) (set y 9) r)");
     CHECK(results, pointers.ok);
     if (!pointers.ok) {
         std::fprintf(stderr, "%s", ErrorText(pointers).c_str());
@@ -240,9 +242,9 @@ void SemanticsTests(TestResults& results) {
     CHECK(results, CallOk(results, in, "t.step", {}) == 12);
     CHECK(results, CallOk(results, in, "t.wide", {}) == 0x100A);
     CHECK(results, CallOk(results, in, "t.copy", {}) == 0x2348);
-    // a let without a value zeroes its variable on every run, though its frame keeps the 9
-    CHECK(results, CallOk(results, in, "t.zeroed", {}) == 0);
-    CHECK(results, CallOk(results, in, "t.zeroed", {}) == 0);
+    // a let sets its variable on every run, though the static frame still holds the 9
+    CHECK(results, CallOk(results, in, "t.frame", {}) == 0);
+    CHECK(results, CallOk(results, in, "t.frame", {}) == 0);
     // packed because of addr_of: element 2 starts 8 bytes in, b low byte first
     std::int32_t arr = VarId(pointers, "t.arr");
     std::uint16_t base = pointers.layout.vars[static_cast<std::size_t>(arr)].address;

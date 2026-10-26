@@ -5,7 +5,7 @@ namespace tisple {
 namespace {
 
 bool IsPlaceLike(ExprKind kind) {
-    return IsPlaceKind(kind) || kind == ExprKind::Load;
+    return IsPlaceKind(kind) || kind == ExprKind::Load || kind == ExprKind::LoadField;
 }
 
 TypeKind Kind(const Checker& ck, TypeId type) {
@@ -69,7 +69,7 @@ std::int32_t PlaceRoot(Checker& ck, ExprId place, bool& through_load) {
         if (expr.kind == ExprKind::VarRef) {
             return expr.ref;
         }
-        if (expr.kind == ExprKind::Load) {
+        if (expr.kind == ExprKind::Load || expr.kind == ExprKind::LoadField) {
             through_load = true;
             return -1;
         }
@@ -168,6 +168,16 @@ ExprId CheckDot(Checker& ck, const Node& node) {
                     Show(node) + " reads a field of a plain name; write " + base_node.text +
                         fields);
     }
+    if (HeadName(base_node) == "load") {
+        std::string fix = "(load";
+        for (std::size_t i = 1; i < base_node.items.size(); i++) {
+            fix += " " + Show(base_node.items[i]);
+        }
+        for (std::size_t i = 2; i < node.items.size(); i++) {
+            fix += " " + node.items[i].text;
+        }
+        return Fail(ck, node, Show(node) + " reads a field through a pointer; write " + fix + ")");
+    }
     ExprId base = CheckExpr(ck, base_node, -1);
     TypeId type = ExprType(ck, base);
     if (type == kErrorType) {
@@ -175,8 +185,7 @@ ExprId CheckDot(Checker& ck, const Node& node) {
     }
     if (Kind(ck, type) == TypeKind::Struct && !IsPlaceLike(ExprAt(ck, base).kind)) {
         return Fail(ck, base_node,
-                    "take fields of a variable, (at ...), a field or (load p), not " +
-                        Show(base_node));
+                    "take fields of a variable, (at ...) or a field, not " + Show(base_node));
     }
     ExprId value = base;
     for (std::size_t i = 2; i < node.items.size(); i++) {
@@ -188,42 +197,101 @@ ExprId CheckDot(Checker& ck, const Node& node) {
     return value;
 }
 
+namespace {
+
+// (load p pos x): walks the field names items[2..end) from what p points to
+bool PointerFields(Checker& ck, const Node& node, std::size_t end, TypeId pointer, TypeId& type,
+                   std::uint32_t& offset) {
+    type = TypeOf(*ck.out, pointer).elem;
+    offset = 0;
+    for (std::size_t i = 2; i < end; i++) {
+        const Node& field = node.items[i];
+        if (field.kind != NodeKind::Symbol || field.text.find('.') != std::string::npos) {
+            Err(ck, field,
+                "(" + node.items[0].text + " p field ...) takes plain field names, like x");
+            return false;
+        }
+        if (Kind(ck, type) != TypeKind::Struct) {
+            Err(ck, field,
+                Show(node.items[1]) + " points to " + ShowType(ck, type) + ", which has no field " +
+                    field.text);
+            return false;
+        }
+        std::int32_t index = FindFieldIndex(*ck.out, type, field.text);
+        const StructDecl& sd =
+            ck.out->structs[static_cast<std::size_t>(TypeOf(*ck.out, type).decl)];
+        if (index < 0) {
+            Err(ck, field,
+                sd.name + " has no field " + field.text + "; its fields are " + FieldList(sd));
+            return false;
+        }
+        offset += sd.fields[static_cast<std::size_t>(index)].offset;
+        type = sd.fields[static_cast<std::size_t>(index)].type;
+    }
+    return true;
+}
+
+} // namespace
+
 ExprId CheckLoad(Checker& ck, const Node& node) {
-    if (node.items.size() != 2) {
-        return Fail(ck, node, "load takes one pointer; write (load p)");
+    if (node.items.size() < 2) {
+        return Fail(ck, node,
+                    "load takes a pointer and maybe field names; write (load p) or (load p x)");
     }
     ExprId p = CheckPointer(ck, node.items[1], "load");
-    TypeId type = ExprType(ck, p);
-    if (type == kErrorType) {
+    TypeId pointer = ExprType(ck, p);
+    if (pointer == kErrorType) {
         return ErrorExpr(ck, node);
     }
-    ExprId id = AddExpr(ck, ExprKind::Load, TypeOf(*ck.out, type).elem, node);
+    TypeId type = kErrorType;
+    std::uint32_t offset = 0;
+    if (!PointerFields(ck, node, node.items.size(), pointer, type, offset)) {
+        return ErrorExpr(ck, node);
+    }
+    bool field = node.items.size() > 2;
+    ExprId id = AddExpr(ck, field ? ExprKind::LoadField : ExprKind::Load, type, node);
     ExprAt(ck, id).a = p;
+    ExprAt(ck, id).value = offset;
     return id;
 }
 
 ExprId CheckStore(Checker& ck, const Node& node) {
-    if (node.items.size() != 3) {
-        return Fail(ck, node, "store takes a pointer and a value; write (store p v)");
+    if (node.items.size() < 3) {
+        return Fail(ck, node,
+                    "store takes a pointer, maybe field names, and a value; write (store p v) or "
+                    "(store p x v)");
     }
+    const Node& value_node = node.items.back();
     ExprId p = CheckPointer(ck, node.items[1], "store");
-    TypeId type = ExprType(ck, p);
-    if (type == kErrorType) {
-        CheckExpr(ck, node.items[2], -1);
+    TypeId pointer = ExprType(ck, p);
+    if (pointer == kErrorType) {
+        CheckExpr(ck, value_node, -1);
         return ErrorExpr(ck, node);
     }
-    TypeId elem = TypeOf(*ck.out, type).elem;
-    if (Kind(ck, elem) == TypeKind::Array) {
+    TypeId type = kErrorType;
+    std::uint32_t offset = 0;
+    if (!PointerFields(ck, node, node.items.size() - 1, pointer, type, offset)) {
+        return ErrorExpr(ck, node);
+    }
+    if (Kind(ck, type) == TypeKind::Array) {
         return Fail(ck, node, "store writes one value; store arrays element by element");
     }
-    ExprId value = CheckExpr(ck, node.items[2], elem);
-    RequireType(ck, node.items[2], value, elem, "store through " + Show(node.items[1]));
-    if (Kind(ck, elem) == TypeKind::Struct) {
-        RequireStructSource(ck, node.items[2], value);
+    ExprId value = CheckExpr(ck, value_node, type);
+    std::string target = Show(node.items[1]);
+    for (std::size_t i = 2; i + 1 < node.items.size(); i++) {
+        target += " " + node.items[i].text;
     }
-    ExprId id = AddExpr(ck, ExprKind::Store, kVoidType, node);
-    ExprAt(ck, id).a = p;
-    ExprAt(ck, id).b = value;
+    RequireType(ck, value_node, value, type, "store through " + target);
+    if (Kind(ck, type) == TypeKind::Struct) {
+        RequireStructSource(ck, value_node, value);
+    }
+    bool field = node.items.size() > 3;
+    ExprId id = AddExpr(ck, field ? ExprKind::StoreField : ExprKind::Store, kVoidType, node);
+    Expr& expr = ExprAt(ck, id);
+    expr.a = p;
+    expr.b = value;
+    expr.value = offset;
+    expr.ref = type;
     return id;
 }
 

@@ -66,14 +66,17 @@ whole program, so files are namespaces, not separate compilation units.
 ### lib/apple2
 
 Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
-`SPKR`, `TXTCLR`, `HIRES`, ...), plus the screen pages. Write
-`(import apple2 a2)` and `a2.SPKR`; never type an I/O address by hand.
+`SPKR`, `TXTCLR`, `HIRES`, ...), plus the screen pages and the key codes
+`(& (io_read u8 KBD) 0x7F)` gives (`KEY_LEFT`, `KEY_RIGHT`, `KEY_UP`, `KEY_DOWN`,
+`KEY_RETURN`, `KEY_ESC`, `KEY_SPACE`, `KEY_DELETE`). Write `(import apple2 a2)`
+and `a2.SPKR`; never type an I/O address or key code by hand.
 
 ## Keywords
 
 `:name` does two things only:
 
-1. Declaration options on `let`: `:address`, `:align`, `:boundary` (later `:in`).
+1. Placement options on a top-level `let` or a `const` table, after the value:
+   `:address`, `:align`, `:boundary` (later `:in`).
 2. Field names in struct literals: `(Sprite :x 10 :y 20 :active true)`. Every
    field, in declared order, none left out. The names exist so a swapped
    `x`/`y` is an error instead of a silent bug; there is no reordering and no
@@ -101,19 +104,22 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 - No implicit widening or promotion. Both sides of `+`, `=`, `<` and so on must
   have the same type. `(+ (u16 a) b)` widens `a` explicitly.
 - Conversions: `(u8 x)`, `(i8 x)`, `(u16 x)`, `(i16 x)`. Narrowing truncates;
-  widening zero-extends from unsigned and sign-extends from signed. Pointers
-  convert only with `as`, so `(ptr ...)` is always a type.
+  widening zero-extends from unsigned and sign-extends from signed. An enum
+  member converts to its number, `(u8 Action.fire)`; nothing converts back to an
+  enum. Pointers convert only with `as`, so `(ptr ...)` is always a type.
 - A literal has no type of its own. It takes the type its context needs and is
   an error if out of range (`(+ x 300)` with `x : u8` fails). A literal with no
   context is an error: `(let n 5)` must be `(let n u8 5)`, and the same for
-  `const`.
+  `const`. So is a `for` over two literals: `(for y u8 0 48 ...)`, not
+  `(for y 0 48 ...)` (owner, 2026-10-26).
 - Arithmetic wraps: `(+ 255 1)` at `u8` is `0`. Comparisons are signed for
   `i8`/`i16`, unsigned otherwise.
 - `*` exists at every width and compiles to a routine; `/` and `%` likewise,
   later.
 - Bit operators are symbols, like arithmetic: `(& a b)`, `(| a b)`, `(^ a b)`,
   `(~ a)`, `(<< x n)`, `(>> x n)`. `>>` is logical for unsigned, arithmetic for
-  signed.
+  signed. The shift count `n` is always `u8`, whatever the type of `x`; shifting
+  by the width or more gives 0 (all sign bits for a signed `>>`).
 
 ## Forms
 
@@ -121,20 +127,21 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | --- | --- |
 | `(const name type value)` | compile-time constant; `type` optional |
 | `(const NAME (array t n) v0 v1 ...)` | constant table: exactly `n` values straight after the type (settled 2026-10-26) |
-| `(let name type value)` | variable; `type` or `value` may be omitted, not both |
+| `(let name type value)` | variable; `type` may be omitted. A local always has a value; a top-level `let` without one starts at zero in the image |
 | `(set place value)` | assign to a name, `s.x`, `(at ...)` or `(. ...)` |
 | `(fn name (args (p t) ...) (returns t) body ...)` | function; `args` omitted when none, `returns` omitted when it returns nothing |
 | `(if c then else)` | both arms one form; with `else` it has a value, without it is a statement |
 | `(do body ...)` | group forms; value is the last |
 | `(while c body ...)` | loop |
 | `(for i type start end body ...)` | `i` from `start` up to, not including, `end`; `type` optional, so `(for i u8 0 256 ...)` covers every byte |
-| `(match x (pattern form) ...)` | first matching clause; patterns are literals, enum members, or `_` |
+| `(match x (pattern form) ...)` | first matching clause; patterns are literals, named constants (`a2.KEY_ESC`), enum members, or `_` |
 | `(return value)` / `(return)` / `(break)` / `(continue)` | early exits |
 | `(and a b)` `(or a b)` `(not a)` | short-circuit, on `bool` |
 | `(at arr i)` | array element; `i : u8` when the array has at most 256 elements |
 | `s.x` / `s.pos.x` | struct field of a named value |
 | `(. expr name ...)` | struct field of an expression, `(. (at sprites i) x)`; only when the base is not a plain name |
 | `(load p)` / `(store p v)` | read / write through a pointer; the only way to do either |
+| `(load p x)` / `(store p x v)` | a field of the struct `p` points to; chains like `(load p pos x)`. `(. (load p) x)` is written `(load p x)` |
 | `(addr_of place)` | address of a variable, element or field |
 | `(as (ptr t) n)` | the `u16` address `n` as a `(ptr t)`, and back with `(as u16 p)` |
 | `(io_read t addr)` / `(io_write t addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
@@ -196,6 +203,9 @@ runs before the checker, so nothing later sees a macro.
 - A symbol ending in `#` inside a template becomes a fresh unique name on
   every expansion (from Clojure), so a caller's own `tmp` is never captured.
 - Arguments are unevaluated forms. First version: the body is one template.
+- Names the template writes resolve in the macro's own module, so a macro in
+  `gfx/hgr` can call `plot` and mean `hgr.plot` wherever it is used. Unquoted
+  arguments resolve where the macro is called (owner, 2026-10-26).
   Macros that compute at compile time can come later by running the reference
   interpreter on macro bodies.
 - `tisple expand file.tsp` prints the expanded program through the formatter.
@@ -205,8 +215,9 @@ runs before the checker, so nothing later sees a macro.
 - Globals get fixed addresses from the linker. The interpreter uses the same
   layout, so pointer programs agree byte for byte.
 - No recursion in this subset: the checker rejects call-graph cycles. Every
-  function gets a static frame; the backend may overlap frames that can't be
-  live at the same time.
+  function gets a static frame; for now the layout gives each function its own,
+  the backend may later overlap frames that can't be live at the same time, and
+  the interpreter follows whatever the layout says.
 - Return value: `u8`/`i8`/`bool` in A, 16-bit in A (low) and X (high).
 - Arrays of structs are stored one array per field, and arrays of `u16`, `i16`
   and pointers as a low-byte table and a high-byte table, unless something
@@ -237,7 +248,12 @@ hold. Named regions (`:in`) come later.
 | --- | --- |
 | `:address 0x6000` | start at exactly this address |
 | `:align 256` | start on a multiple of 256 |
-| `:boundary 256` | whole object inside one 256-byte block |
+| `:boundary 256` | whole object inside one 256-byte block; for a split table, each byte table |
+
+Placement goes on top-level `let`s and `const` tables. An explicit `:address`
+may point anywhere, a hi-res page included (`(let screen (array u8 8192)
+:address 0x2000)`); automatic placement never uses zero page, the stack, text
+page 1, hi-res page 1 or `$C000` and up.
 
 ## Out of the first subset
 

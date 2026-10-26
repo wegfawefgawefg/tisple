@@ -77,7 +77,7 @@ void PlacementTests(TestResults& results) {
                              "(let rows (array u16 192) :boundary 256)\n"
                              "(let small u8 1)\n"
                              "(let big (array u8 0x1500))\n"
-                             "(fn f (let local (array u16 3)))");
+                             "(fn f (let local u16 3))");
     CHECK(results, placed.ok);
     if (!placed.ok) {
         std::fprintf(stderr, "%s", ErrorText(placed).c_str());
@@ -100,7 +100,7 @@ void PlacementTests(TestResults& results) {
     bool local_placed = false;
     for (std::size_t i = 0; i < placed.program.vars.size(); i++) {
         if (placed.program.vars[i].name == "local") {
-            local_placed = placed.layout.vars[i].address >= 0x0C00 && placed.layout.vars[i].split;
+            local_placed = placed.layout.vars[i].address >= 0x0C00;
         }
     }
     CHECK(results, local_placed);

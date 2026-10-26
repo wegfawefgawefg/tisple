@@ -91,7 +91,8 @@ void ResolveTests(TestResults& results) {
                 "or a struct or enum name");
     ExpectError(results, "(fn f (returns u8) f)", "t.tsp:1:20: f is a function; call it: (f ...)");
     ExpectError(results, "(enum A one)\n(fn f (returns u8) (A))",
-                "t.tsp:2:20: A is not a function, so (A ...) is not a call");
+                "t.tsp:2:20: nothing converts to an enum; name a member, as in A.one, or match on "
+                "the number");
     // (. name x) is written name.x, except in code a macro made
     ExpectError(results, "(struct P (x u8))\n(let p P)\n(fn f (returns u8) (. p x))",
                 "t.tsp:3:20: (. p x) reads a field of a plain name; write p.x");

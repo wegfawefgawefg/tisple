@@ -40,12 +40,12 @@ PatternResult ReadPattern(Checker& ck, const Node& pattern, TypeId type) {
         if (pattern.kind != NodeKind::Symbol) {
             Err(ck, pattern,
                 "a pattern on " + ed.name + " is a member, like " + ed.name + "." +
-                    ed.members[0].name + ", or _");
+                    ed.members[0].name + ", a constant, or _");
             return result;
         }
-    } else if (pattern.kind != NodeKind::Integer) {
+    } else if (pattern.kind != NodeKind::Integer && pattern.kind != NodeKind::Symbol) {
         Err(ck, pattern,
-            "a pattern on " + ShowType(ck, type) + " is a number literal or _, not " +
+            "a pattern on " + ShowType(ck, type) + " is a number, a constant or _, not " +
                 Show(pattern));
         return result;
     }
@@ -58,7 +58,9 @@ PatternResult ReadPattern(Checker& ck, const Node& pattern, TypeId type) {
     }
     const Expr& literal = ExprAt(ck, expr);
     if (literal.kind != ExprKind::Literal) {
-        Err(ck, pattern, "a pattern is a literal, an enum member or _");
+        Err(ck, pattern,
+            Show(pattern) + " is not a constant; a pattern is a number, a constant, an enum "
+                            "member or _");
         return result;
     }
     result.ok = true;

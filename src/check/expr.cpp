@@ -11,9 +11,9 @@ ExprId MakeLiteral(Checker& ck, const Node& node, TypeId type, std::uint16_t raw
     return id;
 }
 
-std::string UnknownName(Checker& ck, const std::string& text, const char* what) {
+std::string UnknownName(Checker& ck, const Node& at, const std::string& text, const char* what) {
     // a name some import has is the likely fix
-    const ModuleScope& scope = ck.modules[static_cast<std::size_t>(ck.at.module)];
+    const ModuleScope& scope = ck.modules[static_cast<std::size_t>(NameModule(ck, at))];
     for (const auto& [prefix, module] : scope.imports) {
         const ModuleScope& target = ck.modules[static_cast<std::size_t>(module)];
         if (target.names.count(text) != 0) {
@@ -32,7 +32,7 @@ ExprId CheckName(Checker& ck, const Node& node) {
     if (segments.empty()) {
         return Fail(ck, node, node.text + " is not a name; dotted names look like dot.x");
     }
-    NameRef ref = LookupName(ck, segments);
+    NameRef ref = LookupName(ck, segments, node);
     const std::string& first = segments[0];
     ExprId value = -1;
     switch (ref.kind) {
@@ -43,7 +43,7 @@ ExprId CheckName(Checker& ck, const Node& node) {
         if (ref.used > 0) {
             return Fail(ck, node, first + " is a macro; call it as (" + first + " ...)");
         }
-        return Fail(ck, node, UnknownName(ck, node.text, "name"));
+        return Fail(ck, node, UnknownName(ck, node, node.text, "name"));
     case NameKind::Module:
         return Fail(ck, node,
                     first + " is a module; name one of its members, as in " + first + ".x");
@@ -181,7 +181,7 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
     }
 
     std::vector<std::string> segments = SplitDotted(head);
-    NameRef ref = segments.empty() ? NameRef() : LookupName(ck, segments);
+    NameRef ref = segments.empty() ? NameRef() : LookupName(ck, segments, head_node);
     bool whole = ref.used == segments.size();
     if (ref.kind == NameKind::Function && whole) {
         return CheckCall(ck, node, ref.index);
@@ -189,8 +189,14 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint) {
     if (ref.kind == NameKind::Struct && whole) {
         return CheckStructLit(ck, node, StructType(ck, ref.index));
     }
+    if (ref.kind == NameKind::Enum && whole) {
+        return Fail(ck, node,
+                    "nothing converts to an enum; name a member, as in " + head + "." +
+                        ck.out->enums[static_cast<std::size_t>(ref.index)].members[0].name +
+                        ", or match on the number");
+    }
     if (ref.kind == NameKind::None && ref.missing_in.empty() && ref.used == 0) {
-        return Fail(ck, node, UnknownName(ck, head, "function"));
+        return Fail(ck, node, UnknownName(ck, head_node, head, "function"));
     }
     if (ref.kind == NameKind::None && !ref.missing_in.empty()) {
         return Fail(ck, node, ref.missing_in + " has no " + segments[ref.used]);
@@ -301,12 +307,12 @@ bool IsPlaceKind(ExprKind kind) {
 
 bool RequireStructSource(Checker& ck, const Node& node, ExprId expr) {
     ExprKind kind = ExprAt(ck, expr).kind;
-    if (kind == ExprKind::StructLit || kind == ExprKind::Load || IsPlaceKind(kind) ||
-        ExprType(ck, expr) == kErrorType) {
+    if (kind == ExprKind::StructLit || kind == ExprKind::Load || kind == ExprKind::LoadField ||
+        IsPlaceKind(kind) || ExprType(ck, expr) == kErrorType) {
         return true;
     }
     Err(ck, node,
-        "a struct value comes from a struct literal, a variable, (at ...), a field or (load p); "
+        "a struct value comes from a struct literal, a variable, (at ...), a field or a load; "
         "set each case on its own instead, as in (if c (set s a) (set s b))");
     return false;
 }

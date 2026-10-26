@@ -140,6 +140,38 @@ std::string MismatchFix(const Checker& ck, const Node& node, TypeId ta, TypeId t
     return "; write (" + head + " " + left + " (" + ShowType(ck, ta) + " " + right + "))";
 }
 
+// (<< x n): x any integer, n always u8
+ExprId CheckShift(Checker& ck, const Node& node, Op op, TypeId hint) {
+    const std::string& head = node.items[0].text;
+    const Node& left = node.items[1];
+    const Node& right = node.items[2];
+    ExprId a = -1;
+    if (IsBareLiteral(left) && hint < 0) {
+        a = Fail(ck, left,
+                 Show(node) +
+                     ": the shifted literal has no type; give the result one, as in "
+                     "(let m u8 " +
+                     Show(node) + ")");
+    } else {
+        a = CheckExpr(ck, left, hint);
+    }
+    ExprId b = CheckExpr(ck, right, kU8Type);
+    TypeId ta = ExprType(ck, a);
+    if (IsTyped(ta) && !IsIntegerKind(KindOf(*ck.out, ta))) {
+        return Fail(ck, node, head + " works on integers, not " + KindWord(ck, ta));
+    }
+    bool count_ok = RequireType(ck, right, b, kU8Type, "the shift count");
+    if (!IsTyped(ta) || !IsTyped(ExprType(ck, b)) || !count_ok) {
+        return ErrorExpr(ck, node);
+    }
+    ExprId id = AddExpr(ck, ExprKind::Binary, ta, node);
+    Expr& expr = ExprAt(ck, id);
+    expr.op = op;
+    expr.a = a;
+    expr.b = b;
+    return id;
+}
+
 } // namespace
 
 bool FindBinaryOp(const std::string& name, Op& op) {
@@ -186,6 +218,9 @@ ExprId CheckBinary(Checker& ck, const Node& node, Op op, TypeId hint) {
         std::string fix = node.items.size() > 3 ? "; write (" + head + " (" + head + " a b) c)"
                                                 : "; write (" + head + " a b)";
         return Fail(ck, node, head + " takes two operands" + fix);
+    }
+    if (op == Op::Shl || op == Op::Shr) {
+        return CheckShift(ck, node, op, hint);
     }
     ExprId a = -1;
     ExprId b = -1;
@@ -310,8 +345,9 @@ ExprId CheckConvert(Checker& ck, const Node& node, TypeId to) {
         return Fail(ck, node,
                     head + " converts integers, not bool; write (if " + Show(arg) + " 1 0)");
     }
-    if (!IsIntegerKind(kind)) {
-        return Fail(ck, node, head + " converts integers, not " + KindWord(ck, from));
+    // an enum member converts to its number; nothing converts back
+    if (!IsIntegerKind(kind) && kind != TypeKind::Enum) {
+        return Fail(ck, node, head + " converts integers and enums, not " + KindWord(ck, from));
     }
     ExprId id = AddExpr(ck, ExprKind::Convert, to, node);
     ExprAt(ck, id).a = a;

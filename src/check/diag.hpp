@@ -19,6 +19,7 @@ struct Loc {
 struct Expansion {
     std::string macro;
     Loc call;
+    std::int32_t module = -1; // where the macro is defined: its template's free names live there
 };
 
 // every file of a program plus the macro calls, so any Loc can be printed

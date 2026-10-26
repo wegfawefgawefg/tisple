@@ -106,9 +106,8 @@ void PlaceTests(TestResults& results) {
                 "t.tsp:2:12: K is a constant; it cannot be set");
     ExpectError(results, "(const T (array u8 2) 1 2)\n(fn f (set (at T 0) 2))",
                 "t.tsp:2:12: (at T 0) is part of a constant; it cannot be set");
-    ExpectError(results, "(struct P (x u8))\n(fn f (args (p (ptr P))) (set (. (load p) x) 1))",
-                "t.tsp:2:31: set does not write through pointers; write (store p value) with the "
-                "whole value");
+    ExpectError(results, "(struct P (x u8))\n(fn f (args (p (ptr P))) (set (load p x) 1))",
+                "t.tsp:2:31: set does not write through pointers; write (store p x 1)");
     ExpectError(results, "(fn f (args (x u8)) (set (+ x 1) 2))",
                 "t.tsp:1:26: set needs a variable, s.x, (at ...) or (. ...); (+ x 1) is not one");
     ExpectError(results, t + "(let u (array u8 10))\n(fn f (set t u))",

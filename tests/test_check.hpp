@@ -37,6 +37,7 @@ void RunCheckExampleTests(TestResults& results);
 void RunCheckNameTests(TestResults& results);
 void RunCheckTypeTests(TestResults& results);
 void RunCheckFormTests(TestResults& results);
+void RunCheckDecisionTests(TestResults& results);
 void RunExpandTests(TestResults& results);
 void RunLayoutTests(TestResults& results);
 void RunInterpTests(TestResults& results);

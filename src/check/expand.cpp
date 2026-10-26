@@ -148,6 +148,11 @@ const MacroDef* FindMacro(const Expander& ex, std::int32_t module, const Node& f
     if (head.empty()) {
         return nullptr;
     }
+    // a call a template wrote looks in the macro's own module
+    std::uint32_t expansion = form.items[0].expansion;
+    if (expansion != 0) {
+        module = ex.program->sources.expansions[expansion - 1].module;
+    }
     std::int32_t target = module;
     std::string name = head;
     std::size_t dot = head.find('.');
@@ -291,7 +296,7 @@ bool Instantiate(Expander& ex, std::int32_t module, const MacroDef& def, const N
         return false;
     }
     Sources& sources = ex.program->sources;
-    sources.expansions.push_back(Expansion{call.items[0].text, call_loc});
+    sources.expansions.push_back(Expansion{call.items[0].text, call_loc, def.module});
     Instance in;
     in.def = &def;
     in.args = &call.items;

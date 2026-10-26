@@ -95,10 +95,11 @@ Cursor EvalPlace(Interp& in, ExprId id, std::int32_t& root) {
         std::uint16_t index = Eval(in, e.b);
         return ElementCursor(*in.program, *in.layout, root, base, At(in, e.a).type, index);
     }
-    case ExprKind::Load: {
+    case ExprKind::Load:
+    case ExprKind::LoadField: {
         root = -1;
         Cursor cursor;
-        cursor.address = Eval(in, e.a);
+        cursor.address = static_cast<std::uint16_t>((Eval(in, e.a) + e.value) & 0xFFFF);
         return cursor;
     }
     default:
@@ -315,7 +316,8 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::VarRef:
     case ExprKind::Index:
     case ExprKind::Field:
-    case ExprKind::Load: {
+    case ExprKind::Load:
+    case ExprKind::LoadField: {
         std::int32_t root = -1;
         Cursor cursor = EvalPlace(in, id, root);
         if (in.flow != Flow::Normal || !IsScalar(in, e.type)) {
@@ -328,6 +330,12 @@ std::uint16_t Eval(Interp& in, ExprId id) {
         cursor.address = Eval(in, e.a);
         TypeId elem = TypeAt(in, At(in, e.a).type).elem;
         Assign(in, cursor, -1, elem, e.b);
+        return 0;
+    }
+    case ExprKind::StoreField: {
+        Cursor cursor;
+        cursor.address = static_cast<std::uint16_t>((Eval(in, e.a) + e.value) & 0xFFFF);
+        Assign(in, cursor, -1, e.ref, e.b);
         return 0;
     }
     case ExprKind::AddrOf: {
@@ -402,14 +410,7 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::Let: {
         Cursor var = VarCursor(*in.layout, e.ref);
         TypeId type = in.program->vars[static_cast<std::size_t>(e.ref)].type;
-        if (e.a >= 0) {
-            Assign(in, var, e.ref, type, e.a);
-            return 0;
-        }
-        const VarPlace& place = in.layout->vars[static_cast<std::size_t>(e.ref)];
-        for (std::uint32_t i = 0; i < place.size; i++) {
-            in.memory[(place.address + i) & 0xFFFF] = 0;
-        }
+        Assign(in, var, e.ref, type, e.a);
         return 0;
     }
     case ExprKind::Set: {

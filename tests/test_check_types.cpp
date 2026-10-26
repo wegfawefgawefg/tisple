@@ -122,7 +122,7 @@ void StructTests(TestResults& results) {
                 "t.tsp:1:1: a struct needs fields; write (struct E (x u8) (y u8))");
     ExpectError(results, p + "(let a P)\n(fn f (args (c bool)) (set a (if c a a)))",
                 "t.tsp:3:30: a struct value comes from a struct literal, a variable, (at ...), a "
-                "field or (load p); set each case on its own instead, as in (if c (set s a) (set "
+                "field or a load; set each case on its own instead, as in (if c (set s a) (set "
                 "s b))");
     ExpectError(results, p + "(let a P)\n(fn f (returns bool) (= a a))",
                 "t.tsp:3:22: = compares integers, bools, enum members and pointers, not P");

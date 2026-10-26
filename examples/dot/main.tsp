@@ -21,10 +21,10 @@
         (return Action.none))
     (io_read u8 a2.KBDSTRB)
     (match (& key 0x7F)
-        (0x08 Action.left)
-        (0x15 Action.right)
-        (0x0B Action.up)
-        (0x0A Action.down)
+        (a2.KEY_LEFT Action.left)
+        (a2.KEY_RIGHT Action.right)
+        (a2.KEY_UP Action.up)
+        (a2.KEY_DOWN Action.down)
         (_ Action.none)))
 
 (fn click

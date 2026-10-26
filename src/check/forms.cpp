@@ -50,6 +50,32 @@ ExprId CheckArm(Checker& ck, const Node& node, TypeId hint, bool statement) {
     return id;
 }
 
+// how to give a local of this type its start value
+std::string LetFix(const Checker& ck, const std::string& name, TypeId type) {
+    const Type& t = TypeOf(*ck.out, type);
+    if (t.kind == TypeKind::Array) {
+        return "arrays have no value to start from, so make " + name + " a top-level let";
+    }
+    if (t.kind == TypeKind::Struct) {
+        const StructDecl& sd = ck.out->structs[static_cast<std::size_t>(t.decl)];
+        std::string literal = "(" + sd.name;
+        for (const Field& field : sd.fields) {
+            literal += " :" + field.name + " ...";
+        }
+        return "write (let " + name + " " + literal + "))";
+    }
+    std::string zero = "0";
+    if (t.kind == TypeKind::Bool) {
+        zero = "false";
+    } else if (t.kind == TypeKind::Enum) {
+        const EnumDecl& ed = ck.out->enums[static_cast<std::size_t>(t.decl)];
+        zero = ed.name + "." + ed.members[0].name;
+    } else if (t.kind == TypeKind::Ptr) {
+        zero = "(as " + ShowType(ck, type) + " 0)";
+    }
+    return "write (let " + name + " " + ShowType(ck, type) + " " + zero + ")";
+}
+
 // the start value of a let: checks it against the declared type, or infers one
 ExprId CheckLetValue(Checker& ck, const Node& name, const Node& value, TypeId& type) {
     if (IsArray(ck, type)) {
@@ -148,6 +174,8 @@ ExprId CheckLet(Checker& ck, const Node& node) {
     ExprId init = -1;
     if (value) {
         init = CheckLetValue(ck, name, *value, type);
+    } else if (type > kErrorType) {
+        Err(ck, node, "a local let needs a value; " + LetFix(ck, name.text, type));
     }
     if (type < 0) {
         type = kErrorType;
@@ -179,10 +207,16 @@ ExprId CheckSet(Checker& ck, const Node& node) {
     }
     bool through_load = false;
     std::int32_t root = PlaceRoot(ck, place, through_load);
-    if (through_load || expr.kind == ExprKind::Load) {
-        return Fail(ck, place_node,
-                    "set does not write through pointers; write (store p value) with the whole "
-                    "value");
+    if (through_load || expr.kind == ExprKind::Load || expr.kind == ExprKind::LoadField) {
+        std::string fix = "(store p x value)";
+        if (HeadName(place_node) == "load") {
+            fix = "(store";
+            for (std::size_t i = 1; i < place_node.items.size(); i++) {
+                fix += " " + Show(place_node.items[i]);
+            }
+            fix += " " + Show(node.items[2]) + ")";
+        }
+        return Fail(ck, place_node, "set does not write through pointers; write " + fix);
     }
     if (root < 0 || !IsPlaceKind(expr.kind)) {
         return Fail(ck, place_node,

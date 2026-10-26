@@ -130,7 +130,9 @@ TypeId ResolveType(Checker& ck, const Node& node);
 TypeId TryResolveType(Checker& ck, const Node& node);
 bool EnsureStruct(Checker& ck, std::int32_t decl, const Node& at);
 void DeclareModule(Checker& ck, std::int32_t module);
-NameRef LookupName(Checker& ck, const std::vector<std::string>& segments);
+// `at` is the symbol being resolved: names a macro template wrote resolve in the macro's module
+NameRef LookupName(Checker& ck, const std::vector<std::string>& segments, const Node& at);
+std::int32_t NameModule(const Checker& ck, const Node& at);
 std::vector<std::string> SplitDotted(const std::string& text);
 // naming checks for a new name; false (with an error) when it is not allowed
 enum class NameRule : std::uint8_t {

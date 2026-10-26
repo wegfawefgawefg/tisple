@@ -7,8 +7,8 @@
 // - Values are raw bits: u8/i8/bool/enums in the low byte, u16/i16/pointers in 16 bits.
 //   Arithmetic wraps per width (check/arith.hpp, shared with constant folding).
 // - Every variable, parameters and locals included, lives in memory at its Layout address;
-//   functions have static frames (there is no recursion). A let without a value zeroes its
-//   variable; the image starts zeroed, then top-level initial values are written.
+//   functions have static frames (there is no recursion). The image starts zeroed, then
+//   top-level initial values are written; a local let always has a value.
 // - Evaluation is left to right: operands, call arguments, the place of a set before its
 //   value, the pointer of a store before its value. A struct value is read whole before
 //   it is written, so overlapping copies through pointers are well defined.

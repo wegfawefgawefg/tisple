@@ -93,8 +93,11 @@ void ExhaustiveByte(TestResults& results, const std::string& type) {
         if (op.divide) {
             body = "(if (!= b 0) " + body + ")";
         }
-        text += "(fn " + std::string(op.fn) + " (args (a " + type + ")) (for b " + type + " " +
-                range + " " + body + "))\n";
+        // a shift count is always u8
+        bool shift = std::string(op.fn) == "shl" || std::string(op.fn) == "shr";
+        std::string count = shift ? "u8 0 256" : type + " " + range;
+        text += "(fn " + std::string(op.fn) + " (args (a " + type + ")) (for b " + count + " " +
+                body + "))\n";
     }
     Built built = BuildText(text);
     CHECK(results, built.ok);
@@ -136,8 +139,10 @@ void EdgeWords(TestResults& results, const std::string& type) {
     std::string text;
     for (const OpCase& op : kOps) {
         std::string ret = op.compare ? "bool" : type;
-        text += "(fn " + std::string(op.fn) + " (args (a " + type + ") (b " + type +
-                ")) (returns " + ret + ") (" + op.name + " a b))\n";
+        bool shift = std::string(op.fn) == "shl" || std::string(op.fn) == "shr";
+        text += "(fn " + std::string(op.fn) + " (args (a " + type + ") (b " +
+                (shift ? std::string("u8") : type) + ")) (returns " + ret + ") (" + op.name +
+                " a b))\n";
     }
     Built built = BuildText(text);
     CHECK(results, built.ok);
@@ -147,7 +152,8 @@ void EdgeWords(TestResults& results, const std::string& type) {
         int wrong = 0;
         for (std::int32_t a : edges) {
             for (std::int32_t b : edges) {
-                if (op.divide && b == 0) {
+                bool shift = std::string(op.fn) == "shl" || std::string(op.fn) == "shr";
+                if ((op.divide && b == 0) || (shift && b > 0xFF)) {
                     continue;
                 }
                 std::int32_t want = Reference(op.fn, is_signed, 16, a, b);

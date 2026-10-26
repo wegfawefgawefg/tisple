@@ -103,7 +103,7 @@ TypeId ResolveType(Checker& ck, const Node& node) {
             return kErrorType;
         }
         std::vector<std::string> segments = SplitDotted(node.text);
-        NameRef ref = segments.empty() ? NameRef() : LookupName(ck, segments);
+        NameRef ref = segments.empty() ? NameRef() : LookupName(ck, segments, node);
         if (ref.kind == NameKind::Struct && ref.used == segments.size()) {
             return StructType(ck, ref.index);
         }
@@ -146,7 +146,7 @@ TypeId TryResolveType(Checker& ck, const Node& node) {
         if (segments.empty()) {
             return -1;
         }
-        NameRef ref = LookupName(ck, segments);
+        NameRef ref = LookupName(ck, segments, node);
         bool whole = ref.used == segments.size();
         if (whole && (ref.kind == NameKind::Struct || ref.kind == NameKind::Enum)) {
             return ResolveType(ck, node);
@@ -287,7 +287,15 @@ void FromDecl(Checker& ck, const Decl& decl, const std::vector<std::string>& seg
 
 } // namespace
 
-NameRef LookupName(Checker& ck, const std::vector<std::string>& segments) {
+std::int32_t NameModule(const Checker& ck, const Node& at) {
+    if (at.expansion == 0) {
+        return ck.at.module;
+    }
+    std::int32_t module = ck.in->sources.expansions[at.expansion - 1].module;
+    return module >= 0 ? module : ck.at.module;
+}
+
+NameRef LookupName(Checker& ck, const std::vector<std::string>& segments, const Node& at) {
     NameRef ref;
     const std::string& first = segments[0];
     for (auto scope = ck.at.scopes.rbegin(); scope != ck.at.scopes.rend(); ++scope) {
@@ -300,7 +308,7 @@ NameRef LookupName(Checker& ck, const std::vector<std::string>& segments) {
             }
         }
     }
-    const ModuleScope& scope = ck.modules[static_cast<std::size_t>(ck.at.module)];
+    const ModuleScope& scope = ck.modules[static_cast<std::size_t>(NameModule(ck, at))];
     auto decl = scope.names.find(first);
     if (decl != scope.names.end()) {
         FromDecl(ck, decl->second, segments, 1, ref);

@@ -30,6 +30,7 @@ int main() {
     tisple_tests::RunCheckNameTests(results);
     tisple_tests::RunCheckTypeTests(results);
     tisple_tests::RunCheckFormTests(results);
+    tisple_tests::RunCheckDecisionTests(results);
     tisple_tests::RunExpandTests(results);
     tisple_tests::RunLayoutTests(results);
     tisple_tests::RunInterpTests(results);

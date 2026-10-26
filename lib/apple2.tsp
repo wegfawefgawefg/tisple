@@ -6,6 +6,16 @@
 (const KBD u16 0xC000)     ; read: last key, bit 7 set while a new key waits
 (const KBDSTRB u16 0xC010) ; access to clear bit 7 of KBD
 
+; key codes, as (& (io_read u8 KBD) 0x7F) gives them
+(const KEY_LEFT u8 0x08)  ; left arrow
+(const KEY_RIGHT u8 0x15) ; right arrow
+(const KEY_UP u8 0x0B)    ; up arrow (IIe)
+(const KEY_DOWN u8 0x0A)  ; down arrow (IIe)
+(const KEY_RETURN u8 0x0D)
+(const KEY_ESC u8 0x1B)
+(const KEY_SPACE u8 0x20)
+(const KEY_DELETE u8 0x7F)
+
 ; sound and cassette
 (const SPKR u16 0xC030)    ; each access clicks the speaker
 (const TAPEOUT u16 0xC020) ; each access toggles cassette out
