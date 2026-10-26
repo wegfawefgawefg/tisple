@@ -188,6 +188,12 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
         if (ptemps.size > 0) {
             items.push_back(ptemps);
         }
+        Item lptrs = ptemps;
+        lptrs.sym = be.lptr_sym[f];
+        lptrs.size = be.lptr_size[f];
+        if (lptrs.size > 0) {
+            items.push_back(lptrs);
+        }
     }
 
     std::vector<std::uint32_t> zp_sizes(fn_count, 0);

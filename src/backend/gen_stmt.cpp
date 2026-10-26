@@ -134,7 +134,7 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
     TypeId type = At(g, place).type;
     PlaceRef p;
     if (IsStructType(g, type)) {
-        if (!ResolvePlace(g, place, HasWrites(*g.program, value), p)) {
+        if (!ResolvePlace(g, place, value, p)) {
             return;
         }
         NormalizePlace(g, p, type);
@@ -143,7 +143,7 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
     }
     bool up = false;
     bool step = IsStep(g, place, value, up);
-    if (!ResolvePlace(g, place, !step && HasWrites(*g.program, value), p)) {
+    if (!ResolvePlace(g, place, step ? -1 : value, p)) {
         return;
     }
     NormalizePlace(g, p, type);
@@ -156,7 +156,7 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
 
 void GenStore(Gen& g, const Expr& e) {
     PlaceRef p;
-    if (!ResolveStore(g, e, HasWrites(*g.program, e.b), p)) {
+    if (!ResolveStore(g, e, e.b, p)) {
         return;
     }
     NormalizePlace(g, p, p.type);

@@ -197,6 +197,37 @@ void TestRegressions(TestResults& results) {
                  "    (set g (<< g 8))\n"
                  "    (+ g h))",
                  "t.f", {});
+    // fuzz seed 15082: a discarded trial of an inner loop made a derived pointer, the
+    // retry handed its zero-page slot to a second one
+    CheckProgram(results,
+                 "(struct S (a u8) (b i16))\n"
+                 "(let g0 u8 12)\n"
+                 "(let wb (array u8 1024))\n"
+                 "(let sa (array S 8))\n"
+                 "(fn f (returns u8)\n"
+                 "    (for i u8 0 8 (set (. (at sa i) a) (* i 3)))\n"
+                 "    (let wp (addr_of (at wb (u16 (& (~ g0) 15)))))\n"
+                 "    (for n u16 250 262\n"
+                 "        (for k u8 0 3\n"
+                 "            (set g0 (~ g0))\n"
+                 "            (store (+ wp n) (. (at sa (& k 7)) a)))\n"
+                 "        (set (at wb n) g0)\n"
+                 "        (for k u8 3 5 (store (+ wp n) k)))\n"
+                 "    (at wb 251))",
+                 "t.f", {});
+    // u16 loops in every shape: page crossing, ending on a page, through the top
+    CheckProgram(results,
+                 "(let wb (array u8 1024))\n"
+                 "(let ww (array u16 600))\n"
+                 "(let total u16 0)\n"
+                 "(fn f (args (n u16)) (returns u16)\n"
+                 "    (let p (addr_of (at wb 7)))\n"
+                 "    (for i u16 250 n (set (at ww i) (+ i 1)) (store (+ p i) (u8 i)))\n"
+                 "    (for i u16 500 512 (set (at wb i) (u8 (>> i 1))))\n"
+                 "    (for i u16 65530 65536 (set total (+ total i)))\n"
+                 "    (for i u16 0 600 (set total (+ total (at ww i))))\n"
+                 "    (+ total (u16 (at wb 300))))",
+                 "t.f", {590});
 }
 
 } // namespace

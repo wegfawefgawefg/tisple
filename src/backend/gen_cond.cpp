@@ -218,7 +218,7 @@ void GenCompare(Gen& g, const Expr& e, bool when, std::int32_t label) {
     }
     if (size == 2) {
         Opnd a = Eval(g, e.a, nullptr);
-        if (HasWrites(*g.program, e.b)) {
+        if (MayWriteOpnd(g, e.b, a)) {
             a = Snapshot(g, a);
         }
         Opnd b = b_const ? ImmOpnd(cb, 2) : Eval(g, e.b, nullptr);
@@ -237,7 +237,7 @@ void GenCompare(Gen& g, const Expr& e, bool when, std::int32_t label) {
         return;
     }
     Opnd a = TrySimple(g, e.a);
-    if (a.size == 0 || (IsVolatile(a) && HasWrites(*g.program, e.b))) {
+    if (a.size == 0 || MayWriteOpnd(g, e.b, a)) {
         EvalA(g, e.a);
         a = SpillA(g);
     }

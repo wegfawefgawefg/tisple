@@ -1,6 +1,8 @@
 #include "backend/gen.hpp"
 #include "check/arith.hpp"
 
+#include <algorithm>
+
 namespace tisple {
 
 namespace {
@@ -42,7 +44,7 @@ bool EndIsStable(const Gen& g, const Opnd& end, ExprId body) {
     if (info.role != SymRole::Var) {
         return false;
     }
-    return !MayWriteVar(*g.program, body, info.owner);
+    return !MayWriteVarIn(g, body, info.owner);
 }
 
 void LoadCounter(Gen& g, int r, const Opnd& start) {
@@ -98,6 +100,178 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     return true;
 }
 
+// the cycles of the code from item `first` on, as written (no loop counts)
+std::uint64_t StaticCycles(const Gen& g, std::size_t first) {
+    std::uint64_t total = 0;
+    for (std::size_t i = first; i < g.out->size(); i++) {
+        total += static_cast<std::uint64_t>(ItemCycles(g.be->as, (*g.out)[i]));
+    }
+    return total;
+}
+
+// the counter in X or in Y, whichever body comes out cheaper; false if neither works
+bool PinCheapest(Gen& g, const ForParts& f) {
+    std::size_t mark = g.out->size();
+    Gen start = g;
+    bool found = false;
+    std::uint64_t best_cost = 0;
+    std::vector<AsmItem> best_items;
+    Gen best = g;
+    for (int r = 0; r < 2; r++) {
+        if (start.pin[r] >= 0) {
+            continue;
+        }
+        g = start;
+        g.out->resize(mark);
+        if (!TryPinned(g, f, r)) {
+            continue;
+        }
+        std::uint64_t cost = StaticCycles(g, mark);
+        if (!found || cost < best_cost) {
+            found = true;
+            best_cost = cost;
+            best_items.assign(g.out->begin() + static_cast<std::ptrdiff_t>(mark), g.out->end());
+            best = g;
+        }
+        if (g.failed) {
+            break;
+        }
+    }
+    g = found ? best : start;
+    g.out->resize(mark);
+    g.out->insert(g.out->end(), best_items.begin(), best_items.end());
+    return found;
+}
+
+bool SameBase(const Derived& d, const AsmValue& base, std::int32_t var, std::int32_t offset) {
+    return d.var == var && d.offset == offset && d.base.sym == base.sym &&
+           d.base.offset == base.offset && d.base.part == base.part;
+}
+
+// T = base + offset + (high << 8): only A and the carry
+void InitDerived(Gen& g, const Derived& d, const AsmValue& high) {
+    Opnd t = MemOpnd(d.ptr, 2, 1);
+    Opnd base;
+    if (d.var >= 0) {
+        base = MemOpnd(d.base, 2, 1);
+    } else {
+        AsmValue address = d.base;
+        address.offset = (address.offset + d.offset) & 0xFFFF;
+        base = d.base.sym >= 0 ? SymImmOpnd(address, 2)
+                               : ImmOpnd(static_cast<std::uint16_t>(address.offset), 2);
+    }
+    if (d.var >= 0 && d.offset != 0) {
+        Combine16(g, Op::Add, base, ImmOpnd(static_cast<std::uint16_t>(d.offset & 0xFFFF), 2), t);
+        base = t;
+    }
+    LoadA(g, base, 0);
+    StoreA(g, t, 0);
+    LoadA(g, base, 1);
+    Emit(g, Mn::CLC, Mode::Imp);
+    Emit(g, Mn::ADC, Mode::Abs, high);
+    StoreA(g, t, 1);
+}
+
+bool IsImmByteValue(const Opnd& o, int k, int value) {
+    const ByteRef& b = o.b[k];
+    return b.kind == ByteKind::Imm && b.value.sym < 0 && (b.value.offset & 0xFF) == value;
+}
+
+// a u16 counter: low byte in Y, high byte in the variable's memory, arrays and pointers it
+// indexes as derived (ptr),Y. False (nothing kept) if the body needed Y.
+bool TryWide(Gen& g, const ForParts& f) {
+    if (g.wide || g.pin[1] >= 0) {
+        return false;
+    }
+    std::size_t mark = g.out->size();
+    Gen saved = g;
+    bool outer = g.violation;
+    g.violation = false;
+    AsmValue high = SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)], 1);
+    LoadA(g, f.start, 1);
+    Emit(g, Mn::STA, Mode::Abs, high);
+    LoadCounter(g, 1, f.start);
+    std::size_t init_at = g.out->size();
+    WideLoop wide;
+    wide.var = f.var;
+    wide.high = high;
+    wide.body = f.body;
+    g.wide = &wide;
+    g.pin[1] = f.var;
+    std::int32_t top = NewLabel(g);
+    std::int32_t next = NewLabel(g);
+    g.loops.back().continue_label = next;
+    PlaceLabel(g, top);
+    GenStmt(g, f.body);
+    PlaceLabel(g, next);
+    g.pin[1] = -1;
+    g.wide = nullptr;
+    if (g.violation && !g.failed) {
+        g.out->resize(mark);
+        g = saved;
+        return false;
+    }
+    // derived pointers only a discarded trial asked for are not kept up
+    std::vector<Derived> used;
+    for (const Derived& d : wide.derived) {
+        bool referenced = false;
+        for (std::size_t i = init_at; i < g.out->size() && !referenced; i++) {
+            const AsmItem& item = (*g.out)[i];
+            referenced = item.kind == ItemKind::Ins && item.value.sym == d.ptr.sym &&
+                         item.value.offset == d.ptr.offset;
+        }
+        if (referenced) {
+            used.push_back(d);
+        }
+    }
+    wide.derived = used;
+    // INY; a new page moves the high byte and every derived pointer
+    Emit(g, Mn::INY, Mode::Imp);
+    auto next_page = [&]() {
+        for (const Derived& d : wide.derived) {
+            Emit(g, Mn::INC, Mode::Abs, SymValue(d.ptr.sym, d.ptr.offset + 1));
+        }
+        Emit(g, Mn::INC, Mode::Abs, high);
+    };
+    bool end_low_zero = IsImmByteValue(f.end, 0, 0);
+    if (end_low_zero && IsImmByteValue(f.end, 1, 0)) {
+        Branch(g, Mn::BNE, top);
+        next_page();
+        Branch(g, Mn::BNE, top);
+    } else if (end_low_zero) {
+        // the counter can only reach the end at a page start
+        Branch(g, Mn::BNE, top);
+        next_page();
+        Emit(g, Mn::LDA, Mode::Abs, high);
+        OpA(g, Mn::CMP, f.end, 1);
+        Branch(g, Mn::BNE, top);
+    } else {
+        std::int32_t wrap = NewLabel(g);
+        std::int32_t check = NewLabel(g);
+        Branch(g, Mn::BEQ, wrap);
+        PlaceLabel(g, check);
+        const ByteRef& low = f.end.b[0];
+        Emit(g, Mn::CPY, low.kind == ByteKind::Imm ? Mode::Imm : Mode::Abs, low.value);
+        Branch(g, Mn::BNE, top);
+        Emit(g, Mn::LDA, Mode::Abs, high);
+        OpA(g, Mn::CMP, f.end, 1);
+        Branch(g, Mn::BNE, top);
+        Jump(g, f.end_label);
+        PlaceLabel(g, wrap);
+        next_page();
+        Jump(g, check);
+    }
+    // the derived pointers start where the counter starts, just before the loop
+    std::size_t before = g.out->size();
+    for (const Derived& d : wide.derived) {
+        InitDerived(g, d, high);
+    }
+    std::rotate(g.out->begin() + static_cast<std::ptrdiff_t>(init_at),
+                g.out->begin() + static_cast<std::ptrdiff_t>(before), g.out->end());
+    g.violation = outer;
+    return true;
+}
+
 void MemoryLoop(Gen& g, const ForParts& f) {
     Opnd v = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)]), f.size, 1);
     CopyOpnd(g, f.start, v);
@@ -138,6 +312,26 @@ void MemoryLoop(Gen& g, const ForParts& f) {
 
 } // namespace
 
+AsmValue DerivedPointer(Gen& g, AsmValue base, std::int32_t var, std::int32_t offset) {
+    for (const Derived& d : g.wide->derived) {
+        if (SameBase(d, base, var, offset)) {
+            return d.ptr;
+        }
+    }
+    Derived d;
+    d.base = base;
+    d.var = var;
+    d.offset = offset;
+    std::uint32_t at = g.wide->next_slot;
+    g.wide->next_slot += 2;
+    std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
+    max = g.wide->next_slot > max ? g.wide->next_slot : max;
+    d.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
+                     static_cast<std::int32_t>(at));
+    g.wide->derived.push_back(d);
+    return d.ptr;
+}
+
 void GenFor(Gen& g, const Expr& e) {
     const Program& program = *g.program;
     ForParts f;
@@ -150,7 +344,7 @@ void GenFor(Gen& g, const Expr& e) {
 
     // start, then end, each evaluated once
     f.start = Eval(g, e.a, nullptr);
-    if (f.start.in_a || (e.b >= 0 && HasWrites(program, e.b))) {
+    if (f.start.in_a || MayWriteOpnd(g, e.b, f.start)) {
         f.start = Snapshot(g, f.start);
     }
     if (e.b >= 0) {
@@ -187,11 +381,9 @@ void GenFor(Gen& g, const Expr& e) {
     g.for_depth++;
     bool done = false;
     if (f.size == 1 && g.for_depth <= kMaxPinnedDepth) {
-        for (int r = 0; r < 2 && !done; r++) {
-            if (g.pin[r] < 0) {
-                done = TryPinned(g, f, r);
-            }
-        }
+        done = PinCheapest(g, f);
+    } else if (f.size == 2 && g.for_depth <= kMaxPinnedDepth) {
+        done = TryWide(g, f);
     }
     if (!done) {
         MemoryLoop(g, f);

@@ -18,6 +18,7 @@
 #include "asm/asm.hpp"
 #include "backend/analysis.hpp"
 #include "backend/backend.hpp"
+#include "backend/effects.hpp"
 
 #include <string>
 #include <vector>
@@ -29,6 +30,7 @@ enum class SymRole : std::uint8_t {
     Var,      // owner: var id
     Temps,    // owner: function; value temporaries
     PtrTemps, // owner: function; pointer temporaries, always zero page
+    LoopPtrs, // owner: function; derived pointers of wide loops, always zero page
     Scratch,  // fixed zero page for the runtime and single instruction sequences
     Data,     // tables, the zero-page image, the save buffer
 };
@@ -61,7 +63,9 @@ struct Backend {
     std::vector<std::int32_t> ptemp_sym;
     std::vector<std::uint32_t> temp_size;
     std::vector<std::uint32_t> ptemp_size;
-    bool raw_pointers = false;              // some (as (ptr t) n): a pointer may point anywhere
+    std::vector<std::int32_t> lptr_sym;
+    std::vector<std::uint32_t> lptr_size;
+    Effects effects;
     std::vector<bool> deref;                // by var: some load or store goes straight through it
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
@@ -134,6 +138,25 @@ struct LoopCtx {
     std::int32_t continue_label = -1;
 };
 
+// a zero-page pointer kept at base + (i & $FF00) for a u16 loop counter i whose low byte
+// lives in Y, so base + i is (ptr),Y; it moves up a page when the counter's high byte does
+struct Derived {
+    AsmValue base;           // a symbol's address, a number, or (var) a pointer variable
+    std::int32_t var = -1;   // the pointer variable, if the base is one
+    std::int32_t offset = 0; // added to the base
+    AsmValue ptr;
+};
+
+// the u16 loop counter in Y (low byte) and memory (high byte)
+struct WideLoop {
+    std::int32_t var = -1;
+    AsmValue high;
+    ExprId body = -1;
+    // made during the body, trial runs included, so slots are never handed out twice
+    std::vector<Derived> derived;
+    std::uint32_t next_slot = 0;
+};
+
 struct Gen {
     Backend* be = nullptr;
     const Program* program = nullptr;
@@ -141,6 +164,7 @@ struct Gen {
     std::vector<AsmItem>* out = nullptr;
     RegContent reg[2];              // X, Y
     std::int32_t pin[2] = {-1, -1}; // loop var living in X, Y
+    WideLoop* wide = nullptr;       // the u16 loop var whose low byte is pin[1]
     bool violation = false;         // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
@@ -191,10 +215,15 @@ void StoreAX(Gen& g, const Opnd& dst);
 // A holds an 8-bit value: keep it in a temporary
 Opnd SpillA(Gen& g);
 // writing dst byte by byte from low to high could overwrite a byte of src that is read
-// later (only byte-moving operands and type-punned pointers make this possible)
-bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst);
+// later (only byte-moving operands make this possible; pointers are always aligned to what
+// they were made from, see effects.hpp)
+bool CrossAliases(const Opnd& src, const Opnd& dst);
 // may the operands share memory at all
-bool Overlaps(const Gen& g, const Opnd& a, const Opnd& d);
+bool Overlaps(const Opnd& a, const Opnd& d);
+// may running `code` (-1: nothing) change what o reads
+bool MayWriteOpnd(const Gen& g, ExprId code, const Opnd& o);
+// may running `code` change var
+bool MayWriteVarIn(const Gen& g, ExprId code, std::int32_t var);
 // copy to a temporary unless it is already safe from later code
 Opnd Snapshot(Gen& g, const Opnd& o);
 
@@ -213,13 +242,17 @@ struct PlaceRef {
     Opnd index; // u8 or u16 value
     std::uint32_t mult = 0;
     TypeId type = -1;
+    // where ptr came from: a pointer variable, or a constant address
+    std::int32_t ptr_var = -1;
+    bool ptr_const = false;
+    std::uint16_t ptr_value = 0;
 };
 
-// evaluates the index and pointer parts of a place, in order; with `snapshot`, keeps every
-// value later code could change in temporaries
-bool ResolvePlace(Gen& g, ExprId id, bool snapshot, PlaceRef& out);
+// evaluates the index and pointer parts of a place, in order, keeping in temporaries every
+// value the `later` code (-1: none) could change before the place is used
+bool ResolvePlace(Gen& g, ExprId id, ExprId later, PlaceRef& out);
 // the place a store or store-field writes
-bool ResolveStore(Gen& g, const Expr& store, bool snapshot, PlaceRef& out);
+bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out);
 // emits pointer arithmetic so every byte of a value of type `type` is directly reachable
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type);
 // an operand for the scalar at the place (after NormalizePlace)
@@ -265,6 +298,8 @@ void CondToA(Gen& g, ExprId id);
 
 void GenStmt(Gen& g, ExprId id);
 void GenFor(Gen& g, const Expr& e);
+// the derived pointer for base + offset in the current wide loop (made on first use)
+AsmValue DerivedPointer(Gen& g, AsmValue base, std::int32_t var, std::int32_t offset);
 void GenWhile(Gen& g, const Expr& e);
 void GenMatch(Gen& g, const Expr& e, const Opnd* dst, bool value);
 void GenSet(Gen& g, ExprId place, ExprId value);

@@ -91,6 +91,9 @@ struct Gen {
     std::vector<PtrInfo> ptrs; // pointer locals in scope (whole function)
     int names = 0;
     int loops = 0;
+    // a u16 loop variable known to stay below 512, and a pointer into wb, inside its loop
+    std::string wide;
+    std::string wide_ptr;
     bool in_while = false;
     int budget = 0;
 
@@ -293,6 +296,13 @@ struct Gen {
 
     std::string IntExpr(T t, int depth) {
         static const char* const arith[] = {"+", "-", "*", "&", "|", "^", "+", "-"};
+        if (!wide.empty() && (t == T::U8 || t == T::U16) && rng.Chance(20)) {
+            if (t == T::U16) {
+                return rng.Chance(50) ? "(at ww " + wide + ")" : wide;
+            }
+            return rng.Chance(50) ? "(at wb " + wide + ")"
+                                  : "(load (+ " + wide_ptr + " " + wide + "))";
+        }
         int pick = rng.Below(14);
         switch (pick) {
         case 0:
@@ -491,13 +501,35 @@ struct Gen {
             start = "250";
             end = "256";
         }
+        bool small = true;
+        if (t == T::U16) {
+            static const char* const kRanges[][2] = {
+                {"250", "262"}, {"250", "256"}, {"500", "512"}, {"254", "258"}, {"65533", "65536"}};
+            int pick = rng.Below(9);
+            if (pick < 5) {
+                start = kRanges[pick][0];
+                end = kRanges[pick][1];
+                small = pick != 4;
+            }
+        }
         std::string head = "(for " + i + " " + Name(t) + " " + start + " " + end;
+        std::string outer_wide = wide;
+        std::string outer_ptr = wide_ptr;
+        std::string prefix;
+        if (t == T::U16 && small && rng.Chance(70)) {
+            std::string offset = NonLit(T::U8, 1);
+            wide = i;
+            wide_ptr = Fresh("wp");
+            prefix = "(do (let " + wide_ptr + " (addr_of (at wb (u16 (& " + offset + " 15))))) ";
+        }
         scopes.emplace_back();
         scopes.back().push_back(VarInfo{i, t, true});
         std::string body = LoopBody(depth, false);
+        wide = outer_wide;
+        wide_ptr = outer_ptr;
         scopes.pop_back();
         DropPointers();
-        return head + body + ")";
+        return prefix + head + body + ")" + (prefix.empty() ? "" : ")");
     }
 
     std::string While(int depth) {
@@ -583,8 +615,22 @@ struct Gen {
         return "";
     }
 
+    std::string WideStmt() {
+        switch (rng.Below(3)) {
+        case 0:
+            return "(set (at ww " + wide + ") " + Expr(T::U16, 2) + ")";
+        case 1:
+            return "(set (at wb " + wide + ") " + Expr(T::U8, 2) + ")";
+        default:
+            return "(store (+ " + wide_ptr + " " + wide + ") " + Expr(T::U8, 2) + ")";
+        }
+    }
+
     std::string Stmt(int depth) {
         budget--;
+        if (!wide.empty() && rng.Chance(35)) {
+            return WideStmt();
+        }
         int pick = rng.Below(depth > 0 ? 16 : 6);
         switch (pick) {
         case 0:
@@ -714,7 +760,7 @@ struct Gen {
         target.elem = T::U8;
         target.count = 16;
         target.pointers = true;
-        text += "(let pt (array u8 16))\n";
+        text += "(let pt (array u8 16))\n(let wb (array u8 1024))\n(let ww (array u16 512))\n";
         arrays.push_back(target);
         ArrayInfo table;
         table.name = "KT";

@@ -163,7 +163,7 @@ void ShiftLoop8(Gen& g, Op op, bool is_signed, const Opnd& count) {
 // operands for a two-operand routine: both readable after any later code
 void Operands8(Gen& g, ExprId a, ExprId b, Opnd& oa, Opnd& ob) {
     oa = TrySimple(g, a);
-    if (oa.size == 0 || (IsVolatile(oa) && HasWrites(*g.program, b))) {
+    if (oa.size == 0 || MayWriteOpnd(g, b, oa)) {
         EvalA(g, a);
         oa = SpillA(g);
     }
@@ -353,7 +353,7 @@ void EvalArith8(Gen& g, const Expr& e) {
             return;
         }
         Opnd a = TrySimple(g, e.a);
-        if (a.size != 0 && !HasWrites(*g.program, e.b) && Commutes(op)) {
+        if (a.size != 0 && !MayWriteOpnd(g, e.b, a) && Commutes(op)) {
             EvalA(g, e.b);
             Alu8(g, op, a);
             return;
@@ -431,7 +431,7 @@ void EvalArith8(Gen& g, const Expr& e) {
 }
 
 void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& dst) {
-    if (CrossAliases(g, a_in, dst) || CrossAliases(g, b_in, dst)) {
+    if (CrossAliases(a_in, dst) || CrossAliases(b_in, dst)) {
         Opnd t = NewTemp(g, 2);
         Combine16(g, op, a_in, b_in, t);
         CopyOpnd(g, t, dst);
@@ -524,7 +524,7 @@ void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
 Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
     if (e.kind == ExprKind::PtrAdd || e.kind == ExprKind::PtrSub) {
         Opnd a = Eval(g, e.a, nullptr);
-        if (HasWrites(*g.program, e.b)) {
+        if (MayWriteOpnd(g, e.b, a)) {
             a = Snapshot(g, a);
         }
         Opnd b = Eval(g, e.b, nullptr);
@@ -544,7 +544,7 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         bool fixed = ConstValue(*g.program, e.b, c);
         Opnd count;
         if (!fixed) {
-            if (HasWrites(*g.program, e.b)) {
+            if (MayWriteOpnd(g, e.b, a)) {
                 a = Snapshot(g, a);
             }
             count = TrySimple(g, e.b);
@@ -554,7 +554,7 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
             }
         }
         Opnd d = ShiftTarget(g, dst);
-        if (Overlaps(g, a, d)) {
+        if (Overlaps(a, d)) {
             d = NewTemp(g, 2);
         }
         Shift16(g, op, IsSignedKind(ExprKindOf(*g.program, e.a)), a, d, fixed, c, count);
@@ -587,7 +587,7 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         return d;
     }
     Opnd a = Eval(g, e.a, nullptr);
-    if (HasWrites(*g.program, e.b)) {
+    if (MayWriteOpnd(g, e.b, a)) {
         a = Snapshot(g, a);
     }
     Opnd b = Eval(g, e.b, nullptr);

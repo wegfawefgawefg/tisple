@@ -44,6 +44,8 @@ void MakeSymbols(Backend& be) {
     be.ptemp_sym.resize(fn_count);
     be.temp_size.assign(fn_count, 0);
     be.ptemp_size.assign(fn_count, 0);
+    be.lptr_sym.resize(fn_count);
+    be.lptr_size.assign(fn_count, 0);
     be.code.resize(fn_count);
     for (std::size_t f = 0; f < fn_count; f++) {
         const std::string& name = program.functions[f].name;
@@ -52,6 +54,8 @@ void MakeSymbols(Backend& be) {
         be.temp_sym[f] = NewSym(be, name + ".temps", SymRole::Temps, owner);
         be.ptemp_sym[f] = NewSym(be, name + ".ptrs", SymRole::PtrTemps, owner);
         be.as.symbols[static_cast<std::size_t>(be.ptemp_sym[f])].zp = true;
+        be.lptr_sym[f] = NewSym(be, name + ".loop_ptrs", SymRole::LoopPtrs, owner);
+        be.as.symbols[static_cast<std::size_t>(be.lptr_sym[f])].zp = true;
     }
     be.scratch = NewSym(be, "scratch", SymRole::Scratch, -1);
     be.rt_a = NewSym(be, "rt_a", SymRole::Scratch, -1);
@@ -150,11 +154,7 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
         return false;
     }
     be.deref = FindDerefPointers(program);
-    for (const Expr& e : program.exprs) {
-        if (e.kind == ExprKind::Reinterpret && KindOf(program, e.type) == TypeKind::Ptr) {
-            be.raw_pointers = true;
-        }
-    }
+    be.effects = ComputeEffects(program);
     MakeSymbols(be);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         GenFunction(be, static_cast<std::int32_t>(f));

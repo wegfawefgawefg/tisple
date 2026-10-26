@@ -52,7 +52,7 @@ void CollectValue(Gen& g, ExprId id, TypeId type, bool snapshot, std::vector<Opn
         return;
     }
     PlaceRef source;
-    if (!ResolvePlace(g, id, false, source)) {
+    if (!ResolvePlace(g, id, -1, source)) {
         return;
     }
     NormalizePlace(g, source, type);

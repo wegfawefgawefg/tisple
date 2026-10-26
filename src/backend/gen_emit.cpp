@@ -425,8 +425,7 @@ bool IsMemoryByte(const ByteRef& b) {
 }
 
 // could byte x of src and byte y of dst be the same memory (no pointer reaches a temporary)
-bool MaySameByte(const Gen& g, const Opnd& src, const ByteRef& x, const Opnd& dst,
-                 const ByteRef& y) {
+bool MaySameByte(const Opnd& src, const ByteRef& x, const Opnd& dst, const ByteRef& y) {
     if (!IsMemoryByte(x) || !IsMemoryByte(y)) {
         return false;
     }
@@ -434,28 +433,28 @@ bool MaySameByte(const Gen& g, const Opnd& src, const ByteRef& x, const Opnd& ds
         return x.kind == y.kind && x.value.sym == y.value.sym && x.value.offset == y.value.offset;
     }
     if (x.kind == ByteKind::IndY || y.kind == ByteKind::IndY) {
-        return src.moved || g.be->raw_pointers;
+        return src.moved;
     }
     return x.value.sym == y.value.sym && x.value.offset == y.value.offset;
 }
 
 } // namespace
 
-bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst) {
+bool CrossAliases(const Opnd& src, const Opnd& dst) {
     if (src.in_a || src.size < 2 || dst.size < 2) {
         return false;
     }
-    if (!src.moved && !g.be->raw_pointers) {
+    if (!src.moved) {
         return false;
     }
     // dst byte 0 is written before src byte 1 is read
-    return MaySameByte(g, src, src.b[1], dst, dst.b[0]);
+    return MaySameByte(src, src.b[1], dst, dst.b[0]);
 }
 
-bool Overlaps(const Gen& g, const Opnd& a, const Opnd& d) {
+bool Overlaps(const Opnd& a, const Opnd& d) {
     for (int i = 0; i < a.size; i++) {
         for (int k = 0; k < d.size; k++) {
-            if (MaySameByte(g, a, a.b[i], d, d.b[k])) {
+            if (MaySameByte(a, a.b[i], d, d.b[k])) {
                 return true;
             }
         }
@@ -468,9 +467,9 @@ void CopyOpnd(Gen& g, const Opnd& src, const Opnd& dst) {
         StoreA(g, dst, 0);
         return;
     }
-    if (CrossAliases(g, src, dst)) {
+    if (CrossAliases(src, dst)) {
         // high byte first works unless dst byte 1 is also src byte 0; else go through a temp
-        if (!MaySameByte(g, src, src.b[0], dst, dst.b[1])) {
+        if (!MaySameByte(src, src.b[0], dst, dst.b[1])) {
             LoadA(g, src, 1);
             StoreA(g, dst, 1);
             LoadA(g, src, 0);
@@ -524,6 +523,56 @@ Opnd SpillA(Gen& g) {
     Opnd t = NewTemp(g, 1);
     StoreA(g, t, 0);
     return t;
+}
+
+bool MayWriteVarIn(const Gen& g, ExprId code, std::int32_t var) {
+    return CodeMayWrite(*g.program, g.be->effects, code, var);
+}
+
+namespace {
+
+// a frame or global byte some code might write; temporaries and scratch never are
+bool MayWriteSym(const Gen& g, ExprId code, const AsmValue& v) {
+    if (v.sym < 0) {
+        return HasWrites(*g.program, code);
+    }
+    const SymInfo& info = g.be->info[static_cast<std::size_t>(v.sym)];
+    if (info.role != SymRole::Var) {
+        return false;
+    }
+    return MayWriteVarIn(g, code, info.owner);
+}
+
+} // namespace
+
+bool MayWriteOpnd(const Gen& g, ExprId code, const Opnd& o) {
+    if (code < 0 || o.size == 0) {
+        return false;
+    }
+    if (o.in_a) {
+        return true;
+    }
+    for (int k = 0; k < o.size; k++) {
+        const ByteRef& b = o.b[k];
+        switch (b.kind) {
+        case ByteKind::Imm:
+        case ByteKind::Reg:
+            break;
+        case ByteKind::Mem:
+        case ByteKind::MemIdx:
+            if (MayWriteSym(g, code, b.value)) {
+                return true;
+            }
+            break;
+        case ByteKind::IndY:
+            // the pointer, and whatever it points at
+            if (MayWriteSym(g, code, b.value) || HasWrites(*g.program, code)) {
+                return true;
+            }
+            break;
+        }
+    }
+    return o.index.used && !o.index.is_reg && MayWriteSym(g, code, o.index.value);
 }
 
 Opnd Snapshot(Gen& g, const Opnd& o) {

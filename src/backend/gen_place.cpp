@@ -82,8 +82,9 @@ bool IsNormal(const Gen& g, const PlaceRef& place, TypeId type) {
     }
     if (place.has_index) {
         // (p),Y with Y the index: a single byte right at the pointer
+        bool scalar_word = IsScalarType(g, type) && SizeOf(g, type) == 2 && place.ptr2.sym >= 0;
         return IsByteIndex(place.index) && place.mult == 1 && place.cursor.address == 0 &&
-               scalar_byte &&
+               (scalar_byte || scalar_word) &&
                !(place.index.b[0].kind == ByteKind::Reg && place.index.b[0].reg == 0);
     }
     return FarthestByte(g, place, type) < 0x100 || place.ptr2.sym >= 0;
@@ -129,10 +130,19 @@ void ToPointer(Gen& g, PlaceRef& place) {
 }
 
 // the pointer a load or store goes through, in zero page
-bool PointerBase(Gen& g, ExprId pointer, bool snapshot, bool emit, AsmValue& out) {
+bool PointerBase(Gen& g, ExprId pointer, ExprId later, bool emit, PlaceRef& out) {
     const Expr& pe = At(g, pointer);
-    if (pe.kind == ExprKind::VarRef && PointerInZp(*g.be, pe.ref) && !snapshot) {
-        out = SymValue(g.be->var_sym[static_cast<std::size_t>(pe.ref)]);
+    if (pe.kind == ExprKind::VarRef) {
+        out.ptr_var = pe.ref;
+    }
+    std::uint16_t c = 0;
+    if (ConstValue(*g.program, pointer, c)) {
+        out.ptr_const = true;
+        out.ptr_value = c;
+    }
+    if (pe.kind == ExprKind::VarRef && PointerInZp(*g.be, pe.ref) &&
+        !MayWriteVarIn(g, later, pe.ref)) {
+        out.ptr = SymValue(g.be->var_sym[static_cast<std::size_t>(pe.ref)]);
         return true;
     }
     if (!emit) {
@@ -141,12 +151,12 @@ bool PointerBase(Gen& g, ExprId pointer, bool snapshot, bool emit, AsmValue& out
     Opnd dst = MemOpnd(NewPtrTemp(g), 2, 1);
     dst.temp = true;
     EvalInto(g, pointer, dst);
-    out = dst.b[0].value;
+    out.ptr = dst.b[0].value;
     return true;
 }
 
 // an index value as an operand byte 0 can index with (memory or a register)
-bool IndexOperand(Gen& g, ExprId id, bool snapshot, bool emit, Opnd& out) {
+bool IndexOperand(Gen& g, ExprId id, ExprId later, bool emit, Opnd& out) {
     if (!emit) {
         out = TrySimple(g, id);
         if (out.size == 0 || IsImm(out)) {
@@ -160,7 +170,7 @@ bool IndexOperand(Gen& g, ExprId id, bool snapshot, bool emit, Opnd& out) {
     bool usable =
         !out.in_a && IndexFrom(out, index) &&
         (out.size == 1 || out.b[1].kind == ByteKind::Imm || out.b[1].kind == ByteKind::Mem);
-    if (usable && !(snapshot && IsVolatile(out))) {
+    if (usable && !MayWriteOpnd(g, later, out)) {
         return true;
     }
     // into a temporary; a known-zero high byte stays known
@@ -179,7 +189,7 @@ bool IndexOperand(Gen& g, ExprId id, bool snapshot, bool emit, Opnd& out) {
 
 // what a pointer points at, plus a constant offset; (load (+ p i)) keeps i as an index
 bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, TypeId type,
-                    bool snapshot, bool emit, PlaceRef& out) {
+                    ExprId later, bool emit, PlaceRef& out) {
     out = PlaceRef();
     out.pointer = true;
     out.cursor = Cursor();
@@ -190,11 +200,11 @@ bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, Ty
     const Expr& pe = At(g, pointer);
     std::uint16_t c = 0;
     if (plain && pe.kind == ExprKind::PtrAdd && !ConstValue(*g.program, pe.b, c)) {
-        if (!PointerBase(g, pe.a, snapshot, emit, out.ptr)) {
+        if (!PointerBase(g, pe.a, later, emit, out)) {
             return false;
         }
         Opnd index;
-        if (!IndexOperand(g, pe.b, snapshot, emit, index)) {
+        if (!IndexOperand(g, pe.b, later, emit, index)) {
             return false;
         }
         out.has_index = true;
@@ -202,10 +212,10 @@ bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, Ty
         out.mult = pe.value;
         return true;
     }
-    return PointerBase(g, pointer, snapshot, emit, out.ptr);
+    return PointerBase(g, pointer, later, emit, out);
 }
 
-bool Resolve(Gen& g, ExprId id, bool snapshot, bool emit, PlaceRef& out) {
+bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
     const Expr& e = At(g, id);
     switch (e.kind) {
     case ExprKind::VarRef: {
@@ -221,14 +231,14 @@ bool Resolve(Gen& g, ExprId id, bool snapshot, bool emit, PlaceRef& out) {
         return true;
     }
     case ExprKind::Field:
-        if (!Resolve(g, e.a, snapshot, emit, out)) {
+        if (!Resolve(g, e.a, later, emit, out)) {
             return false;
         }
         out.cursor = FieldCursor(out.cursor, e.value);
         out.type = e.type;
         return true;
     case ExprKind::Index: {
-        if (!Resolve(g, e.a, snapshot, emit, out)) {
+        if (!Resolve(g, e.a, later, emit, out)) {
             return false;
         }
         TypeId array = At(g, e.a).type;
@@ -247,7 +257,7 @@ bool Resolve(Gen& g, ExprId id, bool snapshot, bool emit, PlaceRef& out) {
         Cursor c0 = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, 0);
         Cursor c1 = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, 1);
         Opnd index;
-        if (!IndexOperand(g, e.b, snapshot, emit, index)) {
+        if (!IndexOperand(g, e.b, later, emit, index)) {
             return false;
         }
         out.cursor = c0;
@@ -260,7 +270,7 @@ bool Resolve(Gen& g, ExprId id, bool snapshot, bool emit, PlaceRef& out) {
     case ExprKind::Load:
     case ExprKind::LoadField:
         return ResolvePointer(g, e.a, e.kind == ExprKind::Load,
-                              e.kind == ExprKind::LoadField ? e.value : 0, e.type, snapshot, emit,
+                              e.kind == ExprKind::LoadField ? e.value : 0, e.type, later, emit,
                               out);
     default:
         if (emit) {
@@ -272,18 +282,69 @@ bool Resolve(Gen& g, ExprId id, bool snapshot, bool emit, PlaceRef& out) {
 
 } // namespace
 
-bool ResolvePlace(Gen& g, ExprId id, bool snapshot, PlaceRef& out) {
-    return Resolve(g, id, snapshot, true, out);
+bool ResolvePlace(Gen& g, ExprId id, ExprId later, PlaceRef& out) {
+    return Resolve(g, id, later, true, out);
 }
 
-bool ResolveStore(Gen& g, const Expr& store, bool snapshot, PlaceRef& out) {
+bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out) {
     bool field = store.kind == ExprKind::StoreField;
     TypeId type = field ? store.ref : TypeOf(*g.program, ExprOf(*g.program, store.a).type).elem;
-    return ResolvePointer(g, store.a, !field, field ? store.value : 0, type, snapshot, true, out);
+    return ResolvePointer(g, store.a, !field, field ? store.value : 0, type, later, true, out);
 }
 
+namespace {
+
+// the index is the wide loop counter: low byte in Y, high byte in memory
+bool IsWideCounter(const Gen& g, const Opnd& index) {
+    if (!g.wide || index.size != 2) {
+        return false;
+    }
+    const ByteRef& low = index.b[0];
+    const ByteRef& high = index.b[1];
+    return low.kind == ByteKind::Reg && low.reg == 1 && high.kind == ByteKind::Mem &&
+           high.value.sym == g.wide->high.sym && high.value.offset == g.wide->high.offset;
+}
+
+// base + counter as (derived),Y: no address arithmetic in the loop at all
+bool UseDerived(Gen& g, PlaceRef& place, TypeId type) {
+    if (!place.has_index || place.mult != 1 || !IsWideCounter(g, place.index) ||
+        !IsScalarType(g, type)) {
+        return false;
+    }
+    std::uint32_t size = SizeOf(g, type);
+    std::int32_t offset = static_cast<std::int32_t>(place.cursor.address);
+    AsmValue base;
+    std::int32_t var = -1;
+    if (!place.pointer) {
+        base = place.base;
+    } else if (place.ptr_const) {
+        base = Num(place.ptr_value);
+    } else if (place.ptr_var >= 0 && !MayWriteVarIn(g, g.wide->body, place.ptr_var)) {
+        var = place.ptr_var;
+        base = SymValue(g.be->var_sym[static_cast<std::size_t>(var)]);
+    } else {
+        return false;
+    }
+    std::int32_t stride = static_cast<std::int32_t>(place.cursor.stride);
+    place.ptr = DerivedPointer(g, base, var, offset);
+    place.ptr2 = AsmValue();
+    if (size == 2) {
+        place.ptr2 = DerivedPointer(g, base, var, offset + stride);
+    }
+    place.pointer = true;
+    place.cursor.address = 0;
+    Opnd y;
+    y.size = 1;
+    y.b[0].kind = ByteKind::Reg;
+    y.b[0].reg = 1;
+    place.index = y;
+    return true;
+}
+
+} // namespace
+
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type) {
-    if (IsNormal(g, place, type)) {
+    if (IsNormal(g, place, type) || UseDerived(g, place, type)) {
         return;
     }
     // the whole address so far into a zero-page pointer
@@ -320,7 +381,7 @@ Opnd PlaceOpnd(Gen& g, const PlaceRef& place, TypeId type) {
         }
         b.kind = ByteKind::IndY;
         if (place.has_index) {
-            b.value = place.ptr;
+            b.value = k == 1 && place.ptr2.sym >= 0 ? place.ptr2 : place.ptr;
             b.y_index = true;
             continue;
         }
@@ -446,6 +507,15 @@ Opnd TrySimple(Gen& g, ExprId id) {
     }
     switch (e.kind) {
     case ExprKind::VarRef: {
+        if (g.wide && g.wide->var == e.ref && g.pin[1] == e.ref) {
+            Opnd o;
+            o.size = 2;
+            o.b[0].kind = ByteKind::Reg;
+            o.b[0].reg = 1;
+            o.b[1].kind = ByteKind::Mem;
+            o.b[1].value = g.wide->high;
+            return o;
+        }
         for (int r = 0; r < 2; r++) {
             if (g.pin[r] == e.ref) {
                 Opnd o;
@@ -486,7 +556,7 @@ Opnd TrySimple(Gen& g, ExprId id) {
     }
     case ExprKind::AddrOf: {
         PlaceRef place;
-        if (!Resolve(g, e.a, false, false, place) || place.has_index || place.pointer) {
+        if (!Resolve(g, e.a, -1, false, place) || place.has_index || place.pointer) {
             return Opnd();
         }
         AsmValue address = place.base;
@@ -505,7 +575,7 @@ Opnd TrySimple(Gen& g, ExprId id) {
         return Opnd();
     }
     PlaceRef place;
-    if (!Resolve(g, id, false, false, place) || !IsNormal(g, place, e.type)) {
+    if (!Resolve(g, id, -1, false, place) || !IsNormal(g, place, e.type)) {
         return Opnd();
     }
     return PlaceOpnd(g, place, e.type);
@@ -513,7 +583,7 @@ Opnd TrySimple(Gen& g, ExprId id) {
 
 Opnd AddressOf(Gen& g, ExprId id, const Opnd* dst) {
     PlaceRef place;
-    if (!ResolvePlace(g, id, false, place)) {
+    if (!ResolvePlace(g, id, -1, place)) {
         return ImmOpnd(0, 2);
     }
     if (place.pointer || place.has_index) {
