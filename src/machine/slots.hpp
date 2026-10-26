@@ -21,5 +21,7 @@ bool CardHasRom(const Apple2& a, int slot, bool expansion);
 uint8_t CardRomPeek(const Apple2& a, int slot, uint16_t addr);
 
 void InsertCard(Apple2& a, int slot, CardKind kind);
+// the reset line reaches every card
+void ResetCards(Apple2& a);
 
 } // namespace tisple

@@ -2,10 +2,12 @@
 
 #include "emu/disasm.hpp"
 #include "machine/bus.hpp"
+#include "machine/slots.hpp"
 
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <type_traits>
 
 namespace tisple {
@@ -15,7 +17,7 @@ static_assert(std::is_trivially_copyable_v<Apple2>, "a snapshot is a struct copy
 namespace {
 
 constexpr uint32_t kSnapshotMagic = 0x32415054; // "TPA2"
-constexpr uint32_t kSnapshotVersion = 1;
+constexpr uint32_t kSnapshotVersion = 2;
 
 struct SnapshotHeader {
     uint32_t magic = kSnapshotMagic;
@@ -87,8 +89,9 @@ bool CheckHighPc(Apple2& a, uint16_t pc) {
 } // namespace
 
 void PowerOn(Apple2& a) {
+    // built in place: the struct is too big for a temporary on the stack
     std::memset(static_cast<void*>(&a), 0, sizeof(Apple2));
-    a = Apple2{};
+    new (&a) Apple2();
     InitMachine(a.cpu);
     InstallBus(a);
     ResetSoftSwitches(a);
@@ -153,6 +156,7 @@ bool LoadProgram(Apple2& a, const uint8_t* bytes, size_t size, uint16_t origin,
 
 void ResetApple2(Apple2& a) {
     ResetSoftSwitches(a);
+    ResetCards(a);
     a.direct_load = false;
     a.stopped = false;
     a.stop_reason = MachineStop::kRunning;
@@ -189,6 +193,10 @@ RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, voi
             next = ServiceEvents(a);
         }
         uint16_t pc = M6502_GET_ADDR(m.pins);
+        if (pc == a.return_pc && pc != 0) {
+            Stop(a, MachineStop::kReturned, pc, 0);
+            break;
+        }
         uint8_t opcode = 0;
         if (pc < 0xC000) {
             opcode = m.mem[pc];
@@ -324,22 +332,44 @@ uint64_t SpeakerToggleCycle(const Apple2& a, uint64_t n) {
 }
 
 std::vector<uint8_t> SaveSnapshot(const Apple2& a) {
-    SnapshotHeader header;
-    std::vector<uint8_t> bytes(sizeof(header) + sizeof(Apple2));
-    std::memcpy(bytes.data(), &header, sizeof(header));
-    std::memcpy(bytes.data() + sizeof(header), static_cast<const void*>(&a), sizeof(Apple2));
-    // pointers mean nothing outside this process: zero them in the saved copy
-    Apple2* saved = reinterpret_cast<Apple2*>(bytes.data() + sizeof(header));
+    // a copy with the pointers zeroed: they mean nothing outside this process
+    std::unique_ptr<Apple2> saved = std::make_unique<Apple2>();
+    std::memcpy(static_cast<void*>(saved.get()), static_cast<const void*>(&a), sizeof(Apple2));
     saved->cpu.io = IoHook{};
     saved->cpu.bus_log = nullptr;
     m6502_snapshot_onsave(&saved->cpu.cpu);
+
+    SnapshotHeader header;
+    std::vector<uint8_t> bytes(sizeof(header));
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    // zero runs as 0, then the run length in 7-bit groups (low first, top bit: more)
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(saved.get());
+    size_t i = 0;
+    while (i < sizeof(Apple2)) {
+        if (raw[i] != 0) {
+            bytes.push_back(raw[i]);
+            i++;
+            continue;
+        }
+        size_t run = 0;
+        while (i + run < sizeof(Apple2) && raw[i + run] == 0) {
+            run++;
+        }
+        i += run;
+        bytes.push_back(0);
+        do {
+            uint8_t group = static_cast<uint8_t>(run & 0x7F);
+            run >>= 7;
+            bytes.push_back(static_cast<uint8_t>(group | (run != 0 ? 0x80 : 0)));
+        } while (run != 0);
+    }
     return bytes;
 }
 
 bool LoadSnapshot(Apple2& a, const uint8_t* bytes, size_t size, std::string& error) {
     SnapshotHeader header;
-    if (size != sizeof(header) + sizeof(Apple2)) {
-        error = "snapshot is the wrong size for this build";
+    if (size < sizeof(header)) {
+        error = "snapshot is too short";
         return false;
     }
     std::memcpy(&header, bytes, sizeof(header));
@@ -348,8 +378,39 @@ bool LoadSnapshot(Apple2& a, const uint8_t* bytes, size_t size, std::string& err
         error = "not a snapshot from this build";
         return false;
     }
+    std::unique_ptr<Apple2> loaded = std::make_unique<Apple2>();
+    uint8_t* raw = reinterpret_cast<uint8_t*>(loaded.get());
+    size_t out = 0;
+    size_t i = sizeof(header);
+    while (i < size) {
+        uint8_t b = bytes[i++];
+        if (b != 0) {
+            if (out == sizeof(Apple2)) {
+                break;
+            }
+            raw[out++] = b;
+            continue;
+        }
+        size_t run = 0;
+        int shift = 0;
+        uint8_t group = 0x80;
+        while ((group & 0x80) != 0 && i < size && shift < 63) {
+            group = bytes[i++];
+            run |= static_cast<size_t>(group & 0x7F) << shift;
+            shift += 7;
+        }
+        if ((group & 0x80) != 0 || run > sizeof(Apple2) - out) {
+            break;
+        }
+        std::memset(raw + out, 0, run);
+        out += run;
+    }
+    if (out != sizeof(Apple2) || i != size) {
+        error = "snapshot is damaged or the wrong size for this build";
+        return false;
+    }
     m6502_t live_cpu = a.cpu.cpu;
-    std::memcpy(static_cast<void*>(&a), bytes + sizeof(header), sizeof(Apple2));
+    std::memcpy(static_cast<void*>(&a), raw, sizeof(Apple2));
     m6502_snapshot_onload(&a.cpu.cpu, &live_cpu);
     a.cpu.bus_log = nullptr;
     InstallBus(a);

@@ -1,5 +1,7 @@
 #include "machine/slots.hpp"
 
+#include "machine/disk2.hpp"
+
 namespace tisple {
 
 namespace {
@@ -26,6 +28,8 @@ uint8_t CardIoAccess(Apple2& a, int slot, int reg, bool is_write, uint8_t value,
         drives = true;
         return card.regs[reg];
     }
+    case CardKind::kDisk2:
+        return Disk2IoAccess(a, reg, is_write, value, drives);
     default:
         return 0;
     }
@@ -38,6 +42,9 @@ uint8_t CardRomAccess(Apple2& a, int slot, int offset, bool is_write, uint8_t va
     case CardKind::kTestCard:
         drives = !is_write;
         return a.slots.test_card.rom[offset];
+    case CardKind::kDisk2:
+        drives = !is_write;
+        return a.slots.disk2.rom[offset];
     default:
         return 0;
     }
@@ -57,8 +64,14 @@ uint8_t CardExpansionAccess(Apple2& a, int slot, int offset, bool is_write, uint
 }
 
 bool CardHasRom(const Apple2& a, int slot, bool expansion) {
-    (void)expansion;
-    return KindAt(a, slot) == CardKind::kTestCard;
+    switch (KindAt(a, slot)) {
+    case CardKind::kTestCard:
+        return true;
+    case CardKind::kDisk2:
+        return !expansion; // no $C800 rom
+    default:
+        return false;
+    }
 }
 
 uint8_t CardRomPeek(const Apple2& a, int slot, uint16_t addr) {
@@ -68,8 +81,18 @@ uint8_t CardRomPeek(const Apple2& a, int slot, uint16_t addr) {
             return a.slots.test_card.expansion[addr - 0xC800];
         }
         return a.slots.test_card.rom[addr & 0xFF];
+    case CardKind::kDisk2:
+        return addr >= 0xC800 ? 0 : a.slots.disk2.rom[addr & 0xFF];
     default:
         return 0;
+    }
+}
+
+void ResetCards(Apple2& a) {
+    for (int slot = 1; slot <= 7; slot++) {
+        if (a.slots.kind[slot] == CardKind::kDisk2) {
+            ResetDisk2(a);
+        }
     }
 }
 

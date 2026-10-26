@@ -2,6 +2,7 @@
 #include "source_file.hpp"
 #include "test_backend.hpp"
 #include "test_check.hpp"
+#include "test_disk.hpp"
 #include "test_emu.hpp"
 #include "test_gaps.hpp"
 #include "test_ide.hpp"
@@ -28,6 +29,7 @@ int main() {
     tisple_tests::RunSourceFileTests(results);
     tisple_tests::RunEmuTests(results);
     tisple_tests::RunMachineTests(results);
+    tisple_tests::RunDiskTests(results);
     tisple_tests::RunReaderTests(results);
     tisple_tests::RunFormatTests(results);
     tisple_tests::RunShowTests(results);

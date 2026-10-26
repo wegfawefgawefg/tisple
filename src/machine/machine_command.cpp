@@ -1,5 +1,7 @@
 #include "machine/machine_command.hpp"
 
+#include "disk/machine_disks.hpp"
+#include "machine/disk2.hpp"
 #include "machine/png.hpp"
 #include "machine/speaker_audio.hpp"
 
@@ -37,12 +39,14 @@ struct MachineArgs {
     int scale = 2;
     std::vector<ScreenshotArg> screenshots;
     std::vector<std::pair<uint32_t, uint32_t>> peeks; // address, byte count
+    MachineDisks disks;
 };
 
 void PrintMachineUsage() {
     std::fprintf(
         stderr,
         "usage: tisple machine <file.bin> [options]\n"
+        "       tisple machine --disk a.dsk [--disk2 b.dsk] [options]   boot from a disk\n"
         "  --origin A          load address and entry (default $6000)\n"
         "  --cycles N | --frames N   how long to run (default 100000000 cycles)\n"
         "  --keys \"C:K,...\"    press key K at cycle C; K is a character, $hex, or one of\n"
@@ -51,6 +55,10 @@ void PrintMachineUsage() {
         "  --wav F.wav         save the speaker\n"
         "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color)\n"
         "  --rom F             a 12 or 16 KB rom image; with no program, reset through it\n"
+        "  --disk F | --disk2 F  a disk ii in slot 6 with F (.dsk .do .po .nib) in drive 1 / 2;\n"
+        "                      with no program and no --rom, boot it with our boot rom\n"
+        "  --disk-rom F        the card's boot rom (Apple's DISK2.rom) instead of ours\n"
+        "  --write-back        save written disks back to their files at the end\n"
         "  --load-snapshot F | --save-snapshot F   machine state in and out\n"
         "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
@@ -201,6 +209,14 @@ bool ParseArgs(int argc, char** argv, bool want_program, MachineArgs& args) {
             args.wav = argv[++i];
         } else if (std::strcmp(arg, "--rom") == 0 && has_value) {
             args.rom = argv[++i];
+        } else if (std::strcmp(arg, "--disk") == 0 && has_value) {
+            args.disks.paths[0] = argv[++i];
+        } else if (std::strcmp(arg, "--disk2") == 0 && has_value) {
+            args.disks.paths[1] = argv[++i];
+        } else if (std::strcmp(arg, "--disk-rom") == 0 && has_value) {
+            args.disks.rom_path = argv[++i];
+        } else if (std::strcmp(arg, "--write-back") == 0) {
+            args.disks.write_back = true;
         } else if (std::strcmp(arg, "--load-snapshot") == 0 && has_value) {
             args.load_snapshot = argv[++i];
         } else if (std::strcmp(arg, "--save-snapshot") == 0 && has_value) {
@@ -351,6 +367,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         }
         std::printf("\n");
     }
+    std::fputs(DescribeDisks(a).c_str(), stdout);
     std::fputs(DescribeStubNotes(a.stub_notes).c_str(), stdout);
     if (!ok) {
         return 1;
@@ -376,6 +393,11 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
             return 1;
         }
     }
+    // a snapshot carries its card and disks; --disk then only names the write-back files
+    if (args.disks.any() && args.load_snapshot == nullptr && !SetUpDisks(*a, args.disks, error)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        return 1;
+    }
     if (args.load_snapshot != nullptr) {
         std::vector<uint8_t> bytes;
         if (!ReadFile(args.load_snapshot, bytes) ||
@@ -391,7 +413,9 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
             return 1;
         }
     } else if (args.rom != nullptr) {
-        ResetApple2(*a);
+        ResetApple2(*a); // the rom's autostart boots slot 6 when a disk is in
+    } else if (args.disks.any()) {
+        StartDiskBoot(*a);
     } else {
         PrintMachineUsage();
         return 1;
@@ -400,23 +424,33 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         return 1;
     }
+    int code = 0;
     if (!args.window) {
-        return RunHeadless(*a, args);
-    }
-    if (window == nullptr) {
+        code = RunHeadless(*a, args);
+    } else if (window == nullptr) {
         std::fprintf(
             stderr,
             "tisple machine: this build has no window (built without SDL3, TISPLE_SDL off)\n");
         return 1;
+    } else {
+        WindowOptions options;
+        options.scale = args.scale;
+        options.look = args.look;
+        options.max_cycles = args.cycles_given ? args.cycles : 0;
+        if (args.program != nullptr) {
+            options.title = std::string("Tisple ][ - ") + args.program;
+        } else if (!args.disks.paths[0].empty()) {
+            options.title = "Tisple ][ - " + args.disks.paths[0];
+        }
+        code = window(*a, options);
     }
-    WindowOptions options;
-    options.scale = args.scale;
-    options.look = args.look;
-    options.max_cycles = args.cycles_given ? args.cycles : 0;
-    if (args.program != nullptr) {
-        options.title = std::string("Tisple ][ - ") + args.program;
+    if (args.disks.write_back) {
+        std::string report;
+        bool saved = WriteBackDisks(*a, args.disks, report);
+        std::fputs(report.c_str(), stdout);
+        code = saved ? code : 1;
     }
-    return window(*a, options);
+    return code;
 }
 
 } // namespace
@@ -436,6 +470,18 @@ int RunMachineCommand(int argc, char** argv, MachineWindowFn window) {
         return 1;
     }
     return RunWithArgs(&program, args, window);
+}
+
+int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int argc, char** argv,
+                     MachineWindowFn window) {
+    MachineArgs args;
+    if (!ParseArgs(argc, argv, false, args)) {
+        PrintMachineUsage();
+        return 1;
+    }
+    args.disks.images[0] = image;
+    args.disks.formats[0] = format;
+    return RunWithArgs(nullptr, args, window);
 }
 
 int RunMachineOnBinary(const std::vector<uint8_t>& binary, uint16_t origin, int argc, char** argv,

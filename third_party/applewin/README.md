@@ -19,5 +19,25 @@ keep their attribution in the file headers:
   `source/Joystick.cpp`) and the $C01x status/keyboard behaviour of
   `source/Memory.cpp`, read as a reference.
 
+- `src/machine/disk2.cpp` (and the model described in `disk2.hpp`): the Disk II
+  card after `source/Disk.cpp` (Copyright 1994-1996 Michael O'Brien, 1999-2001
+  Oliver Schmidt, 2002-2005 Tom Charlesworth, 2006-2019 Tom Charlesworth,
+  Michael Pohoreski and Nick Westgate): the stepper rule of `ControlStepperDeferred` (a magnet
+  next to the head's own pulls it one half-track, no quarter tracks), motor
+  off clearing the magnets, the read latch's 7-microsecond hold after a nibble
+  extended while zeros follow (`DataLatchReadWOZ`), the head window's made-up
+  bits after four zero cells (30% ones, after the WOZ notes), write protect
+  saturating the latch (`LoadWriteProtect`), the one-second spin-down, and the
+  deselected drive stopping. Our version keeps every bit cell (also in write
+  mode) and loads the shift register at the cpu's write; the noise comes from
+  a fixed LFSR so runs repeat.
+- `src/disk/nibble.cpp` was checked against `source/DiskImageHelper.cpp`
+  (`Code62`, `Decode62`, the sector order tables) for the 6-and-2 layout; the
+  code is our own from Beneath Apple DOS.
+
+Not used: AppleWin's disk boot code or firmware. Our disk ii boot rom
+(`src/machine/disk2_rom.cpp`) and the self-booting disk's loader
+(`src/disk/boot_loader.cpp`) are original.
+
 Nothing from AppleWin's character set data (`NTSC_CharSet.cpp`) or its ROM
 images is used: our text font is our own drawing (`src/machine/font.cpp`).
