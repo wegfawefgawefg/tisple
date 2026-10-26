@@ -17,8 +17,17 @@ there is nothing copyrighted to ship.
   cycles, for tests.
 - Video: text (our own Apple-like font), lo-res, hi-res with NTSC color
   artifacts, mixed mode, both pages.
-- Final cross-check, later: the same binaries in MAME's apple2e with ROMs the
-  owner supplies.
+- Borrow, don't rewrite (owner, 2026-10-26): video and soft-switch code are
+  adapted from Mii (MIT, github.com/buserror/mii_emu) with attribution; Clock
+  Signal (MIT) is the behaviour reference. GPL emulators (AppleWin, LinApple,
+  izapple2) are never copied from. No Apple ROM or ROM-derived data (the
+  character font included) is ever committed.
+- Why a thin machine of our own at all: full emulators boot through Apple's
+  ROM from a disk image, which means copyrighted ROMs and seconds of boot.
+  Our programs never touch ROM or disk, so the part we need is small:
+  memory, about 30 soft switches, keyboard, speaker, video.
+- Real-machine check, a separate slow step: a disk image of the program run
+  in Mii or MAME with real ROMs kept locally, never committed.
 
 ## 2. Programs
 
