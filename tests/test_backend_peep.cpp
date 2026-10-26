@@ -47,10 +47,40 @@ void TestDeadValues(TestResults& results) {
                  "t.f", {});
 }
 
+// a reload only for its flags goes when they already show A, else is AND #$FF; a byte stored
+// from another is the same as it until either changes
+void TestFlagReloads(TestResults& results) {
+    const std::uint16_t values[] = {0, 1, 4, 5, 200};
+    for (std::uint16_t x : values) {
+        CheckProgram(results,
+                     "(let g u8) (let h u8) (let n u8 0) (let wb (array u8 4))\n"
+                     "(fn f ((x u8)) u8\n"
+                     "    (set g x)\n"
+                     "    (if (= g 0) (set n (+ n 1)))\n"
+                     "    (if (< x 5) (set n (+ n 2)))\n"
+                     "    (if (= x 0) (set n (+ n 4)))\n"
+                     "    (if (!= x 4) (set n (+ n 8)))\n"
+                     "    (if (and (< x 5) (= x 0)) (set n (+ n 32)))\n"
+                     "    (if (and (>= x 4) (!= x 0)) (set n (+ n 64)))\n"
+                     "    (set h g)\n"
+                     "    (set g (+ x 1))\n"
+                     "    (if (= h 0) (set n (+ n 16)))\n"
+                     "    (set (at wb 1) h)\n"
+                     "    (let p (ptr u8) (addr_of (at wb 1)))\n"
+                     "    (store p 9)\n"
+                     "    (set n (+ n (at wb 1)))\n"
+                     "    (set h n)\n"
+                     "    (set n 3)\n"
+                     "    (+ h n))",
+                     "t.f", {x});
+    }
+}
+
 } // namespace
 
 void RunBackendPeepTests(TestResults& results) {
     TestDeadValues(results);
+    TestFlagReloads(results);
 }
 
 } // namespace tisple_tests

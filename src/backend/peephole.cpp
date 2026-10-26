@@ -119,12 +119,16 @@ struct Tracker {
     const Assembly* as = nullptr;
     Content reg[3];                                       // A, X, Y
     std::vector<std::pair<AsmValue, AsmValue>> mem_const; // memory byte, constant there
+    std::vector<std::pair<AsmValue, AsmValue>> mem_copy;  // memory byte, the byte it equals
+    bool nz_a = false;                                    // N and Z show A's value
 
     void ForgetAll() {
         for (Content& c : reg) {
             c.known = false;
         }
         mem_const.clear();
+        mem_copy.clear();
+        nz_a = false;
     }
     void ForgetMemory() {
         for (Content& c : reg) {
@@ -133,11 +137,17 @@ struct Tracker {
             }
         }
         mem_const.clear();
+        mem_copy.clear();
     }
     void ForgetByte(const AsmValue& m) {
         for (Content& c : reg) {
             if (c.known && c.mem && SameValue(c.v, m)) {
                 c.known = false;
+            }
+        }
+        for (std::size_t i = mem_copy.size(); i-- > 0;) {
+            if (SameValue(mem_copy[i].first, m) || SameValue(mem_copy[i].second, m)) {
+                mem_copy.erase(mem_copy.begin() + static_cast<std::ptrdiff_t>(i));
             }
         }
         for (std::size_t i = 0; i < mem_const.size(); i++) {
@@ -146,6 +156,23 @@ struct Tracker {
                 return;
             }
         }
+    }
+    // register r holds what the memory byte m holds: that byte, or one m is a copy of
+    bool Holds(int r, const AsmValue& m) const {
+        const Content& c = reg[r];
+        if (!c.known || !c.mem) {
+            return false;
+        }
+        if (SameValue(c.v, m)) {
+            return true;
+        }
+        for (const auto& copy : mem_copy) {
+            if ((SameValue(copy.first, m) && SameValue(copy.second, c.v)) ||
+                (SameValue(copy.second, m) && SameValue(copy.first, c.v))) {
+                return true;
+            }
+        }
+        return false;
     }
     const AsmValue* ConstAt(const AsmValue& m) const {
         for (const auto& entry : mem_const) {
@@ -164,6 +191,42 @@ bool Trackable(const Assembly& as, Mode mode, const AsmValue& v) {
     }
     const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
     return !sym.defined || sym.value < 0xC000;
+}
+
+// do N and Z show A's value after this instruction (before: they did before it)
+bool NzFollowsA(const AsmItem& item, bool before) {
+    switch (item.mn) {
+    case Mn::LDA:
+    case Mn::TXA:
+    case Mn::TYA:
+    case Mn::PLA:
+    case Mn::ADC:
+    case Mn::SBC:
+    case Mn::AND:
+    case Mn::ORA:
+    case Mn::EOR:
+    case Mn::TAX:
+    case Mn::TAY:
+        return true;
+    case Mn::ASL:
+    case Mn::LSR:
+    case Mn::ROL:
+    case Mn::ROR:
+        return item.mode == Mode::Acc;
+    case Mn::STA:
+    case Mn::STX:
+    case Mn::STY:
+    case Mn::CLC:
+    case Mn::SEC:
+    case Mn::CLV:
+    case Mn::NOP:
+    case Mn::PHA:
+    case Mn::PHP:
+    case Mn::TXS:
+        return before;
+    default:
+        return IsBranch(item.mn) && before;
+    }
 }
 
 int LoadReg(Mn mn) {
@@ -189,6 +252,8 @@ void RegisterPass(Pass& p) {
             t.ForgetAll();
             continue;
         }
+        bool nz_before = t.nz_a;
+        t.nz_a = NzFollowsA(item, nz_before);
         Mn mn = item.mn;
         int r = LoadReg(mn);
         if (r >= 0) {
@@ -205,10 +270,18 @@ void RegisterPass(Pass& p) {
                     c.v = *k;
                 }
             }
-            if (c.known && (SameContent(t.reg[r], c) ||
+            if (c.known && (SameContent(t.reg[r], c) || (c.mem && t.Holds(r, item.value)) ||
                             (c.mem && SameContent(t.reg[r], Content{true, true, item.value})))) {
-                if (!p.FlagsNeeded(i)) {
+                if (!p.FlagsNeeded(i) || (r == 0 && nz_before)) {
+                    // nothing reads the flags, or they already show A
+                    t.nz_a = nz_before;
                     p.Kill(i);
+                    continue;
+                }
+                if (r == 0) {
+                    // the flags for A, without loading it again
+                    item = MakeIns(Mn::AND, Mode::Imm, Num(0xFF));
+                    p.changed = true;
                     continue;
                 }
             }
@@ -241,6 +314,8 @@ void RegisterPass(Pass& p) {
             Content& c = t.reg[r];
             if (c.known && !c.mem) {
                 t.mem_const.push_back({item.value, c.v});
+            } else if (c.known && c.mem) {
+                t.mem_copy.push_back({item.value, c.v});
             } else if (!c.known) {
                 c.known = true;
                 c.mem = true;

@@ -193,6 +193,26 @@ entry says what happened and what it should do.
    | gaps --fuzz 3000: dead values | 0.65% | 0.16% |
    | gaps --fuzz 3000: compiled code flagged | 7.63% | 7.00% |
 
+10. Gap list item 6, reloads only for flags (2026-10-26). The peephole's
+    register pass knows whether N and Z show A's value (after LDA, an ALU
+    op, a transfer or a shift of A, and through stores, CLC/SEC and
+    branches). A load of what A already holds goes even when a branch reads
+    its flags if they already show A, and is `AND #$FF` (2 cycles, the same
+    flags) when they don't, as after a CMP. A byte stored from a register
+    that holds another byte is known to equal that byte until either is
+    written, so `STA b / ... / LDA b` with A still holding the source goes
+    too. Tests: in tests/test_backend_peep.cpp, flags after `STA`, after
+    `CMP` inside `and`, a copy whose source is then set, a byte written
+    through a pointer between.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | hgr row tables | 44746, 173 bytes | 43594, 169 bytes |
+    | hi-res line of 280 | 72373 (258.5 a pixel) | 70553 (252.0 a pixel) |
+    | other kernels, Life generations | 156409, 878, 572, 137331/42074, 54 | the same |
+    | gaps flagged: life, dot, sprites | 0.78%, 63.73%, 7.73% | 0.78%, 53.95%, 7.73% |
+    | gaps --fuzz 3000: loads already held | 1.22% | 1.19% |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -280,9 +300,6 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-6. Reloads made only for flags. When the flags already follow A, as after
-   an LDA or ALU op, drop them. Otherwise test the flags another way
-   (`AND #$FF`, 2 cycles). Top load shape in fuzz runs; dot's main loop.
 7. When inlining, bind parameters that are plain variables to those
    variables instead of copying them in: Life's `row_of.world`,
    hires_plot's `plot.x` and `plot.y`, and the let chains in macros.shuffle
