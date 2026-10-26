@@ -133,9 +133,8 @@ assembly interop).
 
 ### Macros
 
-Kept on the table. They work on the tree. Needs quote/quasiquote/unquote,
-`--expand` output printed back through the formatter, and a hygiene rule for
-generated names.
+Common Lisp-style quasiquote templates with Clojure-style `name#` unique
+names. Details in `docs/language.md`.
 
 ## Backend
 

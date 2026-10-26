@@ -106,6 +106,27 @@ No shadowing in the same body.
   `JMP (table,X)` on 65C02); sparse ones to compare chains. The backend picks
   by size and cycles.
 
+## Macros
+
+Common Lisp-style templates, decided 2026-10-26. Expansion is tree to tree and
+runs before the checker, so nothing later sees a macro.
+
+```scheme
+(macro swap (args a b)
+    `(do
+        (let tmp# ,a)
+        (set ,a ,b)
+        (set ,b tmp#)))
+```
+
+- `` ` `` quasiquote, `,` unquote, `,@` splice, `'` quote.
+- A symbol ending in `#` inside a template becomes a fresh unique name on
+  every expansion (from Clojure), so a caller's own `tmp` is never captured.
+- Arguments are unevaluated forms. First version: the body is one template.
+  Macros that compute at compile time can come later by running the reference
+  interpreter on macro bodies.
+- `tisple expand file.tsp` prints the expanded program through the formatter.
+
 ## Memory and calls (first backend)
 
 - Globals get fixed addresses from the linker. The interpreter uses the same
@@ -121,7 +142,7 @@ No shadowing in the same body.
 ## Out of the first subset
 
 Placement controls, strings, function pointers, recursion, inline assembly,
-macros, modules, `/` and `%`. All planned; none needed to prove the backend.
+modules, `/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
 
 ## Open questions for the owner
 
