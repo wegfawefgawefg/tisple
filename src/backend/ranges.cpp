@@ -308,11 +308,13 @@ std::uint32_t BinaryMax(const Program& program, const ValueRanges& r, const Expr
         }
         return limit;
     case Op::Div:
+        // a divisor of 0 gives all ones (check/arith.hpp)
         if (fixed && c != 0 && !is_signed) {
             return a / c;
         }
-        return is_signed ? limit : a;
+        return limit;
     case Op::Mod:
+        // a divisor of 0 gives the dividend
         if (fixed && c != 0 && !is_signed) {
             return std::min<std::uint32_t>(a, c - 1u);
         }

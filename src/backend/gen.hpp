@@ -398,6 +398,9 @@ void EvalArith8(Gen& g, const Expr& e);
 Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst);
 // 16-bit a op b into dst, byte by byte (ADC/SBC with carry, AND/ORA/EOR)
 void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
+// a + b, 16-bit, with bytes known before running needing no code (gen_wide.cpp); the
+// result is in dst (or a temporary) except for bytes that are numbers or one operand's byte
+Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst);
 // multiply a 16-bit operand by a constant into dst
 void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst);
 void CallRuntime(Gen& g, Runtime routine);

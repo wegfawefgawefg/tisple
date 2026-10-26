@@ -143,6 +143,36 @@ entry says what happened and what it should do.
    | Life generations in 10 M cycles | 49 | 54 |
    | gaps flagged: life, dot, sprites | 7.64%, 63.68%, 7.73% | 0.78%, 63.68%, 7.73% |
 
+8. Gap list item 4, known-zero bytes (2026-10-26). 16-bit values keep a
+   byte that is known to be 0 as the number 0 in their operand instead of
+   storing it, and the code that reads them skips it. A shift left by 8 or
+   more of a widened byte is the low byte moved up with a 0 below it; a
+   shift whose value fits a byte by the value ranges (`(& y 7)` shifted by
+   up to 5) is an 8-bit shift with a 0 above; a left shift by 5 to 7 of a
+   byte is `LSR A / STA hi / LDA #0 / ROR A / STA lo` (and the like) with no
+   third byte; a right shift of a byte is 8-bit; a product that fits a byte
+   (`(* (as u16 (>> y 6)) 40)`) is an 8-bit multiply. Adds
+   (src/backend/gen_wide.cpp) make a byte that is two numbers a number, and
+   a byte that adds 0 to another byte, with no carry coming in, that other
+   byte where it is: `$2000 + (y << 10)` is one byte of work. A copy of a
+   byte onto itself is skipped.
+   Tests: tests/test_backend_wide.cpp (every u8 through shifts by 0 to 15 of
+   widened, masked, 16-bit, signed and offset values; products that just
+   fit a byte and just don't; adds with constant bytes that carry, passed
+   bytes, hgr.init's row address, destinations that are their own operands
+   with the bytes swapped, pointers plus widened bytes). The fuzz generator
+   writes 16-bit arithmetic on masked, shifted and widened bytes; it found
+   that the value ranges took `(/ z n)` to be at most z, but a divisor of 0
+   gives all ones (fixed, with a test).
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | hgr row tables (hgr.init) | 54922, 202 bytes | 44746, 173 bytes |
+   | other kernels | 156409, 878, 572, 137331/42074, 72373 | the same |
+   | Life generations in 10 M cycles | 54 | 54 |
+   | gaps on hgr.init (of a 10 M-cycle dot run) | 2880 cycles at 7 sites | 2112 at 5 |
+   | gaps flagged: life, dot, sprites | 0.78%, 63.68%, 7.73% | 0.78%, 63.73%, 7.73% |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -230,10 +260,6 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-4. Known-zero bytes in 16-bit arithmetic on widened bytes. Don't store,
-   shift or add high bytes that are known to be 0 (`(<< (as u16 (& y 7))
-   10)`, `y*42` while y < 64). This is most of hgr.init's 24% and about 1%
-   of Life.
 5. A register-liveness pass in the peephole: drop loads and ALU results
    whose register and flags are both dead before the next write. This is
    0.7% of fuzz runs and the most common exact superoptimizer result.

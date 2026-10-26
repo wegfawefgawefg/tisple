@@ -287,6 +287,9 @@ std::string Gen::IntExpr(T t, int depth) {
         return std::string("(as ") + Name(t) + " " + NonLit(from, depth - 1) + ")";
     }
     case 6:
+        if (t == T::U16 && rng.Chance(40)) {
+            return WideByte(depth);
+        }
         return "(~ " + NonLit(t, depth - 1) + ")";
     case 7:
         return "(if " + Expr(T::Bool, depth - 1) + " " + Expr(t, depth - 1) + " " +
@@ -350,6 +353,33 @@ std::string Gen::SmallSum(int depth) {
     };
     std::string last = rng.Chance(40) ? std::to_string(rng.Below(250)) : Expr(T::U8, depth - 1);
     return "(+ (+ " + at() + " " + at() + ") (+ " + at() + " " + last + "))";
+}
+
+std::string Gen::WideByte(int depth) {
+    auto byte = [&]() {
+        std::string x = NonLit(T::U8, depth - 1);
+        switch (rng.Below(4)) {
+        case 0:
+            return "(as u16 (& " + x + " " + std::to_string(1 + rng.Below(15)) + "))";
+        case 1:
+            return "(as u16 (>> " + x + " " + std::to_string(1 + rng.Below(7)) + "))";
+        case 2:
+            return "(as u16 " + x + ")";
+        default:
+            return "(<< (as u16 " + x + ") " + std::to_string(rng.Below(16)) + ")";
+        }
+    };
+    std::string a = byte();
+    switch (rng.Below(4)) {
+    case 0:
+        return "(<< " + a + " " + std::to_string(rng.Below(16)) + ")";
+    case 1:
+        return "(* " + a + " " + std::to_string(1 + rng.Below(100)) + ")";
+    case 2:
+        return "(+ " + std::to_string(rng.Below(4) * 0x1000 + rng.Below(2) * 0xF0) + " " + a + ")";
+    default:
+        return "(+ " + a + " " + byte() + ")";
+    }
 }
 
 std::string Gen::BoolExpr(int depth) {

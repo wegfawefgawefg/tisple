@@ -48,6 +48,7 @@ int main() {
     tisple_tests::RunBackendDivTests(results);
     tisple_tests::RunBackendCarryTests(results);
     tisple_tests::RunBackendReduceTests(results);
+    tisple_tests::RunBackendWideTests(results);
     tisple_tests::RunBackendProgramTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);

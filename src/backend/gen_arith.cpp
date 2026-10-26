@@ -312,6 +312,10 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
                 LoadA(g, a, k);
                 break;
             }
+            if (!carry && op == Op::Add && ImmByte(a, k) == 0) {
+                LoadA(g, b, k);
+                break;
+            }
             LoadA(g, a, k);
             if (!carry) {
                 Emit(g, op == Op::Add ? Mn::CLC : Mn::SEC, Mode::Imp);
@@ -397,8 +401,11 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
             MulConst16(g, b, e.value, scaled);
             b = scaled;
         }
+        if (e.kind == ExprKind::PtrAdd) {
+            return Add16(g, a, b, dst);
+        }
         Opnd d = dst ? *dst : NewTemp(g, 2);
-        Combine16(g, e.kind == ExprKind::PtrAdd ? Op::Add : Op::Sub, a, b, d);
+        Combine16(g, Op::Sub, a, b, d);
         return d;
     }
     Op op = e.op;
@@ -407,6 +414,16 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
     }
     std::uint16_t c = 0;
     bool b_const = ConstValue(*g.program, e.b, c);
+    if (op == Op::Mul && b_const && MaxOf(g, e.a) * c <= 0xFF) {
+        // the product fits a byte: work it out in A, the high byte is 0
+        EvalA(g, e.a);
+        MulConst8A(g, c);
+        Opnd t = SpillA(g);
+        t.size = 2;
+        t.b[1] = ByteRef();
+        t.b[1].value = Num(0);
+        return t;
+    }
     if (op == Op::Mul && b_const && Popcount(c) <= kMaxInlineMulBits) {
         Opnd a = Eval(g, e.a, nullptr);
         Opnd d = dst ? *dst : NewTemp(g, 2);
@@ -431,6 +448,9 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         CallRuntime(g, Runtime::Mul16);
         StoreAX(g, d);
         return d;
+    }
+    if (op == Op::Add) {
+        return Add16(g, a, b, dst);
     }
     Opnd d = dst ? *dst : NewTemp(g, 2);
     Combine16(g, op, a, b, d);

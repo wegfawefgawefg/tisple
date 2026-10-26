@@ -134,6 +134,9 @@ struct Gen {
     std::string Divisor(T t);
     // a sum of three elements of sm and a byte
     std::string SmallSum(int depth);
+    // 16-bit arithmetic on widened, masked or shifted bytes: shifts, products and adds
+    // with bytes known to be 0, like a hi-res row address
+    std::string WideByte(int depth);
     std::string BoolExpr(int depth);
     std::string Expr(T t, int depth);
     std::string IoAddress();

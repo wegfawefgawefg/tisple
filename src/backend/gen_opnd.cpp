@@ -83,8 +83,8 @@ bool IsMemoryByte(const ByteRef& b) {
 // same_pos: the two bytes sit at the same position of their values. Pointers are aligned to
 // what they were made from, so a byte read through one can only be another position's byte
 // of a value when src moves bytes.
-bool MaySameByte(const Gen& g, const Opnd& src, const ByteRef& x, const Opnd& dst,
-                 const ByteRef& y, bool same_pos) {
+bool MaySameByte(const Gen& g, const Opnd& src, const ByteRef& x, const Opnd& dst, const ByteRef& y,
+                 bool same_pos) {
     if (!IsMemoryByte(x) || !IsMemoryByte(y)) {
         return false;
     }
@@ -186,6 +186,12 @@ void CopyOpnd(Gen& g, const Opnd& src, const Opnd& dst) {
         return;
     }
     for (int k = 0; k < dst.size; k++) {
+        // a byte already where it goes (RAM: a symbol, never a number that may be I/O)
+        bool in_place = src.b[k].kind == ByteKind::Mem && dst.b[k].kind == ByteKind::Mem &&
+                        src.b[k].value.sym >= 0 && SameValue(src.b[k].value, dst.b[k].value);
+        if (in_place) {
+            continue;
+        }
         bool same_imm = k > 0 && src.b[k].kind == ByteKind::Imm &&
                         src.b[k - 1].kind == ByteKind::Imm &&
                         SameValue(src.b[k].value, src.b[k - 1].value);

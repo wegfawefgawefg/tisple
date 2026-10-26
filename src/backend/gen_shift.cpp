@@ -183,6 +183,78 @@ void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool f
     StoreA(g, d, 1);
 }
 
+// -1 unless byte k is a plain number
+int KnownByte(const Opnd& o, int k) {
+    const ByteRef& b = o.b[k];
+    if (o.in_a || b.kind != ByteKind::Imm || b.value.sym >= 0) {
+        return -1;
+    }
+    return b.value.offset & 0xFF;
+}
+
+// a constant shift with a byte of the result known to be 0 (a_max: no value of a is
+// larger): that byte is the number 0 in the result, and only the other one is worked out
+// in d. False if no byte is known.
+bool ShiftKnown(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint32_t a_max, std::uint16_t c,
+                const Opnd& d, Opnd& out) {
+    bool high_zero = KnownByte(a, 1) == 0;
+    out = d;
+    if (op == Op::Shl && c >= 8 && c < 16) {
+        // the low byte, moved up
+        LoadA(g, a, 0);
+        for (int i = 8; i < c; i++) {
+            Emit(g, Mn::ASL, Mode::Acc);
+        }
+        StoreA(g, d, 1);
+        out.b[0] = ByteRef();
+        out.b[0].value = Num(0);
+        return true;
+    }
+    if (op == Op::Shl && c < 8 && (a_max << c) <= 0xFF) {
+        LoadA(g, a, 0);
+        for (int i = 0; i < c; i++) {
+            Emit(g, Mn::ASL, Mode::Acc);
+        }
+        StoreA(g, d, 0);
+        out.b[1] = ByteRef();
+        out.b[1].value = Num(0);
+        return true;
+    }
+    if (op == Op::Shl && c >= 5 && c < 8 && high_zero) {
+        // [lo 00] >> (8 - c): the high byte is lo >> (8 - c), the low byte the bits out
+        int steps = 8 - c;
+        if (steps == 1) {
+            LoadA(g, a, 0);
+            Emit(g, Mn::LSR, Mode::Acc);
+            StoreA(g, d, 1);
+            Emit(g, Mn::LDA, Mode::Imm, Num(0));
+            Emit(g, Mn::ROR, Mode::Acc);
+            StoreA(g, d, 0);
+            return true;
+        }
+        Emit(g, Mn::LDA, Mode::Imm, Num(0));
+        StoreA(g, d, 0);
+        LoadA(g, a, 0);
+        for (int i = 0; i < steps; i++) {
+            Emit(g, Mn::LSR, Mode::Acc);
+            RmwByte(g, Mn::ROR, d, 0);
+        }
+        StoreA(g, d, 1);
+        return true;
+    }
+    if (op == Op::Shr && !is_signed && high_zero && c < 8) {
+        LoadA(g, a, 0);
+        for (int i = 0; i < c; i++) {
+            Emit(g, Mn::LSR, Mode::Acc);
+        }
+        StoreA(g, d, 0);
+        out.b[1] = ByteRef();
+        out.b[1].value = Num(0);
+        return true;
+    }
+    return false;
+}
+
 void Shift8(Gen& g, const Expr& e);
 
 void Shift8(Gen& g, const Expr& e) {
@@ -227,6 +299,10 @@ Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t co
     if (Overlaps(g, a, d)) {
         d = NewTemp(g, 2);
     }
+    Opnd known;
+    if (ShiftKnown(g, op, is_signed, a, 0xFFFF, count, d, known)) {
+        return known;
+    }
     Shift16(g, op, is_signed, a, d, true, count, Opnd());
     return d;
 }
@@ -251,7 +327,12 @@ Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst) {
     if (Overlaps(g, a, d)) {
         d = NewTemp(g, 2);
     }
-    Shift16(g, op, IsSignedKind(ExprKindOf(*g.program, e.a)), a, d, fixed, c, count);
+    bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
+    Opnd known;
+    if (fixed && ShiftKnown(g, op, is_signed, a, MaxOf(g, e.a), c, d, known)) {
+        return known;
+    }
+    Shift16(g, op, is_signed, a, d, fixed, c, count);
     return d;
 }
 
