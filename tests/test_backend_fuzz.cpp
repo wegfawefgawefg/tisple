@@ -5,9 +5,11 @@
 #include "source_file.hpp"
 #include "test_backend.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 
 namespace tisple_tests {
 
@@ -101,12 +103,39 @@ bool DiffFile(TestResults& results) {
     return true;
 }
 
+// the programs of fuzz farm miscompiles, as the generator wrote them then (seed.tsp), so they
+// stay covered whatever the generator writes for those seeds now
+void RunFarmPrograms(TestResults& results) {
+    std::string dir = std::string(TISPLE_SOURCE_DIR) + "/tests/programs/fuzz_farm";
+    std::vector<std::string> paths;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        paths.push_back(entry.path().string());
+    }
+    std::sort(paths.begin(), paths.end());
+    for (const std::string& path : paths) {
+        tisple::SourceFile file;
+        std::string error;
+        CHECK(results, tisple::LoadSourceFile(path, file, error));
+        Compiled c = CompileText(file.text);
+        Diff d;
+        d.in.max_steps = 300000;
+        d.max_cycles = 40000000;
+        bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+        if (!ok) {
+            std::fprintf(stderr, "fuzz farm program %s: %s\n", path.c_str(), d.message.c_str());
+        }
+        CHECK(results, ok);
+    }
+    CHECK(results, paths.size() >= 14);
+}
+
 } // namespace
 
 void RunBackendFuzzTests(TestResults& results) {
     if (DiffFile(results)) {
         return;
     }
+    RunFarmPrograms(results);
     std::uint64_t count = EnvNumber("TISPLE_FUZZ", kDefaultPrograms);
     std::uint64_t first = EnvNumber("TISPLE_FUZZ_SEED", 1);
     FuzzStats stats;

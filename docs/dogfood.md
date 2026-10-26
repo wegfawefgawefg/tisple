@@ -29,6 +29,42 @@ entry says what happened and what it should do.
    inner loop has no LDY at all. `(let l u16 (as u16 (- x 1)))` lets that only
    index cost nothing. Step is 94 cycles a cell, draw 24 (cycle report).
 
+5. Gap list item 1, division (2026-10-26). hires_plot's `(/ x 7)` and
+   `(% x 7)` each called divu16 with a 16-bit divisor: about 750 cycles each.
+   Now (src/backend/gen_div.cpp) unsigned division by a constant below 128
+   that is not a power of two is long division with the divisor as an
+   immediate, one unrolled step (`ROL q / ROL A / CMP #c / BCC / SBC #c`) per
+   dividend bit. The remainder stays below 128, so it lives in A and the
+   runtime's path for a remainder past 255 is gone. The first steps of a byte,
+   before the remainder can reach the divisor, only shift. A 16-bit dividend
+   divides its high byte first, which is no work at all when that byte is
+   below the divisor (x < 1792 for 7). An 8-bit dividend by 128 or more is one
+   compare. Inside a loop the steps are inline (about 70 bytes for 8 bits, 160
+   for 16); elsewhere every site calls one routine per divisor and width
+   (`rt.divu16_7`). A `/` and `%` of the same operands divide once: the second
+   reads rt_a or rt_r while no label, call or write to them came between and
+   no statement since may have written what the operands read. Signed and
+   variable divisors still use the runtime, and pair the same way.
+   Tests: tests/test_backend_div.cpp (every u8 dividend by every constant
+   0..255 as pairs, in both orders and alone; u16 dividends over the whole
+   range by 0..20 and 17 larger constants; signed, variable-divisor and pair
+   edges: an operand set between, the result written into the dividend, a
+   store through another pointer to the dividend, an index changed, a
+   division in only one arm or in a loop that may not run, calls between,
+   i/o dividends, the loop counter as dividend). The fuzz generator writes
+   constant divisors (small odd and even, 128 and up, powers of two, signed)
+   and `/` `%` pairs on the same operands, sometimes with a statement between
+   or into the dividend itself. Changing the generator changes what each seed
+   writes, so the fuzz farm's 14 programs are kept in tests/programs/fuzz_farm.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | hi-res line of 280 pixels (new in the cycle report) | 471373 (1683.5 a pixel) | 72373 (258.5 a pixel) |
+   | fill, hgr rows, sprites, multiply, life step/draw | 156411, 54922, 942, 572, 180689/46405 | the same |
+   | Life generations in 10 M cycles | 43 | 43 |
+   | gaps flagged: life, dot, sprites | 18.22%, 63.68%, 13.90% | the same (no division) |
+   | gaps --fuzz 3000: runtime routines | 5.1% | 4.8% (the new generator) |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -116,10 +152,6 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-1. Divide once for a `/` and `%` pair on the same operands, and specialise
-   division by a constant: no 16-bit divisor, and no high-divisor path for
-   divisors under 128. This is about 45% of hires_plot's hline, and most of
-   the 5% that fuzz runs spend in the runtime.
 2. Carry facts. A counted loop's exit test (`CPX/CPY/CMP` then `BNE`, or
    the `BCS` guard) leaves C clear in the body, so the first CLC there can
    go: 6.7% of sprites, and the first of Life's 7. For the other 6, value

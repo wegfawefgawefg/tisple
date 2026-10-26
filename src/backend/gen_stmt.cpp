@@ -249,6 +249,7 @@ void GenStmt(Gen& g, ExprId id) {
         }
         break;
     }
+    ForgetDivision(g, id);
     ReleaseTemps(g, mark);
 }
 

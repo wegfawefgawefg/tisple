@@ -128,6 +128,8 @@ struct Gen {
     std::string ByteIndex(int depth);
     std::string PointerRead(T t, int depth);
     std::string IntExpr(T t, int depth);
+    // a constant divisor: small odd and even ones, 128 and up, a few powers of two
+    std::string Divisor(T t);
     std::string BoolExpr(int depth);
     std::string Expr(T t, int depth);
     std::string IoAddress();
@@ -151,6 +153,10 @@ struct Gen {
     std::string RoomStmt();
 
     std::string Store();
+    // a place of type t, or "" if there is none
+    std::string PlaceOf(T t);
+    // a / and a % of the same operands, now and then with a statement between
+    std::string DivPair();
     std::string WideStmt();
     std::string Stmt(int depth);
     std::string Function(std::size_t index);

@@ -65,18 +65,6 @@ int Popcount(std::uint32_t v) {
     return n;
 }
 
-// log2 of a power of two, else -1
-int PowerOfTwo(std::uint32_t v) {
-    if (v == 0 || (v & (v - 1)) != 0) {
-        return -1;
-    }
-    int k = 0;
-    while ((v >> k) != 1) {
-        k++;
-    }
-    return k;
-}
-
 // A = A * c, top-down shift and add with the multiplicand in a temporary
 void MulConst8A(Gen& g, std::uint32_t c) {
     c &= 0xFF;
@@ -216,14 +204,6 @@ bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst
     return true;
 }
 
-Runtime DivRoutine(bool is_signed, bool wide) {
-
-    if (wide) {
-        return is_signed ? Runtime::DivS16 : Runtime::DivU16;
-    }
-    return is_signed ? Runtime::DivS8 : Runtime::DivU8;
-}
-
 } // namespace
 
 void CallRuntime(Gen& g, Runtime routine) {
@@ -289,35 +269,6 @@ void EvalArith8(Gen& g, const Expr& e) {
         Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
         LoadA(g, a, 0);
         CallRuntime(g, Runtime::Mul8);
-        return;
-    }
-    case Op::Div:
-    case Op::Mod: {
-        std::uint16_t c = 0;
-        int k = ConstValue(*g.program, e.b, c) ? PowerOfTwo(c & 0xFF) : -1;
-        if (k >= 0 && !IsSignedKind(ExprKindOf(*g.program, e.a))) {
-            // unsigned by 2^k: a shift or a mask
-            EvalA(g, e.a);
-            if (op == Op::Mod) {
-                Emit(g, Mn::AND, Mode::Imm, Num((1 << k) - 1));
-                return;
-            }
-            for (int i = 0; i < k; i++) {
-                Emit(g, Mn::LSR, Mode::Acc);
-            }
-            return;
-        }
-        Opnd a;
-        Opnd b;
-        Operands8(g, e.a, e.b, a, b);
-        LoadA(g, b, 0);
-        Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
-        LoadA(g, a, 0);
-        Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_a));
-        CallRuntime(g, DivRoutine(IsSignedKind(ExprKindOf(*g.program, e.a)), false));
-        if (op == Op::Mod) {
-            Emit(g, Mn::LDA, Mode::Abs, SymValue(g.be->rt_r));
-        }
         return;
     }
     default:
@@ -443,7 +394,6 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
     }
     std::uint16_t c = 0;
     bool b_const = ConstValue(*g.program, e.b, c);
-    bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
     if (op == Op::Mul && b_const && Popcount(c) <= kMaxInlineMulBits) {
         Opnd a = Eval(g, e.a, nullptr);
         Opnd d = dst ? *dst : NewTemp(g, 2);
@@ -456,33 +406,17 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         MulConst16(g, b, c, d);
         return d;
     }
-    if ((op == Op::Div || op == Op::Mod) && b_const && PowerOfTwo(c) >= 0 && !is_signed) {
-        Opnd a = Eval(g, e.a, nullptr);
-        if (op == Op::Mod) {
-            Opnd d = dst ? *dst : NewTemp(g, 2);
-            Combine16(g, Op::And, a, ImmOpnd(static_cast<std::uint16_t>(c - 1), 2), d);
-            return d;
-        }
-        return ShiftConst16(g, Op::Shr, false, a, static_cast<std::uint16_t>(PowerOfTwo(c)), dst);
-    }
     Opnd a = Eval(g, e.a, nullptr);
     if (MayWriteOpnd(g, e.b, a)) {
         a = Snapshot(g, a);
     }
     Opnd b = Eval(g, e.b, nullptr);
-    if (op == Op::Mul || op == Op::Div || op == Op::Mod) {
-        Opnd rt_a = MemOpnd(SymValue(g.be->rt_a), 2, 1);
-        Opnd rt_b = MemOpnd(SymValue(g.be->rt_b), 2, 1);
-        CopyOpnd(g, a, rt_a);
-        CopyOpnd(g, b, rt_b);
+    if (op == Op::Mul) {
+        CopyOpnd(g, a, MemOpnd(SymValue(g.be->rt_a), 2, 1));
+        CopyOpnd(g, b, MemOpnd(SymValue(g.be->rt_b), 2, 1));
         Opnd d = dst ? *dst : NewTemp(g, 2);
-        if (op == Op::Mul) {
-            CallRuntime(g, Runtime::Mul16);
-            StoreAX(g, d);
-            return d;
-        }
-        CallRuntime(g, DivRoutine(IsSignedKind(ExprKindOf(*g.program, e.a)), true));
-        CopyOpnd(g, op == Op::Div ? rt_a : MemOpnd(SymValue(g.be->rt_r), 2, 1), d);
+        CallRuntime(g, Runtime::Mul16);
+        StoreAX(g, d);
         return d;
     }
     Opnd d = dst ? *dst : NewTemp(g, 2);

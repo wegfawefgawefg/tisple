@@ -267,7 +267,12 @@ std::string Gen::IntExpr(T t, int depth) {
         return std::string("(") + (rng.Chance(50) ? "<<" : ">>") + " " + NonLit(t, depth - 1) +
                " " + Count() + ")";
     case 4:
-        // mostly odd divisors; now and then any, zero included, which has a defined result
+        // constant divisors, mostly odd ones, and now and then any, zero included, which has
+        // a defined result
+        if (rng.Chance(35)) {
+            return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
+                   " " + Divisor(t) + ")";
+        }
         if (rng.Chance(20)) {
             return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
                    " " + Expr(t, depth - 1) + ")";
@@ -314,6 +319,23 @@ std::string Gen::IntExpr(T t, int depth) {
     default:
         return Leaf(t);
     }
+}
+
+std::string Gen::Divisor(T t) {
+    static const int kUnsigned[] = {3,  5,  6,   7,   9,   10,  12,  15,
+                                    25, 40, 100, 127, 128, 129, 200, 255};
+    static const int kWide[] = {256, 300, 1000, 4097};
+    static const int kSigned[] = {3, 5, 7, 10, 100, 127, -3, -7, -100, -128};
+    if (t == T::I8 || t == T::I16) {
+        return std::to_string(kSigned[rng.Below(10)]);
+    }
+    if (t == T::U16 && rng.Chance(20)) {
+        return std::to_string(kWide[rng.Below(4)]);
+    }
+    if (rng.Chance(10)) {
+        return std::to_string(1 << rng.Below(8));
+    }
+    return std::to_string(kUnsigned[rng.Below(16)]);
 }
 
 std::string Gen::BoolExpr(int depth) {

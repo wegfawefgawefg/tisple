@@ -360,6 +360,13 @@ Opnd Eval(Gen& g, ExprId id, const Opnd* dst) {
             CondToA(g, id);
             return InA();
         }
+        if (e.op == Op::Div || e.op == Op::Mod) {
+            if (size == 1) {
+                EvalDiv8(g, id, e);
+                return InA();
+            }
+            return EvalDiv16(g, id, e, dst);
+        }
         if (size == 1) {
             EvalArith8(g, e);
             return InA();

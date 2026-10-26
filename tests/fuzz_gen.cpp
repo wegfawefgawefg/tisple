@@ -226,6 +226,52 @@ std::string Gen::Store() {
     return "";
 }
 
+std::string Gen::PlaceOf(T t) {
+    std::vector<const VarInfo*> vars = VarsOf(t, true);
+    std::vector<const ArrayInfo*> arrs = ArraysOf(t, true);
+    if (!arrs.empty() && (vars.empty() || rng.Chance(40))) {
+        const ArrayInfo& a =
+            *arrs[static_cast<std::size_t>(rng.Below(static_cast<int>(arrs.size())))];
+        return "(at " + a.name + " " + Index(a) + ")";
+    }
+    if (vars.empty()) {
+        return "";
+    }
+    return vars[static_cast<std::size_t>(rng.Below(static_cast<int>(vars.size())))]->name;
+}
+
+std::string Gen::DivPair() {
+    T t = kInts[rng.Below(4)];
+    std::string x = rng.Chance(60) ? Var(t) : NonLit(t, 1);
+    std::string d = rng.Chance(75) ? Divisor(t) : "(| " + Var(t) + " 1)";
+    std::string first = PlaceOf(t);
+    std::string second = PlaceOf(t);
+    if (first.empty() || second.empty()) {
+        return "(set " + Var(T::U16) + " 0)";
+    }
+    // now and then the first result goes into the dividend itself
+    if (rng.Chance(15)) {
+        for (const VarInfo* v : VarsOf(t, true)) {
+            if (v->name == x) {
+                first = x;
+            }
+        }
+    }
+    const char* ops[2] = {"/", "%"};
+    if (rng.Chance(40)) {
+        ops[0] = "%";
+        ops[1] = "/";
+    }
+    std::string text = "(do (set " + first + " (" + ops[0] + " " + x + " " + d + "))";
+    if (rng.Chance(30)) {
+        scopes.emplace_back();
+        text += " " + Stmt(0);
+        scopes.pop_back();
+        DropPointers();
+    }
+    return text + " (set " + second + " (" + ops[1] + " " + x + " " + d + ")))";
+}
+
 std::string Gen::RoomPointerLet() {
     // room for any byte count: the start is at most 255 into wb's 1024 bytes
     std::string p = Fresh("p");
@@ -291,6 +337,9 @@ std::string Gen::Stmt(int depth) {
     case 1: {
         if (rng.Chance(25)) {
             return IndexLet();
+        }
+        if (rng.Chance(12)) {
+            return DivPair();
         }
         T t = AnyType();
 

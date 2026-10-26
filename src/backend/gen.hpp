@@ -59,6 +59,13 @@ enum class Runtime : std::uint8_t {
 };
 constexpr int kRuntimeCount = static_cast<int>(Runtime::Count);
 
+// a division routine for one constant divisor (gen_div.cpp)
+struct DivRoutine {
+    std::uint32_t divisor = 0;
+    bool wide = false;
+    std::int32_t sym = -1;
+};
+
 struct Backend {
     const Program* program = nullptr;
     Layout shapes; // every var's shape, address 0
@@ -76,6 +83,8 @@ struct Backend {
     std::vector<std::uint32_t> fn_exprs;    // by function: expressions in its body
     std::vector<bool> deref;                // by var: some load or store goes straight through it
     std::vector<IndexAlias> aliases;        // by var: locals that only name a byte index
+    std::vector<bool> div_pairs;            // by expr: FindDivPairs
+    std::vector<DivRoutine> div_routines;   // the ones the code calls
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
     std::int32_t rt_a = -1;                 // 2 bytes each
@@ -183,6 +192,17 @@ struct CounterRange {
     int hi = 255;
 };
 
+// the last division's operands: its quotient is in rt_a, and its remainder in rt_r when
+// have_rem, until code touches them (gen_div.cpp)
+struct DivDone {
+    bool valid = false;
+    ExprId a = -1;
+    ExprId b = -1;
+    std::size_t at = 0; // the items from here on
+    bool have_rem = false;
+    bool rem_byte = false; // the remainder is below 256: rt_r+1 is not set
+};
+
 struct Gen {
     Backend* be = nullptr;
     const Program* program = nullptr;
@@ -195,8 +215,9 @@ struct Gen {
     std::vector<Derived> derived;     // of the loops being generated
     std::uint32_t lptr_top = 0;       // loop pointer bytes handed out in this function
     std::vector<CounterRange> ranges; // of the u8 loops being generated
-    std::uint64_t cost = 0;           // cycles emitted so far, times 4 per loop level
-    bool violation = false;           // code touched a pinned register
+    DivDone div;
+    std::uint64_t cost = 0; // cycles emitted so far, times 4 per loop level
+    bool violation = false; // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
     std::vector<LoopCtx> loops;
@@ -216,6 +237,9 @@ void Unsupported(Gen& g, ExprId id, const char* what);
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value = AsmValue());
 std::int32_t NewLabel(Gen& g);
 void PlaceLabel(Gen& g, std::int32_t label);
+// a label only forward branches over straight-line code reach, which leave X and Y alone:
+// what they hold stays known
+void PlaceLocalLabel(Gen& g, std::int32_t label);
 void Branch(Gen& g, Mn mn, std::int32_t label);
 void Jump(Gen& g, std::int32_t label);
 void ForgetRegs(Gen& g);
@@ -363,6 +387,15 @@ void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
 // multiply a 16-bit operand by a constant into dst
 void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst);
 void CallRuntime(Gen& g, Runtime routine);
+// division and remainder (gen_div.cpp): 8-bit into A, 16-bit into dst or a temporary
+void EvalDiv8(Gen& g, ExprId id, const Expr& e);
+Opnd EvalDiv16(Gen& g, ExprId id, const Expr& e, const Opnd* dst);
+// after each statement: forget the last division if the statement may change its operands
+void ForgetDivision(Gen& g, ExprId stmt);
+// by expr: a division with another of the same operands somewhere in the program
+std::vector<bool> FindDivPairs(const Program& program);
+// the division routines the code calls, each a label and its items
+void EmitDivRoutines(Backend& be, std::vector<AsmItem>& out);
 // shifts (gen_shift.cpp): 8-bit into A, 16-bit into dst or a temporary
 void EvalShift8(Gen& g, const Expr& e);
 Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst);
