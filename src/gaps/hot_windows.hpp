@@ -39,7 +39,7 @@ struct HotWindowOptions {
     SearchOptions search;
     bool facts = true;
     std::uint64_t min_count = 16;
-    std::uint64_t facts_min_count = 256; // fewer executions say too little to take as facts
+    std::uint64_t facts_min_count = 128; // fewer executions say too little to take as facts
     bool verbose = false;                // one line per search on stderr
     std::string only;                    // only windows in functions whose name contains this
 };
