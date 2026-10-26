@@ -1,12 +1,19 @@
 #include "check/commands.hpp"
 #include "emu/sim_command.hpp"
 #include "interp/interp_command.hpp"
+#include "machine/machine_command.hpp"
 #include "reader/commands.hpp"
 
 #include <cstdio>
 #include <cstring>
 
 namespace {
+
+#ifdef TISPLE_HAS_SDL
+const tisple::MachineWindowFn kMachineWindow = tisple::RunMachineWindow;
+#else
+const tisple::MachineWindowFn kMachineWindow = nullptr;
+#endif
 
 void PrintUsage() {
     std::printf("Tisple ][ 0.1\n"
@@ -19,6 +26,7 @@ void PrintUsage() {
     std::printf("  check   check a program and its imports\n"
                 "  expand  print a program after macro expansion\n"
                 "  interp  run main in the reference interpreter (--max-steps N)\n");
+    std::printf("  machine run a raw binary in the built-in Apple IIe (--window, --screenshot)\n");
 }
 
 } // namespace
@@ -51,6 +59,9 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "interp") == 0) {
         return tisple::RunInterpCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "machine") == 0) {
+        return tisple::RunMachineCommand(argc - 2, argv + 2, kMachineWindow);
     }
 
     std::fprintf(stderr, "tisple: unknown command '%s'\n", argv[1]);
