@@ -161,8 +161,8 @@ std::vector<std::vector<SoIns>> StochasticSearch(const Window& w, const Facts& f
     int bytes = 0;
     Score(c, cur, wrong, cycles, bytes);
     double cur_cost = kWrongWeight * wrong + cycles;
-    int best_cycles = w.cycles;
-    int best_bytes = w.bytes;
+    int best_cycles = options.bound_cycles >= 0 ? options.bound_cycles : w.cycles;
+    int best_bytes = options.bound_bytes >= 0 ? options.bound_bytes : w.bytes;
     for (steps = 0; steps < options.stochastic_steps; steps++) {
         std::vector<int> next = cur;
         Mutate(c, next);

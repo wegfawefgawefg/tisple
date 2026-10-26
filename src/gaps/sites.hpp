@@ -16,6 +16,7 @@ struct SiteInfo {
     std::int32_t span = -1; // into Compiled::spans
     std::int32_t note = -1; // the source line above it, into Assembly::notes
     std::int32_t prev = -1; // the instruction before it with no label between; -1 at a label
+    std::int32_t label = -1; // the last named label above it in its span (a symbol)
 };
 
 struct SiteMap {
@@ -24,9 +25,10 @@ struct SiteMap {
 
 void BuildSiteMap(const Compiled& compiled, SiteMap& out);
 
-// "main.step"; "?" outside every span
+// "main.step", "runtime divu16" (runtime routines by their labels); "?" outside every span
 std::string SiteFunction(const Compiled& compiled, const SiteMap& map, std::uint16_t address);
-// "programs/life/main.tsp:54: (let n u8", without the folders; "" with no note above
+// "life/main.tsp:54: (let n u8", without most folders and cut at 100 characters; "" with no
+// note above
 std::string SiteSource(const Compiled& compiled, const SiteMap& map, std::uint16_t address);
 // the instruction as the listing prints it, "ADC ($10),Y  ; main.step.above"
 std::string SiteText(const Compiled& compiled, const SiteMap& map, std::uint16_t address);

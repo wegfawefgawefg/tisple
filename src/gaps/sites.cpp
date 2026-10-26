@@ -34,6 +34,7 @@ void BuildSiteMap(const Compiled& compiled, SiteMap& out) {
         const FunctionSpan& span = compiled.spans[s];
         std::int32_t note = -1;
         std::int32_t prev = -1;
+        std::int32_t label = -1;
         for (std::size_t i = span.first; i < span.end; i++) {
             const AsmItem& item = as.items[i];
             if (item.kind == ItemKind::Note) {
@@ -42,6 +43,10 @@ void BuildSiteMap(const Compiled& compiled, SiteMap& out) {
             }
             if (item.kind == ItemKind::Label) {
                 prev = -1;
+                const std::string& name = as.symbols[static_cast<std::size_t>(item.value.sym)].name;
+                if (!name.empty() && name[0] != 'L') {
+                    label = item.value.sym;
+                }
                 continue;
             }
             if (item.kind != ItemKind::Ins) {
@@ -54,6 +59,7 @@ void BuildSiteMap(const Compiled& compiled, SiteMap& out) {
                 info.span = static_cast<std::int32_t>(s);
                 info.note = note;
                 info.prev = prev;
+                info.label = label;
             }
             prev = static_cast<std::int32_t>(i);
         }
@@ -65,7 +71,13 @@ std::string SiteFunction(const Compiled& compiled, const SiteMap& map, std::uint
     if (info == nullptr || info->span < 0) {
         return "?";
     }
-    return compiled.spans[static_cast<std::size_t>(info->span)].name;
+    const FunctionSpan& span = compiled.spans[static_cast<std::size_t>(info->span)];
+    if (span.function >= 0 || info->label < 0 || span.name != "runtime") {
+        return span.name;
+    }
+    // runtime routines' labels are routine.part: mul16.add, divu8.loop
+    const std::string& label = compiled.as.symbols[static_cast<std::size_t>(info->label)].name;
+    return span.name + " " + label.substr(0, label.find('.'));
 }
 
 std::string SiteSource(const Compiled& compiled, const SiteMap& map, std::uint16_t address) {
@@ -73,7 +85,11 @@ std::string SiteSource(const Compiled& compiled, const SiteMap& map, std::uint16
     if (info == nullptr || info->note < 0) {
         return "";
     }
-    return WithoutFolders(compiled.as.notes[static_cast<std::size_t>(info->note)]);
+    std::string text = WithoutFolders(compiled.as.notes[static_cast<std::size_t>(info->note)]);
+    if (text.size() > 100) {
+        text = text.substr(0, 97) + "...";
+    }
+    return text;
 }
 
 std::string SiteText(const Compiled& compiled, const SiteMap& map, std::uint16_t address) {

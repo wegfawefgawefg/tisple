@@ -39,7 +39,9 @@ struct HotWindowOptions {
     SearchOptions search;
     bool facts = true;
     std::uint64_t min_count = 16;
+    std::uint64_t facts_min_count = 256; // fewer executions say too little to take as facts
     bool verbose = false; // one line per search on stderr
+    std::string only;     // only windows in functions whose name contains this
 };
 
 struct HotWindowStats {
@@ -55,12 +57,14 @@ struct HotWindowStats {
 
 // results by window shape, so a shape met again (in this program or the next) is not
 // searched twice; the search is deterministic, so this does not change any result
-struct CachedSearch {
-    SearchResult strict;
-    SearchResult with_facts;
-    std::string facts;
+struct FactsSearch {
+    SearchResult result; // found only when cheaper than the exact result
+    std::string facts;   // the facts it needs
 };
-using WindowCache = std::map<std::string, CachedSearch>;
+struct WindowCache {
+    std::map<std::string, SearchResult> exact;  // by WindowKey
+    std::map<std::string, FactsSearch> facts;   // by WindowKey and the observed facts
+};
 
 std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const SiteMap& map,
                                               const Profiler& p, const HotWindowOptions& options,

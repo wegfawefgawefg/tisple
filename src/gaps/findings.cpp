@@ -192,12 +192,12 @@ void FindStrided(const Compiled& compiled, const SiteMap& map, const Profiler& p
         int step = s.last_step < 128 ? s.last_step : s.last_step - 256;
         std::string reason = "the stored byte steps by " + std::string(step >= 0 ? "+" : "") +
                              std::to_string(step) + " each time (" + std::to_string(stores) +
-                             " such bytes on this line): keep them and add";
+                             (stores == 1 ? " such byte" : " such bytes") + std::string(" on this line): keep them and add");
         Finding f = Make(compiled, map, v, Pattern::kStrided, s.step_repeats, s.count - 2,
                          block - replacement, reason);
-        std::size_t space = f.source.find(' ');
         f.key = std::string(PatternName(Pattern::kStrided)) + ": " +
-                (space == std::string::npos ? f.source : f.source.substr(space + 1));
+                ItemShape(compiled, map.at[a].prev) + " ; " + ShapeText(info.mn, info.mode) +
+                " (steps by a constant)";
         f.estimate = true;
         out.push_back(f);
     }

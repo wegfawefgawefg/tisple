@@ -413,8 +413,8 @@ SearchResult Superoptimize(const Window& w, const Facts& facts, const SearchOpti
         }
         s.stack.assign(static_cast<std::size_t>(options.max_len) + 1, vectors);
         s.table.assign(std::size_t{1} << options.table_bits, TableEntry());
-        s.best_cycles = w.cycles;
-        s.best_bytes = w.bytes;
+        s.best_cycles = options.bound_cycles >= 0 ? options.bound_cycles : w.cycles;
+        s.best_bytes = options.bound_bytes >= 0 ? options.bound_bytes : w.bytes;
         s.needed = NeededCells(s, vectors);
         ReadCosts(s);
         Search(s, 0, 0, 0, 0);

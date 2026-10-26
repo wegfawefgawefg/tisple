@@ -56,11 +56,18 @@ bool FindProgramGaps(const Program& program, const Compiled& compiled, const Gap
     out.instructions = profiler->instructions;
     out.cycles = profiler->cycles;
     out.find = options.find;
-    out.findings = FindGaps(compiled, *map, *profiler, options.find);
+    out.only = options.only;
+    for (const Finding& f : FindGaps(compiled, *map, *profiler, options.find)) {
+        if (f.function.find(options.only) != std::string::npos) {
+            out.findings.push_back(f);
+        }
+    }
     out.superopt = options.superopt;
     if (options.superopt) {
-        out.windows = SuperoptHotWindows(compiled, *map, *profiler, options.windows, cache,
-                                         out.window_stats);
+        HotWindowOptions windows = options.windows;
+        windows.only = options.only;
+        out.windows =
+            SuperoptHotWindows(compiled, *map, *profiler, windows, cache, out.window_stats);
     }
     return true;
 }

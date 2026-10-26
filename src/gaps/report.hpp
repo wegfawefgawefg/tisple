@@ -21,6 +21,7 @@ struct ProgramGaps {
     std::uint64_t instructions = 0;
     std::uint64_t cycles = 0; // traced
     FindOptions find;
+    std::string only; // the report is about these functions only
     std::vector<Finding> findings;
     bool superopt = false;
     std::vector<WindowFinding> windows;
@@ -43,10 +44,16 @@ struct BulkGaps {
     std::uint64_t failed = 0; // did not check, compile or start
     std::uint64_t cycles = 0;
     std::uint64_t saved = 0;
-    std::uint64_t window_saved = 0;
+    std::uint64_t window_saved = 0;       // exact windows in compiled code
+    std::uint64_t window_facts_saved = 0; // windows that need observed facts
     std::map<std::string, PatternTotal> patterns; // by pattern
     std::map<std::string, PatternTotal> keys;     // by pattern and instruction shapes
+    // startup and runtime routines (multiply, divide): fixed code whose findings mostly
+    // follow the data, kept apart from the compiled code's
+    std::uint64_t runtime_saved = 0;
+    std::map<std::string, PatternTotal> runtime;
     std::map<std::string, PatternTotal> windows;  // superoptimizer: before -> after shapes
+    std::map<std::string, PatternTotal> windows_facts;
     HotWindowStats window_stats;
 };
 

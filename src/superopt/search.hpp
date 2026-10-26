@@ -43,6 +43,9 @@ struct SearchOptions {
     std::uint64_t seed = 1;
     std::uint32_t table_bits = 20;    // the table of reached states: 2^bits entries
     std::uint64_t stochastic_steps = 0; // 0: exhaustive search; else MCMC steps
+    // only results better than this count (cycles, then bytes); -1: than the window
+    int bound_cycles = -1;
+    int bound_bytes = -1;
 };
 
 struct SearchResult {

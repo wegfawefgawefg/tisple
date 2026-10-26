@@ -34,6 +34,7 @@ void PrintGapsUsage() {
         "         --min-percent P (100), --windows N (window starts searched, 30),\n"
         "         --nodes N (search budget per window, 1000000), --max-len N (5),\n"
         "         --stochastic STEPS (MCMC instead of enumeration), --no-facts,\n"
+        "         --only NAME (functions whose name contains NAME),\n"
         "         --verbose (each search on stderr),\n"
         "         --origin A\n");
 }
@@ -69,6 +70,8 @@ bool ParseArgs(int argc, char** argv, GapsArgs& args) {
             o.superopt = true;
         } else if (std::strcmp(arg, "--sim") == 0) {
             o.run.bare = true;
+        } else if (std::strcmp(arg, "--only") == 0 && i + 1 < argc) {
+            o.only = argv[++i];
         } else if (std::strcmp(arg, "--verbose") == 0) {
             o.windows.verbose = true;
         } else if (std::strcmp(arg, "--no-facts") == 0) {

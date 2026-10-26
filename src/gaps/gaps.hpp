@@ -17,6 +17,7 @@ struct GapsOptions {
     FindOptions find;
     bool superopt = false;
     HotWindowOptions windows;
+    std::string only; // report only functions whose name contains this
 };
 
 bool FindProgramGaps(const Program& program, const Compiled& compiled, const GapsOptions& options,

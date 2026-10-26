@@ -76,26 +76,42 @@ void Note(HotWindowStats& stats, const SearchResult& r, const Window& w, bool fa
     }
 }
 
-CachedSearch SearchWindow(const Window& w, const Facts& observed, const HotWindowOptions& options,
-                          HotWindowStats& stats) {
-    CachedSearch out;
+const SearchResult& ExactSearch(const Window& w, const HotWindowOptions& options,
+                                WindowCache& cache, HotWindowStats& stats) {
+    std::string key = WindowKey(w);
+    auto it = cache.exact.find(key);
+    if (it != cache.exact.end()) {
+        stats.cached++;
+        return it->second;
+    }
     SearchOptions so = options.search;
     so.max_len = std::min(so.max_len, static_cast<int>(w.code.size()));
-    out.strict = Superoptimize(w, Facts(), so);
-    Note(stats, out.strict, w, false, options.verbose);
-    if (!options.facts || !HasFacts(observed)) {
-        return out;
+    SearchResult r = Superoptimize(w, Facts(), so);
+    Note(stats, r, w, false, options.verbose);
+    return cache.exact.emplace(key, r).first->second;
+}
+
+// under the observed facts, only something cheaper than the exact result counts
+const FactsSearch& SearchWithFacts(const Window& w, const Facts& observed,
+                                   const SearchResult& exact, const HotWindowOptions& options,
+                                   WindowCache& cache, HotWindowStats& stats) {
+    std::string key = WindowKey(w) + " | " + FactsText(w, observed);
+    auto it = cache.facts.find(key);
+    if (it != cache.facts.end()) {
+        stats.cached++;
+        return it->second;
     }
-    SearchResult with = Superoptimize(w, observed, so);
-    Note(stats, with, w, true, options.verbose);
-    bool cheaper = with.found && (!out.strict.found || with.cycles < out.strict.cycles);
-    if (!cheaper) {
-        return out;
+    SearchOptions so = options.search;
+    so.max_len = std::min(so.max_len, static_cast<int>(w.code.size()));
+    so.bound_cycles = exact.found ? exact.cycles : w.cycles;
+    so.bound_bytes = exact.found ? exact.bytes : w.bytes;
+    FactsSearch out;
+    out.result = Superoptimize(w, observed, so);
+    Note(stats, out.result, w, true, options.verbose);
+    if (out.result.found) {
+        out.facts = FactsText(w, NeededFacts(w, out.result.code, observed, so));
     }
-    Facts needed = NeededFacts(w, with.code, observed, so);
-    out.with_facts = with;
-    out.facts = FactsText(w, needed);
-    return out;
+    return cache.facts.emplace(key, out).first->second;
 }
 
 WindowFinding MakeFinding(const Compiled& compiled, const SiteMap& map, const Window& w,
@@ -131,7 +147,9 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
         const std::vector<RawIns>& ins = runs[r].ins;
         for (std::size_t start = 0; start + 1 < ins.size(); start++) {
             std::uint64_t count = p.sites[ins[start].address].count;
-            if (count < options.min_count) {
+            if (count < options.min_count ||
+                SiteFunction(compiled, map, ins[start].address).find(options.only) ==
+                    std::string::npos) {
                 continue;
             }
             std::size_t len = std::min(static_cast<std::size_t>(options.window), ins.size() - start);
@@ -162,22 +180,19 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
                 continue;
             }
             stats.windows++;
-            Facts observed = ObservedFacts(w, code, p);
-            std::string key = WindowKey(w) + " | " + FactsText(w, observed);
-            auto it = cache.find(key);
-            if (it == cache.end()) {
-                it = cache.emplace(key, SearchWindow(w, observed, options, stats)).first;
-            } else {
-                stats.cached++;
-            }
-            const CachedSearch& result = it->second;
             std::uint64_t count = p.sites[code[0].address].count;
-            if (result.strict.found) {
-                found.push_back(MakeFinding(compiled, map, w, result.strict, "", count));
+            Facts observed =
+                count >= options.facts_min_count ? ObservedFacts(w, code, p) : Facts();
+            const SearchResult& exact = ExactSearch(w, options, cache, stats);
+            if (exact.found) {
+                found.push_back(MakeFinding(compiled, map, w, exact, "", count));
             }
-            if (result.with_facts.found) {
-                found.push_back(
-                    MakeFinding(compiled, map, w, result.with_facts, result.facts, count));
+            if (!options.facts || !HasFacts(observed)) {
+                continue;
+            }
+            const FactsSearch& with = SearchWithFacts(w, observed, exact, options, cache, stats);
+            if (with.result.found) {
+                found.push_back(MakeFinding(compiled, map, w, with.result, with.facts, count));
             }
         }
     }
