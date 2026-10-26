@@ -57,5 +57,6 @@ void RunBackendIndexTests(TestResults& results);
 void RunBackendFuzzTests(TestResults& results);
 void RunBackendDivTests(TestResults& results);
 void RunBackendCarryTests(TestResults& results);
+void RunBackendReduceTests(TestResults& results);
 
 } // namespace tisple_tests

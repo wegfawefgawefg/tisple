@@ -66,6 +66,11 @@ void GenLet(Gen& g, const Expr& e) {
     if (alias.index_only || alias.forward) {
         return; // every read reads the value itself (index_alias.hpp)
     }
+    for (std::int32_t var : g.reduced) {
+        if (var == e.ref) {
+            return; // set before the loop and moved at the end of each iteration
+        }
+    }
     const Var& var = g.program->vars[static_cast<std::size_t>(e.ref)];
 
     std::uint32_t size = TypeOf(*g.program, var.type).size;

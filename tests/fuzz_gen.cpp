@@ -130,10 +130,17 @@ std::string Gen::For(int depth) {
     }
     scopes.emplace_back();
     scopes.back().push_back(VarInfo{i, t, true});
+    // the stride lets first, so they only read what is in scope before the body
+    std::string strides;
+    if (t == T::U8 && rng.Chance(35)) {
+        bool minus_one = start == std::to_string(lo) && lo >= 1;
+        strides = " " + StrideLets(i, minus_one, start != "250");
+    }
     std::string body = LoopBody(depth, false);
     if (t == T::U8 && rng.Chance(60)) {
         body = " " + RoomStmt() + body;
     }
+    body = strides + body;
     counter = outer_counter;
     wide = outer_wide;
     wide_ptr = outer_ptr;
@@ -270,6 +277,51 @@ std::string Gen::DivPair() {
         DropPointers();
     }
     return text + " (set " + second + " (" + ops[1] + " " + x + " " + d + ")))";
+}
+
+std::string Gen::StrideLets(const std::string& loop_var, bool minus_one, bool small) {
+    static const char* const kStrides[] = {"1", "5", "42", "64"};
+    std::string d = std::to_string(rng.Below(3));
+    std::string row = "(+ " + loop_var + " " + d + ")";
+    // a u16 is fine with a row that wraps; a pointer must stay inside wb
+    int pick = small ? rng.Below(3) : 2;
+    if ((minus_one || pick == 2) && rng.Chance(30)) {
+        row = "(- " + loop_var + " 1)";
+    }
+    std::string base = "(addr_of (at wb " + std::to_string(rng.Below(4)) + "))";
+    std::string q = Fresh("q");
+    std::string value;
+    switch (pick) {
+    case 0:
+        value = "(rowp " + base + " " + row + ")";
+        break;
+    case 1:
+        value = "(+ " + base + " (* (as u16 " + row + ") " + kStrides[rng.Below(4)] + "))";
+        break;
+    default: {
+        std::vector<const VarInfo*> words = VarsOf(T::U16, false);
+        std::string w =
+            words[static_cast<std::size_t>(rng.Below(static_cast<int>(words.size())))]->name;
+        std::string text = "(let " + q + " u16 (+ (* (as u16 " + row + ") " +
+                           std::to_string(1 + rng.Below(4000)) + ") " + w + "))";
+        std::vector<const VarInfo*> sinks = VarsOf(T::U16, true);
+        if (sinks.empty()) {
+            return text;
+        }
+        std::string sink =
+            sinks[static_cast<std::size_t>(rng.Below(static_cast<int>(sinks.size())))]->name;
+        return text + " (set " + sink + " (^ " + sink + " (+ " + q + " (>> " + q + " 3))))";
+    }
+    }
+    std::string text = "(let " + q + " (ptr u8) " + value + ")";
+    text += " (store (+ " + q + " (as u16 (& " + NonLit(T::U8, 1) + " 7))) " + Expr(T::U8, 1) + ")";
+    std::vector<const VarInfo*> sinks = VarsOf(T::U8, true);
+    if (!sinks.empty()) {
+        std::string sink =
+            sinks[static_cast<std::size_t>(rng.Below(static_cast<int>(sinks.size())))]->name;
+        text += " (set " + sink + " (+ " + sink + " (load " + q + ")))";
+    }
+    return text;
 }
 
 std::string Gen::SmallStore() {
@@ -518,6 +570,8 @@ std::string Gen::Program() {
     text += "(let gs S (make S :a " + Literal(T::U8) + " :b " + Literal(T::I16) + " :c " +
             Literal(T::Bool) + " :d " + Literal(T::U8) + "))\n";
 
+    // rows of wb, 37 bytes apart, for StrideLets
+    text += "(fn rowp ((b (ptr u8)) (y u8)) (ptr u8) (+ b (* (as u16 y) 37)))\n";
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;

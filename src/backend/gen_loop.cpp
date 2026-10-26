@@ -86,15 +86,19 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     bool outer = g.violation;
     g.violation = false;
     LoadCounter(g, r, f.start);
-    std::size_t init_at = g.out->size();
     g.pin[r] = f.var;
     g.pin_body[r] = f.body;
+    std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
+    InitReducedLets(g, reduced);
+    std::size_t init_at = g.out->size();
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
     PlaceLabel(g, top);
     GenStmt(g, f.body);
     PlaceLabel(g, next);
+    StepReducedLets(g, reduced);
+    DropReducedLets(g, reduced);
     g.pin[r] = -1;
     g.pin_body[r] = -1;
     if (g.violation && !g.failed) {
@@ -296,12 +300,19 @@ bool TryWide(Gen& g, const ForParts& f) {
 void MemoryLoop(Gen& g, const ForParts& f) {
     Opnd v = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)]), f.size, 1);
     CopyOpnd(g, f.start, v);
+    std::vector<ReducedLet> reduced;
+    if (f.size == 1) {
+        reduced = FindReducedLets(g, f.var, f.body);
+    }
+    InitReducedLets(g, reduced);
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
     PlaceLabel(g, top);
     GenStmt(g, f.body);
     PlaceLabel(g, next);
+    StepReducedLets(g, reduced);
+    DropReducedLets(g, reduced);
     if (f.size == 1) {
         RmwByte(g, Mn::INC, v, 0);
         if (IsImmZeroByte(f.end, 0)) {

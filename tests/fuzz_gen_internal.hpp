@@ -163,6 +163,10 @@ struct Gen {
     std::string DivPair();
     // a store of a small value into sm, directly or through a pointer
     std::string SmallStore();
+    // lets at the top of a u8 loop's body that move by a constant each iteration (a row of
+    // wb through rowp, a pointer plus the counter times a stride, a u16 product), each
+    // read twice; minus_one: the counter starts at 1 or more; small: it stays below 12
+    std::string StrideLets(const std::string& loop_var, bool minus_one, bool small);
     std::string WideStmt();
     std::string Stmt(int depth);
     std::string Function(std::size_t index);

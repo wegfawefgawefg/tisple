@@ -110,6 +110,39 @@ entry says what happened and what it should do.
 
    Life's remaining CLCs are in `row_of`'s multiply by 42 (items 3 and 4).
 
+7. Gap list item 3, strength reduction (2026-10-26). A 16-bit let at the
+   top of a u8 loop's body whose value is the counter times a constant plus
+   values the body never changes is worked out once before the loop and
+   moved by the constant at the end of every iteration
+   (src/backend/gen_reduce.cpp): `(let above (ptr u8) (row_of cur (- y 1)))`
+   is now `LDA above / CLC / ADC #42 / STA above / BCC / INC above+1` per
+   row instead of the inlined multiply by 42 (about 70 cycles). The value is
+   followed through adds, constant multiplies and shifts, conversions,
+   pointer arithmetic and calls to one-expression functions like `row_of`
+   (parameters standing for the arguments). A byte part such as `(- y 1)`
+   or `(<< r 1)` must not wrap for any value the counter takes, so `(- y 1)`
+   from 0 or `(+ y 1)` with a variable end stays as it was. The rest must
+   have no effects, not read the counter, and read no variable the body may
+   write, nor memory when the body stores. The let's variable is never set
+   and its address never taken, so it equals the value through its scope.
+   Tests: tests/test_backend_reduce.cpp (Life's above/here/below rows, a
+   byte part that wraps from 0 and at 255, a variable end, the base changed
+   in the body directly, through a call and through a pointer the body
+   stores through, the let set later, continue and break around it, shifts,
+   a product that wraps mod 65536, a pointer minus, a byte product near
+   255, nested loops); each of those checks fails when its rule is dropped.
+   The fuzz generator writes such lets at the top of u8 loops (a row of wb
+   through a `rowp` like `row_of`, a pointer plus the counter times a
+   stride, a u16 product that may wrap), each read twice.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | life step | 154005 (80.2 a cell) | 137331 (71.5 a cell) |
+   | life draw | 46421 (24.2 a cell) | 42074 (21.9 a cell) |
+   | other kernels | 156409, 54922, 878, 572, 72373 | the same |
+   | Life generations in 10 M cycles | 49 | 54 |
+   | gaps flagged: life, dot, sprites | 7.64%, 63.68%, 7.73% | 0.78%, 63.68%, 7.73% |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -197,9 +230,6 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-3. Strength-reduce `(* y STRIDE)` on a loop counter, including through an
-   inlined `row_of`. Keep the row pointer and add the stride each time:
-   about 5% of Life.
 4. Known-zero bytes in 16-bit arithmetic on widened bytes. Don't store,
    shift or add high bytes that are known to be 0 (`(<< (as u16 (& y 7))
    10)`, `y*42` while y < 64). This is most of hgr.init's 24% and about 1%

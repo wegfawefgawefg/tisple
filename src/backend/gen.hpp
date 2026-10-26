@@ -187,6 +187,13 @@ struct WideLoop {
     ExprId body = -1;
 };
 
+// a let of a u8 loop's body that moves by a constant each iteration (gen_reduce.cpp)
+struct ReducedLet {
+    std::int32_t var = -1;
+    ExprId value = -1;
+    std::uint16_t step = 0;
+};
+
 // the values a u8 loop counter takes inside its body (loop variables are read-only)
 struct CounterRange {
     std::int32_t var = -1;
@@ -218,8 +225,9 @@ struct Gen {
     std::uint32_t lptr_top = 0;       // loop pointer bytes handed out in this function
     std::vector<CounterRange> ranges; // of the u8 loops being generated
     DivDone div;
-    std::uint64_t cost = 0; // cycles emitted so far, times 4 per loop level
-    bool violation = false; // code touched a pinned register
+    std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
+    std::uint64_t cost = 0;            // cycles emitted so far, times 4 per loop level
+    bool violation = false;            // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
     std::vector<LoopCtx> loops;
@@ -428,5 +436,18 @@ void GenMatch(Gen& g, const Expr& e, const Opnd* dst, bool value);
 void GenSet(Gen& g, ExprId place, ExprId value);
 void GenStore(Gen& g, const Expr& e);
 void GenFunction(Backend& be, std::int32_t function);
+
+// ---- strength reduction (gen_reduce.cpp)
+
+// the lets at the top of a u8 loop's body that are the counter times a constant plus values
+// the body never changes; the counter's range must be in Gen::ranges
+std::vector<ReducedLet> FindReducedLets(Gen& g, std::int32_t counter, ExprId body);
+// each let's value for the first iteration, before the loop's top (the counter holds its
+// start); their lets then make no code
+void InitReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
+// each let moved by its step, at the end of an iteration
+void StepReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
+// after the loop: their lets make code again
+void DropReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
 
 } // namespace tisple
