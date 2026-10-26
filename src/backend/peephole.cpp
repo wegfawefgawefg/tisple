@@ -212,6 +212,22 @@ void RegisterPass(Pass& p) {
                     continue;
                 }
             }
+            // A holds it: TAX or TAY; X or Y holds it: TXA or TYA (same flags, cheaper)
+            bool from_memory = item.mode != Mode::Imm && c.known;
+            for (int o = 0; o < 3 && c.known; o++) {
+                if (o == r || (o != 0 && r != 0)) {
+                    continue;
+                }
+                bool same = SameContent(t.reg[o], c) ||
+                            (from_memory && SameContent(t.reg[o], Content{true, true, item.value}));
+                if (!same) {
+                    continue;
+                }
+                Mn transfer = r == 1 ? Mn::TAX : r == 2 ? Mn::TAY : o == 1 ? Mn::TXA : Mn::TYA;
+                item = MakeIns(transfer, Mode::Imp);
+                p.changed = true;
+                break;
+            }
             t.reg[r] = c;
             continue;
         }

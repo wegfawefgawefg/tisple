@@ -36,7 +36,8 @@ bool MergeIndex(const Opnd& a, const Opnd& b, Index& out) {
     }
     out = a.index;
     return a.index.is_reg == b.index.is_reg && a.index.reg == b.index.reg &&
-           a.index.value.sym == b.index.value.sym && a.index.value.offset == b.index.value.offset;
+           a.index.value.sym == b.index.value.sym && a.index.value.offset == b.index.value.offset &&
+           a.index.delta == b.index.delta;
 }
 
 // 16-bit a op b with no code: every byte comes from one side because the other is a known
@@ -181,7 +182,10 @@ Opnd TrySimple(Gen& g, ExprId id) {
         return Opnd();
     }
     PlaceRef place;
-    if (!ResolveForRead(g, id, place) || !IsNormalPlace(g, place, e.type)) {
+    if (!ResolveForRead(g, id, place)) {
+        return Opnd();
+    }
+    if (!IsNormalPlace(g, place, e.type) && !UseLoopPointer(g, place, e.type)) {
         return Opnd();
     }
     return PlaceOpnd(g, place, e.type);

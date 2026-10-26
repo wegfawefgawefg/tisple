@@ -74,24 +74,50 @@ std::uint32_t FarthestByte(const Gen& g, const PlaceRef& place, TypeId type) {
     return far;
 }
 
+// the index register can hold the index: a pinned register as it is, memory plus a few
+// INX/DEX or INY/DEY
+bool IsIndexReady(const PlaceRef& place) {
+    if (place.delta == 0) {
+        return true;
+    }
+    return place.index.b[0].kind == ByteKind::Mem && IsSmallDelta(place.delta);
+}
+
 // can every byte be reached as it is
 bool IsNormal(const Gen& g, const PlaceRef& place, TypeId type) {
     bool scalar_byte = IsScalarType(g, type) && SizeOf(g, type) == 1;
     if (!place.pointer) {
-        return !place.has_index || (IsByteIndex(place.index) && place.mult == 1);
+        return !place.has_index ||
+               (IsByteIndex(place.index) && place.mult == 1 && IsIndexReady(place));
     }
     if (place.has_index) {
         // (p),Y with Y the index: a single byte right at the pointer
         bool scalar_word = IsScalarType(g, type) && SizeOf(g, type) == 2 && place.ptr2.sym >= 0;
         return IsByteIndex(place.index) && place.mult == 1 && place.cursor.address == 0 &&
-               (scalar_byte || scalar_word) &&
+               (scalar_byte || scalar_word) && IsIndexReady(place) &&
                !(place.index.b[0].kind == ByteKind::Reg && place.index.b[0].reg == 0);
     }
     return FarthestByte(g, place, type) < 0x100 || place.ptr2.sym >= 0;
 }
 
+// a byte index with its delta added, into a temporary
+void AddDelta(Gen& g, PlaceRef& place) {
+    if (!place.has_index || place.delta == 0) {
+        return;
+    }
+    Opnd t = NewTemp(g, 1);
+    LoadA(g, place.index, 0);
+    Emit(g, Mn::CLC, Mode::Imp);
+    Emit(g, Mn::ADC, Mode::Imm, Num(place.delta));
+    StoreA(g, t, 0);
+    place.index = t;
+    place.delta = 0;
+    place.counter = -1;
+}
+
 // the place's address so far (base, offset, index) into a fresh zero-page pointer
 void ToPointer(Gen& g, PlaceRef& place) {
+    AddDelta(g, place);
     Opnd base;
     std::uint32_t offset = place.cursor.address;
     if (place.pointer) {
@@ -127,6 +153,7 @@ void ToPointer(Gen& g, PlaceRef& place) {
     place.has_index = false;
     place.index = Opnd();
     place.mult = 0;
+    place.counter = -1;
 }
 
 // the pointer a load or store goes through, in zero page
@@ -155,8 +182,20 @@ bool PointerBase(Gen& g, ExprId pointer, ExprId later, bool emit, PlaceRef& out)
     return true;
 }
 
-// an index value as an operand byte 0 can index with (memory or a register)
-bool IndexOperand(Gen& g, ExprId id, ExprId later, bool emit, Opnd& out) {
+// the index of a place: an operand byte 0 can index with (memory or a register), plus the
+// delta of a byte index
+bool IndexOperand(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& place) {
+    id = AliasTarget(g, id);
+    place.delta = 0;
+    place.counter = -1;
+    ByteIndex bi;
+    if (ByteIndexOf(g, id, bi) && !IsImm(bi.base) && !MayWriteOpnd(g, later, bi.base)) {
+        place.index = bi.base;
+        place.delta = bi.delta;
+        place.counter = bi.counter;
+        return true;
+    }
+    Opnd& out = place.index;
     if (!emit) {
         out = TrySimple(g, id);
         if (out.size == 0 || IsImm(out)) {
@@ -199,16 +238,22 @@ bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, Ty
     out.type = type;
     const Expr& pe = At(g, pointer);
     std::uint16_t c = 0;
-    if (plain && pe.kind == ExprKind::PtrAdd && !ConstValue(*g.program, pe.b, c)) {
+    if (plain && pe.kind == ExprKind::PtrAdd && ConstValue(*g.program, pe.b, c)) {
+        // a constant count is an offset: LDY #offset
         if (!PointerBase(g, pe.a, later, emit, out)) {
             return false;
         }
-        Opnd index;
-        if (!IndexOperand(g, pe.b, later, emit, index)) {
+        out.cursor.address = static_cast<std::uint16_t>((offset + c * pe.value) & 0xFFFF);
+        return true;
+    }
+    if (plain && pe.kind == ExprKind::PtrAdd) {
+        if (!PointerBase(g, pe.a, later, emit, out)) {
+            return false;
+        }
+        if (!IndexOperand(g, pe.b, later, emit, out)) {
             return false;
         }
         out.has_index = true;
-        out.index = index;
         out.mult = pe.value;
         return true;
     }
@@ -256,15 +301,20 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         }
         Cursor c0 = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, 0);
         Cursor c1 = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, 1);
-        Opnd index;
-        if (!IndexOperand(g, e.b, later, emit, index)) {
+        if (!IndexOperand(g, e.b, later, emit, out)) {
             return false;
         }
         out.cursor = c0;
         out.has_index = true;
-        out.index = index;
         out.mult = (c1.address - c0.address) & 0xFFFFu;
         out.type = e.type;
+        if (out.delta != 0 && DeltaFits(g, out.counter, out.delta)) {
+            // (at a (+ i k)) is a + k indexed by i: the sum never wraps
+            std::int32_t k = out.delta < 0x80 ? out.delta : out.delta - 0x100;
+            out.cursor.address = static_cast<std::uint16_t>(
+                (c0.address + k * static_cast<std::int32_t>(out.mult)) & 0xFFFF);
+            out.delta = 0;
+        }
         return true;
     }
     case ExprKind::Load:
@@ -292,60 +342,15 @@ bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out) {
     return ResolvePointer(g, store.a, !field, field ? store.value : 0, type, later, true, out);
 }
 
-namespace {
-
-// the index is the wide loop counter: low byte in Y, high byte in memory
-bool IsWideCounter(const Gen& g, const Opnd& index) {
-    if (!g.wide || index.size != 2) {
-        return false;
-    }
-    const ByteRef& low = index.b[0];
-    const ByteRef& high = index.b[1];
-    return low.kind == ByteKind::Reg && low.reg == 1 && high.kind == ByteKind::Mem &&
-           high.value.sym == g.wide->high.sym && high.value.offset == g.wide->high.offset;
-}
-
-// base + counter as (derived),Y: no address arithmetic in the loop at all
-bool UseDerived(Gen& g, PlaceRef& place, TypeId type) {
-    if (!place.has_index || place.mult != 1 || !IsWideCounter(g, place.index) ||
-        !IsScalarType(g, type)) {
-        return false;
-    }
-    std::uint32_t size = SizeOf(g, type);
-    std::int32_t offset = static_cast<std::int32_t>(place.cursor.address);
-    AsmValue base;
-    std::int32_t var = -1;
-    if (!place.pointer) {
-        base = place.base;
-    } else if (place.ptr_const) {
-        base = Num(place.ptr_value);
-    } else if (place.ptr_var >= 0 && !MayWriteVarIn(g, g.wide->body, place.ptr_var)) {
-        var = place.ptr_var;
-        base = SymValue(g.be->var_sym[static_cast<std::size_t>(var)]);
-    } else {
-        return false;
-    }
-    std::int32_t stride = static_cast<std::int32_t>(place.cursor.stride);
-    place.ptr = DerivedPointer(g, base, var, offset);
-    place.ptr2 = AsmValue();
-    if (size == 2) {
-        place.ptr2 = DerivedPointer(g, base, var, offset + stride);
-    }
-    place.pointer = true;
-    place.cursor.address = 0;
-    Opnd y;
-    y.size = 1;
-    y.b[0].kind = ByteKind::Reg;
-    y.b[0].reg = 1;
-    place.index = y;
-    return true;
-}
-
-} // namespace
-
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type) {
-    if (IsNormal(g, place, type) || UseDerived(g, place, type)) {
+    if (IsNormal(g, place, type) || UseLoopPointer(g, place, type)) {
         return;
+    }
+    if (place.has_index && place.delta != 0) {
+        AddDelta(g, place);
+        if (IsNormal(g, place, type)) {
+            return;
+        }
     }
     // the whole address so far into a zero-page pointer
     ToPointer(g, place);
@@ -395,6 +400,7 @@ Opnd PlaceOpnd(Gen& g, const PlaceRef& place, TypeId type) {
     }
     if (place.has_index) {
         IndexFrom(place.index, o.index);
+        o.index.delta = place.delta;
     }
     return o;
 }

@@ -29,7 +29,7 @@ bool SameIndex(const Index& a, const Index& b) {
         return true;
     }
     return a.is_reg == b.is_reg && a.reg == b.reg && a.value.sym == b.value.sym &&
-           a.value.offset == b.value.offset && a.value.part == b.value.part;
+           a.value.offset == b.value.offset && a.value.part == b.value.part && a.delta == b.delta;
 }
 
 bool SameOpnd(const Opnd& a, const Opnd& b) {

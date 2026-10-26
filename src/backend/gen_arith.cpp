@@ -115,6 +115,54 @@ void Operands8(Gen& g, ExprId a, ExprId b, Opnd& oa, Opnd& ob) {
     }
 }
 
+// the operands of a run of one associative 8-bit op: (+ (+ a b) (+ c d)) is a b c d
+void ChainLeaves(Gen& g, Op op, ExprId id, std::vector<ExprId>& out) {
+    const Expr& e = ExprOf(*g.program, id);
+    if (e.kind == ExprKind::Binary && e.op == op && ExprSize(*g.program, id) == 1) {
+        ChainLeaves(g, op, e.a, out);
+        ChainLeaves(g, op, e.b, out);
+        return;
+    }
+    out.push_back(id);
+}
+
+// a op b op c ... with nothing but reads in it, as one run through A: the leaf that needs
+// code first, then every other leaf read straight from memory. The result is the same in
+// any order (the op is associative and commutative at 8 bits) and no leaf writes anything.
+bool EvalChain8(Gen& g, const Expr& e) {
+    if (!Commutes(e.op)) {
+        return false;
+    }
+    std::vector<ExprId> leaves;
+    ChainLeaves(g, e.op, e.a, leaves);
+    ChainLeaves(g, e.op, e.b, leaves);
+    if (leaves.size() < 3) {
+        return false;
+    }
+    std::size_t first = leaves.size();
+    for (std::size_t i = 0; i < leaves.size(); i++) {
+        if (HasEffects(*g.program, leaves[i])) {
+            return false;
+        }
+        if (TrySimple(g, leaves[i]).size == 0) {
+            if (first < leaves.size()) {
+                return false;
+            }
+            first = i;
+        }
+    }
+    if (first == leaves.size()) {
+        first = 0;
+    }
+    EvalA(g, leaves[first]);
+    for (std::size_t i = 0; i < leaves.size(); i++) {
+        if (i != first) {
+            Alu8(g, e.op, TrySimple(g, leaves[i]));
+        }
+    }
+    return true;
+}
+
 Runtime DivRoutine(bool is_signed, bool wide) {
     if (wide) {
         return is_signed ? Runtime::DivS16 : Runtime::DivU16;
@@ -137,6 +185,9 @@ void EvalArith8(Gen& g, const Expr& e) {
     case Op::And:
     case Op::Or:
     case Op::Xor: {
+        if (EvalChain8(g, e)) {
+            return;
+        }
         Opnd b = TrySimple(g, e.b);
         if (b.size != 0) {
             EvalA(g, e.a);

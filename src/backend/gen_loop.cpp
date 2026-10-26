@@ -76,7 +76,9 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     bool outer = g.violation;
     g.violation = false;
     LoadCounter(g, r, f.start);
+    std::size_t init_at = g.out->size();
     g.pin[r] = f.var;
+    g.pin_body[r] = f.body;
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
@@ -84,6 +86,7 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     GenStmt(g, f.body);
     PlaceLabel(g, next);
     g.pin[r] = -1;
+    g.pin_body[r] = -1;
     if (g.violation && !g.failed) {
         g.out->resize(mark);
         g = saved;
@@ -96,37 +99,88 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
              b.value);
     }
     Branch(g, Mn::BNE, top);
+    if (r == 1) {
+        InitDerived(g, TakeDerived(g, f.var, init_at), init_at, AsmValue());
+    }
     g.violation = outer;
     return true;
 }
 
-// the cycles of the code from item `first` on, as written (no loop counts)
-std::uint64_t StaticCycles(const Gen& g, std::size_t first) {
-    std::uint64_t total = 0;
-    for (std::size_t i = first; i < g.out->size(); i++) {
-        total += static_cast<std::uint64_t>(ItemCycles(g.be->as, (*g.out)[i]));
+void MemoryLoop(Gen& g, const ForParts& f);
+
+// a u8 counter runs from the start up to one below the end; i8 counters get no range
+CounterRange CounterRangeOf(const Program& program, const Expr& e, TypeKind kind) {
+    CounterRange r;
+    r.var = e.ref;
+    if (kind != TypeKind::U8) {
+        r.var = -1;
+        return r;
     }
-    return total;
+    std::uint16_t c = 0;
+    if (ConstValue(program, e.a, c) && c <= 0xFF) {
+        r.lo = c;
+    }
+    if (e.b >= 0 && ConstValue(program, e.b, c) && c >= 1 && c <= 0x100) {
+        r.hi = c - 1;
+    }
+    return r;
 }
 
-// the counter in X or in Y, whichever body comes out cheaper; false if neither works
-bool PinCheapest(Gen& g, const ForParts& f) {
+bool HasFor(const Program& program, ExprId id) {
+    if (id < 0) {
+        return false;
+    }
+    const Expr& e = ExprOf(program, id);
+    if (e.kind == ExprKind::For) {
+        return true;
+    }
+    if (HasFor(program, e.a) || HasFor(program, e.b) || HasFor(program, e.c)) {
+        return true;
+    }
+    if (e.kind == ExprKind::Do) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (HasFor(program, ListItem(program, e, i))) {
+                return true;
+            }
+        }
+    }
+    if (e.kind == ExprKind::Match) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (HasFor(program, program.clauses[e.first + i].body)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// the counter in X, in Y, or in memory, whichever costs the fewest cycles (inner loops
+// weigh more, see Gen::cost). Memory is only a choice when the body has loops of its own,
+// which may want both registers.
+void ByteLoop(Gen& g, const ForParts& f, bool pin) {
     std::size_t mark = g.out->size();
     Gen start = g;
     bool found = false;
     std::uint64_t best_cost = 0;
     std::vector<AsmItem> best_items;
     Gen best = g;
-    for (int r = 0; r < 2; r++) {
-        if (start.pin[r] >= 0) {
+    bool nested = HasFor(*g.program, f.body);
+    for (int choice = 0; choice < 3; choice++) {
+        bool memory = choice == 2;
+        if (!memory && (!pin || start.pin[choice] >= 0)) {
             continue;
+        }
+        if (memory && found && !nested) {
+            break;
         }
         g = start;
         g.out->resize(mark);
-        if (!TryPinned(g, f, r)) {
+        if (memory) {
+            MemoryLoop(g, f);
+        } else if (!TryPinned(g, f, choice)) {
             continue;
         }
-        std::uint64_t cost = StaticCycles(g, mark);
+        std::uint64_t cost = g.cost - start.cost;
         if (!found || cost < best_cost) {
             found = true;
             best_cost = cost;
@@ -137,39 +191,9 @@ bool PinCheapest(Gen& g, const ForParts& f) {
             break;
         }
     }
-    g = found ? best : start;
+    g = best;
     g.out->resize(mark);
     g.out->insert(g.out->end(), best_items.begin(), best_items.end());
-    return found;
-}
-
-bool SameBase(const Derived& d, const AsmValue& base, std::int32_t var, std::int32_t offset) {
-    return d.var == var && d.offset == offset && d.base.sym == base.sym &&
-           d.base.offset == base.offset && d.base.part == base.part;
-}
-
-// T = base + offset + (high << 8): only A and the carry
-void InitDerived(Gen& g, const Derived& d, const AsmValue& high) {
-    Opnd t = MemOpnd(d.ptr, 2, 1);
-    Opnd base;
-    if (d.var >= 0) {
-        base = MemOpnd(d.base, 2, 1);
-    } else {
-        AsmValue address = d.base;
-        address.offset = (address.offset + d.offset) & 0xFFFF;
-        base = d.base.sym >= 0 ? SymImmOpnd(address, 2)
-                               : ImmOpnd(static_cast<std::uint16_t>(address.offset), 2);
-    }
-    if (d.var >= 0 && d.offset != 0) {
-        Combine16(g, Op::Add, base, ImmOpnd(static_cast<std::uint16_t>(d.offset & 0xFFFF), 2), t);
-        base = t;
-    }
-    LoadA(g, base, 0);
-    StoreA(g, t, 0);
-    LoadA(g, base, 1);
-    Emit(g, Mn::CLC, Mode::Imp);
-    Emit(g, Mn::ADC, Mode::Abs, high);
-    StoreA(g, t, 1);
 }
 
 bool IsImmByteValue(const Opnd& o, int k, int value) {
@@ -198,6 +222,7 @@ bool TryWide(Gen& g, const ForParts& f) {
     wide.body = f.body;
     g.wide = &wide;
     g.pin[1] = f.var;
+    g.pin_body[1] = f.body;
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
@@ -205,30 +230,18 @@ bool TryWide(Gen& g, const ForParts& f) {
     GenStmt(g, f.body);
     PlaceLabel(g, next);
     g.pin[1] = -1;
+    g.pin_body[1] = -1;
     g.wide = nullptr;
     if (g.violation && !g.failed) {
         g.out->resize(mark);
         g = saved;
         return false;
     }
-    // derived pointers only a discarded trial asked for are not kept up
-    std::vector<Derived> used;
-    for (const Derived& d : wide.derived) {
-        bool referenced = false;
-        for (std::size_t i = init_at; i < g.out->size() && !referenced; i++) {
-            const AsmItem& item = (*g.out)[i];
-            referenced = item.kind == ItemKind::Ins && item.value.sym == d.ptr.sym &&
-                         item.value.offset == d.ptr.offset;
-        }
-        if (referenced) {
-            used.push_back(d);
-        }
-    }
-    wide.derived = used;
+    std::vector<Derived> used = TakeDerived(g, f.var, init_at);
     // INY; a new page moves the high byte and every derived pointer
     Emit(g, Mn::INY, Mode::Imp);
     auto next_page = [&]() {
-        for (const Derived& d : wide.derived) {
+        for (const Derived& d : used) {
             Emit(g, Mn::INC, Mode::Abs, SymValue(d.ptr.sym, d.ptr.offset + 1));
         }
         Emit(g, Mn::INC, Mode::Abs, high);
@@ -262,12 +275,7 @@ bool TryWide(Gen& g, const ForParts& f) {
         Jump(g, check);
     }
     // the derived pointers start where the counter starts, just before the loop
-    std::size_t before = g.out->size();
-    for (const Derived& d : wide.derived) {
-        InitDerived(g, d, high);
-    }
-    std::rotate(g.out->begin() + static_cast<std::ptrdiff_t>(init_at),
-                g.out->begin() + static_cast<std::ptrdiff_t>(before), g.out->end());
+    InitDerived(g, used, init_at, high);
     g.violation = outer;
     return true;
 }
@@ -311,26 +319,6 @@ void MemoryLoop(Gen& g, const ForParts& f) {
 }
 
 } // namespace
-
-AsmValue DerivedPointer(Gen& g, AsmValue base, std::int32_t var, std::int32_t offset) {
-    for (const Derived& d : g.wide->derived) {
-        if (SameBase(d, base, var, offset)) {
-            return d.ptr;
-        }
-    }
-    Derived d;
-    d.base = base;
-    d.var = var;
-    d.offset = offset;
-    std::uint32_t at = g.wide->next_slot;
-    g.wide->next_slot += 2;
-    std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
-    max = g.wide->next_slot > max ? g.wide->next_slot : max;
-    d.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
-                     static_cast<std::int32_t>(at));
-    g.wide->derived.push_back(d);
-    return d.ptr;
-}
 
 void GenFor(Gen& g, const Expr& e) {
     const Program& program = *g.program;
@@ -379,13 +367,12 @@ void GenFor(Gen& g, const Expr& e) {
     g.loops.push_back(ctx);
     g.loop_depth++;
     g.for_depth++;
-    bool done = false;
-    if (f.size == 1 && g.for_depth <= kMaxPinnedDepth) {
-        done = PinCheapest(g, f);
-    } else if (f.size == 2 && g.for_depth <= kMaxPinnedDepth) {
-        done = TryWide(g, f);
-    }
-    if (!done) {
+    bool pin = g.for_depth <= kMaxPinnedDepth;
+    if (f.size == 1) {
+        g.ranges.push_back(CounterRangeOf(program, e, kind));
+        ByteLoop(g, f, pin);
+        g.ranges.pop_back();
+    } else if (!pin || !TryWide(g, f)) {
         MemoryLoop(g, f);
     }
     g.for_depth--;

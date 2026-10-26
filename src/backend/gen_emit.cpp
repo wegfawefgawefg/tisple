@@ -57,15 +57,34 @@ void TrackIndexWrite(Gen& g, int r, Mn mn, Mode mode, const AsmValue& value) {
         c.known = mode == Mode::Imm || ((mode == Mode::Abs || mode == Mode::Zp) && value.sym >= 0);
         c.mem = mode != Mode::Imm;
         c.v = value;
+        c.delta = 0;
         return;
     }
     bool step = mn == Mn::INX || mn == Mn::DEX || mn == Mn::INY || mn == Mn::DEY;
+    bool up = mn == Mn::INX || mn == Mn::INY;
     if (step && c.known && !c.mem && c.v.sym < 0) {
-        bool up = mn == Mn::INX || mn == Mn::INY;
         c.v.offset = (c.v.offset + (up ? 1 : -1)) & 0xFF;
         return;
     }
+    if (step && c.known && c.mem) {
+        c.delta = static_cast<std::uint8_t>(c.delta + (up ? 1 : 0xFF));
+        return;
+    }
     c.known = false;
+}
+
+// a store through a pointer can reach this byte: only address-taken variables, globals and
+// memory no variable declares (pointer provenance, effects.hpp)
+bool PointerMayReach(const Gen& g, const AsmValue& v) {
+    if (v.sym < 0) {
+        return true;
+    }
+    const SymInfo& info = g.be->info[static_cast<std::size_t>(v.sym)];
+    if (info.role == SymRole::Var) {
+        const Var& var = g.program->vars[static_cast<std::size_t>(info.owner)];
+        return var.function < 0 || var.address_taken;
+    }
+    return info.role == SymRole::Data;
 }
 
 std::uint64_t LoopWeight(int depth) {
@@ -154,6 +173,8 @@ void Unsupported(Gen& g, ExprId id, const char* what) {
 
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
     g.out->push_back(MakeIns(mn, mode, value));
+    g.cost +=
+        static_cast<std::uint64_t>(ItemCycles(g.be->as, g.out->back())) * LoopWeight(g.loop_depth);
     if (value.sym >= 0 && mode != Mode::Rel) {
         SymInfo& info = g.be->info[static_cast<std::size_t>(value.sym)];
         if (info.role != SymRole::Label) {
@@ -178,12 +199,53 @@ void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
         return;
     }
     bool direct = mode == Mode::Abs || mode == Mode::Zp;
+    bool pointer = mode == Mode::IndY || mode == Mode::IndX;
     for (RegContent& c : g.reg) {
-        if (c.known && c.mem && (!direct || SameValue(c.v, value))) {
+        if (!c.known || !c.mem) {
+            continue;
+        }
+        bool hit = direct ? SameValue(c.v, value) : !pointer || PointerMayReach(g, c.v);
+        if (hit) {
             c.known = false;
         }
     }
 }
+
+namespace {
+
+// INX/INY or DEX/DEY from one delta to another, if that takes only a few
+bool StepIndexReg(Gen& g, int reg, std::uint8_t from, std::uint8_t to) {
+    std::uint8_t up = static_cast<std::uint8_t>(to - from);
+    if (!IsSmallDelta(up)) {
+        return false;
+    }
+    bool forward = up < 0x80;
+    int steps = forward ? up : 0x100 - up;
+    for (int i = 0; i < steps; i++) {
+        Mn mn = reg == 0 ? (forward ? Mn::INX : Mn::DEX) : (forward ? Mn::INY : Mn::DEY);
+        Emit(g, mn, Mode::Imp);
+    }
+    return true;
+}
+
+// a constant into X or Y; one step from the constant it holds is INX/INY or DEX/DEY
+void LoadIndexConst(Gen& g, int reg, std::uint8_t value) {
+    const RegContent& c = g.reg[reg];
+    if (g.pin[reg] < 0 && c.known && !c.mem && c.v.sym < 0) {
+        std::uint8_t now = static_cast<std::uint8_t>(c.v.offset);
+        std::uint8_t up = static_cast<std::uint8_t>(value - now);
+        if (up == 0) {
+            return;
+        }
+        if (up == 1 || up == 0xFF) {
+            StepIndexReg(g, reg, now, value);
+            return;
+        }
+    }
+    Emit(g, reg == 0 ? Mn::LDX : Mn::LDY, Mode::Imm, Num(value));
+}
+
+} // namespace
 
 std::int32_t NewLabel(Gen& g) {
     return NewSym(*g.be, "L" + std::to_string(g.be->as.symbols.size()), SymRole::Label, -1);
@@ -233,32 +295,28 @@ void SourceNote(Gen& g, const Loc& loc) {
 
 void LoadIndexReg(Gen& g, int reg, const Index& index) {
     if (index.is_reg) {
-        if (index.reg != reg) {
-            g.violation = true; // no way to move X to Y without A
+        if (index.reg != reg || index.delta != 0) {
+            g.violation = true; // no way to move X to Y without A, nor to change a counter
         }
         return;
     }
-    const RegContent& c = g.reg[reg];
-    if (g.pin[reg] < 0 && c.known && c.mem && SameValue(c.v, index.value)) {
+    RegContent c = g.reg[reg];
+    if (g.pin[reg] < 0 && c.known && c.mem && SameValue(c.v, index.value) &&
+        StepIndexReg(g, reg, c.delta, index.delta)) {
         return;
     }
     Emit(g, reg == 0 ? Mn::LDX : Mn::LDY, Mode::Abs, index.value);
+    if (!StepIndexReg(g, reg, 0, index.delta)) {
+        Fail(g, Loc(), "internal: an index delta too big for INX/INY");
+    }
 }
 
 void LoadYConst(Gen& g, std::uint8_t value) {
-    const RegContent& c = g.reg[1];
-    if (g.pin[1] < 0 && c.known && !c.mem && c.v.sym < 0 && c.v.offset == value) {
-        return;
-    }
-    Emit(g, Mn::LDY, Mode::Imm, Num(value));
+    LoadIndexConst(g, 1, value);
 }
 
 void LoadXConst(Gen& g, std::uint8_t value) {
-    const RegContent& c = g.reg[0];
-    if (g.pin[0] < 0 && c.known && !c.mem && c.v.sym < 0 && c.v.offset == value) {
-        return;
-    }
-    Emit(g, Mn::LDX, Mode::Imm, Num(value));
+    LoadIndexConst(g, 0, value);
 }
 
 void LoadA(Gen& g, const Opnd& o, int k) {

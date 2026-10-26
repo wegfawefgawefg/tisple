@@ -9,9 +9,15 @@
 // - Computed 8-bit values end in A; computed 16-bit values in a frame temporary or straight
 //   in their destination. Results of calls come back in A or A/X.
 // - Conditions compile to branches (GenBranch), never to booleans first.
-// - X and Y hold index values; a small tracker remembers what they hold, so an index is
-//   loaded once for a run of accesses. A u8 `for` counter may live in X or Y ("pinned"):
-//   the body is generated once per choice and kept if it never touches that register.
+// - X and Y hold index values; a small tracker remembers what they hold (a memory byte plus
+//   a small delta), so an index is loaded once for a run of accesses and x + 1 after x is
+//   INY. A byte index (a u8, maybe widened, plus or minus constants) on a pointer is (p),Y
+//   with no address arithmetic (gen_index.cpp).
+// - A u8 `for` counter may live in X or Y ("pinned"), or in memory when the body has loops
+//   of its own: the body is generated once per choice, a choice that touches its register is
+//   dropped, and the cheapest kept, cycles inside loops weighing more. With the counter in Y,
+//   p + counter + k is (p + k),Y through a loop pointer set before the loop.
+
 // - Temporaries are frame bytes of the function, so they survive calls (callee frames never
 //   overlap the caller's). Pointer temporaries always live in zero page.
 
@@ -19,6 +25,7 @@
 #include "backend/analysis.hpp"
 #include "backend/backend.hpp"
 #include "backend/effects.hpp"
+#include "backend/index_alias.hpp"
 
 #include <string>
 #include <vector>
@@ -68,6 +75,7 @@ struct Backend {
     Effects effects;
     std::vector<std::uint32_t> fn_exprs;    // by function: expressions in its body
     std::vector<bool> deref;                // by var: some load or store goes straight through it
+    std::vector<IndexAlias> aliases;        // by var: locals that only name a byte index
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
     std::int32_t rt_a = -1;                 // 2 bytes each
@@ -101,12 +109,13 @@ struct ByteRef {
     std::uint8_t reg = 0;
 };
 
-// what an index register must hold: a memory byte, or a pinned register
+// what an index register must hold: a memory byte, or a pinned register, plus delta
 struct Index {
     bool used = false;
     bool is_reg = false;
     std::uint8_t reg = 0;
-    AsmValue value; // memory byte
+    AsmValue value;         // memory byte
+    std::uint8_t delta = 0; // added mod 256 (INX/DEX, INY/DEY)
 };
 
 struct Opnd {
@@ -132,6 +141,7 @@ struct RegContent {
     bool known = false;
     bool mem = false; // the register equals the memory byte at v (else the constant v)
     AsmValue v;
+    std::uint8_t delta = 0; // mem: plus this, mod 256
 };
 
 struct LoopCtx {
@@ -145,9 +155,14 @@ struct InlineCtx {
     Opnd dst; // 16-bit results
 };
 
-// a zero-page pointer kept at base + (i & $FF00) for a u16 loop counter i whose low byte
-// lives in Y, so base + i is (ptr),Y; it moves up a page when the counter's high byte does
+// a zero-page pointer for a loop whose counter lives in Y, so base + offset + counter is
+// (ptr),Y with no address arithmetic in the loop; it is set just before the loop
+// - u16 counter i (low byte in Y): ptr = base + offset + (i & $FF00); it moves up a page when
+//   the counter's high byte does
+// - u8 counter: ptr = base + offset, used only where counter + offset never wraps (a constant
+//   delta on a byte index, see CounterRange)
 struct Derived {
+    std::int32_t loop = -1;  // the loop's counter variable
     AsmValue base;           // a symbol's address, a number, or (var) a pointer variable
     std::int32_t var = -1;   // the pointer variable, if the base is one
     std::int32_t offset = 0; // added to the base
@@ -159,9 +174,13 @@ struct WideLoop {
     std::int32_t var = -1;
     AsmValue high;
     ExprId body = -1;
-    // made during the body, trial runs included, so slots are never handed out twice
-    std::vector<Derived> derived;
-    std::uint32_t next_slot = 0;
+};
+
+// the values a u8 loop counter takes inside its body (loop variables are read-only)
+struct CounterRange {
+    std::int32_t var = -1;
+    int lo = 0;
+    int hi = 255;
 };
 
 struct Gen {
@@ -169,10 +188,15 @@ struct Gen {
     const Program* program = nullptr;
     std::int32_t function = -1;
     std::vector<AsmItem>* out = nullptr;
-    RegContent reg[2];              // X, Y
-    std::int32_t pin[2] = {-1, -1}; // loop var living in X, Y
-    WideLoop* wide = nullptr;       // the u16 loop var whose low byte is pin[1]
-    bool violation = false;         // code touched a pinned register
+    RegContent reg[2];                // X, Y
+    std::int32_t pin[2] = {-1, -1};   // loop var living in X, Y
+    ExprId pin_body[2] = {-1, -1};    // the body of that loop
+    WideLoop* wide = nullptr;         // the u16 loop var whose low byte is pin[1]
+    std::vector<Derived> derived;     // of the loops being generated
+    std::uint32_t lptr_top = 0;       // loop pointer bytes handed out in this function
+    std::vector<CounterRange> ranges; // of the u8 loops being generated
+    std::uint64_t cost = 0;           // cycles emitted so far, times 4 per loop level
+    bool violation = false;           // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
     std::vector<LoopCtx> loops;
@@ -254,6 +278,10 @@ struct PlaceRef {
     std::int32_t ptr_var = -1;
     bool ptr_const = false;
     std::uint16_t ptr_value = 0;
+    // a one-byte index stands for (index + delta) & $FF; counter: the u8 loop variable it
+    // reads, if any (its CounterRange may let the delta move into the address)
+    std::uint8_t delta = 0;
+    std::int32_t counter = -1;
 };
 
 // evaluates the index and pointer parts of a place, in order, keeping in temporaries every
@@ -275,6 +303,36 @@ bool IsNormalPlace(const Gen& g, const PlaceRef& place, TypeId type);
 void PlaceToPointer(Gen& g, PlaceRef& place);
 // an expression that needs no code to read, or size 0 (gen_simple.cpp)
 Opnd TrySimple(Gen& g, ExprId id);
+
+// ---- byte indices and loop pointers (gen_index.cpp)
+
+// a u8 value, or a u16 one below 256, that reads as (base + delta) & $FF with no code
+struct ByteIndex {
+    Opnd base; // one byte: memory, a pinned register or a number
+    std::uint8_t delta = 0;
+    std::int32_t counter = -1; // the loop variable base is, if any
+};
+
+// id, or the value of the index alias it names
+ExprId AliasTarget(const Gen& g, ExprId id);
+bool ByteIndexOf(Gen& g, ExprId id, ByteIndex& out);
+// INX/INY or DEX/DEY reach it
+bool IsSmallDelta(std::uint8_t delta);
+// counter + delta never wraps while the counter's loop body runs
+bool DeltaFits(const Gen& g, std::int32_t counter, std::uint8_t delta);
+// the place as (derived),Y in the loop whose counter is in Y; no code now, the pointer is
+// set before the loop. False if the place is not one.
+bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type);
+// the derived pointer for base + offset in the loop of counter `loop` (made on first use)
+AsmValue DerivedPointer(Gen& g, std::int32_t loop, AsmValue base, std::int32_t var,
+                        std::int32_t offset);
+// the loop's derived pointers that its code (items from `first` on) reads; the loop's others
+// are dropped
+std::vector<Derived> TakeDerived(Gen& g, std::int32_t loop, std::size_t first);
+// code setting each pointer, moved to item `at`, just before the loop; high is the u16
+// counter's high byte, or sym -1 for a u8 counter
+void InitDerived(Gen& g, const std::vector<Derived>& derived, std::size_t at, AsmValue high);
+
 // &place as a 16-bit value
 Opnd AddressOf(Gen& g, ExprId place, const Opnd* dst);
 void CopyStruct(Gen& g, ExprId value, const PlaceRef& dst, TypeId type);
@@ -316,8 +374,7 @@ void CondToA(Gen& g, ExprId id);
 
 void GenStmt(Gen& g, ExprId id);
 void GenFor(Gen& g, const Expr& e);
-// the derived pointer for base + offset in the current wide loop (made on first use)
-AsmValue DerivedPointer(Gen& g, AsmValue base, std::int32_t var, std::int32_t offset);
+
 void GenWhile(Gen& g, const Expr& e);
 void GenMatch(Gen& g, const Expr& e, const Opnd* dst, bool value);
 void GenSet(Gen& g, ExprId place, ExprId value);

@@ -154,6 +154,7 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
         return false;
     }
     be.deref = FindDerefPointers(program);
+    be.aliases = FindIndexAliases(program);
     be.effects = ComputeEffects(program);
     be.fn_exprs.assign(program.functions.size(), 0);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
