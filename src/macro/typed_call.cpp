@@ -320,10 +320,11 @@ bool EnsureBuilt(MacroRun& run, Frame& frame, std::int32_t module, const std::st
                        "call are being expanded; use it from a macro outside those functions");
         return false;
     }
-    if (!HasRoot(typed, module, name) || !typed.built) {
-        if (!HasRoot(typed, module, name)) {
-            typed.roots.push_back({module, name});
-        }
+    bool new_root = !HasRoot(typed, module, name);
+    if (new_root) {
+        typed.roots.push_back({module, name});
+    }
+    if (new_root || !typed.built) {
         typed.building = true;
         typed.program = Program();
         typed.layout = Layout();
@@ -332,12 +333,17 @@ bool EnsureBuilt(MacroRun& run, Frame& frame, std::int32_t module, const std::st
         typed.built = true;
         typed.building = false;
     }
-    if (!typed.ok) {
-        RunFail(run, frame, at,
-                name + " can't be used at compile time until it checks: " + typed.failure);
-        return false;
+    if (typed.ok) {
+        return true;
     }
-    return true;
+    // a declaration that does not check never spoils the ones that do
+    if (new_root) {
+        typed.roots.pop_back();
+        typed.built = false;
+    }
+    RunFail(run, frame, at,
+            name + " can't be used at compile time until it checks: " + typed.failure);
+    return false;
 }
 
 } // namespace

@@ -237,6 +237,43 @@ void TableTests(TestResults& results) {
     ExpectExpanded(results, "(import macros)\n(fn f () void (macros.unroll i 0 3 (g i)))",
                    "(import macros)\n\n(fn f () void\n    (do\n        (do\n            (g 0))\n"
                    "        (do\n            (g 1))\n        (do\n            (g 2))))\n");
+    // a (fn (i) ...) form passed as an argument runs where it is written: tripled is ours
+    ExpectExpanded(results,
+                   "(import tables)\n(macro tripled (i) (* 3 i))\n"
+                   "(tables.table T u8 4 (fn (i) (tripled i)))",
+                   "(import tables)\n(const T (array u8 4) (make (array u8 4) 0 3 6 9))\n");
+}
+
+// names a macro in another module builds from an argument resolve where the argument is
+void ResolveTests(TestResults& results) {
+    const std::vector<tisple::VirtualFile> pool = {{"lib0/pool.tsp",
+                                                    "(macro counter (name)\n"
+                                                    "    (let count (symbol name \"_count\"))\n"
+                                                    "    `(fn ,(symbol name \"_next\") () u8\n"
+                                                    "        (set ,count (+ ,count 1))\n"
+                                                    "        ,count))\n"}};
+    Built built = BuildText("(import pool)\n(let bullet_count u8 0)\n(pool.counter bullet)\n"
+                            "(fn main () u8 (bullet_next) (bullet_next))",
+                            pool);
+    CHECK(results, built.ok);
+    if (!built.ok) {
+        std::fprintf(stderr, "%s", ErrorText(built).c_str());
+        return;
+    }
+    tisple::Interp in;
+    StartInterp(in, built);
+    CHECK(results, CallOk(results, in, "t.main", {}) == 2);
+    // arity with & more, and the shapes that are errors
+    ExpectError(results, "(macro m (a & more) a)\n(fn f () void (m))",
+                "t.tsp:2:15: m takes at least 1 argument, got 0; write (m a & more)");
+    ExpectError(results, "(macro m (& a b) a)",
+                "t.tsp:1:11: & goes right before the last parameter, which takes the other "
+                "arguments: (macro m (a & more) ...)");
+    ExpectError(results, "(macro m (list) list)",
+                "t.tsp:1:11: list already means something in macro code; rename the parameter");
+    // strings exist at compile time only: one that reaches code is the checker's error
+    ExpectError(results, "(macro m () \"hi\")\n(fn f () void (let s u8 (m)))",
+                "t.tsp:2:25: strings are not in this subset yet (in macro m)");
 }
 
 // plasma's tables come from macros, and its unrolled draw runs the same on the 6502
@@ -284,6 +321,7 @@ void RunMacroTests(TestResults& results) {
     LimitTests(results);
     TypedCallTests(results);
     TableTests(results);
+    ResolveTests(results);
     PlasmaTests(results);
 }
 
