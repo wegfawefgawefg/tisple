@@ -66,7 +66,7 @@ canonical result.
 
 (fn read_key
     (let key (io_read u8 0xC000))
-    (bit_and key 0x7F))
+    (& key 0x7F))
 ```
 
 Settled:

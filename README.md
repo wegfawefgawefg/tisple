@@ -6,7 +6,7 @@ knows what your code costs in cycles before it runs.
 ```scheme
 (fn read_key
     (let key (io_read u8 0xC000))
-    (bit_and key 0x7F))
+    (& key 0x7F))
 ```
 
 Status: early. Design and milestones in `docs/design.md`.
