@@ -231,6 +231,9 @@ void Close(WindowState& w) {
 }
 
 bool Open(WindowState& w, const WindowOptions& options) {
+    // a fixed app id so window managers can match the window (WM_CLASS "tisple")
+    SDL_SetAppMetadata("Tisple ][", "0.1", "tisple");
+    SDL_SetHint(SDL_HINT_APP_ID, "tisple");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         std::fprintf(stderr, "tisple machine: SDL_Init failed: %s\n", SDL_GetError());
         return false;
