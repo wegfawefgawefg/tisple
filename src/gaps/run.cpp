@@ -50,8 +50,8 @@ bool RunMainBare(const Compiled& compiled, const ProfileRunOptions& options, Pro
     FinishProfile(p, m);
     SetBusLog(m, nullptr);
     out.cycles = result.cycles;
-    out.stop = result.reason == StopReason::kStopAddress ? "main returned"
-                                                         : StopReasonName(result.reason);
+    out.stop =
+        result.reason == StopReason::kStopAddress ? "main returned" : StopReasonName(result.reason);
     return true;
 }
 
@@ -92,9 +92,8 @@ bool TracedCall(Machine& m, const Compiled& compiled, std::int32_t function,
     return result.reason == StopReason::kStopAddress;
 }
 
-bool RunLibrary(const Program& program, const Compiled& compiled,
-                const ProfileRunOptions& options, Profiler& p, ProfileRunResult& out,
-                std::string& error) {
+bool RunLibrary(const Program& program, const Compiled& compiled, const ProfileRunOptions& options,
+                Profiler& p, ProfileRunResult& out, std::string& error) {
     std::vector<std::int32_t> functions;
     for (const FunctionSpan& span : compiled.spans) {
         if (span.function >= 0 && span.end > span.first &&
@@ -124,6 +123,7 @@ bool RunLibrary(const Program& program, const Compiled& compiled,
         WriteArgs(*run.machine, program, compiled, fn, rng);
         out.calls++;
         if (TracedCall(*run.machine, compiled, f, options.call_cycles, p, out.cycles)) {
+            ConsumeResult(p);
             continue;
         }
         failures++;

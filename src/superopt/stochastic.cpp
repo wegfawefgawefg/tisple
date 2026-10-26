@@ -29,10 +29,9 @@ int WrongBits(const Window& w, const SoState& x, const SoState& t) {
     if ((w.live & kLocY) != 0) {
         wrong += Popcount(static_cast<unsigned>(x.y ^ t.y));
     }
-    unsigned flags = static_cast<unsigned>(((w.live & kLocN) != 0 ? 0x80 : 0) |
-                                           ((w.live & kLocV) != 0 ? 0x40 : 0) |
-                                           ((w.live & kLocZ) != 0 ? 0x02 : 0) |
-                                           ((w.live & kLocC) != 0 ? 0x01 : 0));
+    unsigned flags = static_cast<unsigned>(
+        ((w.live & kLocN) != 0 ? 0x80 : 0) | ((w.live & kLocV) != 0 ? 0x40 : 0) |
+        ((w.live & kLocZ) != 0 ? 0x02 : 0) | ((w.live & kLocC) != 0 ? 0x01 : 0));
     wrong += Popcount((x.p ^ t.p) & flags);
     for (std::size_t i = 0; i < w.cells.size(); i++) {
         if (w.cells[i].live) {
@@ -133,8 +132,8 @@ int SetIndexOf(const std::vector<SoIns>& set, const SoIns& ins) {
 } // namespace
 
 std::vector<std::vector<SoIns>> StochasticSearch(const Window& w, const Facts& facts,
-                                                 const SearchOptions& options,
-                                                 std::uint64_t& steps, int& rejected) {
+                                                 const SearchOptions& options, std::uint64_t& steps,
+                                                 int& rejected) {
     std::vector<std::vector<SoIns>> accepted;
     std::vector<SoIns> set = CandidateSet(w);
     if (set.empty()) {
@@ -179,8 +178,8 @@ std::vector<std::vector<SoIns>> StochasticSearch(const Window& w, const Facts& f
             continue;
         }
         std::vector<SoIns> code = CodeOf(c, cur);
-        EquivResult e = CheckEquivalent(w, w.code, code, facts, options.verify_vectors, 0,
-                                        options.seed + 13);
+        EquivResult e =
+            CheckEquivalent(w, w.code, code, facts, options.verify_vectors, 0, options.seed + 13);
         if (!e.equal) {
             rejected++;
             continue;

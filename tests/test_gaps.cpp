@@ -1,11 +1,12 @@
 // the gap finder's profiler: known-redundant instructions in hand-made code are flagged,
 // necessary ones are not, and programs/life's inner-loop CLCs show up
 
+#include "test_gaps.hpp"
+
 #include "emu/harness.hpp"
 #include "fuzz_gen.hpp"
 #include "gaps/gaps.hpp"
 #include "test_backend.hpp"
-#include "test_gaps.hpp"
 
 #include <memory>
 
@@ -110,7 +111,8 @@ void TestHandMadeLoop(TestResults& results) {
 
     auto map = std::make_unique<tisple::SiteMap>();
     tisple::BuildSiteMap(h.compiled, *map);
-    std::vector<tisple::Finding> found = tisple::FindGaps(h.compiled, *map, *p, tisple::FindOptions());
+    std::vector<tisple::Finding> found =
+        tisple::FindGaps(h.compiled, *map, *p, tisple::FindOptions());
     // items: 0 LDX, 1 label, 2 SEC, 3 LDA, 4 CLC, 5 ADC, 6 STA $10, 7 LDA #1, 8 CLC, 9 ADC,
     // 10 CLC, 11 ADC, 12 STA $11, 13 LDA $11, 14 STA $12, 15 LDA #7, 16 STA $12, 17 LDY,
     // 18 LDA #9, 19 DEX, 20 BNE, 21 BRK

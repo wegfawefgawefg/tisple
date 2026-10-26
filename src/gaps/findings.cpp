@@ -146,8 +146,9 @@ void FindBranch(const Compiled& compiled, const SiteMap& map, const SiteView& v,
             compare_cycles = OpcodeInfoFor(compiled.image[at]).cycles;
         }
         std::uint64_t per = compare_cycles + (never ? 2 : 0);
-        Finding f = Make(compiled, map, v, Pattern::kCompareOneWay, held, s.count, held * per,
-                         never ? "compare and branch: never taken" : "compare and branch: always taken");
+        Finding f =
+            Make(compiled, map, v, Pattern::kCompareOneWay, held, s.count, held * per,
+                 never ? "compare and branch: never taken" : "compare and branch: always taken");
         f.text = SiteText(compiled, map, s.compare_site) + " / " + f.text;
         out.push_back(f);
         return;
@@ -157,7 +158,8 @@ void FindBranch(const Compiled& compiled, const SiteMap& map, const SiteView& v,
     }
     // never taken: the branch goes (2); always taken: laid out to fall through (1)
     out.push_back(Make(compiled, map, v, Pattern::kBranchOneWay, held, s.count,
-                       held * (never ? 2 : 1), never ? "branch never taken" : "branch always taken"));
+                       held * (never ? 2 : 1),
+                       never ? "branch never taken" : "branch always taken"));
 }
 
 // the cycles of every instruction under the same source note as the site
@@ -177,8 +179,8 @@ bool IsStrided(const Compiled& compiled, const SiteMap& map, const Profiler& p,
                const FindOptions& options, std::uint32_t a) {
     const SiteStats& s = p.sites[a];
     Mn mn = OpcodeInfoFor(compiled.image[a - compiled.origin]).mn;
-    if (!IsStoreMn(mn) || map.at[a].item < 0 || map.at[a].note < 0 ||
-        s.count < options.min_count || s.count < 3 || s.last_step == 0 || s.volatile_count > 0) {
+    if (!IsStoreMn(mn) || map.at[a].item < 0 || map.at[a].note < 0 || s.count < options.min_count ||
+        s.count < 3 || s.last_step == 0 || s.volatile_count > 0) {
         return false;
     }
     double steps = static_cast<double>(s.count - 2);
@@ -223,7 +225,8 @@ void FindStrided(const Compiled& compiled, const SiteMap& map, const Profiler& p
         int step = s.last_step < 128 ? s.last_step : s.last_step - 256;
         std::string reason = "the stored byte steps by " + std::string(step >= 0 ? "+" : "") +
                              std::to_string(step) + " each time (" + std::to_string(stores) +
-                             (stores == 1 ? " such byte" : " such bytes") + std::string(" on this line): keep them and add");
+                             (stores == 1 ? " such byte" : " such bytes") +
+                             std::string(" on this line): keep them and add");
         Finding f = Make(compiled, map, v, Pattern::kStrided, s.step_repeats, s.count - 2,
                          block - replacement, reason);
         f.key = std::string(PatternName(Pattern::kStrided)) + ": " +

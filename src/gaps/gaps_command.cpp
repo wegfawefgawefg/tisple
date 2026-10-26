@@ -139,7 +139,8 @@ int RunFuzz(GapsArgs& args, ProgramTextFn generate) {
     }
     auto start = std::chrono::steady_clock::now();
     BulkGaps bulk = FuzzGaps(generate, args.seed, args.fuzz, args.threads, args.options);
-    double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    double seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     std::fputs(FormatBulkReport(bulk, args.seed, args.top).c_str(), stdout);
     std::printf("\n%.1f s on %d threads\n", seconds, args.threads);
     return 0;

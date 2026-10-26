@@ -44,10 +44,10 @@ struct Searcher {
 };
 
 const Mn kSearchMns[] = {
-    Mn::LDA, Mn::LDX, Mn::LDY, Mn::STA, Mn::STX, Mn::STY, Mn::ADC, Mn::SBC, Mn::AND, Mn::ORA,
-    Mn::EOR, Mn::CMP, Mn::CPX, Mn::CPY, Mn::BIT, Mn::ASL, Mn::LSR, Mn::ROL, Mn::ROR, Mn::INC,
-    Mn::DEC, Mn::INX, Mn::INY, Mn::DEX, Mn::DEY, Mn::TAX, Mn::TAY, Mn::TXA, Mn::TYA, Mn::CLC,
-    Mn::SEC, Mn::CLV,
+    Mn::LDA, Mn::LDX, Mn::LDY, Mn::STA, Mn::STX, Mn::STY, Mn::ADC, Mn::SBC,
+    Mn::AND, Mn::ORA, Mn::EOR, Mn::CMP, Mn::CPX, Mn::CPY, Mn::BIT, Mn::ASL,
+    Mn::LSR, Mn::ROL, Mn::ROR, Mn::INC, Mn::DEC, Mn::INX, Mn::INY, Mn::DEX,
+    Mn::DEY, Mn::TAX, Mn::TAY, Mn::TXA, Mn::TYA, Mn::CLC, Mn::SEC, Mn::CLV,
 };
 
 void AddIfValid(const Window& w, std::vector<SoIns>& set, const SoIns& ins) {
@@ -104,10 +104,9 @@ void BuildMask(Searcher& s) {
     m.a = (w.live & kLocA) != 0 ? 0xFF : 0;
     m.x = (w.live & kLocX) != 0 ? 0xFF : 0;
     m.y = (w.live & kLocY) != 0 ? 0xFF : 0;
-    m.p = static_cast<std::uint8_t>(((w.live & kLocN) != 0 ? 0x80 : 0) |
-                                    ((w.live & kLocV) != 0 ? 0x40 : 0) |
-                                    ((w.live & kLocZ) != 0 ? 0x02 : 0) |
-                                    ((w.live & kLocC) != 0 ? 0x01 : 0));
+    m.p = static_cast<std::uint8_t>(
+        ((w.live & kLocN) != 0 ? 0x80 : 0) | ((w.live & kLocV) != 0 ? 0x40 : 0) |
+        ((w.live & kLocZ) != 0 ? 0x02 : 0) | ((w.live & kLocC) != 0 ? 0x01 : 0));
     for (std::size_t i = 0; i < w.cells.size(); i++) {
         m.cells[i] = w.cells[i].live ? 0xFF : 0;
     }
@@ -137,8 +136,7 @@ std::uint64_t HashStates(const std::vector<SoState>& states) {
 
 // what is still wrong on some vector: cells (each needs its own write) and registers (each
 // needs its own instruction, since none writes two; flags alone count as one)
-void Wrong(const Searcher& s, const std::vector<SoState>& states, std::uint32_t& cells,
-           int& regs) {
+void Wrong(const Searcher& s, const std::vector<SoState>& states, std::uint32_t& cells, int& regs) {
     std::uint64_t d0 = 0;
     std::uint64_t d1 = 0;
     for (std::size_t v = 0; v < states.size(); v++) {
@@ -226,8 +224,8 @@ void Consider(Searcher& s, int cycles, int bytes) {
     if (!Better(s, cycles, bytes)) {
         return;
     }
-    EquivResult r = CheckEquivalent(*s.w, s.w->code, s.path, *s.facts, s.o->verify_vectors, 0,
-                                    s.o->seed + 11);
+    EquivResult r =
+        CheckEquivalent(*s.w, s.w->code, s.path, *s.facts, s.o->verify_vectors, 0, s.o->seed + 11);
     if (!r.equal) {
         s.rejected++;
         return;
@@ -464,8 +462,7 @@ SearchResult Superoptimize(const Window& w, const Facts& facts, const SearchOpti
         }
         out.rejected++;
     }
-    out.seconds =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     return out;
 }
 

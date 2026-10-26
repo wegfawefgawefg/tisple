@@ -16,7 +16,7 @@ namespace tisple {
 // sequences that matched every test vector and passed the random check, each cheaper than
 // the one before; steps gets the steps taken
 std::vector<std::vector<SoIns>> StochasticSearch(const Window& w, const Facts& facts,
-                                                 const SearchOptions& options,
-                                                 std::uint64_t& steps, int& rejected);
+                                                 const SearchOptions& options, std::uint64_t& steps,
+                                                 int& rejected);
 
 } // namespace tisple

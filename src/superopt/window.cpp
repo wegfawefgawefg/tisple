@@ -224,8 +224,8 @@ bool MakeWindow(const std::vector<RawIns>& code, const std::vector<RawIns>& afte
         out.bytes += InsBytes(ins);
     }
     for (const Cell& c : out.cells) {
-        if (IsDirectCell(c) &&
-            std::find(pointer_bytes.begin(), pointer_bytes.end(), c.operand) != pointer_bytes.end()) {
+        if (IsDirectCell(c) && std::find(pointer_bytes.begin(), pointer_bytes.end(), c.operand) !=
+                                   pointer_bytes.end()) {
             why = "a pointer byte is also an operand";
             return false;
         }

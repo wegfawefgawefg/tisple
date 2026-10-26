@@ -34,14 +34,14 @@
 namespace tisple {
 
 struct SearchOptions {
-    int max_len = 5;                    // longest candidate
+    int max_len = 5;                   // longest candidate
     std::uint64_t max_nodes = 1000000; // the search budget; keeps results deterministic
-    int vectors = 16;                   // test vectors during the search
+    int vectors = 16;                  // test vectors during the search
     int verify_vectors = 2048;
     int sim_vectors = 128;
     double exhaustive_bits = 24; // prove by every input up to this many input bits
     std::uint64_t seed = 1;
-    std::uint32_t table_bits = 20;    // the table of reached states: 2^bits entries
+    std::uint32_t table_bits = 20;      // the table of reached states: 2^bits entries
     std::uint64_t stochastic_steps = 0; // 0: exhaustive search; else MCMC steps
     // only results better than this count (cycles, then bytes); -1: than the window
     int bound_cycles = -1;
@@ -58,7 +58,7 @@ struct SearchResult {
     bool complete = false; // the enumeration finished inside its budget
     std::uint64_t nodes = 0;
     double seconds = 0;
-    int rejected = 0;     // candidates that passed the search's vectors but not the checks
+    int rejected = 0; // candidates that passed the search's vectors but not the checks
     std::string why_rejected;
 };
 

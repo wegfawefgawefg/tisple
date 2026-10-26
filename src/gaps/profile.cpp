@@ -264,7 +264,9 @@ void Judge(Profiler& p, const Regs& after) {
         s.same++;
     }
     if (mn == Mn::STA || mn == Mn::STX || mn == Mn::STY) {
-        std::uint8_t value = mn == Mn::STA ? in.before.a : mn == Mn::STX ? in.before.x : in.before.y;
+        std::uint8_t value = mn == Mn::STA   ? in.before.a
+                             : mn == Mn::STX ? in.before.x
+                                             : in.before.y;
         NoteStoredValue(s, value);
     }
     if (IsBranch(mn)) {
@@ -386,6 +388,11 @@ void FinishProfile(Profiler& p, const Machine& m) {
     }
     p.pending.valid = false;
     p.bus.clear();
+}
+
+void ConsumeResult(Profiler& p) {
+    p.reg_read[0] = true;
+    p.reg_read[1] = true;
 }
 
 void ResetProfileTracking(Profiler& p) {

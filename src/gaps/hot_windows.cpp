@@ -50,14 +50,24 @@ Facts ObservedFacts(const Window& w, const std::vector<RawIns>& raw, const Profi
     return f;
 }
 
+// an indexed or indirect access that reached $C000 and up in the run: i/o has side effects
+// the superoptimizer does not model
+bool TouchedIo(const std::vector<RawIns>& code, const Profiler& p) {
+    for (const RawIns& ins : code) {
+        if (p.sites[ins.address].volatile_count > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Overlaps(const WindowFinding& a, const WindowFinding& b) {
     std::uint32_t a_end = a.window.address + static_cast<std::uint32_t>(a.bytes_before);
     std::uint32_t b_end = b.window.address + static_cast<std::uint32_t>(b.bytes_before);
     return a.window.address < b_end && b.window.address < a_end;
 }
 
-void Note(HotWindowStats& stats, const SearchResult& r, const Window& w, bool facts,
-          bool verbose) {
+void Note(HotWindowStats& stats, const SearchResult& r, const Window& w, bool facts, bool verbose) {
     int len = static_cast<int>(w.code.size());
     if (verbose) {
         std::fprintf(stderr, "search %d ins %d cycles%s: %s; %llu nodes, %s, %.3f s%s%s\n", len,
@@ -152,7 +162,8 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
                     std::string::npos) {
                 continue;
             }
-            std::size_t len = std::min(static_cast<std::size_t>(options.window), ins.size() - start);
+            std::size_t len =
+                std::min(static_cast<std::size_t>(options.window), ins.size() - start);
             int cycles = 0;
             for (std::size_t i = start; i < start + len; i++) {
                 int opcode = OpcodeFor(ins[i].mn, ins[i].mode);
@@ -161,8 +172,9 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
             starts.push_back({count * static_cast<std::uint64_t>(cycles), r, start, len});
         }
     }
-    std::stable_sort(starts.begin(), starts.end(),
-                     [](const Candidate& a, const Candidate& b) { return a.potential > b.potential; });
+    std::stable_sort(starts.begin(), starts.end(), [](const Candidate& a, const Candidate& b) {
+        return a.potential > b.potential;
+    });
 
     // every window length at each of the top starts
     std::vector<WindowFinding> found;
@@ -176,13 +188,12 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
                 FollowingIns(compiled, run.span, run.items[c.start + len - 1]);
             Window w;
             std::string why;
-            if (!MakeWindow(code, after, w, why)) {
+            if (TouchedIo(code, p) || !MakeWindow(code, after, w, why)) {
                 continue;
             }
             stats.windows++;
             std::uint64_t count = p.sites[code[0].address].count;
-            Facts observed =
-                count >= options.facts_min_count ? ObservedFacts(w, code, p) : Facts();
+            Facts observed = count >= options.facts_min_count ? ObservedFacts(w, code, p) : Facts();
             const SearchResult& exact = ExactSearch(w, options, cache, stats);
             if (exact.found) {
                 found.push_back(MakeFinding(compiled, map, w, exact, "", count));
@@ -199,12 +210,13 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
 
     // the best of overlapping windows, most cycles saved first; those that need facts are
     // chosen among themselves, so an exact result is never hidden behind one that needs facts
-    std::stable_sort(found.begin(), found.end(), [](const WindowFinding& a, const WindowFinding& b) {
-        if (a.saved != b.saved) {
-            return a.saved > b.saved;
-        }
-        return a.bytes_before - a.bytes_after > b.bytes_before - b.bytes_after;
-    });
+    std::stable_sort(found.begin(), found.end(),
+                     [](const WindowFinding& a, const WindowFinding& b) {
+                         if (a.saved != b.saved) {
+                             return a.saved > b.saved;
+                         }
+                         return a.bytes_before - a.bytes_after > b.bytes_before - b.bytes_after;
+                     });
     std::vector<WindowFinding> kept;
     for (int pass = 0; pass < 2; pass++) {
         std::vector<WindowFinding> chosen;

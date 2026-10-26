@@ -12,10 +12,10 @@
 namespace tisple {
 
 struct SiteInfo {
-    std::int32_t item = -1; // into Compiled::as.items; -1 when no instruction is here
-    std::int32_t span = -1; // into Compiled::spans
-    std::int32_t note = -1; // the source line above it, into Assembly::notes
-    std::int32_t prev = -1; // the instruction before it with no label between; -1 at a label
+    std::int32_t item = -1;  // into Compiled::as.items; -1 when no instruction is here
+    std::int32_t span = -1;  // into Compiled::spans
+    std::int32_t note = -1;  // the source line above it, into Assembly::notes
+    std::int32_t prev = -1;  // the instruction before it with no label between; -1 at a label
     std::int32_t label = -1; // the last named label above it in its span (a symbol)
 };
 

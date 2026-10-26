@@ -24,8 +24,7 @@ RawIns R(Mn mn, Mode mode = Mode::Imp, std::uint16_t operand = 0) {
 
 const std::vector<RawIns> kAllLive = {R(Mn::RTS)};
 
-bool Window(const std::vector<RawIns>& code, const std::vector<RawIns>& after,
-            tisple::Window& w) {
+bool Window(const std::vector<RawIns>& code, const std::vector<RawIns>& after, tisple::Window& w) {
     std::string why;
     bool ok = tisple::MakeWindow(code, after, w, why);
     if (!ok) {
@@ -49,8 +48,8 @@ tisple::SearchOptions Quick() {
 // every opcode the evaluator models, in every mode, on the simulator: the evaluator must
 // agree on registers, flags and memory
 void TestEvaluatorMatchesSimulator(TestResults& results) {
-    const Mode modes[] = {Mode::Imp,  Mode::Acc,  Mode::Imm,  Mode::Zp,   Mode::ZpX, Mode::ZpY,
-                          Mode::Abs,  Mode::AbsX, Mode::AbsY, Mode::IndX, Mode::IndY};
+    const Mode modes[] = {Mode::Imp, Mode::Acc,  Mode::Imm,  Mode::Zp,   Mode::ZpX, Mode::ZpY,
+                          Mode::Abs, Mode::AbsX, Mode::AbsY, Mode::IndX, Mode::IndY};
     int checked = 0;
     for (int m = 0; m < static_cast<int>(Mn::Count); m++) {
         Mn mn = static_cast<Mn>(m);
@@ -61,8 +60,8 @@ void TestEvaluatorMatchesSimulator(TestResults& results) {
             if (tisple::OpcodeFor(mn, mode) < 0) {
                 continue;
             }
-            std::uint16_t operand = mode == Mode::Imm   ? 0x5A
-                                    : mode == Mode::Abs ? 0x1234
+            std::uint16_t operand = mode == Mode::Imm                            ? 0x5A
+                                    : mode == Mode::Abs                          ? 0x1234
                                     : (mode == Mode::AbsX || mode == Mode::AbsY) ? 0x1300
                                                                                  : 0x40;
             tisple::Window w;
@@ -133,11 +132,11 @@ void TestKnownEqual(TestResults& results) {
     tisple::Facts any;
     // CLC / ADC #1 and SEC / ADC #0 agree on A, every flag
     tisple::Window w;
-    CHECK(results, Window({R(Mn::CLC), R(Mn::ADC, Mode::Imm, 1), R(Mn::SEC),
-                           R(Mn::ADC, Mode::Imm, 0)},
-                          kAllLive, w));
-    tisple::EquivResult r = tisple::CheckEquivalent(w, CodeOf(w, 0, 2), CodeOf(w, 2, 2), any, 512,
-                                                    24, 3);
+    CHECK(results,
+          Window({R(Mn::CLC), R(Mn::ADC, Mode::Imm, 1), R(Mn::SEC), R(Mn::ADC, Mode::Imm, 0)},
+                 kAllLive, w));
+    tisple::EquivResult r =
+        tisple::CheckEquivalent(w, CodeOf(w, 0, 2), CodeOf(w, 2, 2), any, 512, 24, 3);
     CHECK(results, r.equal && r.proof == tisple::Proof::kProved);
     std::string why;
     CHECK(results, tisple::CheckOnSimulator(w, CodeOf(w, 0, 2), CodeOf(w, 2, 2), any, 64, 5, why));
@@ -146,9 +145,9 @@ void TestKnownEqual(TestResults& results) {
 void TestLoadStoreLoad(TestResults& results) {
     // LDA #0 / STA x / LDA #0 is LDA #0 / STA x, proved
     tisple::Window w;
-    CHECK(results, Window({R(Mn::LDA, Mode::Imm, 0), R(Mn::STA, Mode::Zp, 0x40),
-                           R(Mn::LDA, Mode::Imm, 0)},
-                          kAllLive, w));
+    CHECK(results,
+          Window({R(Mn::LDA, Mode::Imm, 0), R(Mn::STA, Mode::Zp, 0x40), R(Mn::LDA, Mode::Imm, 0)},
+                 kAllLive, w));
     tisple::SearchResult r = tisple::Superoptimize(w, tisple::Facts(), Quick());
     CHECK(results, r.found && r.complete);
     CHECK(results, r.cycles == 5 && r.bytes == 4 && r.proof == tisple::Proof::kProved);

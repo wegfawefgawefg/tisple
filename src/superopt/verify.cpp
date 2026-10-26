@@ -49,7 +49,8 @@ void SetLoc(SoState& s, int loc, std::uint8_t v) {
     case 4:
     case 5:
     case 6:
-        s.p = static_cast<std::uint8_t>((s.p & ~kFlagMask[loc - 3]) | (v != 0 ? kFlagMask[loc - 3] : 0));
+        s.p = static_cast<std::uint8_t>((s.p & ~kFlagMask[loc - 3]) |
+                                        (v != 0 ? kFlagMask[loc - 3] : 0));
         break;
     default:
         s.cells[loc - 7] = v;
@@ -197,8 +198,8 @@ bool Assemble(const std::vector<SoIns>& code, const Window& w, std::vector<std::
         }
         out.push_back(static_cast<std::uint8_t>(opcode));
         std::uint16_t v = ins.mode == Mode::Imm ? ins.imm
-                          : ins.cell >= 0       ? w.cells[static_cast<std::size_t>(ins.cell)].operand
-                                                : 0;
+                          : ins.cell >= 0 ? w.cells[static_cast<std::size_t>(ins.cell)].operand
+                                          : 0;
         int size = ModeSize(ins.mode);
         if (size >= 2) {
             out.push_back(static_cast<std::uint8_t>(v & 0xFF));

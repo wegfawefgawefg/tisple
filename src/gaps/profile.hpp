@@ -98,6 +98,8 @@ struct Profiler {
 void ProfileTrace(void* ctx, const Machine& m);
 // judges the last instruction (call once the run stops)
 void FinishProfile(Profiler& p, const Machine& m);
+// a call from the harness came back: its caller reads the result in A and X
+void ConsumeResult(Profiler& p);
 // forget what is in flight (the machine was restarted); counts stay
 void ResetProfileTracking(Profiler& p);
 

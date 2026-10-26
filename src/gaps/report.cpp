@@ -194,11 +194,10 @@ void Merge(std::map<std::string, PatternTotal>& into,
 std::string TotalsTable(const char* title, const std::map<std::string, PatternTotal>& map,
                         std::uint64_t cycles, std::size_t top, bool examples) {
     std::vector<std::pair<std::string, PatternTotal>> rows(map.begin(), map.end());
-    std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
-        return a.second.saved > b.second.saved;
-    });
-    std::string text =
-        Format("\n%s (%zu kinds)\n     cycles      %%  sites progs  first seed\n", title, rows.size());
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const auto& a, const auto& b) { return a.second.saved > b.second.saved; });
+    std::string text = Format("\n%s (%zu kinds)\n     cycles      %%  sites progs  first seed\n",
+                              title, rows.size());
     for (std::size_t i = 0; i < rows.size() && i < top; i++) {
         const PatternTotal& t = rows[i].second;
         text += Format("%11llu %6.2f %6llu %5llu  %llu  %s\n", U(t.saved), Percent(t.saved, cycles),
@@ -241,8 +240,9 @@ std::string ShapeCode(const std::vector<SoIns>& code, const std::vector<Cell>& c
 }
 
 std::string FormatProgramReport(const ProgramGaps& g, std::size_t top) {
-    std::string text = Format("gaps: %s on %s, %llu cycles (%s), %llu instructions", g.name.c_str(),
-                              g.machine.c_str(), U(g.cycles), g.run.stop.c_str(), U(g.instructions));
+    std::string text =
+        Format("gaps: %s on %s, %llu cycles (%s), %llu instructions", g.name.c_str(),
+               g.machine.c_str(), U(g.cycles), g.run.stop.c_str(), U(g.instructions));
     if (g.run.calls > 0) {
         text += Format(", %llu calls", U(g.run.calls));
     }
@@ -282,7 +282,8 @@ std::string FormatProgramReport(const ProgramGaps& g, std::size_t top) {
                        f.function.c_str(), Hex4(f.address).c_str(), f.text.c_str(),
                        f.reason.c_str(), f.estimate ? " (estimate)" : "");
         if (f.out_of != f.count) {
-            text += Format("                        held on %llu of %llu\n", U(f.held), U(f.out_of));
+            text +=
+                Format("                        held on %llu of %llu\n", U(f.held), U(f.out_of));
         }
         if (!f.source.empty()) {
             text += "                        " + f.source + "\n";
@@ -368,8 +369,8 @@ std::string FormatBulkReport(const BulkGaps& bulk, std::uint64_t first_seed, std
                    Percent(bulk.runtime_saved, bulk.cycles));
     text += TotalsTable("compiled code by pattern", bulk.patterns, bulk.cycles, top, false);
     text += TotalsTable("compiled code by pattern and shape", bulk.keys, bulk.cycles, top, true);
-    text += TotalsTable("runtime routines by pattern and shape", bulk.runtime, bulk.cycles,
-                        top / 2, false);
+    text += TotalsTable("runtime routines by pattern and shape", bulk.runtime, bulk.cycles, top / 2,
+                        false);
     if (bulk.window_stats.windows > 0) {
         const HotWindowStats& st = bulk.window_stats;
         text += Format("\nsuperoptimizer: %llu hot windows, %llu searches (%llu from the cache), "
