@@ -108,6 +108,11 @@ Opnd ByteShift(Gen& g, const Expr& e) {
 
 Opnd TrySimple(Gen& g, ExprId id) {
     id = ForwardTarget(g, id);
+    for (const ReducedByte& r : g.reduced_bytes) {
+        if (r.expr == id) {
+            return r.temp;
+        }
+    }
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
     if (IsScalarKind(KindOf(*g.program, e.type)) && ConstValue(*g.program, id, c)) {

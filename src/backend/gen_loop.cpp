@@ -90,6 +90,8 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     g.pin_body[r] = f.body;
     std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
     InitReducedLets(g, reduced);
+    std::vector<ReducedByte> bytes = FindReducedBytes(g, f.var, f.body, reduced);
+    InitReducedBytes(g, bytes);
     std::size_t init_at = g.out->size();
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
@@ -99,6 +101,8 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     PlaceLabel(g, next);
     StepReducedLets(g, reduced);
     DropReducedLets(g, reduced);
+    StepReducedBytes(g, bytes);
+    DropReducedBytes(g, bytes);
     g.pin[r] = -1;
     g.pin_body[r] = -1;
     if (g.violation && !g.failed) {
@@ -273,6 +277,11 @@ void MemoryLoop(Gen& g, const ForParts& f) {
         reduced = FindReducedLets(g, f.var, f.body);
     }
     InitReducedLets(g, reduced);
+    std::vector<ReducedByte> bytes;
+    if (f.size == 1) {
+        bytes = FindReducedBytes(g, f.var, f.body, reduced);
+    }
+    InitReducedBytes(g, bytes);
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
@@ -281,6 +290,8 @@ void MemoryLoop(Gen& g, const ForParts& f) {
     PlaceLabel(g, next);
     StepReducedLets(g, reduced);
     DropReducedLets(g, reduced);
+    StepReducedBytes(g, bytes);
+    DropReducedBytes(g, bytes);
     if (f.size == 1) {
         RmwByte(g, Mn::INC, v, 0);
         if (IsImmZeroByte(f.end, 0)) {

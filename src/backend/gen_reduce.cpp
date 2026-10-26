@@ -372,6 +372,14 @@ std::vector<ReducedLet> FindReducedLets(Gen& g, std::int32_t counter, ExprId bod
     return out;
 }
 
+bool LoopInvariant(Gen& g, std::int32_t counter, ExprId body, ExprId id) {
+    Loop l;
+    l.g = &g;
+    l.counter = counter;
+    l.body = body;
+    return Invariant(l, id, nullptr, 0);
+}
+
 void InitReducedLets(Gen& g, const std::vector<ReducedLet>& lets) {
     for (const ReducedLet& r : lets) {
         SourceNote(g, g.program->vars[static_cast<std::size_t>(r.var)].loc);

@@ -430,6 +430,35 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
     | 20000 fuzz programs (generator with item 17's shapes) | 87088535 cycles | 86920245 cycles |
 
+18. Strided bytes and invariant bytes in loops (2026-10-26). Plasma's
+    column loop worked out `(- (* x 3) (<< t 1))` every iteration (`TXA /
+    STA / ASL / CLC / ADC / STA / LDA t / ASL / STA / LDA / SEC / SBC`), and
+    the row loop `(+ (* y 5) (<< t 1))`: the gap finder's top site (strided
+    values, 6.7% of the run). Item 7 only reduced 16-bit lets. Now
+    (src/backend/gen_reduce_byte.cpp) a byte expression anywhere in a u8 or
+    i8 loop's body that is the counter times a constant plus things the body
+    never changes, through +, -, constant multiplies and shifts and u8/i8
+    conversions, is worked out before the loop into a temporary and stepped
+    at the end of every iteration (`INC`/`DEC` for 1 and -1); with no counter
+    in it, it is only worked out once (hoisted). Byte arithmetic wraps, so the
+    step is exact for any values and the counter's range does not matter.
+    Code reading the expression reads the temporary. Only when its estimated
+    code costs more than reading and stepping, and only what is safe to read
+    before a loop that may not run: no loads through pointers, no arrays at
+    fixed addresses. Tests: in tests/test_backend_reduce.cpp, plasma's sums,
+    steps that wrap over all 256 counter values, -1 and 0 steps, an i8
+    counter from below 0, an invariant the body sets directly, through a
+    call and through a pointer, continue and break, a loop that may not run,
+    nested loops; treating everything as invariant fails them and the fuzz
+    run (the generator already writes such loops).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | plasma's column and row loops | 31 and 27 cycles of the sum each time | a load and an ADC #3 / #5 |
+    | plasma frames in 10 s | 231 | 243 (24.3 fps); code 1191 to 1203 bytes |
+    | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
+    | 20000 fuzz programs | 86920245 cycles | 86336946 cycles |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

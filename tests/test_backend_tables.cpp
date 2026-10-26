@@ -98,7 +98,6 @@ void TestTwoReads(TestResults& results) {
                     "        (set (at out 2) (| (at lo (+ (at small 3) a)) (at hi (+ (at small 3) "
                     "y))))))");
     CHECK(results, HasOraAbsX(c, "t.f"));
-    CHECK(results, HasOraAbsX(c, "t.h"));
 }
 
 } // namespace

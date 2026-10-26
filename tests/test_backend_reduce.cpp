@@ -4,6 +4,7 @@
 
 #include "test_backend.hpp"
 
+#include <cstdio>
 #include <string>
 
 namespace tisple_tests {
@@ -105,10 +106,87 @@ void TestRowLets(TestResults& results) {
               "            (set sum (+ sum (as u16 (^ (load cell) (load (+ cell 1))))))))");
 }
 
+// byte expressions of a loop's body kept in a temporary that steps by a constant, or stays
+// (gen_reduce_byte.cpp), for every byte value of the argument
+const char* const kBytes = "(let g u8 0)\n"
+                           "(let lo (array u8 256))\n"
+                           "(let out (array u8 256))\n"
+                           "(let small (array u8 16))\n"
+                           "(let pb (ptr u8))\n"
+                           "(fn bump () void (set g (+ g 7)))\n"
+                           "(fn fill () void\n"
+                           "    (set pb (addr_of (at small 0)))\n"
+                           "    (for i u8 0 255 (set (at lo i) (^ (* i 3) 0x5A)))\n"
+                           "    (for i u8 0 16 (set (at small i) (* i 13))))\n";
+
+void CheckBytes(TestResults& results, const std::string& body) {
+    std::string text = std::string(kBytes) + "(fn f ((t u8)) u8\n" + body + ")\n";
+    Compiled c = CompileText(text);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.fill", {});
+    for (std::uint16_t v = 0; v < 256 && ok; v += 3) {
+        ok = DiffCall(d, "t.f", {v});
+    }
+    if (!ok) {
+        std::fprintf(stderr, "program:\n%s\n  %s\n", text.c_str(), d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
+void TestByteExprs(TestResults& results) {
+    const char* bodies[] = {
+        // plasma's column and row sums
+        "    (for x u8 0 40 (set (at out x) (+ (at lo (+ (<< x 2) t)) (at lo (- (* x 3) (<< t "
+        "1))))))\n"
+        "    (for y u8 0 48 (set (at out y) (+ (at lo (+ (* y 5) (<< t 1))) (at lo (+ y t)))))\n"
+        "    (at out (& t 31))",
+        // steps that wrap, all 256 counter values, a step of -1, and of 0 (only hoisted)
+        "    (for x u8 0 255 (set (at out x) (+ (* x 77) (* t 3))))\n"
+        "    (for x u8 t 255 (set g (+ g (at lo (- (* t 3) x)))))\n"
+        "    (for x u8 0 9 (set (at out x) (- (* (+ t g) 5) 9)))\n"
+        "    (+ g (at out (+ t 1)))",
+        // an i8 counter from below zero
+        "    (for x i8 -20 20 (set (at out (& (as u8 x) 63)) (as u8 (+ (* x 5) (as i8 (* t "
+        "3))))))\n"
+        "    (at out (& t 63))",
+        // the body changes what looks invariant: directly, through a call, through a pointer
+        "    (for x u8 0 30 (set (at out x) (+ (* x 3) (* t 5))) (set t (+ t 1)))\n"
+        "    (for x u8 0 30 (set (at out x) (+ (at out x) (+ (* x 3) (* g 5)))) (bump))\n"
+        "    (for x u8 0 12 (store (+ pb (as u16 (& x 15))) x)\n"
+        "        (set (at out x) (+ (at out x) (+ (* x 3) (* (at small 5) 3)))))\n"
+        "    (+ (at out (& t 31)) g)",
+        // continue and break, and a loop that may not run
+        "    (for x u8 0 50\n"
+        "        (if (= (& x 3) 1) (continue))\n"
+        "        (if (> x (+ t 10)) (break))\n"
+        "        (set g (+ g (at lo (+ (* x 6) (* t 7))))))\n"
+        "    (for x u8 0 (& t 3) (set g (^ g (+ (* x 9) (* t 3)))))\n"
+        "    g",
+        // nested loops: the inner counter steps, the outer one stays
+        "    (for y u8 0 6\n"
+        "        (for x u8 0 7 (set (at out (+ (* y 8) x)) (at lo (+ (* x 3) (+ (* y 40) t))))))\n"
+        "    (at out (& t 63))",
+        // a load through a pointer is read in the loop, never before it (it may be I/O)
+        "    (for x u8 0 (& t 1) (set g (+ (* (load pb) 3) (* x 3))))\n"
+        "    (for x u8 0 (& t 3) (set g (+ (* (load (+ pb 2)) 5) (* x 3))))\n"
+        "    g",
+    };
+    for (const char* body : bodies) {
+        CheckBytes(results, body);
+    }
+    // the column loop: no multiply inside it, one ADC #3 at its end
+    Compiled c = CompileText(std::string(kBytes) +
+                             "(fn f ((t u8)) void (for x u8 0 40 (set (at out x) (at lo (- (* x 3) "
+                             "(<< t 1))))))");
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::SBC) == 1);
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::ADC) == 2);
+}
+
 } // namespace
 
 void RunBackendReduceTests(TestResults& results) {
     TestRowLets(results);
+    TestByteExprs(results);
 }
 
 } // namespace tisple_tests

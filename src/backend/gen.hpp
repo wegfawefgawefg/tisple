@@ -194,6 +194,14 @@ struct ReducedLet {
     std::uint16_t step = 0;
 };
 
+// a byte expression of a u8 loop's body that moves by a constant each iteration, or not at all
+// (gen_reduce_byte.cpp); while its loop is generated, reading it reads the temporary
+struct ReducedByte {
+    ExprId expr = -1;
+    std::uint8_t step = 0;
+    Opnd temp;
+};
+
 // the values a u8 loop counter takes inside its body (loop variables are read-only)
 struct CounterRange {
     std::int32_t var = -1;
@@ -226,6 +234,7 @@ struct Gen {
     std::vector<CounterRange> ranges; // of the u8 loops being generated
     DivDone div;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
+    std::vector<ReducedByte> reduced_bytes;
     // parameters of the calls being inlined that read their argument, a plain variable the
     // callee never changes, instead of a copy of it
     std::vector<std::pair<std::int32_t, ExprId>> bound;
@@ -459,5 +468,18 @@ void InitReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
 void StepReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
 // after the loop: their lets make code again
 void DropReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
+// the same value on every iteration of the loop of counter over body
+bool LoopInvariant(Gen& g, std::int32_t counter, ExprId body, ExprId id);
+
+// byte expressions of a u8 or i8 loop's body worth keeping in a temporary that moves by a
+// constant (or stays), outside the reduced lets' values (gen_reduce_byte.cpp)
+std::vector<ReducedByte> FindReducedBytes(Gen& g, std::int32_t counter, ExprId body,
+                                          const std::vector<ReducedLet>& lets);
+// each expression's value for the first iteration into its temporary, before the loop's top
+// (the counter holds its start); from then on reading it reads the temporary
+void InitReducedBytes(Gen& g, std::vector<ReducedByte>& bytes);
+// each temporary moved by its step, at the end of an iteration (only A and the flags)
+void StepReducedBytes(Gen& g, const std::vector<ReducedByte>& bytes);
+void DropReducedBytes(Gen& g, const std::vector<ReducedByte>& bytes);
 
 } // namespace tisple
