@@ -66,7 +66,7 @@ median (6 s at worst), and length 6 in about 4 s. On Life's inner loop
 (three `(zp),Y` operands, A live, 21 cycles), 10 of 15 length-6 windows
 finish within 30 M nodes. No 7-instruction window (23 to 26 cycles) finishes
 within 30 M nodes (about 8 s). The default budget of 1 M nodes (about 0.3 s)
-finishes 169 of Life's 186 searches. A whole run takes 8 s on Life and 15 s
+finishes 169 of Life's 186 searches. A whole run takes 8 s on Life and 17 s
 on dot. 3000 fuzz programs take 27 s on 8 threads.
 
 ### Findings
