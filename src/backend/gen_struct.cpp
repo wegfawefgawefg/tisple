@@ -66,8 +66,10 @@ void CollectValue(Gen& g, ExprId id, TypeId type, bool snapshot, std::vector<Opn
 
 } // namespace
 
-void CopyStruct(Gen& g, ExprId value, const PlaceRef& dst, TypeId type) {
+void CopyStruct(Gen& g, ExprId value, const PlaceRef& dst_in, TypeId type) {
     const Program& program = *g.program;
+    PlaceRef dst = dst_in;
+    PinPlace(g, dst, type);
     // read everything first whenever the source could overlap the destination
     bool snapshot = HasWrites(program, value) || HasLoads(program, value) || dst.pointer ||
                     dst.root < 0 || ReadsVar(program, value, dst.root);

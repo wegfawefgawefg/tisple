@@ -162,6 +162,7 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
         return;
     }
     NormalizePlace(g, p, type);
+    PinPlace(g, p, type);
     Opnd d = PlaceOpnd(g, p, type);
     if (step && GenStep(g, d, up)) {
         return;
@@ -175,6 +176,7 @@ void GenStore(Gen& g, const Expr& e) {
         return;
     }
     NormalizePlace(g, p, p.type);
+    PinPlace(g, p, p.type);
     if (IsStructType(g, p.type)) {
         CopyStruct(g, e.b, p, p.type);
         return;

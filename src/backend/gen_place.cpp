@@ -405,6 +405,43 @@ Opnd PlaceOpnd(Gen& g, const PlaceRef& place, TypeId type) {
     return o;
 }
 
+void PinPlace(Gen& g, PlaceRef& place, TypeId type) {
+    if (SizeOf(g, type) < 2) {
+        return;
+    }
+    if (place.has_index && place.index.b[0].kind == ByteKind::Mem && !place.index.temp) {
+        const AsmValue& v = place.index.b[0].value;
+        bool hit = place.pointer ? PointerMayReach(g, v) : v.sym == place.base.sym;
+        if (hit) {
+            Opnd t = NewTemp(g, 1);
+            LoadA(g, place.index, 0);
+            StoreA(g, t, 0);
+            Opnd w = place.index;
+            w.b[0] = t.b[0];
+            w.temp = place.index.size == 1 || w.b[1].kind == ByteKind::Imm;
+            place.index = w;
+        }
+    }
+    if (!place.pointer) {
+        return;
+    }
+    AsmValue* ptrs[2] = {&place.ptr, &place.ptr2};
+    for (AsmValue* ptr : ptrs) {
+        if (ptr->sym < 0) {
+            continue;
+        }
+        AsmValue high = *ptr;
+        high.offset++;
+        if (!PointerMayReach(g, *ptr) && !PointerMayReach(g, high)) {
+            continue;
+        }
+        Opnd copy = MemOpnd(NewPtrTemp(g), 2, 1);
+        copy.temp = true;
+        CopyOpnd(g, MemOpnd(*ptr, 2, 1), copy);
+        *ptr = copy.b[0].value;
+    }
+}
+
 PlaceRef FieldPlace(const Gen& g, const PlaceRef& place, std::uint32_t offset) {
     (void)g;
     PlaceRef out = place;

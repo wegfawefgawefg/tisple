@@ -298,6 +298,22 @@ void TestRegressions(TestResults& results) {
                  "(fn f () u16\n"
                  "    (+ (f0 1 (f2 42306) 3) (f0 2 (f3 0x1234 0x4321) 4)))",
                  "t.f", {});
+    // fuzz seed 5003765326: a 16-bit element (and a struct) indexed by the low byte of an
+    // element of the same array, and a pointer that points at itself: writing the low byte
+    // moved where the high byte went
+    CheckProgram(results,
+                 "(struct S ((a u8) (b i16)))\n"
+                 "(let arr (array u16 256))\n"
+                 "(let sa (array S 8))\n"
+                 "(let gs S (make S :a 5 :b -2))\n"
+                 "(let pp (ptr u16))\n"
+                 "(fn f () u16\n"
+                 "    (set (at arr (as u8 (at arr 0))) 31602)\n"
+                 "    (set (at sa (& (at sa 0 a) 7)) gs)\n"
+                 "    (set pp (as (ptr u16) (as u16 (addr_of pp))))\n"
+                 "    (store pp 0x4321)\n"
+                 "    (+ (at arr 0x72) (as u16 (at sa 5 b))))",
+                 "t.f", {});
     // u16 loops in every shape: page crossing, ending on a page, through the top
     CheckProgram(results,
                  "(let wb (array u8 1024))\n"

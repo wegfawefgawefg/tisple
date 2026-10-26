@@ -296,6 +296,9 @@ bool ResolvePlace(Gen& g, ExprId id, ExprId later, PlaceRef& out);
 bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out);
 // emits pointer arithmetic so every byte of a value of type `type` is directly reachable
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type);
+// a store of a value of this type to the place writes its bytes one by one: keep the index
+// and pointer it goes through in temporaries when one of those bytes may be them
+void PinPlace(Gen& g, PlaceRef& place, TypeId type);
 // an operand for the scalar at the place (after NormalizePlace)
 Opnd PlaceOpnd(Gen& g, const PlaceRef& place, TypeId type);
 // a sub-place: field at packed offset, element with a constant index
