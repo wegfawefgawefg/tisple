@@ -238,4 +238,3 @@ reports come after the compiler works.
 - How backing storage for allocators is declared.
 - Calling convention for recursion, function pointers and interrupts.
 - IR shape.
-- Macro hygiene.
