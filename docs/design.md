@@ -72,7 +72,8 @@ canonical result.
 Settled:
 
 - Small vocabulary: `fn`, `let`, `const`, `struct`, ordinary control flow.
-- `snake_case` everywhere including built-ins. No kebab-case, no `!` suffixes.
+- Rust naming: `PascalCase` types, `SCREAMING_SNAKE_CASE` constants, `snake_case`
+  everything else including built-ins. No kebab-case, no `!` suffixes.
 - Round parentheses only; no square brackets.
 - `(args ...)` names the parameters. Functions with none omit it.
 - `let` for locals and top-level bindings. No `define`, no `global`.

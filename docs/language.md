@@ -11,17 +11,17 @@ A program is one or more `.tsp` files of top-level forms: `import`, `const`,
 `main` in the entry file is the entry point.
 
 ```scheme
-(const max_sprites u8 32)
+(const MAX_SPRITES u8 32)
 
-(struct sprite (x u8) (y u8) (active bool))
+(struct Sprite (x u8) (y u8) (active bool))
 
-(let sprites (array sprite max_sprites))
+(let sprites (array Sprite MAX_SPRITES))
 (let sprite_count u8 0)
 
 (fn spawn (args (x u8) (y u8))
-    (if (= sprite_count max_sprites)
+    (if (= sprite_count MAX_SPRITES)
         (return false))
-    (set (at sprites sprite_count) (sprite :x x :y y :active true))
+    (set (at sprites sprite_count) (Sprite :x x :y y :active true))
     (set sprite_count (+ sprite_count 1))
     true)
 ```
@@ -38,7 +38,7 @@ whole program, so files are namespaces, not separate compilation units.
 
 ; main.tsp
 (import gfx/hgr)
-(import sound/speaker :as spk)
+(import sound/speaker as spk)
 
 (fn main
     (hgr.plot 10 20)
@@ -47,7 +47,8 @@ whole program, so files are namespaces, not separate compilation units.
 
 - Import paths are relative to the project root (the entry file's folder),
   then `lib/` for the bundled Apple II library. The last segment is the
-  prefix (`hgr.plot`); `:as` renames it.
+  prefix (`hgr.plot`); `as` renames it. `import` is a special form, so `as` is a
+  plain word, not a keyword.
 - `tisple build main.tsp` follows imports to find every file.
 - Every top-level name is importable for now.
 - An import cycle is an error.
@@ -55,9 +56,9 @@ whole program, so files are namespaces, not separate compilation units.
 ## Keywords
 
 *Proposed*: `:name` is a keyword, syntax only, never a runtime value. Used for
-struct literals `(sprite :x 10 :y 20)`, declaration options
-`(let t (array u8 200) :in tables :align 16)`, import options `:as`, and later
-named arguments.
+struct literals `(Sprite :x 10 :y 20)`, declaration options
+`(let t (array u8 200) :in tables :align 16)`, and later named arguments. Only
+where a form is open-ended; fixed special forms like `import` use plain words.
 
 ## Types
 
@@ -70,9 +71,9 @@ named arguments.
 | struct name | a declared `struct` |
 | enum name | a declared `enum`; stored as `u8` |
 
-Struct names are `snake_case` like everything else (`sprite`, not `Sprite`).
-Types and values live in separate namespaces, so `(let sprite sprite)` is legal
-if unwise.
+Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
+`Action`), constants `SCREAMING_SNAKE_CASE` (`MAX_SPRITES`), everything else
+`snake_case`. Primitives stay `u8`, `i16`, `bool`. The checker enforces it.
 
 ## Integers
 
@@ -121,9 +122,9 @@ No shadowing in the same body.
 ## Enums and match
 
 ```scheme
-(enum action move_left move_right fire)
+(enum Action move_left move_right fire)
 
-(fn handle (args (a action))
+(fn handle (args (a Action))
     (match a
         (move_left (step 255))
         (move_right (step 1))
@@ -132,7 +133,7 @@ No shadowing in the same body.
             (play_click)))))
 ```
 
-- Members number from 0 in order. `(enum action (fire 7) ...)` sets a value.
+- Members number from 0 in order. `(enum Action (fire 7) ...)` sets a value.
 - `match` on an enum without `_` must name every member. On integers it needs
   `_`. Like `if`, it has a value when every clause gives one.
 - Payload enums (Dudu-style) are later.
@@ -171,7 +172,7 @@ runs before the checker, so nothing later sees a macro.
 - Return value: `u8`/`i8`/`bool` in A, 16-bit in A (low) and X (high).
 - Arrays of structs are stored one array per field unless something takes an
   element's address; then they are packed.
-- `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes.
+- `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes (settled).
 
 ## Out of the first subset
 
@@ -182,4 +183,4 @@ Placement controls, strings, function pointers, recursion, inline assembly,
 
 1. Settled 2026-10-26: field access is `(. s x)`.
 2. Settled 2026-10-26: `if` + `do`, no `when`/`unless`; `cond` only if else-if chains get ugly.
-3. Pointer arithmetic: recommended by elements (C-like); `(ptr u8)` for byte offsets. Awaiting owner.
+3. Settled 2026-10-26: pointer arithmetic moves by elements; `(ptr u8)` for byte offsets.
