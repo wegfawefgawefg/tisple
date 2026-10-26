@@ -46,6 +46,19 @@ std::uint16_t Divide(Op op, TypeKind kind, std::uint16_t a, std::uint16_t b) {
     return MaskToKind(kind, static_cast<std::uint32_t>(result));
 }
 
+// what the backend's restoring division gives for a zero divisor: every quotient bit is set
+// and the remainder is the dividend; signed divides the magnitude, then fixes the signs
+std::uint16_t DivideByZero(Op op, TypeKind kind, std::uint16_t a) {
+    if (op == Op::Mod) {
+        return a;
+    }
+    std::uint16_t all_ones = MaskToKind(kind, 0xFFFF);
+    if (IsSignedKind(kind) && SignedValue(kind, a) < 0) {
+        return 1;
+    }
+    return all_ones;
+}
+
 bool Compare(Op op, std::int32_t x, std::int32_t y) {
     switch (op) {
     case Op::Eq:
@@ -81,7 +94,7 @@ std::uint16_t EvalBinaryOp(Op op, TypeKind kind, std::uint16_t a, std::uint16_t 
     case Op::Mod:
         if (b == 0) {
             div_by_zero = true;
-            return 0;
+            return DivideByZero(op, kind, a);
         }
         return Divide(op, kind, a, b);
     case Op::And:

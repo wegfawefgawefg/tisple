@@ -49,12 +49,35 @@ void DeclareEnum(Checker& ck, const Node& form) {
     ed.name = name.text;
     ed.module = ck.at.module;
     ed.loc = NodeLoc(ck, form);
-    if (form.items.size() < 3) {
-        Err(ck, form, "an enum needs members; write (enum " + ed.name + " first second)");
+    // (enum Action (none left right)); the old (enum Action none left right) gets a fix
+    const std::vector<Node>* items = &form.items;
+    std::size_t first = 2;
+    if (form.items.size() == 3 && form.items[2].kind == NodeKind::List &&
+        form.items[2].mark == QuoteMark::None) {
+        items = &form.items[2].items;
+        first = 0;
+        const std::vector<Node>& list = *items;
+        if (list.size() == 2 && list[0].kind == NodeKind::Symbol &&
+            list[1].kind == NodeKind::Integer) {
+            Err(ck, form,
+                "a member with a value is (name number) inside the list; write (enum " + ed.name +
+                    " ((" + list[0].text + " " + list[1].text + ")))");
+            return;
+        }
+    } else if (form.items.size() > 2) {
+        std::string list;
+        for (std::size_t i = 2; i < form.items.size(); i++) {
+            list += (i == 2 ? "" : " ") + Show(form.items[i]);
+        }
+        Err(ck, form,
+            "members are one list, like parameters: write (enum " + ed.name + " (" + list + "))");
+    }
+    if (items->size() <= first) {
+        Err(ck, form, "an enum needs members; write (enum " + ed.name + " (first second))");
     }
     std::uint32_t next = 0;
-    for (std::size_t i = 2; i < form.items.size(); i++) {
-        const Node& item = form.items[i];
+    for (std::size_t i = first; i < items->size(); i++) {
+        const Node& item = (*items)[i];
         const Node* member_name = &item;
         std::uint32_t value = next;
         if (item.kind == NodeKind::List) {

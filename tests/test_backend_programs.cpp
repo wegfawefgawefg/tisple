@@ -141,10 +141,10 @@ void TestStartup(TestResults& results) {
     Compiled c = CompileText("(let total u16 1000)\n"
                              "(let pp (ptr u8))\n"
                              "(let bytes (array u8 8))\n"
-                             "(fn main (returns u16)\n"
+                             "(fn main () u16\n"
                              "    (set pp (addr_of (at bytes 0)))\n"
-                             "    (for i u8 0 8 (store (+ pp (u16 i)) (* i 3)))\n"
-                             "    (for i u8 0 8 (set total (+ total (u16 (at bytes i)))))\n"
+                             "    (for i u8 0 8 (store (+ pp (as u16 i)) (* i 3)))\n"
+                             "    (for i u8 0 8 (set total (+ total (as u16 (at bytes i)))))\n"
                              "    total)");
     CHECK(results, c.ok);
     if (!c.ok) {
@@ -175,12 +175,12 @@ void TestStartup(TestResults& results) {
 void TestFrameOverlap(TestResults& results) {
     // a and b are never live together, so their frames share bytes; f calls both and keeps
     // its own values across the calls
-    Compiled c = CompileText("(fn a (args (x u16) (y u16)) (returns u16) (let t (+ x y)) (* t 3))\n"
-                             "(fn b (args (x u8)) (returns u8) (let t (+ x 1)) (* t t))\n"
-                             "(fn f (args (n u16)) (returns u16)\n"
-                             "    (let keep (+ n 5))\n"
-                             "    (let r (a n keep))\n"
-                             "    (+ (+ r (u16 (b (u8 n)))) keep))");
+    Compiled c = CompileText("(fn a ((x u16) (y u16)) u16 (let t u16 (+ x y)) (* t 3))\n"
+                             "(fn b ((x u8)) u8 (let t u8 (+ x 1)) (* t t))\n"
+                             "(fn f ((n u16)) u16\n"
+                             "    (let keep u16 (+ n 5))\n"
+                             "    (let r u16 (a n keep))\n"
+                             "    (+ (+ r (as u16 (b (as u8 n)))) keep))");
     CHECK(results, c.ok);
     const tisple::Program& program = c.built.program;
     auto address = [&](const char* fn, std::size_t param) {
@@ -196,15 +196,15 @@ void TestFrameOverlap(TestResults& results) {
 
 // more frame bytes than zero page holds: the coldest go to memory frames
 void TestBigFrames(TestResults& results) {
-    std::string text = "(let out u16 0)\n(fn deep (args (x u16)) (returns u16)\n";
+    std::string text = "(let out u16 0)\n(fn deep ((x u16)) u16\n";
     for (int i = 0; i < 130; i++) {
-        text += "    (let v" + std::to_string(i) + " (+ x " + std::to_string(i * 3) + "))\n";
+        text += "    (let v" + std::to_string(i) + " u16 (+ x " + std::to_string(i * 3) + "))\n";
     }
     text += "    (let s u16 0)\n";
     for (int i = 0; i < 130; i++) {
         text += "    (set s (+ s (^ v" + std::to_string(i) + " " + std::to_string(i) + ")))\n";
     }
-    text += "    s)\n(fn f (args (x u16)) (returns u16) (let a (deep x)) (+ a (deep (+ x 1))))\n";
+    text += "    s)\n(fn f ((x u16)) u16 (let a u16 (deep x)) (+ a (deep (+ x 1))))\n";
     Compiled c = CompileText(text);
     CHECK(results, c.ok);
     if (!c.ok) {
@@ -226,12 +226,12 @@ void TestPlacements(TestResults& results) {
                              "(let low (array u8 4) :address 0x0300)\n"
                              "(let low_init u16 0xBEEF :address 0x0310)\n"
                              "(let aligned (array u8 16) :align 256)\n"
-                             "(fn f (returns u16)\n"
+                             "(fn f () u16\n"
                              "    (set zp_ptr (addr_of (at low 1)))\n"
                              "    (store zp_ptr 9)\n"
                              "    (set zp_count (+ zp_count (load zp_ptr)))\n"
                              "    (set (at aligned 3) zp_count)\n"
-                             "    (+ low_init (u16 (at low 1))))");
+                             "    (+ low_init (as u16 (at low 1))))");
     CHECK(results, c.ok);
     if (!c.ok) {
         std::fprintf(stderr, "%s\n", c.errors.c_str());
@@ -247,13 +247,19 @@ void TestPlacements(TestResults& results) {
     CHECK(results, StartDiff(d, c));
     CheckDiff(results, d, "t.f", {});
     CheckDiff(results, d, "t.f", {});
+    // an :address global with no value is not in the file, so loading leaves it alone
+    Compiled untouched = CompileText("(let buf (array u8 64) :address 0x7000)\n"
+                                     "(let kept (array u8 4) :address 0x7100)\n"
+                                     "(let x u8 3)\n"
+                                     "(fn f () u8 (+ x (at buf 1)))");
+    CHECK(results, untouched.ok && untouched.code.origin + untouched.code.image.size() < 0x7000);
     // a code/data overlap is an error, not a silent clobber
-    Compiled clash = CompileText("(let x u8 :address 0x6002)\n(fn f (set x 1))");
+    Compiled clash = CompileText("(let x u8 :address 0x6002)\n(fn f () void (set x 1))");
     CHECK(results, !clash.ok && clash.errors.find("overlaps the program") != std::string::npos);
 }
 
 void TestErrors(TestResults& results) {
-    Compiled big = CompileText("(let a (array u8 30000))\n(fn main (set (at a 5) 1))");
+    Compiled big = CompileText("(let a (array u8 30000))\n(fn main () void (set (at a 5) 1))");
     CHECK(results, !big.ok && big.errors.find("no room") != std::string::npos);
 }
 
@@ -267,7 +273,7 @@ void CycleReport(TestResults& results) {
     TestFill(results, fill, fill_bytes);
     TestHgrInit(results, rows, rows_bytes);
     TestSprites(results, sprites, sprite_bytes);
-    Compiled mul = CompileText("(fn mul (args (a u16) (b u16)) (returns u16) (* a b))");
+    Compiled mul = CompileText("(fn mul ((a u16) (b u16)) u16 (* a b))");
     Diff d;
     CHECK(results, StartDiff(d, mul));
     CheckDiff(results, d, "t.mul", {1234, 5678});

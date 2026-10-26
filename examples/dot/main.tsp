@@ -3,20 +3,20 @@
 (import gfx/hgr)
 (import apple2 a2)
 
-(enum Action none left right up down)
+(enum Action (none left right up down))
 
-(struct Dot (x u16) (y u8))
+(struct Dot ((x u16) (y u8)))
 
-(let dot (Dot :x 140 :y 96))
+(let dot Dot (make Dot :x 140 :y 96))
 
-(macro inc (args place)
+(macro inc (place)
     `(set ,place (+ ,place 1)))
 
-(macro dec (args place)
+(macro dec (place)
     `(set ,place (- ,place 1)))
 
-(fn read_action (returns Action)
-    (let key (io_read u8 a2.KBD))
+(fn read_action () Action
+    (let key u8 (io_read u8 a2.KBD))
     (if (< key 0x80)
         (return Action.none))
     (io_read u8 a2.KBDSTRB)
@@ -27,27 +27,31 @@
         (a2.KEY_DOWN Action.down)
         (_ Action.none)))
 
-(fn click
+(fn click () void
     (io_read u8 a2.SPKR))
 
-(fn main
+(fn main () void
     (hgr.init)
     (hgr.show)
     (hgr.flip dot.x dot.y)
     (while true
-        (let action (read_action))
+        (let action Action (read_action))
         (if (!= action Action.none)
             (do
                 (hgr.flip dot.x dot.y)
                 (match action
-                    (Action.left (if (> dot.x 0)
-                        (dec dot.x)))
-                    (Action.right (if (< dot.x 279)
-                        (inc dot.x)))
-                    (Action.up (if (> dot.y 0)
-                        (dec dot.y)))
-                    (Action.down (if (< dot.y 191)
-                        (inc dot.y)))
-                    (_ (do)))
+                    (Action.left
+                        (if (> dot.x 0)
+                            (dec dot.x)))
+                    (Action.right
+                        (if (< dot.x 279)
+                            (inc dot.x)))
+                    (Action.up
+                        (if (> dot.y 0)
+                            (dec dot.y)))
+                    (Action.down
+                        (if (< dot.y 191)
+                            (inc dot.y)))
+                    (_))
                 (hgr.flip dot.x dot.y)
                 (click)))))

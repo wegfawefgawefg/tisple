@@ -28,7 +28,7 @@ bool InReserved(std::uint32_t start, std::uint32_t size) {
 void RepresentationTests(TestResults& results) {
     // a u16 array is a low-byte table followed by a high-byte table
     Built split = BuildText("(let table (array u16 4))\n"
-                            "(fn f (set (at table 1) 0x1234) (set (at table 3) 0xABCD))");
+                            "(fn f () void (set (at table 1) 0x1234) (set (at table 3) 0xABCD))");
     CHECK(results, split.ok);
     const tisple::VarPlace& table = PlaceOf(split, "t.table");
     CHECK(results, table.split && table.plane_stride == 4 && table.size == 8);
@@ -42,7 +42,7 @@ void RepresentationTests(TestResults& results) {
 
     // an addr_of into it makes it packed, low byte first
     Built packed = BuildText("(let table (array u16 4))\n"
-                             "(fn f (returns u16) (set (at table 1) 0x1234) "
+                             "(fn f () u16 (set (at table 1) 0x1234) "
                              "(as u16 (addr_of (at table 1))))");
     CHECK(results, packed.ok);
     const tisple::VarPlace& packed_table = PlaceOf(packed, "t.table");
@@ -54,14 +54,14 @@ void RepresentationTests(TestResults& results) {
 
     // pointers to u16 arrays are the same bytes through load and store
     Built through = BuildText("(let table (array u16 4))\n"
-                              "(fn f (returns u16) (let p (addr_of (at table 0))) "
+                              "(fn f () u16 (let p (ptr u16) (addr_of (at table 0))) "
                               "(store (+ p 2) 0xBEEF) (at table 2))");
     StartInterp(in, through);
     CHECK(results, CallOk(results, in, "t.f", {}) == 0xBEEF);
 
     // a struct array is one table per byte of the struct
-    Built sprites = BuildText("(struct S (x u8) (pos u16) (on bool))\n(let s (array S 10))\n"
-                              "(fn f (set (at s 2) (S :x 7 :pos 0x0102 :on true)))");
+    Built sprites = BuildText("(struct S ((x u8) (pos u16) (on bool)))\n(let s (array S 10))\n"
+                              "(fn f () void (set (at s 2) (make S :x 7 :pos 0x0102 :on true)))");
     const tisple::VarPlace& s = PlaceOf(sprites, "t.s");
     CHECK(results, s.split && s.plane_stride == 10 && s.size == 40);
     StartInterp(in, sprites);
@@ -77,7 +77,7 @@ void PlacementTests(TestResults& results) {
                              "(let rows (array u16 192) :boundary 256)\n"
                              "(let small u8 1)\n"
                              "(let big (array u8 0x1500))\n"
-                             "(fn f (let local u16 3))");
+                             "(fn f () void (let local u16 3))");
     CHECK(results, placed.ok);
     if (!placed.ok) {
         std::fprintf(stderr, "%s", ErrorText(placed).c_str());
@@ -120,6 +120,18 @@ void PlacementTests(TestResults& results) {
                 "t.tsp:1:6: a at $60F8 crosses a 256-byte block; start it at $6100");
     ExpectError(results, "(let a (array u8 512) :address 0xFF00)",
                 "t.tsp:1:6: a at $FF00 is 512 bytes and runs past $FFFF; move it lower");
+    // pointer provenance: a constant address inside a declared variable must be addr_of
+    ExpectError(results,
+                "(let screen (array u8 8192) :address 0x2000)\n"
+                "(fn f () void (store (as (ptr u8) (+ 0x2000 5)) 1))",
+                "t.tsp:2:22: the constant address $2005 is inside screen ($2000-$3FFF); a pointer "
+                "into a variable comes from addr_of, as in (addr_of screen)");
+    ExpectError(results, "(let buf (array u8 16))\n(fn f () u8 (load (as (ptr u8) 0x0C05)))",
+                "t.tsp:2:19: the constant address $0C05 is inside buf ($0C00-$0C0F); a pointer "
+                "into a variable comes from addr_of, as in (addr_of buf)");
+    CHECK(results, BuildText("(let buf (array u8 16))\n"
+                             "(fn f () u8 (load (as (ptr u8) 0x2005)))")
+                       .ok);
     ExpectError(results, "(let a (array u8 40000))",
                 "t.tsp:1:6: no room for a (40000 bytes) in the data region $0C00-$BFFF");
 }

@@ -107,19 +107,27 @@ bool IsParamType(const Checker& ck, TypeId type) {
     return type == kErrorType || IsScalarKind(KindOf(*ck.out, type));
 }
 
-void ReadParams(Checker& ck, Function& fn, std::int32_t index, const Node& args) {
-    if (args.items.size() == 1) {
-        Err(ck, args,
-            "omit (args) when " +
-                ck.function_forms[static_cast<std::size_t>(index)]->items[1].text +
-                " takes no arguments");
-        return;
+// (params ...) holds only (name type) lists; anything else is the old shape or a body form
+bool IsParamListShape(const Node& node) {
+    if (node.kind != NodeKind::List || node.mark != QuoteMark::None) {
+        return false;
     }
-    for (std::size_t i = 1; i < args.items.size(); i++) {
-        const Node& param = args.items[i];
+    for (const Node& item : node.items) {
+        if (item.kind != NodeKind::List) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// params[first..]: each (name type), added to the function and the current scope
+void ReadParams(Checker& ck, Function& fn, std::int32_t index, const Node& params,
+                std::size_t first) {
+    for (std::size_t i = first; i < params.items.size(); i++) {
+        const Node& param = params.items[i];
         if (param.kind != NodeKind::List || param.items.size() != 2 ||
             param.items[0].kind != NodeKind::Symbol) {
-            Err(ck, param, "each parameter is (name type); write (args (x u8) (y u8))");
+            Err(ck, param, "each parameter is (name type); write ((x u8) (y u8))");
             continue;
         }
         if (!CheckLocalName(ck, param.items[0], "parameter")) {
@@ -145,36 +153,87 @@ void ReadParams(Checker& ck, Function& fn, std::int32_t index, const Node& args)
     }
 }
 
+TypeId ReadReturnType(Checker& ck, const Node& node) {
+    if (node.kind == NodeKind::Symbol && node.text == "void") {
+        return kVoidType;
+    }
+    TypeId type = ResolveType(ck, node);
+    if (!IsParamType(ck, type)) {
+        Err(ck, node,
+            "a function returns 1 or 2 bytes (integers, bool, enums, pointers); return a (ptr " +
+                ShowType(ck, type) + ") instead");
+        type = kErrorType;
+    }
+    return type;
+}
+
+// the return type slot holds void or a type; a body form there means it was left out
+bool IsReturnTypeShape(Checker& ck, const Node& node) {
+    if (node.kind == NodeKind::Symbol && node.text == "void") {
+        return true;
+    }
+    if (node.kind == NodeKind::Symbol) {
+        return TryResolveType(ck, node) >= 0;
+    }
+    const std::string& head = HeadName(node);
+    return head == "ptr" || head == "array";
+}
+
+std::string ShowItems(const Node& list, std::size_t first) {
+    std::string text;
+    for (std::size_t i = first; i < list.items.size(); i++) {
+        text += (text.empty() ? "" : " ") + Show(list.items[i]);
+    }
+    return text;
+}
+
+// (fn name (params) type body ...); the old (args ...) and (returns t) get a fix
 void ReadSignature(Checker& ck, std::int32_t index) {
     const Node& form = *ck.function_forms[static_cast<std::size_t>(index)];
     Function& fn = ck.out->functions[static_cast<std::size_t>(index)];
     Context saved = SwitchContext(ck, fn.module, index);
     ck.at.scopes.emplace_back();
+    const std::vector<Node>& items = form.items;
+    const std::string& name = items[1].text;
     std::size_t next = 2;
-    if (next < form.items.size() && HeadName(form.items[next]) == "args") {
-        ReadParams(ck, fn, index, form.items[next]);
+    bool old_params = false;
+    bool old_returns = false;
+    std::string params_text = "()";
+    if (next < items.size() && HeadName(items[next]) == "args") {
+        old_params = true;
+        params_text = "(" + ShowItems(items[next], 1) + ")";
+        ReadParams(ck, fn, index, items[next], 1);
         next++;
+    } else if (next < items.size() && IsParamListShape(items[next])) {
+        params_text = Show(items[next]);
+        ReadParams(ck, fn, index, items[next], 0);
+        next++;
+    } else {
+        old_params = true;
     }
-    if (next < form.items.size() && HeadName(form.items[next]) == "returns") {
-        const Node& returns = form.items[next];
-        if (returns.items.size() != 2) {
-            Err(ck, returns, "(returns t) names one type; write (returns u8)");
-        } else {
-            TypeId type = ResolveType(ck, returns.items[1]);
-            if (!IsParamType(ck, type)) {
-                Err(ck, returns.items[1],
-                    "a function returns 1 or 2 bytes (integers, bool, enums, pointers); return "
-                    "a (ptr " +
-                        ShowType(ck, type) + ") instead");
-                type = kErrorType;
-            }
-            fn.ret = type;
+    std::string return_text = "void";
+    if (next < items.size() && HeadName(items[next]) == "returns") {
+        old_returns = true;
+        const Node& returns = items[next];
+        if (returns.items.size() == 2) {
+            return_text = Show(returns.items[1]);
+            fn.ret = ReadReturnType(ck, returns.items[1]);
         }
         next++;
-    }
-    if (next < form.items.size() && HeadName(form.items[next]) == "args") {
-        Err(ck, form.items[next], "(args ...) comes before (returns ...)");
+    } else if (!old_params && next < items.size() && IsReturnTypeShape(ck, items[next])) {
+        return_text = Show(items[next]);
+        fn.ret = ReadReturnType(ck, items[next]);
         next++;
+    } else if (!old_params) {
+        Err(ck, form,
+            "the return type comes after the parameters, void when " + name +
+                " returns nothing; write (fn " + name + " " + params_text + " void ...)");
+    }
+    std::string fix = "(fn " + name + " " + params_text + " " + return_text + " ...)";
+    if (old_params) {
+        Err(ck, form, "parameters are always a list now: write " + fix);
+    } else if (old_returns) {
+        Err(ck, form, "the return type is always the third item now: write " + fix);
     }
     ck.body_starts[static_cast<std::size_t>(index)] = next;
     RestoreContext(ck, std::move(saved));
@@ -253,7 +312,7 @@ void FindMain(Checker& ck) {
     ck.out->main = it->second.index;
     const Function& fn = ck.out->functions[static_cast<std::size_t>(ck.out->main)];
     if (!fn.params.empty()) {
-        AddError(*ck.errors, fn.loc, "main takes no arguments; remove its (args ...)");
+        AddError(*ck.errors, fn.loc, "main takes no parameters; write (fn main () void ...)");
     }
 }
 

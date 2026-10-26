@@ -12,13 +12,13 @@
 (let col_byte (array u8 280))
 (let col_bit (array u8 280))
 
-(fn init
+(fn init () void
     (for y u8 0 192
-        (let start
-            (+ (+ a2.HGR_PAGE1 (<< (u16 (& y 7)) 10))
-                (+ (<< (u16 (& (>> y 3) 7)) 7) (* (u16 (>> y 6)) 40))))
-        (set (at row_lo y) (u8 start))
-        (set (at row_hi y) (u8 (>> start 8))))
+        (let start u16
+            (+ (+ a2.HGR_PAGE1 (<< (as u16 (& y 7)) 10))
+                (+ (<< (as u16 (& (>> y 3) 7)) 7) (* (as u16 (>> y 6)) 40))))
+        (set (at row_lo y) (as u8 start))
+        (set (at row_hi y) (as u8 (>> start 8))))
     (let byte u8 0)
     (let bit u8 0)
     (for x u16 0 280
@@ -31,14 +31,14 @@
                 (set byte (+ byte 1))))))
 
 ; any access to these soft switches flips them
-(fn show
+(fn show () void
     (io_read u8 a2.TXTCLR)
     (io_read u8 a2.MIXCLR)
     (io_read u8 a2.LOWSCR)
     (io_read u8 a2.HIRES))
 
 ; xor one pixel, so drawing twice erases it
-(fn flip (args (x u16) (y u8))
-    (let row (| (<< (u16 (at row_hi y)) 8) (u16 (at row_lo y))))
-    (let p (as (ptr u8) (+ row (u16 (at col_byte x)))))
+(fn flip ((x u16) (y u8)) void
+    (let row u16 (| (<< (as u16 (at row_hi y)) 8) (as u16 (at row_lo y))))
+    (let p (ptr u8) (as (ptr u8) (+ row (as u16 (at col_byte x)))))
     (store p (^ (load p) (at col_bit x))))

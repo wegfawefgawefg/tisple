@@ -60,12 +60,12 @@ layout, the way clang-format does in splonks-cpp: 4 spaces, 100 columns, one
 canonical result.
 
 ```scheme
-(fn fill (args (dst (ptr u8)) (count u16) (value u8))
-    (for i 0 count
+(fn fill ((dst (ptr u8)) (count u16) (value u8)) void
+    (for i u16 0 count
         (store (+ dst i) value)))
 
-(fn read_key (returns u8)
-    (let key (io_read u8 0xC000))
+(fn read_key () u8
+    (let key u8 (io_read u8 0xC000))
     (& key 0x7F))
 ```
 
@@ -75,9 +75,14 @@ Settled:
 - Rust naming: `PascalCase` types, `SCREAMING_SNAKE_CASE` constants, `snake_case`
   everything else including built-ins. No kebab-case, no `!` suffixes.
 - Round parentheses only; no square brackets.
-- `(args ...)` names the parameters. Functions with none omit it.
+- `(fn name (params) type body ...)`: the parameter list is always written,
+  `()` when empty, and the return type is always third, `void` when nothing is
+  returned.
 - `let` for locals and top-level bindings. No `define`, no `global`.
-- Local and return types are inferred. Parameters are typed.
+- Every declaration states its type: `(let key u8 ...)`, `(const MAX u8 32)`,
+  `(for i u8 0 n ...)`. Nothing is inferred but the type of a literal.
+- A type never heads a form: `(as u16 y)` converts, `(make Sprite ...)` builds.
+  The four shapes (declare, build, access, control) are in `docs/language.md`.
 - The formatter is designed with the grammar, not after it.
 
 Reader: a symbol is any run of characters other than whitespace, parentheses,
@@ -95,19 +100,26 @@ Formatter rules (`tisple fmt`, implemented in `src/reader/format.cpp`):
 - Every line is indented a multiple of 4, measured from the line where the form
   starts, not from its parenthesis.
 - Body forms always put their body on new lines at +4, like braces on every
-  `if`: `fn` and `macro` (name and `args` stay on the head line), `if` (the
-  condition stays; both arms are body), `while`, `match` (each clause a line),
-  `for` (`i`, the optional type, start and end stay), `do`. With no body they
-  stay on one line: `(while (not (key_ready)))`, `(do)`.
+  `if`: `fn` (name, parameter list and return type stay on the head line),
+  `macro` (name and parameter list stay), `if` (the condition stays; both arms
+  are body), `while`, `match` (the value stays; each clause a line), `for` (`i`,
+  the type, start and end stay), `do`. With no body they stay on one line:
+  `(while (not (key_ready)))`, `(do)`, `(fn f () void)`.
+- A `match` clause is a body too, with the pattern as its head: one line when
+  it is a single form that fits, `(Action.left (step 255))`, or nothing,
+  `(_)`; otherwise the pattern stays and each form goes on its own line at +4.
 - Everything else stays on one line when it fits in 100 columns, closing
   parentheses included. Otherwise the head and the first argument stay (the
   first argument goes down too if it does not fit), each remaining list
   argument gets its own line at +4, and runs of atoms fill lines (data tables
   stay compact).
 - A body form as the last argument hangs off the head line when the head line
-  fits: `(let m (if c` then arms at +4; `(Action.fire (do` then the body.
-- `args`, `enum` and `struct`: one line if it fits, else one parameter, member
-  or field per line at +4 (`args` goes down to +8 inside a long `fn` header).
+  fits: `(let m u8 (if c` then arms at +4.
+- Parameter lists (`fn`, `macro`) and field and member lists (`struct`, `enum`)
+  stay on the head line: one line if they fit, else the first item stays right
+  after the `(` and every other item goes on its own line at +8, so it never
+  looks like body; the return type follows the closing `)`:
+  `(fn draw ((dst (ptr u8))`, `        (count u8)) void`.
 - A `:keyword` and its value stay together on one line.
 - A header item that cannot stay on the head line (a comment forced it down)
   goes to +8, so it never looks like body.
@@ -131,9 +143,9 @@ later as a second reader producing the same tree. Not planned.
 
 ## Core language
 
-- `bool`, `u8`, `i8`, `u16`, `i16`. Arithmetic wraps. *Proposed*: binary ops
-  need both sides the same type, literals take the type their context needs,
-  widening and narrowing are explicit (`u16 x`).
+- `bool`, `u8`, `i8`, `u16`, `i16`. Arithmetic wraps. Binary ops need both
+  sides the same type, literals take the type their context needs, widening
+  and narrowing are explicit (`(as u16 x)`).
 - Functions, locals, `if`, loops, early `return`.
 - Structs, fixed arrays, constants, byte strings.
 - Pointers, address-of, load/store, indexing, field access.
@@ -273,7 +285,7 @@ reports come after the compiler works.
 ## Open decisions
 
 - Literal typing details, pointer arithmetic, signed compares.
-- Struct initialization and view syntax.
+- View syntax.
 - How backing storage for allocators is declared.
 - Calling convention for recursion, function pointers and interrupts.
 - IR shape.

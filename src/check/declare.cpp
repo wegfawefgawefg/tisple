@@ -102,6 +102,10 @@ TypeId ResolveType(Checker& ck, const Node& node) {
             Err(ck, node, node.text + " needs parentheses; write (ptr u8) or (array u8 16)");
             return kErrorType;
         }
+        if (node.text == "void") {
+            Err(ck, node, "void is only the return type of a fn that returns nothing");
+            return kErrorType;
+        }
         std::vector<std::string> segments = SplitDotted(node.text);
         NameRef ref = segments.empty() ? NameRef() : LookupName(ck, segments, node);
         if (ref.kind == NameKind::Struct && ref.used == segments.size()) {
@@ -181,12 +185,32 @@ bool EnsureStruct(Checker& ck, std::int32_t decl, const Node& at) {
     std::vector<Field> fields;
     std::uint32_t offset = 0;
     bool ok = true;
-    if (form.items.size() < 3) {
-        Err(ck, form, "a struct needs fields; write (struct " + sd.name + " (x u8) (y u8))");
+    // (struct Sprite ((x u8) (y u8))); the old (struct Sprite (x u8) (y u8)) gets a fix
+    const std::vector<Node>* items = &form.items;
+    std::size_t first = 2;
+    bool one_list = form.items.size() == 3 && form.items[2].kind == NodeKind::List &&
+                    form.items[2].mark == QuoteMark::None;
+    for (std::size_t i = 0; one_list && i < form.items[2].items.size(); i++) {
+        one_list = form.items[2].items[i].kind == NodeKind::List;
+    }
+    if (one_list) {
+        items = &form.items[2].items;
+        first = 0;
+    } else if (form.items.size() > 2) {
+        std::string list;
+        for (std::size_t i = 2; i < form.items.size(); i++) {
+            list += (i == 2 ? "" : " ") + Show(form.items[i]);
+        }
+        Err(ck, form,
+            "fields are one list, like parameters: write (struct " + sd.name + " (" + list + "))");
         ok = false;
     }
-    for (std::size_t i = 2; i < form.items.size(); i++) {
-        const Node& item = form.items[i];
+    if (items->size() <= first) {
+        Err(ck, form, "a struct needs fields; write (struct " + sd.name + " ((x u8) (y u8)))");
+        ok = false;
+    }
+    for (std::size_t i = first; i < items->size(); i++) {
+        const Node& item = (*items)[i];
         if (item.kind != NodeKind::List || item.items.size() != 2 ||
             item.items[0].kind != NodeKind::Symbol) {
             Err(ck, item, "each field is (name type); write (x u8)");

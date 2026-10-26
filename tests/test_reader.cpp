@@ -66,8 +66,8 @@ void TestStructure(TestResults& results) {
     Tree tree;
     // whitespace means nothing: mashed and spread out read the same
     Tree spread;
-    CHECK(results, Reads("(fn f (args (x u8))\n    ; hi\n    (+ x 1))", spread));
-    CHECK(results, Reads("(fn f(args(x u8))(+ x 1))", tree));
+    CHECK(results, Reads("(fn f ((x u8)) u8\n    ; hi\n    (+ x 1))", spread));
+    CHECK(results, Reads("(fn f((x u8))u8(+ x 1))", tree));
     CHECK(results, tisple::FormsEqual(tree.forms, spread.forms));
     CHECK(results, spread.comments.size() == 1);
     CHECK(results, tree.comments.empty());

@@ -40,12 +40,12 @@ std::string ReadWhole(const std::string& path) {
 }
 
 void TestPlainAndColor(TestResults& results) {
-    std::string source = "; hi\n(fn f (args (x u8))\n    (+ x 0x10 \"s\" :in Sprite MAX))\n";
+    std::string source = "; hi\n(fn f ((x u8)) void\n    (+ x 0x10 \"s\" :in Sprite MAX))\n";
     bool ok = false;
     std::string plain = Show(source, false, ok);
     CHECK(results, ok);
     CHECK(results,
-          plain == "1  ; hi\n2  (fn f (args (x u8))\n3      (+ x 0x10 \"s\" :in Sprite MAX))\n");
+          plain == "1  ; hi\n2  (fn f ((x u8)) void\n3      (+ x 0x10 \"s\" :in Sprite MAX))\n");
     CHECK(results, plain.find('\x1b') == std::string::npos);
 
     std::string color = Show(source, true, ok);
@@ -56,9 +56,9 @@ void TestPlainAndColor(TestResults& results) {
     CHECK(results, color.find("\x1b[38;5;222mMAX\x1b[0m") != std::string::npos);   // constant
     CHECK(results, color.find("\x1b[38;5;215m0x10\x1b[0m") != std::string::npos);  // number
     CHECK(results, color.find("\x1b[38;5;217m:in\x1b[0m") != std::string::npos);   // keyword
-    // parentheses by depth: (fn is depth 0, (args depth 1, (x depth 2
+    // parentheses by depth: (fn is depth 0, the parameter list depth 1, (x depth 2
     CHECK(results, color.find("\x1b[38;5;179m(\x1b[0m\x1b[1;38;5;176mfn") != std::string::npos);
-    CHECK(results, color.find("\x1b[38;5;140m(\x1b[0m\x1b[1;38;5;176margs") != std::string::npos);
+    CHECK(results, color.find("\x1b[38;5;140m(\x1b[0m\x1b[38;5;73m(") != std::string::npos);
 
     // line numbers pad to the widest
     std::string many;

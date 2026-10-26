@@ -99,9 +99,6 @@ bool HasEffects(const Program& program, ExprId id) {
         case ExprKind::While:
         case ExprKind::For:
             return true;
-        case ExprKind::Binary:
-            // a division by zero stops the interpreter, so keep it
-            return e.op == Op::Div || e.op == Op::Mod;
         default:
             return false;
         }
@@ -132,67 +129,6 @@ bool HasLoads(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         return e.kind == ExprKind::Load || e.kind == ExprKind::LoadField;
     });
-}
-
-bool ConstValue(const Program& program, ExprId id, std::uint16_t& value) {
-    const Expr& e = ExprOf(program, id);
-    std::uint16_t a = 0;
-    std::uint16_t b = 0;
-    switch (e.kind) {
-    case ExprKind::Literal:
-        value = static_cast<std::uint16_t>(e.value);
-        return true;
-    case ExprKind::Unary:
-        if (!ConstValue(program, e.a, a)) {
-            return false;
-        }
-        value = EvalUnaryOp(e.op, KindOf(program, e.type), a);
-        return true;
-    case ExprKind::Binary: {
-        if (!ConstValue(program, e.a, a) || !ConstValue(program, e.b, b)) {
-            return false;
-        }
-        bool div_by_zero = false;
-        value = EvalBinaryOp(e.op, ExprKindOf(program, e.a), a, b, div_by_zero);
-        return !div_by_zero;
-    }
-    case ExprKind::Convert:
-        if (!ConstValue(program, e.a, a)) {
-            return false;
-        }
-        value = ConvertBits(ExprKindOf(program, e.a), KindOf(program, e.type), a);
-        return true;
-    case ExprKind::Reinterpret:
-        return ConstValue(program, e.a, value);
-    case ExprKind::And:
-    case ExprKind::Or: {
-        if (!ConstValue(program, e.a, a)) {
-            return false;
-        }
-        // the short circuit decides without b
-        if ((e.kind == ExprKind::And && a == 0) || (e.kind == ExprKind::Or && a != 0)) {
-            value = e.kind == ExprKind::Or ? 1 : 0;
-            return true;
-        }
-        if (!ConstValue(program, e.b, b)) {
-            return false;
-        }
-        value = b != 0 ? 1 : 0;
-        return true;
-    }
-    case ExprKind::PtrAdd:
-    case ExprKind::PtrSub: {
-        if (!ConstValue(program, e.a, a) || !ConstValue(program, e.b, b)) {
-            return false;
-        }
-        std::uint32_t bytes = static_cast<std::uint32_t>(b) * e.value;
-        std::uint32_t sum = e.kind == ExprKind::PtrAdd ? a + bytes : a - bytes;
-        value = static_cast<std::uint16_t>(sum & 0xFFFF);
-        return true;
-    }
-    default:
-        return false;
-    }
 }
 
 bool SameExpr(const Program& program, ExprId a, ExprId b) {

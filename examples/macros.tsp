@@ -1,22 +1,22 @@
 ; macros are templates: ` builds a form, , drops an argument in, ,@ splices a list of forms
 
-(macro swap (args a b)
+(macro swap (a b)
     `(do
-        (let tmp# ,a) ; tmp# is a fresh name every expansion
+        (let tmp# u8 ,a) ; tmp# is a fresh name every expansion
         (set ,a ,b)
         (set ,b tmp#)))
 
-(macro inc (args place)
+(macro inc (place)
     `(set ,place (+ ,place 1)))
 
 ; body is a list of forms, spliced into the loop
-(macro times (args n body)
+(macro times (n body)
     `(for i# u8 0 ,n
         ,@body))
 
-(fn shuffle (args (a u8) (b u8)) (returns u8)
-    (let x a)
-    (let y b)
+(fn shuffle ((a u8) (b u8)) u8
+    (let x u8 a)
+    (let y u8 b)
     (swap x y)
     (times 3 ((inc x) (inc y)))
     (+ x y))

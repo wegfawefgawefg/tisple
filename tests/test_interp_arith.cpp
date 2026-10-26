@@ -56,6 +56,13 @@ std::int32_t Reference(const std::string& fn, bool is_signed, std::int32_t bits,
         }
         return (sa >> (b >= bits ? bits - 1 : b)) & mask;
     }
+    // by zero: what the 6502 routine gives, all quotient bits set and the dividend left over
+    if (fn == "div" && b == 0) {
+        return is_signed && sa < 0 ? 1 : mask;
+    }
+    if (fn == "mod" && b == 0) {
+        return a;
+    }
     if (fn == "div") {
         return (is_signed ? sa / sb : a / b) & mask;
     }
@@ -89,14 +96,11 @@ void ExhaustiveByte(TestResults& results, const std::string& type) {
     std::string text = "(let out (array " + type + " 256))\n(let flags (array bool 256))\n";
     for (const OpCase& op : kOps) {
         std::string table = op.compare ? "flags" : "out";
-        std::string body = "(set (at " + table + " (u8 b)) (" + op.name + " a b))";
-        if (op.divide) {
-            body = "(if (!= b 0) " + body + ")";
-        }
+        std::string body = "(set (at " + table + " (as u8 b)) (" + op.name + " a b))";
         // a shift count is always u8
         bool shift = std::string(op.fn) == "shl" || std::string(op.fn) == "shr";
         std::string count = shift ? "u8 0 256" : type + " " + range;
-        text += "(fn " + std::string(op.fn) + " (args (a " + type + ")) (for b " + count + " " +
+        text += "(fn " + std::string(op.fn) + " ((a " + type + ")) void (for b " + count + " " +
                 body + "))\n";
     }
     Built built = BuildText(text);
@@ -115,9 +119,6 @@ void ExhaustiveByte(TestResults& results, const std::string& type) {
         for (std::int32_t a = 0; a < 256; a++) {
             CallOk(results, in, "t." + std::string(op.fn), {static_cast<std::uint16_t>(a)});
             for (std::int32_t b = 0; b < 256; b++) {
-                if (op.divide && b == 0) {
-                    continue;
-                }
                 std::int32_t want = Reference(op.fn, is_signed, 8, a, b);
                 std::int32_t got = op.compare ? in.memory[flags + b] : in.memory[out + b];
                 if (got != want && wrong++ < 3) {
@@ -140,9 +141,8 @@ void EdgeWords(TestResults& results, const std::string& type) {
     for (const OpCase& op : kOps) {
         std::string ret = op.compare ? "bool" : type;
         bool shift = std::string(op.fn) == "shl" || std::string(op.fn) == "shr";
-        text += "(fn " + std::string(op.fn) + " (args (a " + type + ") (b " +
-                (shift ? std::string("u8") : type) + ")) (returns " + ret + ") (" + op.name +
-                " a b))\n";
+        text += "(fn " + std::string(op.fn) + " ((a " + type + ") (b " +
+                (shift ? std::string("u8") : type) + ")) " + ret + " (" + op.name + " a b))\n";
     }
     Built built = BuildText(text);
     CHECK(results, built.ok);
@@ -153,7 +153,7 @@ void EdgeWords(TestResults& results, const std::string& type) {
         for (std::int32_t a : edges) {
             for (std::int32_t b : edges) {
                 bool shift = std::string(op.fn) == "shl" || std::string(op.fn) == "shr";
-                if ((op.divide && b == 0) || (shift && b > 0xFF)) {
+                if (shift && b > 0xFF) {
                     continue;
                 }
                 std::int32_t want = Reference(op.fn, is_signed, 16, a, b);
@@ -171,13 +171,13 @@ void EdgeWords(TestResults& results, const std::string& type) {
 }
 
 void Conversions(TestResults& results) {
-    Built built = BuildText("(fn u8_to_i16 (args (x u8)) (returns i16) (i16 x))\n"
-                            "(fn i8_to_u16 (args (x i8)) (returns u16) (u16 x))\n"
-                            "(fn i8_to_i16 (args (x i8)) (returns i16) (i16 x))\n"
-                            "(fn u16_to_u8 (args (x u16)) (returns u8) (u8 x))\n"
-                            "(fn i16_to_i8 (args (x i16)) (returns i8) (i8 x))\n"
-                            "(fn not_u8 (args (x u8)) (returns u8) (~ x))\n"
-                            "(fn not_i16 (args (x i16)) (returns i16) (~ x))");
+    Built built = BuildText("(fn u8_to_i16 ((x u8)) i16 (as i16 x))\n"
+                            "(fn i8_to_u16 ((x i8)) u16 (as u16 x))\n"
+                            "(fn i8_to_i16 ((x i8)) i16 (as i16 x))\n"
+                            "(fn u16_to_u8 ((x u16)) u8 (as u8 x))\n"
+                            "(fn i16_to_i8 ((x i16)) i8 (as i8 x))\n"
+                            "(fn not_u8 ((x u8)) u8 (~ x))\n"
+                            "(fn not_i16 ((x i16)) i16 (~ x))");
     CHECK(results, built.ok);
     tisple::Interp in;
     StartInterp(in, built);

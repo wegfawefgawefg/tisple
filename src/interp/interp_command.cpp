@@ -1,5 +1,6 @@
 #include "interp/interp_command.hpp"
 
+#include "backend/backend.hpp"
 #include "check/arith.hpp"
 #include "check/check.hpp"
 #include "interp/interp.hpp"
@@ -50,11 +51,12 @@ int RunInterpCommand(int argc, char** argv) {
         return 1;
     }
 
+    // the backend's layout, so addresses agree with the compiled program
     Program program;
-    Layout layout;
+    Compiled compiled;
     std::vector<Diagnostic> errors;
     if (!BuildProgram(path, LoadOptions(), program, errors) ||
-        !LayoutProgram(program, LayoutOptions(), layout, errors)) {
+        !CompileProgram(program, BuildOptions(), compiled, errors)) {
         std::fputs(FormatDiagnostics(program.sources, errors).c_str(), stderr);
         return 1;
     }
@@ -64,7 +66,7 @@ int RunInterpCommand(int argc, char** argv) {
     }
 
     Interp in;
-    InitInterp(in, program, layout);
+    InitInterp(in, program, compiled.layout);
     in.max_steps = max_steps;
     InterpResult result = CallFunction(in, program.main, {});
     std::string steps = std::to_string(result.steps) + " steps";

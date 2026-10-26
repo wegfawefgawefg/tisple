@@ -170,7 +170,6 @@ bool LiteralFits(TypeKind kind, std::int64_t value);
 ExprId CheckBinary(Checker& ck, const Node& node, Op op, TypeId hint);
 ExprId CheckUnary(Checker& ck, const Node& node, TypeId hint);
 ExprId CheckLogic(Checker& ck, const Node& node);
-ExprId CheckConvert(Checker& ck, const Node& node, TypeId to);
 
 // forms (forms.cpp)
 // forms from items[first] on, as a Do, in the current scope (callers push one)
@@ -178,18 +177,29 @@ ExprId CheckBody(Checker& ck, const std::vector<Node>& items, std::size_t first,
                  bool want_value, const Node& owner);
 ExprId CheckLet(Checker& ck, const Node& node);
 ExprId CheckSet(Checker& ck, const Node& node);
-ExprId CheckIf(Checker& ck, const Node& node, TypeId hint);
-ExprId CheckDo(Checker& ck, const Node& node, TypeId hint);
+// used: the value is wanted; an if, match or do whose value is dropped is a statement, so
+// its arms need not agree on a type
+ExprId CheckIf(Checker& ck, const Node& node, TypeId hint, bool used);
+ExprId CheckDo(Checker& ck, const Node& node, TypeId hint, bool used);
 ExprId CheckWhile(Checker& ck, const Node& node);
 ExprId CheckFor(Checker& ck, const Node& node);
 ExprId CheckReturn(Checker& ck, const Node& node);
 ExprId CheckLoopExit(Checker& ck, const Node& node, bool is_break);
 
 // match (match.cpp)
-ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint);
-// checks arms, deferring bare literals until a type is known; returns the joint type
-TypeId CheckArms(Checker& ck, const std::vector<const Node*>& arms, TypeId hint,
-                 std::vector<ExprId>& out, const Node& owner, const char* what);
+ExprId CheckMatch(Checker& ck, const Node& node, TypeId hint, bool used);
+// one arm of an if or match: the forms items[first, end); its value is the last
+struct Arm {
+    const std::vector<Node>* items = nullptr;
+    std::size_t first = 0;
+    std::size_t end = 0;
+    const Node* owner = nullptr; // where errors about the whole arm point
+};
+// checks arms, each in its own scope. Used: bare literals wait until a type is known and the
+// arms must agree; returns the joint type. Not used: every form is a statement; returns void
+// (never when no arm finishes)
+TypeId CheckArms(Checker& ck, const std::vector<Arm>& arms, TypeId hint, bool used,
+                 std::vector<ExprId>& out, const char* what);
 
 // access and calls (access.cpp; load, store, addr_of and as in pointers.cpp)
 ExprId CheckAt(Checker& ck, const Node& node);
@@ -198,9 +208,15 @@ ExprId CheckLoad(Checker& ck, const Node& node);
 ExprId CheckStore(Checker& ck, const Node& node);
 ExprId CheckAddrOf(Checker& ck, const Node& node);
 ExprId CheckAs(Checker& ck, const Node& node);
+// (make Type ...): struct literals; array literals only as const and top-level let values
+ExprId CheckMake(Checker& ck, const Node& node);
+// a const or top-level let value of array type: (make (array t n) v ...) folded into bytes
+bool FoldArrayLiteral(Checker& ck, const Node& value, TypeId type, const std::string& name,
+                      std::vector<std::uint8_t>& bytes, std::uint32_t offset);
 ExprId CheckIoRead(Checker& ck, const Node& node);
 ExprId CheckIoWrite(Checker& ck, const Node& node);
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function);
+// (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);
 ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string& field);
 // the Var a place is rooted at, or -1; through_load is set when it goes through a Load

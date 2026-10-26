@@ -372,6 +372,14 @@ void EmitNode(Formatter& fm, const Node& node, std::uint32_t base, std::uint32_t
         EmitBodyForm(fm, node, base, trailing, header);
         return;
     }
+    if (IsMatchClause(fm, node)) {
+        EmitBodyForm(fm, node, base, trailing, 0);
+        return;
+    }
+    if (IsParamList(fm, node)) {
+        EmitOnePerLine(fm, node, base, trailing, 0);
+        return;
+    }
     int keep = OnePerLineKeep(node);
     if (keep >= 0) {
         EmitOnePerLine(fm, node, base, trailing, keep);

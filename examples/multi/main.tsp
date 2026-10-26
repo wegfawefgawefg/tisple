@@ -2,7 +2,7 @@
 
 (import gfx/lores gr)
 
-(fn main
+(fn main () void
     (gr.show)
     (for y u8 0 48
         (for x u8 0 40

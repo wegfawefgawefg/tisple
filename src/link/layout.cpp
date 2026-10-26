@@ -274,7 +274,10 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
             PlaceAuto(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);
         }
     }
-    return errors.size() == before;
+    if (errors.size() != before) {
+        return false;
+    }
+    return CheckConstantPointers(program, out, errors);
 }
 
 Cursor VarCursor(const Layout& layout, std::int32_t var) {
