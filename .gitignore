@@ -5,3 +5,4 @@ CMakeUserPresets.json
 .cache/
 .clangd/
 tests/data/
+.claude/
