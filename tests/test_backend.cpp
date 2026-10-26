@@ -284,6 +284,20 @@ void TestRegressions(TestResults& results) {
                  "    (set w (<< (load p) 6))\n"
                  "    (+ w (at arr 2)))",
                  "t.f", {});
+    // fuzz seeds 7002443519, 5003558129, 4002609137 and 2002177440: an inlined call's
+    // 16-bit result went straight into an argument slot of another call, whose frame may
+    // share bytes with the inlined callee's: writing the slot's low byte changed the
+    // callee's parameter before its high byte was read
+    CheckProgram(results,
+                 "(let g u8 0)\n"
+                 "(fn f0 ((a u8) (b u16) (c u8)) u16\n"
+                 "    (set g (+ g a))\n"
+                 "    (+ b (as u16 c)))\n"
+                 "(fn f2 ((x u16)) u16 x)\n"
+                 "(fn f3 ((x u16) (y u16)) u16 (+ x y))\n"
+                 "(fn f () u16\n"
+                 "    (+ (f0 1 (f2 42306) 3) (f0 2 (f3 0x1234 0x4321) 4)))",
+                 "t.f", {});
     // u16 loops in every shape: page crossing, ending on a page, through the top
     CheckProgram(results,
                  "(let wb (array u8 1024))\n"

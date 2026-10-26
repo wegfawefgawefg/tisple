@@ -151,12 +151,62 @@ Opnd EvalConvert(Gen& g, const Expr& e, const Opnd* dst) {
     return d;
 }
 
+// does `from` call `to`, directly or not
+bool CallsFunction(const Program& program, std::int32_t from, std::int32_t to) {
+    std::vector<bool> seen(program.functions.size(), false);
+    std::vector<std::int32_t> work = {from};
+    while (!work.empty()) {
+        std::int32_t f = work.back();
+        work.pop_back();
+        for (std::int32_t callee : program.functions[static_cast<std::size_t>(f)].callees) {
+            if (callee == to) {
+                return true;
+            }
+            if (!seen[static_cast<std::size_t>(callee)]) {
+                seen[static_cast<std::size_t>(callee)] = true;
+                work.push_back(callee);
+            }
+        }
+    }
+    return false;
+}
+
+// may a byte of dst share memory with the frame of `callee` or of what it calls: dst is in
+// the frame of a function that is never live together with callee (an argument slot of
+// another call), so the frames may overlap
+bool SharesFrameWith(const Gen& g, const Opnd& dst, std::int32_t callee) {
+    for (int k = 0; k < dst.size; k++) {
+        const ByteRef& b = dst.b[k];
+        if (b.kind != ByteKind::Mem || b.value.sym < 0) {
+            continue;
+        }
+        const SymInfo& info = g.be->info[static_cast<std::size_t>(b.value.sym)];
+        std::int32_t owner = -1;
+        if (info.role == SymRole::Var) {
+            owner = g.program->vars[static_cast<std::size_t>(info.owner)].function;
+        } else if (info.role == SymRole::Temps) {
+            owner = info.owner;
+        }
+        if (owner < 0) {
+            continue;
+        }
+        if (owner == callee || !CallsFunction(*g.program, owner, callee)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // the callee's body right here, its arguments already in its frame: no JSR or RTS, and a
 // loop around the call can keep its counter in a register
-Opnd InlineBody(Gen& g, const Function& fn, std::uint32_t size, const Opnd* dst) {
+Opnd InlineBody(Gen& g, std::int32_t callee, std::uint32_t size, const Opnd* dst) {
+    const Function& fn = g.program->functions[static_cast<std::size_t>(callee)];
     InlineCtx ctx;
     ctx.ret_label = NewLabel(g);
     bool wide = fn.ret != kVoidType && size == 2;
+    if (dst && SharesFrameWith(g, *dst, callee)) {
+        dst = nullptr;
+    }
     if (wide) {
         ctx.dst = Dest16(g, dst);
     }
@@ -398,7 +448,7 @@ Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
     std::uint32_t size = SizeOf(g, fn.ret);
     if (g.be->fn_exprs[static_cast<std::size_t>(e.ref)] <= kMaxInlineExprs &&
         g.inlines.size() < kMaxInlineDepth) {
-        return InlineBody(g, fn, size, dst);
+        return InlineBody(g, e.ref, size, dst);
     }
     Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->fn_sym[static_cast<std::size_t>(e.ref)]));
     if (fn.ret == kVoidType || size == 0) {
