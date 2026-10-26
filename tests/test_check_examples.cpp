@@ -6,11 +6,24 @@ namespace tisple_tests {
 
 void RunCheckExampleTests(TestResults& results) {
     const char* const files[] = {
-        "examples/fill.tsp",       "examples/hires_plot.tsp",      "examples/keys.tsp",
-        "examples/macros.tsp",     "examples/read_key.tsp",        "examples/speaker.tsp",
-        "examples/sprites.tsp",    "examples/dot/main.tsp",        "examples/dot/gfx/hgr.tsp",
-        "examples/multi/main.tsp", "examples/multi/gfx/lores.tsp", "lib/apple2.tsp",
-        "lib/lores.tsp",           "programs/life/main.tsp",       "programs/snake/main.tsp",
+        "examples/fill.tsp",
+        "examples/hires_plot.tsp",
+        "examples/keys.tsp",
+        "examples/macros.tsp",
+        "examples/read_key.tsp",
+        "examples/speaker.tsp",
+        "examples/sprites.tsp",
+        "examples/dot/main.tsp",
+        "examples/dot/gfx/hgr.tsp",
+        "examples/multi/main.tsp",
+        "examples/multi/gfx/lores.tsp",
+        "lib/apple2.tsp",
+        "lib/lores.tsp",
+        "programs/life/main.tsp",
+        "programs/snake/main.tsp",
+        "lib/tables.tsp",
+        "lib/macros.tsp",
+        "programs/plasma/main.tsp",
     };
     for (const char* file : files) {
         Built built = BuildFile(file);
@@ -20,10 +33,10 @@ void RunCheckExampleTests(TestResults& results) {
         CHECK(results, built.ok);
     }
 
-    // imports: the dot program pulls in gfx/hgr from its folder and apple2 from lib/
+    // imports: the dot program pulls in gfx/hgr from its folder, apple2 and tables from lib/
     Built dot = BuildFile("examples/dot/main.tsp");
-    CHECK(results, dot.program.modules.size() == 3);
-    CHECK(results, tisple::FindFunction(dot.program, "gfx/hgr.init") >= 0);
+    CHECK(results, dot.program.modules.size() == 4);
+    CHECK(results, tisple::FindFunction(dot.program, "gfx/hgr.flip") >= 0);
     CHECK(results, tisple::FindFunction(dot.program, "main.main") == dot.program.main);
 
     // every expression has a resolved type

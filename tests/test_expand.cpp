@@ -75,12 +75,12 @@ void ErrorTests(TestResults& results) {
     ExpectError(results, inc + "(fn f () void (let x u8 0) (inc x x))",
                 "t.tsp:2:28: inc takes 1 argument, got 2; write (inc p)");
     ExpectError(results, "(macro m (a) `(+ ,b 1))\n(fn f () u8 (m 1))",
-                "t.tsp:2:13: only a macro argument can be unquoted; write ,name with a name from "
-                "(a) (in macro m)");
+                "t.tsp:2:13: b is not a parameter (a), let, constant or function; write 'b for "
+                "the symbol; macro code at t.tsp:1:19 (in macro m)");
     ExpectError(results, "(macro m (body) `(do ,@body))\n(fn f () void (m 5))",
                 "t.tsp:2:18: ,@body needs a list of forms; pass ((f a) (g b))");
-    ExpectError(results, "(macro m (a) a)",
-                "t.tsp:1:14: a macro body is one ` template; write `(...)");
+    ExpectError(results, "(macro m (a))",
+                "t.tsp:1:1: a macro needs a body; write (macro m (a) `(...))");
     ExpectError(results, "(macro m (a) `(m ,a))\n(fn f () void (m 1))",
                 "t.tsp:2:15: macro m expands more than 64 levels deep; it probably expands to "
                 "itself (in macro m)");

@@ -31,7 +31,6 @@
     (io_read u8 a2.SPKR))
 
 (fn main () void
-    (hgr.init)
     (hgr.show)
     (hgr.flip dot.x dot.y)
     (while true

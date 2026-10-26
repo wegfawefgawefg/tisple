@@ -1,4 +1,5 @@
 #include "reader/format_internal.hpp"
+#include "reader/keywords.hpp"
 
 namespace tisple {
 
@@ -195,19 +196,22 @@ int BodyHeaderCount(const Node& node) {
     }
     const std::string& head = node.items[0].text;
     if (head == "fn") {
-        // (fn name (params) type body ...)
-        return 3;
+        // (fn name (params) type body ...); in macro code (fn (params) body ...)
+        bool anonymous = node.items.size() > 1 && node.items[1].kind == NodeKind::List;
+        return anonymous ? 1 : 3;
     }
     if (head == "macro") {
-        // (macro name (params) template)
+        // (macro name (params) body ...)
         return 2;
     }
     if (head == "if" || head == "while" || head == "match") {
         return 1;
     }
     if (head == "for") {
-        // (for i type start end body ...)
-        return 4;
+        // (for i type start end body ...); macro code has no type: (for i start end body ...)
+        bool typed = node.items.size() > 2 && node.items[2].kind == NodeKind::Symbol &&
+                     ClassifySymbol(node.items[2].text) == SymbolClass::Type;
+        return typed ? 4 : 3;
     }
     if (head == "do") {
         return 0;

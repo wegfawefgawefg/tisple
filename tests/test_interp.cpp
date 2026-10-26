@@ -95,25 +95,24 @@ void HgrTests(TestResults& results) {
     Built plot = BuildFile("examples/hires_plot.tsp");
     tisple::Interp in;
     StartInterp(in, dot);
-    CallOk(results, in, "gfx/hgr.init", {});
     tisple::Interp table;
     StartInterp(table, plot);
-    std::int32_t row_lo = VarId(dot, "gfx/hgr.row_lo");
-    std::int32_t row_hi = VarId(dot, "gfx/hgr.row_hi");
+    // both tables are computed while compiling: dot's by calling the typed hgr.row_start,
+    // hires_plot's by a macro
+    std::int32_t row = VarId(dot, "gfx/hgr.ROW");
     std::int32_t row_addr = VarId(plot, "hires_plot.ROW_ADDR");
     bool same = true;
     for (std::uint32_t y = 0; y < 192; y++) {
         std::uint16_t want = ReadElement(table, plot, row_addr, y);
-        std::uint16_t got = static_cast<std::uint16_t>(ReadElement(in, dot, row_lo, y) |
-                                                       (ReadElement(in, dot, row_hi, y) << 8));
+        std::uint16_t got = ReadElement(in, dot, row, y);
         if (want != got) {
-            std::fprintf(stderr, "row %u: init gives $%04X, ROW_ADDR has $%04X\n", y, got, want);
+            std::fprintf(stderr, "row %u: ROW gives $%04X, ROW_ADDR has $%04X\n", y, got, want);
             same = false;
         }
     }
     CHECK(results, same);
-    std::int32_t col_byte = VarId(dot, "gfx/hgr.col_byte");
-    std::int32_t col_bit = VarId(dot, "gfx/hgr.col_bit");
+    std::int32_t col_byte = VarId(dot, "gfx/hgr.COL_BYTE");
+    std::int32_t col_bit = VarId(dot, "gfx/hgr.COL_BIT");
     CHECK(results,
           ReadElement(in, dot, col_byte, 279) == 39 && ReadElement(in, dot, col_bit, 279) == 0x40);
     CHECK(results, ReadElement(in, dot, col_byte, 7) == 1 && ReadElement(in, dot, col_bit, 7) == 1);

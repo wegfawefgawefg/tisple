@@ -62,16 +62,27 @@ const std::string& Head(const Node& node) {
     return node.items[0].text;
 }
 
-void Walk(TemplateWalk& walk, const Node& node, bool unquoted) {
+bool IsMarkForm(const Node& node, const char* name) {
+    return node.kind == NodeKind::List && node.items.size() == 2 && Head(node) == name;
+}
+
+// code: macro code, which runs in the compiler; otherwise inside a ` template
+void Walk(TemplateWalk& walk, const Node& node, bool code) {
     if (node.kind == NodeKind::List) {
-        const std::string& head = Head(node);
-        bool unquote = (head == "unquote" || head == "unquote_splicing") && node.items.size() == 2;
-        if (unquote) {
+        bool unquote = IsMarkForm(node, "unquote") || IsMarkForm(node, "unquote_splicing");
+        if (!code && unquote) {
             Walk(walk, node.items[1], true);
             return;
         }
+        if (code && IsMarkForm(node, "quasiquote")) {
+            Walk(walk, node.items[1], false);
+            return;
+        }
+        if (code && IsMarkForm(node, "quote")) {
+            return;
+        }
         for (const Node& item : node.items) {
-            Walk(walk, item, unquoted);
+            Walk(walk, item, code);
         }
         return;
     }
@@ -79,13 +90,16 @@ void Walk(TemplateWalk& walk, const Node& node, bool unquoted) {
         return;
     }
     const MacroInfo& info = walk.ib->names->macros[static_cast<std::size_t>(walk.macro)];
-    if (unquoted) {
+    if (code) {
         for (std::size_t i = 0; i < info.params.size(); i++) {
             if (info.params[i] == node.text) {
                 Note(walk, node, 0, NameUseKind::MacroParam, walk.macro,
                      static_cast<std::int32_t>(i));
+                return;
             }
         }
+        // macros and functions macro code calls; its own lets resolve to nothing here
+        ResolveWrittenName(*walk.ib, *walk.scopes, walk.module, walk.file, node);
         return;
     }
     if (node.text.size() > 1 && node.text.back() == '#') {
@@ -108,7 +122,9 @@ void IndexTemplates(IndexBuilder& ib, const std::vector<ModuleScopeMap>& scopes)
         walk.module = info.module;
         walk.file = info.loc.file;
         walk.fresh.clear();
-        Walk(walk, info.body, false);
+        for (const Node& form : info.body) {
+            Walk(walk, form, true);
+        }
     }
 }
 

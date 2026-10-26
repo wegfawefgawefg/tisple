@@ -220,7 +220,8 @@ files by domain, splonks `.clang-format`, see `AGENTS.md`. *Proposed* layout:
 ```text
 src/main.cpp        tisple command: build, sim, fmt, show, cycles
 src/reader/         tokens, tree, formatter, highlighting
-src/check/          names, types, inference
+src/check/          macro expansion, names, types, inference
+src/macro/          macro code: the compile-time evaluator macros run in
 src/interp/         reference interpreter (the correctness oracle)
 src/ir/             lowered program the backend works on
 src/backend/        isel, register/zero-page allocation, frames, cycle costs

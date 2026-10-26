@@ -2,14 +2,13 @@
 ; (import lores) then (lores.show), (lores.plot x y color), (lores.clear)
 
 (import apple2 a2)
+(import tables)
 
 ; start of each of the 24 text rows: rows are interleaved in thirds of 40 bytes
-(const ROW_START (array u16 24)
-    (make (array u16 24)
-        0x0400 0x0480 0x0500 0x0580 0x0600 0x0680 0x0700 0x0780
-        0x0428 0x04A8 0x0528 0x05A8 0x0628 0x06A8 0x0728 0x07A8
-        0x0450 0x04D0 0x0550 0x05D0 0x0650 0x06D0 0x0750 0x07D0)
-    :boundary 256)
+(macro row_start (r)
+    (+ (+ 0x0400 (* (% r 8) 0x80)) (* (/ r 8) 40)))
+
+(tables.table ROW_START u16 24 row_start :boundary 256)
 
 (const BLACK u8 0)
 (const MAGENTA u8 1)

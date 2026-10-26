@@ -43,28 +43,77 @@ void TestExamplesCompile(TestResults& results) {
     }
 }
 
+// the hi-res row and column tables the dot example once filled at startup, as a kernel; dot
+// itself now computes them while compiling (lib/tables.tsp)
+const char* const kHgrInit =
+    "(let row_lo (array u8 192) :boundary 256)\n"
+    "(let row_hi (array u8 192) :boundary 256)\n"
+    "(let col_byte (array u8 280))\n"
+    "(let col_bit (array u8 280))\n"
+    "(fn init () void\n"
+    "    (for y u8 0 192\n"
+    "        (let start u16\n"
+    "            (+ (+ 0x2000 (<< (as u16 (& y 7)) 10))\n"
+    "                (+ (<< (as u16 (& (>> y 3) 7)) 7) (* (as u16 (>> y 6)) 40))))\n"
+    "        (set (at row_lo y) (as u8 start))\n"
+    "        (set (at row_hi y) (as u8 (>> start 8))))\n"
+    "    (let byte u8 0)\n"
+    "    (let bit u8 0)\n"
+    "    (for x u16 0 280\n"
+    "        (set (at col_byte x) byte)\n"
+    "        (set (at col_bit x) (<< 1 bit))\n"
+    "        (set bit (+ bit 1))\n"
+    "        (if (= bit 7)\n"
+    "            (do\n"
+    "                (set bit 0)\n"
+    "                (set byte (+ byte 1))))))";
+
+std::uint32_t HgrRowAddress(std::uint32_t y) {
+    return 0x2000 + (y % 8) * 0x400 + ((y / 8) % 8) * 0x80 + (y / 64) * 0x28;
+}
+
 void TestHgrInit(TestResults& results, std::uint64_t& cycles, std::uint32_t& bytes) {
-    Compiled c = CompileFile("examples/dot/main.tsp");
-    Diff d;
-    CHECK(results, StartDiff(d, c));
-    CheckDiff(results, d, "gfx/hgr.init", {});
-    cycles = d.last_cycles;
-    bytes = FunctionBytes(c, "gfx/hgr.init");
+    Compiled init = CompileText(kHgrInit);
+    Diff k;
+    CHECK(results, StartDiff(k, init));
+    CheckDiff(results, k, "t.init", {});
+    cycles = k.last_cycles;
+    bytes = FunctionBytes(init, "t.init");
     // the row tables in simulator memory are the hi-res row addresses
-    const tisple::Program& program = c.built.program;
-    std::int32_t lo = tisple::FindVar(program, "gfx/hgr.row_lo");
-    std::int32_t hi = tisple::FindVar(program, "gfx/hgr.row_hi");
-    const std::uint8_t* mem = d.sim.machine->mem;
+    const tisple::Program& kernel = init.built.program;
+    std::int32_t lo = tisple::FindVar(kernel, "t.row_lo");
+    std::int32_t hi = tisple::FindVar(kernel, "t.row_hi");
+    const std::uint8_t* mem = k.sim.machine->mem;
     bool rows = true;
     for (std::uint32_t y = 0; y < 192; y++) {
-        std::uint32_t want = 0x2000 + (y % 8) * 0x400 + ((y / 8) % 8) * 0x80 + (y / 64) * 0x28;
         std::uint32_t got =
-            mem[c.code.layout.vars[static_cast<std::size_t>(lo)].address + y] |
-            (mem[c.code.layout.vars[static_cast<std::size_t>(hi)].address + y] << 8);
-        rows = rows && got == want;
+            mem[init.code.layout.vars[static_cast<std::size_t>(lo)].address + y] |
+            (mem[init.code.layout.vars[static_cast<std::size_t>(hi)].address + y] << 8);
+        rows = rows && got == HgrRowAddress(y);
     }
     CHECK(results, rows);
+
+    // dot's tables, made at compile time by calling hgr.row_start, hold the same addresses
+    Compiled c = CompileFile("examples/dot/main.tsp");
+    const tisple::Program& program = c.built.program;
+    std::int32_t row = tisple::FindVar(program, "gfx/hgr.ROW");
+    std::int32_t col_bit = tisple::FindVar(program, "gfx/hgr.COL_BIT");
+    CHECK(results, row >= 0 && col_bit >= 0);
+    if (row < 0 || col_bit < 0) {
+        return;
+    }
+    const std::vector<std::uint8_t>& table = program.vars[static_cast<std::size_t>(row)].init;
+    bool same = table.size() == 384;
+    for (std::uint32_t y = 0; same && y < 192; y++) {
+        same =
+            static_cast<std::uint32_t>(table[2 * y] | (table[2 * y + 1] << 8)) == HgrRowAddress(y);
+    }
+    CHECK(results, same);
+    const std::vector<std::uint8_t>& bits = program.vars[static_cast<std::size_t>(col_bit)].init;
+    CHECK(results, bits.size() == 280 && bits[0] == 1 && bits[6] == 64 && bits[7] == 1);
     // and the dot moves: flip draws and erases one pixel
+    Diff d;
+    CHECK(results, StartDiff(d, c));
     CheckDiff(results, d, "gfx/hgr.flip", {140, 96});
     CheckDiff(results, d, "gfx/hgr.flip", {279, 191});
     CheckDiff(results, d, "gfx/hgr.flip", {140, 96});

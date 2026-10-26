@@ -20,3 +20,6 @@ variable's name); zero-page allocation moves them.
 | 2026-10-26 | (plasma 256-entry ramps) | plasma | frames in 10 s | 177 (17.7 fps) |
 | 2026-10-26 | 6d9e7a4 | life | generations in 10 s | 56 |
 | 2026-10-26 | 6d9e7a4 | plasma | frames in 10 s | 184 (18.4 fps) |
+| 2026-10-26 | ece08c3 (old backend) (tables from macros, byte-identical) | plasma | frames in 10 s | 177 (17.7 fps) |
+| 2026-10-26 | (draw loop reads (at col x) twice, no local c) | plasma | frames in 10 s | 183 (18.3 fps) |
+| 2026-10-26 | (that loop as macros.unroll x 0 40) | plasma | frames in 10 s | 201 (20.1 fps); code 481 to 1561 bytes |
