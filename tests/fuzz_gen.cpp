@@ -431,6 +431,10 @@ std::string Gen::Stmt(int depth) {
         return "(set " + place + " " + Expr(t, 3) + ")";
     }
     case 5: {
+        const PtrInfo* p = Pointer(T::U8);
+        if (p && rng.Chance(20)) {
+            return "(poke2 " + p->name + " " + Expr(T::U8, 1) + " " + Expr(T::U8, 2) + ")";
+        }
         std::string store = Store();
         if (!store.empty()) {
             return store;
@@ -572,6 +576,9 @@ std::string Gen::Program() {
 
     // rows of wb, 37 bytes apart, for StrideLets
     text += "(fn rowp ((b (ptr u8)) (y u8)) (ptr u8) (+ b (* (as u16 y) 37)))\n";
+    // small helpers taking pointers, inlined with the pointer read where it is
+    text += "(fn peek2 ((p (ptr u8)) (k u8)) u8 (load (+ p (as u16 (& k 3)))))\n";
+    text += "(fn poke2 ((p (ptr u8)) (k u8) (v u8)) void (store (+ p (as u16 (& k 3))) v))\n";
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;

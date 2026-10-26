@@ -213,6 +213,31 @@ entry says what happened and what it should do.
     | gaps flagged: life, dot, sprites | 0.78%, 63.73%, 7.73% | 0.78%, 53.95%, 7.73% |
     | gaps --fuzz 3000: loads already held | 1.22% | 1.19% |
 
+11. Gap list item 7, inlined parameters bound to their arguments
+    (2026-10-26). When a call is inlined, a parameter whose argument is a
+    plain variable reads that variable where it is instead of a copy in the
+    callee's frame (`Gen::bound`, followed wherever code generation looks
+    through a variable: values, places, pointers, byte indices). Only when
+    the parameter is never set and its address never taken, the variable is
+    not a let read in its place (index aliases, forwarded lets), nothing in
+    the callee or in the later arguments may change the variable, and it is
+    not a loop counter held in a register (a copy in memory serves the
+    callee better). hires_plot's `plot.x` and `plot.y` and Life's
+    `row_of.world` lose their copies. Tests: tests/test_backend_bind.cpp
+    (the callee sets the variable or its parameter, a later argument sets
+    it, the callee stores through a pointer to it; pointer, index and 16-bit
+    parameters, nested inlining, counters in memory); each fails when its
+    rule is dropped. The fuzz generator calls small helpers that take
+    pointers (`peek2`, `poke2`) with pointer variables.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | hi-res line of 280 | 70553 (252.0 a pixel) | 65513 (234.0 a pixel) |
+    | life step / draw | 137331 / 42074 | 137101 / 41909 |
+    | other kernels | 156409, 43594, 878, 572 | the same |
+    | Life generations in 10 M cycles | 54 | 55 |
+    | gaps flagged: life, dot, sprites | 0.78%, 53.95%, 7.73% | 0.76%, 53.95%, 7.73% |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -300,10 +325,10 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-7. When inlining, bind parameters that are plain variables to those
-   variables instead of copying them in: Life's `row_of.world`,
-   hires_plot's `plot.x` and `plot.y`, and the let chains in macros.shuffle
-   (18 to 6 cycles, proved).
+7. The let chains in macros.shuffle (18 to 6 cycles, proved): `(let x u8
+   a)` copies a parameter the function then changes through x; seeing that
+   the copy and the swap just rename bytes needs value numbering across
+   lets, not inlining. (Inlined parameters are done, see Fixed 11.)
 8. Commuted adds. For `(+ a b)` with b just computed in A, add a to it
    instead of storing b and reloading a: 3 cycles each, proved, in Life's
    and hgr.init's row arithmetic.

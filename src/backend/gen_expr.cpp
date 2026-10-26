@@ -419,9 +419,46 @@ void EvalInto(Gen& g, ExprId id, const Opnd& dst) {
     }
 }
 
+// an inlined callee's parameter can read its argument where it is: a plain variable (not
+// a let read in its place), the parameter never set nor its address taken, and nothing in
+// the callee nor in the later arguments changes the variable
+bool CanBind(const Gen& g, const Function& fn, const Expr& call, std::uint32_t i) {
+    const Program& program = *g.program;
+    ExprId arg = ListItem(program, call, i);
+    const Expr& a = ExprOf(program, arg);
+    std::int32_t param = fn.params[i];
+    if (a.kind != ExprKind::VarRef || program.vars[static_cast<std::size_t>(param)].address_taken) {
+        return false;
+    }
+    std::int32_t var = a.ref;
+    // a loop counter in a register is better copied to memory once for the callee
+    if (var == g.pin[0] || var == g.pin[1]) {
+        return false;
+    }
+    if (g.be->aliases[static_cast<std::size_t>(var)].value >= 0 ||
+        g.be->aliases[static_cast<std::size_t>(param)].value >= 0) {
+        return false;
+    }
+    if (MayWriteVarIn(g, fn.body, param) || MayWriteVarIn(g, fn.body, var)) {
+        return false;
+    }
+    for (std::uint32_t j = i + 1; j < call.count; j++) {
+        if (MayWriteVarIn(g, ListItem(program, call, j), var)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
     const Expr& e = At(g, id);
     const Function& fn = g.program->functions[static_cast<std::size_t>(e.ref)];
+    bool inline_it = g.be->fn_exprs[static_cast<std::size_t>(e.ref)] <= kMaxInlineExprs &&
+                     g.inlines.size() < kMaxInlineDepth;
+    std::vector<bool> bind(e.count, false);
+    for (std::uint32_t i = 0; i < e.count && inline_it; i++) {
+        bind[i] = CanBind(g, fn, e, i);
+    }
     std::vector<Opnd> pending(e.count);
     std::vector<bool> later_calls(e.count, false);
     bool calls = false;
@@ -432,6 +469,9 @@ Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
     for (std::uint32_t i = 0; i < e.count; i++) {
         ExprId arg = ListItem(*g.program, e, i);
         std::int32_t param = fn.params[i];
+        if (bind[i]) {
+            continue;
+        }
         std::uint32_t size =
             TypeOf(*g.program, g.program->vars[static_cast<std::size_t>(param)].type).size;
         Opnd slot = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(param)]), size, 1);
@@ -453,9 +493,16 @@ Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
         CopyOpnd(g, pending[i], slot);
     }
     std::uint32_t size = SizeOf(g, fn.ret);
-    if (g.be->fn_exprs[static_cast<std::size_t>(e.ref)] <= kMaxInlineExprs &&
-        g.inlines.size() < kMaxInlineDepth) {
-        return InlineBody(g, e.ref, size, dst);
+    if (inline_it) {
+        std::size_t bound = g.bound.size();
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (bind[i]) {
+                g.bound.push_back({fn.params[i], ListItem(*g.program, e, i)});
+            }
+        }
+        Opnd out = InlineBody(g, e.ref, size, dst);
+        g.bound.resize(bound);
+        return out;
     }
     Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->fn_sym[static_cast<std::size_t>(e.ref)]));
     if (fn.ret == kVoidType || size == 0) {

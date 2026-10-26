@@ -226,8 +226,11 @@ struct Gen {
     std::vector<CounterRange> ranges; // of the u8 loops being generated
     DivDone div;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
-    std::uint64_t cost = 0;            // cycles emitted so far, times 4 per loop level
-    bool violation = false;            // code touched a pinned register
+    // parameters of the calls being inlined that read their argument, a plain variable the
+    // callee never changes, instead of a copy of it
+    std::vector<std::pair<std::int32_t, ExprId>> bound;
+    std::uint64_t cost = 0; // cycles emitted so far, times 4 per loop level
+    bool violation = false; // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
     std::vector<LoopCtx> loops;
@@ -363,6 +366,8 @@ struct ByteIndex {
 ExprId AliasTarget(const Gen& g, ExprId id);
 // id, or the value of the forwarded let it reads
 ExprId ForwardTarget(const Gen& g, ExprId id);
+// id, or the argument a bound parameter reads (Gen::bound)
+ExprId BoundTarget(const Gen& g, ExprId id);
 bool ByteIndexOf(Gen& g, ExprId id, ByteIndex& out);
 // INX/INY or DEX/DEY reach it
 bool IsSmallDelta(std::uint8_t delta);

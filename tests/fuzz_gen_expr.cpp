@@ -316,6 +316,10 @@ std::string Gen::IntExpr(T t, int depth) {
         }
         return Leaf(t);
     case 11: {
+        const PtrInfo* p = t == T::U8 ? Pointer(T::U8) : nullptr;
+        if (p && rng.Chance(25)) {
+            return "(peek2 " + p->name + " " + Expr(T::U8, depth - 1) + ")";
+        }
         std::string load = PointerRead(t, depth);
         return load.empty() ? Leaf(t) : load;
     }
