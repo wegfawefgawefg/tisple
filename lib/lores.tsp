@@ -44,10 +44,10 @@
     (for r u8 0 24
         (let p (ptr u8) (row r))
         (for x u8 0 40
-            (store (+ p (as u16 x)) BLACK))))
+            (store (+ p x) BLACK))))
 
 (fn plot ((x u8) (y u8) (color u8)) void
-    (let p (ptr u8) (+ (row (>> y 1)) (as u16 x)))
+    (let p (ptr u8) (+ (row (>> y 1)) x))
     (let old u8 (load p))
     (if (= (& y 1) 0)
         (store p (| (& old 0xF0) color))
@@ -55,7 +55,7 @@
 
 ; the color of block x, y
 (fn get ((x u8) (y u8)) u8
-    (let b u8 (load (+ (row (>> y 1)) (as u16 x))))
+    (let b u8 (load (+ (row (>> y 1)) x)))
     (if (= (& y 1) 0)
         (& b 0x0F)
         (>> b 4)))

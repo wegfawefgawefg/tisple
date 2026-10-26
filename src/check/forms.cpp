@@ -201,7 +201,8 @@ ExprId CheckSet(Checker& ck, const Node& node) {
     const Expr& expr = ExprAt(ck, place);
     TypeId type = expr.type;
     if (type == kErrorType) {
-        CheckExpr(ck, node.items[2], -1);
+        // the value is still checked, but a bare literal in it has no type to complain about
+        CheckExpr(ck, node.items[2], kErrorType);
         return ErrorExpr(ck, node);
     }
     if (expr.kind == ExprKind::Literal) {

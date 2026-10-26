@@ -304,6 +304,19 @@ void TestChains(TestResults& results) {
     }
 }
 
+// (+ p x) with x : u8 is (+ p (as u16 x)) written short: the same image
+void TestShortCount(TestResults& results) {
+    Compiled short_form = CompileText("(fn f ((p (ptr u8)) (q (ptr u16)) (x u8)) u8\n"
+                                      "    (store (+ q x) (load (+ q (- x 1))))\n"
+                                      "    (+ (load (+ p (+ x 1))) (load (- p x))))");
+    Compiled long_form =
+        CompileText("(fn f ((p (ptr u8)) (q (ptr u16)) (x u8)) u8\n"
+                    "    (store (+ q (as u16 x)) (load (+ q (as u16 (- x 1)))))\n"
+                    "    (+ (load (+ p (as u16 (+ x 1)))) (load (- p (as u16 x)))))");
+    CHECK(results, short_form.ok && long_form.ok);
+    CHECK(results, short_form.code.image == long_form.code.image);
+}
+
 } // namespace
 
 void RunBackendIndexTests(TestResults& results) {
@@ -314,6 +327,7 @@ void RunBackendIndexTests(TestResults& results) {
     TestIndexLets(results);
     TestForwardLets(results);
     TestChains(results);
+    TestShortCount(results);
 }
 
 } // namespace tisple_tests

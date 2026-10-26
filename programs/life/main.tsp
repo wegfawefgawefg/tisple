@@ -37,7 +37,7 @@
     (for y u8 1 49
         (let r (ptr u8) (row_of cur y))
         (for x u8 1 41
-            (store (+ r (as u16 x)) (if (< (random) 80)
+            (store (+ r x) (if (< (random) 80)
                 LIVE
                 DEAD)))))
 
@@ -70,7 +70,7 @@
         (let bottom (ptr u8) (row_of cur (+ (<< r 1) 2)))
         (for x u8 0 40
             (let c u16 (as u16 (+ x 1)))
-            (store (+ screen (as u16 x))
+            (store (+ screen x)
                 (| (at TOP_COLOR (load (+ top c))) (at BOTTOM_COLOR (load (+ bottom c))))))))
 
 (fn swap () void

@@ -100,7 +100,8 @@ ExprId CheckStore(Checker& ck, const Node& node) {
     ExprId p = CheckPointer(ck, node.items[1], "store");
     TypeId pointer = ExprType(ck, p);
     if (pointer == kErrorType) {
-        CheckExpr(ck, value_node, -1);
+        // the value is still checked, but a bare literal in it has no type to complain about
+        CheckExpr(ck, value_node, kErrorType);
         return ErrorExpr(ck, node);
     }
     TypeId type = kErrorType;
@@ -224,7 +225,7 @@ ExprId CheckAs(Checker& ck, const Node& node) {
     }
     TypeId to = ResolveType(ck, type_node);
     if (to == kErrorType) {
-        CheckExpr(ck, node.items[2], -1);
+        CheckExpr(ck, node.items[2], kErrorType);
         return ErrorExpr(ck, node);
     }
     TypeKind kind = Kind(ck, to);

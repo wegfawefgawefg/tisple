@@ -5,12 +5,6 @@ entry says what happened and what it should do.
 
 ## Open
 
-1. `(store p 0)`: the literal gets no type, yet `(as u8 0)` is rejected as
-   converting nothing. The stored value should take the pointer's element
-   type as context, like `set` does. (lib/lores.tsp `clear`)
-2. `(+ p x)` with `x : u8` must be written `(+ p (as u16 x))`. A `u8` index on
-   a pointer is the most common 6502 idiom (`LDA (p),Y`); allow `u8` and `u16`
-   counts directly.
 3. The formatter puts a `const` table's type on its own line and packs the
    values to 100 columns, losing hand grouping (8 row addresses per line in
    lib/lores.tsp). Keep the type on the head line; maybe keep the author's
@@ -18,6 +12,25 @@ entry says what happened and what it should do.
 
 ## Fixed
 
+1. `(store p 0)`: the literal gets no type, yet `(as u8 0)` is rejected as
+   converting nothing. The stored value should take the pointer's element
+   type as context, like `set` does. (lib/lores.tsp `clear`)
+   Fixed 2026-10-26. The value already took the element type; the real
+   pointer was `(store (+ p x) 0)` with `x : u8`, where the bad count made
+   the pointer an error and the value was then checked with no type at all,
+   so a second error blamed the literal. A value whose place or pointer
+   failed (store, set, `as` with an unknown type) is now checked quietly.
+   Every value slot gives a literal its type: store and field store (the
+   element or field type), `set`, io_write, match patterns, array and struct
+   values, call arguments, `return` (tests in test_check_types.cpp).
+2. `(+ p x)` with `x : u8` must be written `(+ p (as u16 x))`. A `u8` index on
+   a pointer is the most common 6502 idiom (`LDA (p),Y`); allow `u8` and `u16`
+   counts directly.
+   Fixed 2026-10-26 in the checker: a `u8` count gets the same Convert node
+   `(as u16 x)` makes, so the backend sees the tree it already turns into
+   `(p),Y`. Life, Snake, lib/lores.tsp and every example compile to the same
+   bytes and the same listing as before (only the echoed source lines
+   differ). The fuzz generator writes both spellings.
 4. `(load (+ p (as u16 e)))` with `e : u8` and `p` in zero page computed a
    full 16-bit pointer sum per access (about 23 cycles) instead of `LDY e` /
    `LDA (p),Y`. Life's inner loop does 9 such reads per cell: about 520 cycles
