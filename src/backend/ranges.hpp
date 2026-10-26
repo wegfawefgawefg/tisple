@@ -35,6 +35,13 @@ struct ValueRanges {
 
 ValueRanges FindValueRanges(const Program& program);
 
+// what each pointer may point into (targets.cpp): var_targets, ret_targets and heap
+void FindPointerTargets(const Program& program, ValueRanges& r);
+// what a pointer-valued expression may point into
+Targets PointsTo(const Program& program, const ValueRanges& r, ExprId id);
+// any variable whose address is taken, and memory no variable uses
+Targets AnyTargets(const Program& program);
+
 // the largest value id can have, as raw bits: up to 255 for 8-bit types, 65535 for 16-bit
 std::uint32_t ExprMax(const Program& program, const ValueRanges& ranges, ExprId id);
 
