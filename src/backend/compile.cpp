@@ -1,4 +1,5 @@
 #include "backend/frames.hpp"
+#include "backend/peephole.hpp"
 #include "backend/runtime.hpp"
 #include "link/image.hpp"
 
@@ -157,6 +158,7 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
     MakeSymbols(be);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         GenFunction(be, static_cast<std::int32_t>(f));
+        Peephole(be.as, be.code[f]);
     }
     if (errors.size() != before) {
         return false;
