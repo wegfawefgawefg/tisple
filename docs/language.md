@@ -47,7 +47,7 @@ whole program, so files are namespaces, not separate compilation units.
 
 ; main.tsp
 (import gfx/hgr)
-(import sound/speaker :as spk)
+(import sound/speaker spk)
 
 (fn main
     (hgr.plot 10 20)
@@ -56,7 +56,7 @@ whole program, so files are namespaces, not separate compilation units.
 
 - Import paths are relative to the project root (the entry file's folder),
   then `lib/` for the bundled Apple II library. The last segment is the
-  prefix (`hgr.plot`); `:as` renames it.
+  prefix (`hgr.plot`); an optional second argument renames it.
 - `tisple build main.tsp` follows imports to find every file.
 - Every top-level name is importable for now.
 - An import cycle is an error.
@@ -64,7 +64,7 @@ whole program, so files are namespaces, not separate compilation units.
 ## Keywords
 
 `:name` marks a declaration option, and that is all it does: `:in`, `:align`,
-`:boundary`, `:address` on `let`, and `:as` on `import`. Not values, not named
+`:boundary`, `:address` on `let`. Not values, not named
 arguments, not struct fields. Struct literals are positional:
 `(Sprite 10 20 true)`.
 
