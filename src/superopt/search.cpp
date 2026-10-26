@@ -188,6 +188,9 @@ std::uint32_t NeededCells(const Searcher& s, const std::vector<SoState>& vectors
                 }
                 x.cells[c] = alt;
                 ExecAll(w.code, w.cells.data(), x);
+                if (!w.cells[c].writable) {
+                    x.cells[c] = s.targets[v].cells[c]; // passed through, not a result
+                }
                 if (!SameLive(w, x, s.targets[v])) {
                     needed |= 1u << c;
                     break;
@@ -326,6 +329,32 @@ void Search(Searcher& s, std::size_t depth, int cycles, int bytes, std::uint32_t
     }
 }
 
+// the window with whatever instructions can simply go: a first bound, so the search
+// prunes from the start
+void SeedByDeletion(Searcher& s) {
+    std::vector<SoIns> code = s.w->code;
+    for (std::size_t i = code.size(); i-- > 0;) {
+        std::vector<SoIns> trial = code;
+        trial.erase(trial.begin() + static_cast<std::ptrdiff_t>(i));
+        EquivResult r = CheckEquivalent(*s.w, s.w->code, trial, *s.facts, s.o->verify_vectors, 0,
+                                        s.o->seed + 5);
+        if (r.equal) {
+            code = trial;
+        }
+    }
+    int cycles = 0;
+    int bytes = 0;
+    for (const SoIns& ins : code) {
+        cycles += InsCycles(ins);
+        bytes += InsBytes(ins);
+    }
+    if (code.size() < s.w->code.size() && Better(s, cycles, bytes)) {
+        s.best_cycles = cycles;
+        s.best_bytes = bytes;
+        s.accepted.push_back(code);
+    }
+}
+
 // the full checks on one candidate; fills proof
 bool Confirm(const Window& w, const std::vector<SoIns>& code, const Facts& facts,
              const SearchOptions& o, SearchResult& out) {
@@ -417,6 +446,7 @@ SearchResult Superoptimize(const Window& w, const Facts& facts, const SearchOpti
         s.best_bytes = options.bound_bytes >= 0 ? options.bound_bytes : w.bytes;
         s.needed = NeededCells(s, vectors);
         ReadCosts(s);
+        SeedByDeletion(s);
         Search(s, 0, 0, 0, 0);
         accepted = s.accepted;
         out.nodes = s.nodes;

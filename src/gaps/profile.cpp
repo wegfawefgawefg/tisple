@@ -1,5 +1,7 @@
 #include "gaps/profile.hpp"
 
+#include "superopt/exec.hpp"
+
 #include <bit>
 
 namespace tisple {
@@ -152,6 +154,31 @@ void TrackBytes(Profiler& p, const PendingIns& in, Mn mn) {
     }
 }
 
+// registers read, then written: the last writer of each and whether anything read it
+void TrackRegisters(Profiler& p, std::int32_t site, Mn mn, Mode mode) {
+    LocEffects e = EffectsOf(mn, mode);
+    const std::uint8_t bits[3] = {kLocA, kLocX, kLocY};
+    for (int r = 0; r < 3; r++) {
+        if ((e.reads & bits[r]) != 0) {
+            p.reg_read[r] = true;
+        }
+    }
+    for (int r = 0; r < 3; r++) {
+        if ((e.writes & bits[r]) == 0) {
+            continue;
+        }
+        if (p.reg_owner[r] >= 0) {
+            SiteStats& s = p.sites[static_cast<std::size_t>(p.reg_owner[r])];
+            s.reg_ends++;
+            if (!p.reg_read[r]) {
+                s.reg_dead++;
+            }
+        }
+        p.reg_owner[r] = site;
+        p.reg_read[r] = false;
+    }
+}
+
 void NoteEntryFacts(SiteStats& s, const PendingIns& in, bool reads_memory) {
     const Regs& r = in.before;
     s.p_and &= r.p;
@@ -252,6 +279,7 @@ void Judge(Profiler& p, const Regs& after) {
     ReadFlags(p, FlagsRead(mn));
     WriteFlags(p, static_cast<std::int32_t>(in.pc), FlagsWritten(mn));
     TrackBytes(p, in, mn);
+    TrackRegisters(p, static_cast<std::int32_t>(in.pc), mn, info.mode);
     p.last_pc = in.pc;
     p.last_mn = mn;
 }
@@ -371,6 +399,10 @@ void ResetProfileTracking(Profiler& p) {
     }
     for (std::int8_t& owner : p.flag_owner) {
         owner = -1;
+    }
+    for (int r = 0; r < 3; r++) {
+        p.reg_owner[r] = -1;
+        p.reg_read[r] = false;
     }
 }
 

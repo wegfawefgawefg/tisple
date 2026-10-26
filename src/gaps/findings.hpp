@@ -24,6 +24,7 @@ enum class Pattern : std::uint8_t {
     kCompareOneWay,   // CMP/CPX/CPY/BIT then a branch that always went the same way
     kBranchOneWay,    // another branch that always went the same way
     kFlagsUnread,     // CMP/CPX/CPY/BIT/CLC/SEC/CLV: nothing read the flags it set
+    kDeadValue,       // a load or ALU op: nothing read the register or the flags it set
     kStrided,         // a stored byte stepped by the same amount each time: strength reduction
     kCount,
 };

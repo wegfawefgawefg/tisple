@@ -8,6 +8,7 @@
 //   anything read it (counted when the overwrite happens)
 // - branches: how often taken, and whether a CMP/CPX/CPY/BIT came just before
 // - flag writers: every flag they wrote was overwritten before any was read
+// - register writers: the register was overwritten before anything read it
 // It also keeps what it saw on entry (flags, register ranges, the memory operand's range),
 // which the superoptimizer can take as observed facts, and whether a stored value steps by
 // the same amount every time (a strength-reduction hint).
@@ -35,6 +36,8 @@ struct SiteStats {
     std::uint64_t store_dead = 0;     // of those, the byte was never read in between
     std::uint64_t flag_ends = 0;      // flag writes that ended (every flag it wrote overwritten)
     std::uint64_t flag_dead = 0;      // of those, none of its flags was read
+    std::uint64_t reg_ends = 0;       // register writes that were overwritten
+    std::uint64_t reg_dead = 0;       // of those, the register was never read in between
     // facts on entry
     std::uint8_t p_and = 0xFF;
     std::uint8_t p_or = 0;
@@ -82,6 +85,9 @@ struct Profiler {
     // N, Z, C, V: which event owns each flag; at most four are alive, plus the new one
     FlagEvent events[5];
     std::int8_t flag_owner[4] = {-1, -1, -1, -1};
+    // A, X, Y: the instruction that last wrote each, and whether it has been read
+    std::int32_t reg_owner[3] = {-1, -1, -1};
+    bool reg_read[3] = {};
     std::uint64_t instructions = 0;
     std::uint64_t cycles = 0;
 };

@@ -19,6 +19,7 @@ struct GapsArgs {
     int threads = 1;
     std::size_t top = 25;
     bool cycles_given = false;
+    bool print_source = false; // --fuzz: print the seed's program instead
 };
 
 void PrintGapsUsage() {
@@ -35,7 +36,8 @@ void PrintGapsUsage() {
         "         --nodes N (search budget per window, 1000000), --max-len N (5),\n"
         "         --stochastic STEPS (MCMC instead of enumeration), --no-facts,\n"
         "         --only NAME (functions whose name contains NAME),\n"
-        "         --verbose (each search on stderr),\n"
+        "         --verbose (each search on stderr), --print (--fuzz: print the program of\n"
+        "         --seed, to build and read it as t.tsp),\n"
         "         --origin A\n");
 }
 
@@ -72,6 +74,8 @@ bool ParseArgs(int argc, char** argv, GapsArgs& args) {
             o.run.bare = true;
         } else if (std::strcmp(arg, "--only") == 0 && i + 1 < argc) {
             o.only = argv[++i];
+        } else if (std::strcmp(arg, "--print") == 0) {
+            args.print_source = true;
         } else if (std::strcmp(arg, "--verbose") == 0) {
             o.windows.verbose = true;
         } else if (std::strcmp(arg, "--no-facts") == 0) {
@@ -125,6 +129,10 @@ int RunFuzz(GapsArgs& args, ProgramTextFn generate) {
     if (generate == nullptr) {
         std::fprintf(stderr, "tisple gaps: this build has no fuzz generator\n");
         return 1;
+    }
+    if (args.print_source) {
+        std::fputs(generate(args.seed).c_str(), stdout);
+        return 0;
     }
     if (!args.cycles_given) {
         args.options.run.max_cycles = 2000000; // a fuzz main runs well under this

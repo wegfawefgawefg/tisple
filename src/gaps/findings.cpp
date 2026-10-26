@@ -59,6 +59,37 @@ bool IsStoreMn(Mn mn) {
     return mn == Mn::STA || mn == Mn::STX || mn == Mn::STY;
 }
 
+// instructions whose only effects are a register and flags
+bool OnlyRegister(Mn mn, Mode mode) {
+    switch (mn) {
+    case Mn::LDA:
+    case Mn::LDX:
+    case Mn::LDY:
+    case Mn::TAX:
+    case Mn::TAY:
+    case Mn::TXA:
+    case Mn::TYA:
+    case Mn::TSX:
+    case Mn::INX:
+    case Mn::INY:
+    case Mn::DEX:
+    case Mn::DEY:
+    case Mn::AND:
+    case Mn::ORA:
+    case Mn::EOR:
+    case Mn::ADC:
+    case Mn::SBC:
+        return true;
+    case Mn::ASL:
+    case Mn::LSR:
+    case Mn::ROL:
+    case Mn::ROR:
+        return mode == Mode::Acc;
+    default:
+        return false;
+    }
+}
+
 // instructions whose only effect is on flags
 bool OnlyFlags(Mn mn) {
     return mn == Mn::CMP || mn == Mn::CPX || mn == Mn::CPY || mn == Mn::BIT || mn == Mn::CLC ||
@@ -231,6 +262,11 @@ void FindAt(const Compiled& compiled, const SiteMap& map, const SiteView& v,
         out.push_back(Make(compiled, map, v, Pattern::kStoreDead, s.store_dead, s.store_ends,
                            s.store_dead * v.avg_cycles, "overwritten before any read"));
     }
+    if (OnlyRegister(v.mn, v.mode) && Holds(s.reg_dead, s.reg_ends, options) &&
+        s.flag_dead == s.flag_ends) {
+        out.push_back(Make(compiled, map, v, Pattern::kDeadValue, s.reg_dead, s.reg_ends,
+                           s.reg_dead * v.avg_cycles, "nothing reads the value or its flags"));
+    }
     if (OnlyFlags(v.mn) && Holds(s.flag_dead, s.flag_ends, options)) {
         out.push_back(Make(compiled, map, v, Pattern::kFlagsUnread, s.flag_dead, s.flag_ends,
                            s.flag_dead * v.avg_cycles, "no flag it sets is read"));
@@ -262,6 +298,8 @@ const char* PatternName(Pattern pattern) {
         return "flags unread";
     case Pattern::kStrided:
         return "strided value";
+    case Pattern::kDeadValue:
+        return "dead value";
     default:
         return "?";
     }

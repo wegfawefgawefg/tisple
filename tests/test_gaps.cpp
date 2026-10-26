@@ -30,7 +30,7 @@ struct HandMade {
 //   SEC / LDA #$F0 / CLC (needed: C=1) / ADC #$20 (carries) / STA $10
 //   LDA #$01 (needed) / CLC (needed: C=1) / ADC #$01 / CLC (redundant: C=0) / ADC #$02
 //   STA $11 / LDA $11 (redundant) / STA $12 (dead) / LDA #$07 / STA $12 / LDY $12
-//   DEX / BNE
+//   LDA #$09 (nothing reads A or its flags) / DEX / BNE
 void BuildLoop(HandMade& h) {
     tisple::Assembly& as = h.compiled.as;
     h.loop = tisple::NewSymbol(as, "loop");
@@ -52,6 +52,7 @@ void BuildLoop(HandMade& h) {
     h.Ins(Mn::LDA, Mode::Imm, 0x07);
     h.Ins(Mn::STA, Mode::Zp, 0x12);
     h.Ins(Mn::LDY, Mode::Zp, 0x12);
+    h.Ins(Mn::LDA, Mode::Imm, 0x09);
     h.Ins(Mn::DEX, Mode::Imp);
     as.items.push_back(tisple::MakeIns(Mn::BNE, Mode::Rel, tisple::SymValue(h.loop)));
     h.Ins(Mn::BRK, Mode::Imp);
@@ -112,19 +113,25 @@ void TestHandMadeLoop(TestResults& results) {
     std::vector<tisple::Finding> found = tisple::FindGaps(h.compiled, *map, *p, tisple::FindOptions());
     // items: 0 LDX, 1 label, 2 SEC, 3 LDA, 4 CLC, 5 ADC, 6 STA $10, 7 LDA #1, 8 CLC, 9 ADC,
     // 10 CLC, 11 ADC, 12 STA $11, 13 LDA $11, 14 STA $12, 15 LDA #7, 16 STA $12, 17 LDY,
-    // 18 DEX, 19 BNE, 20 BRK
+    // 18 LDA #9, 19 DEX, 20 BNE, 21 BRK
     CHECK(results, p->sites[AddressOf(h, 10)].count == 32);
     CHECK(results, Has(found, tisple::Pattern::kFlagAlready, AddressOf(h, 10)));
     CHECK(results, Has(found, tisple::Pattern::kLoadAlready, AddressOf(h, 13)));
     CHECK(results, Has(found, tisple::Pattern::kStoreDead, AddressOf(h, 14)));
+    CHECK(results, Has(found, tisple::Pattern::kDeadValue, AddressOf(h, 18)));
+    // the loaded values that are used are not dead
+    CHECK(results, !Has(found, tisple::Pattern::kDeadValue, AddressOf(h, 3)));
+    CHECK(results, !Has(found, tisple::Pattern::kDeadValue, AddressOf(h, 15)));
     // necessary: the carry was set, the register held something else, the byte is read
     CHECK(results, !AnyAt(found, AddressOf(h, 4)));
     CHECK(results, !AnyAt(found, AddressOf(h, 8)));
     CHECK(results, !AnyAt(found, AddressOf(h, 7)));
     CHECK(results, !Has(found, tisple::Pattern::kStoreDead, AddressOf(h, 16)));
-    // the loop branch went both ways; LDY $12 held 7 already on all but the first time
-    CHECK(results, !AnyAt(found, AddressOf(h, 19)));
-    CHECK(results, !AnyAt(found, AddressOf(h, 17)));
+    // the loop branch went both ways; LDY $12 held 7 already on all but the first time (and
+    // nothing reads Y: a dead value)
+    CHECK(results, !AnyAt(found, AddressOf(h, 20)));
+    CHECK(results, !Has(found, tisple::Pattern::kLoadAlready, AddressOf(h, 17)));
+    CHECK(results, Has(found, tisple::Pattern::kDeadValue, AddressOf(h, 17)));
     // a lower bar: 31 of 32 is enough
     tisple::FindOptions loose;
     loose.min_fraction = 0.9;
