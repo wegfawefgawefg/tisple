@@ -26,6 +26,7 @@
 #include "backend/backend.hpp"
 #include "backend/effects.hpp"
 #include "backend/index_alias.hpp"
+#include "backend/ranges.hpp"
 
 #include <string>
 #include <vector>
@@ -59,6 +60,13 @@ enum class Runtime : std::uint8_t {
 };
 constexpr int kRuntimeCount = static_cast<int>(Runtime::Count);
 
+// a division routine for one constant divisor (gen_div.cpp)
+struct DivRoutine {
+    std::uint32_t divisor = 0;
+    bool wide = false;
+    std::int32_t sym = -1;
+};
+
 struct Backend {
     const Program* program = nullptr;
     Layout shapes; // every var's shape, address 0
@@ -73,9 +81,12 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
-    std::vector<std::uint32_t> fn_exprs;    // by function: expressions in its body
-    std::vector<bool> deref;                // by var: some load or store goes straight through it
-    std::vector<IndexAlias> aliases;        // by var: locals that only name a byte index
+    std::vector<std::uint32_t> fn_exprs;  // by function: expressions in its body
+    std::vector<bool> deref;              // by var: some load or store goes straight through it
+    std::vector<IndexAlias> aliases;      // by var: locals that only name a byte index
+    std::vector<bool> div_pairs;          // by expr: FindDivPairs
+    std::vector<DivRoutine> div_routines; // the ones the code calls
+    ValueRanges ranges;
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
     std::int32_t rt_a = -1;                 // 2 bytes each
@@ -176,11 +187,29 @@ struct WideLoop {
     ExprId body = -1;
 };
 
+// a let of a u8 loop's body that moves by a constant each iteration (gen_reduce.cpp)
+struct ReducedLet {
+    std::int32_t var = -1;
+    ExprId value = -1;
+    std::uint16_t step = 0;
+};
+
 // the values a u8 loop counter takes inside its body (loop variables are read-only)
 struct CounterRange {
     std::int32_t var = -1;
     int lo = 0;
     int hi = 255;
+};
+
+// the last division's operands: its quotient is in rt_a, and its remainder in rt_r when
+// have_rem, until code touches them (gen_div.cpp)
+struct DivDone {
+    bool valid = false;
+    ExprId a = -1;
+    ExprId b = -1;
+    std::size_t at = 0; // the items from here on
+    bool have_rem = false;
+    bool rem_byte = false; // the remainder is below 256: rt_r+1 is not set
 };
 
 struct Gen {
@@ -195,8 +224,13 @@ struct Gen {
     std::vector<Derived> derived;     // of the loops being generated
     std::uint32_t lptr_top = 0;       // loop pointer bytes handed out in this function
     std::vector<CounterRange> ranges; // of the u8 loops being generated
-    std::uint64_t cost = 0;           // cycles emitted so far, times 4 per loop level
-    bool violation = false;           // code touched a pinned register
+    DivDone div;
+    std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
+    // parameters of the calls being inlined that read their argument, a plain variable the
+    // callee never changes, instead of a copy of it
+    std::vector<std::pair<std::int32_t, ExprId>> bound;
+    std::uint64_t cost = 0; // cycles emitted so far, times 4 per loop level
+    bool violation = false; // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
     std::vector<LoopCtx> loops;
@@ -214,8 +248,17 @@ void Unsupported(Gen& g, ExprId id, const char* what);
 // ---- emission (gen_emit.cpp)
 
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value = AsmValue());
+// the last item leaves the carry clear for certain: a CLC, or an add marked as not carrying
+bool CarryClearNow(const Gen& g);
+// A holds byte k of o: the last instruction stored it there or loaded it from there
+bool AHoldsByte(const Gen& g, const Opnd& o, int k);
+// the largest value id can have (ranges.hpp)
+std::uint32_t MaxOf(const Gen& g, ExprId id);
 std::int32_t NewLabel(Gen& g);
 void PlaceLabel(Gen& g, std::int32_t label);
+// a label only forward branches over straight-line code reach, which leave X and Y alone:
+// what they hold stays known
+void PlaceLocalLabel(Gen& g, std::int32_t label);
 void Branch(Gen& g, Mn mn, std::int32_t label);
 void Jump(Gen& g, std::int32_t label);
 void ForgetRegs(Gen& g);
@@ -325,6 +368,8 @@ struct ByteIndex {
 ExprId AliasTarget(const Gen& g, ExprId id);
 // id, or the value of the forwarded let it reads
 ExprId ForwardTarget(const Gen& g, ExprId id);
+// id, or the argument a bound parameter reads (Gen::bound)
+ExprId BoundTarget(const Gen& g, ExprId id);
 bool ByteIndexOf(Gen& g, ExprId id, ByteIndex& out);
 // INX/INY or DEX/DEY reach it
 bool IsSmallDelta(std::uint8_t delta);
@@ -360,9 +405,21 @@ void EvalArith8(Gen& g, const Expr& e);
 Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst);
 // 16-bit a op b into dst, byte by byte (ADC/SBC with carry, AND/ORA/EOR)
 void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
+// a + b, 16-bit, with bytes known before running needing no code (gen_wide.cpp); the
+// result is in dst (or a temporary) except for bytes that are numbers or one operand's byte
+Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst);
 // multiply a 16-bit operand by a constant into dst
 void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst);
 void CallRuntime(Gen& g, Runtime routine);
+// division and remainder (gen_div.cpp): 8-bit into A, 16-bit into dst or a temporary
+void EvalDiv8(Gen& g, ExprId id, const Expr& e);
+Opnd EvalDiv16(Gen& g, ExprId id, const Expr& e, const Opnd* dst);
+// after each statement: forget the last division if the statement may change its operands
+void ForgetDivision(Gen& g, ExprId stmt);
+// by expr: a division with another of the same operands somewhere in the program
+std::vector<bool> FindDivPairs(const Program& program);
+// the division routines the code calls, each a label and its items
+void EmitDivRoutines(Backend& be, std::vector<AsmItem>& out);
 // shifts (gen_shift.cpp): 8-bit into A, 16-bit into dst or a temporary
 void EvalShift8(Gen& g, const Expr& e);
 Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst);
@@ -389,5 +446,18 @@ void GenMatch(Gen& g, const Expr& e, const Opnd* dst, bool value);
 void GenSet(Gen& g, ExprId place, ExprId value);
 void GenStore(Gen& g, const Expr& e);
 void GenFunction(Backend& be, std::int32_t function);
+
+// ---- strength reduction (gen_reduce.cpp)
+
+// the lets at the top of a u8 loop's body that are the counter times a constant plus values
+// the body never changes; the counter's range must be in Gen::ranges
+std::vector<ReducedLet> FindReducedLets(Gen& g, std::int32_t counter, ExprId body);
+// each let's value for the first iteration, before the loop's top (the counter holds its
+// start); their lets then make no code
+void InitReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
+// each let moved by its step, at the end of an iteration
+void StepReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
+// after the loop: their lets make code again
+void DropReducedLets(Gen& g, const std::vector<ReducedLet>& lets);
 
 } // namespace tisple

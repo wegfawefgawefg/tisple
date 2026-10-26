@@ -69,6 +69,16 @@ bool IsImmZeroByte(const Opnd& o, int k) {
     return b.kind == ByteKind::Imm && b.value.sym < 0 && (b.value.offset & 0xFF) == 0;
 }
 
+// the branch just emitted goes back to the top of a u8 loop after comparing the counter,
+// one past its value in the body, with the end: the counter only ever counts up to the end
+// (the guard or the constant bounds saw start < end, and the body cannot write it), so going
+// back means counter < end, unsigned, and the carry is clear
+void MarkBackEdge(Gen& g, const ForParts& f) {
+    if (KindOf(*g.program, g.program->vars[static_cast<std::size_t>(f.var)].type) == TypeKind::U8) {
+        g.out->back().carry = Carry::Clear;
+    }
+}
+
 // the counter in register r; false (and nothing kept) if the body needed r
 bool TryPinned(Gen& g, const ForParts& f, int r) {
     std::size_t mark = g.out->size();
@@ -76,15 +86,19 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     bool outer = g.violation;
     g.violation = false;
     LoadCounter(g, r, f.start);
-    std::size_t init_at = g.out->size();
     g.pin[r] = f.var;
     g.pin_body[r] = f.body;
+    std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
+    InitReducedLets(g, reduced);
+    std::size_t init_at = g.out->size();
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
     PlaceLabel(g, top);
     GenStmt(g, f.body);
     PlaceLabel(g, next);
+    StepReducedLets(g, reduced);
+    DropReducedLets(g, reduced);
     g.pin[r] = -1;
     g.pin_body[r] = -1;
     if (g.violation && !g.failed) {
@@ -97,8 +111,11 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
         const ByteRef& b = f.end.b[0];
         Emit(g, r == 0 ? Mn::CPX : Mn::CPY, b.kind == ByteKind::Imm ? Mode::Imm : Mode::Abs,
              b.value);
+        Branch(g, Mn::BNE, top);
+        MarkBackEdge(g, f);
+    } else {
+        Branch(g, Mn::BNE, top);
     }
-    Branch(g, Mn::BNE, top);
     if (r == 1) {
         InitDerived(g, TakeDerived(g, f.var, init_at), init_at, AsmValue());
     }
@@ -283,19 +300,29 @@ bool TryWide(Gen& g, const ForParts& f) {
 void MemoryLoop(Gen& g, const ForParts& f) {
     Opnd v = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)]), f.size, 1);
     CopyOpnd(g, f.start, v);
+    std::vector<ReducedLet> reduced;
+    if (f.size == 1) {
+        reduced = FindReducedLets(g, f.var, f.body);
+    }
+    InitReducedLets(g, reduced);
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
     PlaceLabel(g, top);
     GenStmt(g, f.body);
     PlaceLabel(g, next);
+    StepReducedLets(g, reduced);
+    DropReducedLets(g, reduced);
     if (f.size == 1) {
         RmwByte(g, Mn::INC, v, 0);
-        if (!IsImmZeroByte(f.end, 0)) {
-            LoadA(g, v, 0);
-            OpA(g, Mn::CMP, f.end, 0);
+        if (IsImmZeroByte(f.end, 0)) {
+            Branch(g, Mn::BNE, top);
+            return;
         }
+        LoadA(g, v, 0);
+        OpA(g, Mn::CMP, f.end, 0);
         Branch(g, Mn::BNE, top);
+        MarkBackEdge(g, f);
         return;
     }
     if (IsImmZeroByte(f.end, 0) && IsImmZeroByte(f.end, 1)) {

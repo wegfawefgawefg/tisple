@@ -38,12 +38,21 @@ enum class ItemKind : std::uint8_t {
     Note,  // listing text in Assembly::notes[note]
 };
 
+// what code generation knows about the carry an instruction leaves, beyond what the
+// instruction alone shows: after an add that cannot carry, or when a branch is taken
+enum class Carry : std::uint8_t {
+    Unknown,
+    Clear,
+    Set,
+};
+
 struct AsmItem {
     ItemKind kind = ItemKind::Ins;
     Mn mn = Mn::NOP;
     Mode mode = Mode::Imp;
     AsmValue value;
     std::int32_t note = -1;
+    Carry carry = Carry::Unknown; // for a branch: when taken; else after it
     // set by LayoutCode
     std::uint16_t address = 0;
     std::uint8_t size = 0;

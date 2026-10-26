@@ -130,10 +130,17 @@ std::string Gen::For(int depth) {
     }
     scopes.emplace_back();
     scopes.back().push_back(VarInfo{i, t, true});
+    // the stride lets first, so they only read what is in scope before the body
+    std::string strides;
+    if (t == T::U8 && rng.Chance(35)) {
+        bool minus_one = start == std::to_string(lo) && lo >= 1;
+        strides = " " + StrideLets(i, minus_one, start != "250");
+    }
     std::string body = LoopBody(depth, false);
     if (t == T::U8 && rng.Chance(60)) {
         body = " " + RoomStmt() + body;
     }
+    body = strides + body;
     counter = outer_counter;
     wide = outer_wide;
     wide_ptr = outer_ptr;
@@ -226,6 +233,117 @@ std::string Gen::Store() {
     return "";
 }
 
+std::string Gen::PlaceOf(T t) {
+    std::vector<const VarInfo*> vars = VarsOf(t, true);
+    std::vector<const ArrayInfo*> arrs = ArraysOf(t, true);
+    if (!arrs.empty() && (vars.empty() || rng.Chance(40))) {
+        const ArrayInfo& a =
+            *arrs[static_cast<std::size_t>(rng.Below(static_cast<int>(arrs.size())))];
+        return "(at " + a.name + " " + Index(a) + ")";
+    }
+    if (vars.empty()) {
+        return "";
+    }
+    return vars[static_cast<std::size_t>(rng.Below(static_cast<int>(vars.size())))]->name;
+}
+
+std::string Gen::DivPair() {
+    T t = kInts[rng.Below(4)];
+    std::string x = rng.Chance(60) ? Var(t) : NonLit(t, 1);
+    std::string d = rng.Chance(75) ? Divisor(t) : "(| " + Var(t) + " 1)";
+    std::string first = PlaceOf(t);
+    std::string second = PlaceOf(t);
+    if (first.empty() || second.empty()) {
+        return "(set " + Var(T::U16) + " 0)";
+    }
+    // now and then the first result goes into the dividend itself
+    if (rng.Chance(15)) {
+        for (const VarInfo* v : VarsOf(t, true)) {
+            if (v->name == x) {
+                first = x;
+            }
+        }
+    }
+    const char* ops[2] = {"/", "%"};
+    if (rng.Chance(40)) {
+        ops[0] = "%";
+        ops[1] = "/";
+    }
+    std::string text = "(do (set " + first + " (" + ops[0] + " " + x + " " + d + "))";
+    if (rng.Chance(30)) {
+        scopes.emplace_back();
+        text += " " + Stmt(0);
+        scopes.pop_back();
+        DropPointers();
+    }
+    return text + " (set " + second + " (" + ops[1] + " " + x + " " + d + ")))";
+}
+
+std::string Gen::StrideLets(const std::string& loop_var, bool minus_one, bool small) {
+    static const char* const kStrides[] = {"1", "5", "42", "64"};
+    std::string d = std::to_string(rng.Below(3));
+    std::string row = "(+ " + loop_var + " " + d + ")";
+    // a u16 is fine with a row that wraps; a pointer must stay inside wb
+    int pick = small ? rng.Below(3) : 2;
+    if ((minus_one || pick == 2) && rng.Chance(30)) {
+        row = "(- " + loop_var + " 1)";
+    }
+    std::string base = "(addr_of (at wb " + std::to_string(rng.Below(4)) + "))";
+    std::string q = Fresh("q");
+    std::string value;
+    switch (pick) {
+    case 0:
+        value = "(rowp " + base + " " + row + ")";
+        break;
+    case 1:
+        value = "(+ " + base + " (* (as u16 " + row + ") " + kStrides[rng.Below(4)] + "))";
+        break;
+    default: {
+        std::vector<const VarInfo*> words = VarsOf(T::U16, false);
+        std::string w =
+            words[static_cast<std::size_t>(rng.Below(static_cast<int>(words.size())))]->name;
+        std::string text = "(let " + q + " u16 (+ (* (as u16 " + row + ") " +
+                           std::to_string(1 + rng.Below(4000)) + ") " + w + "))";
+        std::vector<const VarInfo*> sinks = VarsOf(T::U16, true);
+        if (sinks.empty()) {
+            return text;
+        }
+        std::string sink =
+            sinks[static_cast<std::size_t>(rng.Below(static_cast<int>(sinks.size())))]->name;
+        return text + " (set " + sink + " (^ " + sink + " (+ " + q + " (>> " + q + " 3))))";
+    }
+    }
+    std::string text = "(let " + q + " (ptr u8) " + value + ")";
+    text += " (store (+ " + q + " (as u16 (& " + NonLit(T::U8, 1) + " 7))) " + Expr(T::U8, 1) + ")";
+    std::vector<const VarInfo*> sinks = VarsOf(T::U8, true);
+    if (!sinks.empty()) {
+        std::string sink =
+            sinks[static_cast<std::size_t>(rng.Below(static_cast<int>(sinks.size())))]->name;
+        text += " (set " + sink + " (+ " + sink + " (load " + q + ")))";
+    }
+    return text;
+}
+
+std::string Gen::SmallStore() {
+    std::string k = std::to_string(rng.Below(4));
+    std::string index = "(& " + NonLit(T::U8, 1) + " 31)";
+    if (sm_big && rng.Chance(30)) {
+        k = std::to_string(250 + rng.Below(6));
+        index = std::to_string(rng.Below(4));
+    } else if (rng.Chance(20)) {
+        k = "(if " + Expr(T::Bool, 1) + " 1 0)";
+    }
+    switch (rng.Below(3)) {
+    case 0:
+        return "(set (at sm " + index + ") " + k + ")";
+    case 1:
+        return "(store (addr_of (at sm " + index + ")) " + k + ")";
+    default:
+        return "(store (+ (addr_of (at sm (& " + NonLit(T::U8, 1) + " 15))) (as u16 (& " +
+               NonLit(T::U8, 1) + " 15))) " + k + ")";
+    }
+}
+
 std::string Gen::RoomPointerLet() {
     // room for any byte count: the start is at most 255 into wb's 1024 bytes
     std::string p = Fresh("p");
@@ -292,6 +410,9 @@ std::string Gen::Stmt(int depth) {
         if (rng.Chance(25)) {
             return IndexLet();
         }
+        if (rng.Chance(12)) {
+            return DivPair();
+        }
         T t = AnyType();
 
         std::string name = Fresh("l");
@@ -302,11 +423,18 @@ std::string Gen::Stmt(int depth) {
     case 2:
     case 3:
     case 4: {
+        if (rng.Chance(10)) {
+            return SmallStore();
+        }
         T t = T::U8;
         std::string place = Place(t);
         return "(set " + place + " " + Expr(t, 3) + ")";
     }
     case 5: {
+        const PtrInfo* p = Pointer(T::U8);
+        if (p && rng.Chance(20)) {
+            return "(poke2 " + p->name + " " + Expr(T::U8, 1) + " " + Expr(T::U8, 2) + ")";
+        }
         std::string store = Store();
         if (!store.empty()) {
             return store;
@@ -428,6 +556,8 @@ std::string Gen::Program() {
     target.count = 16;
     target.pointers = true;
     text += "(let pt (array u8 16))\n(let wb (array u8 1024))\n(let ww (array u16 512))\n";
+    text += "(let sm (array u8 32))\n";
+    sm_big = rng.Chance(20);
     arrays.push_back(target);
     ArrayInfo table;
     table.name = "KT";
@@ -444,6 +574,11 @@ std::string Gen::Program() {
     text += "(let gs S (make S :a " + Literal(T::U8) + " :b " + Literal(T::I16) + " :c " +
             Literal(T::Bool) + " :d " + Literal(T::U8) + "))\n";
 
+    // rows of wb, 37 bytes apart, for StrideLets
+    text += "(fn rowp ((b (ptr u8)) (y u8)) (ptr u8) (+ b (* (as u16 y) 37)))\n";
+    // small helpers taking pointers, inlined with the pointer read where it is
+    text += "(fn peek2 ((p (ptr u8)) (k u8)) u8 (load (+ p (as u16 (& k 3)))))\n";
+    text += "(fn poke2 ((p (ptr u8)) (k u8) (v u8)) void (store (+ p (as u16 (& k 3))) v))\n";
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;

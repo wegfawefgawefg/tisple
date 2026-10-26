@@ -102,6 +102,8 @@ struct Gen {
     std::string counter;
     bool in_while = false;
     int budget = 0;
+    // sm, an array of small values (0 to 3), but now and then a program stores a big one
+    bool sm_big = false;
 
     std::string Fresh(const char* prefix);
     std::string Literal(T t);
@@ -128,6 +130,13 @@ struct Gen {
     std::string ByteIndex(int depth);
     std::string PointerRead(T t, int depth);
     std::string IntExpr(T t, int depth);
+    // a constant divisor: small odd and even ones, 128 and up, a few powers of two
+    std::string Divisor(T t);
+    // a sum of three elements of sm and a byte
+    std::string SmallSum(int depth);
+    // 16-bit arithmetic on widened, masked or shifted bytes: shifts, products and adds
+    // with bytes known to be 0, like a hi-res row address
+    std::string WideByte(int depth);
     std::string BoolExpr(int depth);
     std::string Expr(T t, int depth);
     std::string IoAddress();
@@ -151,6 +160,16 @@ struct Gen {
     std::string RoomStmt();
 
     std::string Store();
+    // a place of type t, or "" if there is none
+    std::string PlaceOf(T t);
+    // a / and a % of the same operands, now and then with a statement between
+    std::string DivPair();
+    // a store of a small value into sm, directly or through a pointer
+    std::string SmallStore();
+    // lets at the top of a u8 loop's body that move by a constant each iteration (a row of
+    // wb through rowp, a pointer plus the counter times a stride, a u16 product), each
+    // read twice; minus_one: the counter starts at 1 or more; small: it stays below 12
+    std::string StrideLets(const std::string& loop_var, bool minus_one, bool small);
     std::string WideStmt();
     std::string Stmt(int depth);
     std::string Function(std::size_t index);

@@ -173,6 +173,8 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
     be.deref = FindDerefPointers(program);
     be.aliases = FindIndexAliases(program);
     be.effects = ComputeEffects(program);
+    be.div_pairs = FindDivPairs(program);
+    be.ranges = FindValueRanges(program);
     be.fn_exprs.assign(program.functions.size(), 0);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         be.fn_exprs[f] = CountExprs(program, program.functions[f].body);
@@ -187,6 +189,7 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
     }
     std::vector<AsmItem> runtime;
     EmitRuntime(be, runtime);
+    EmitDivRoutines(be, runtime);
     FramePlan plan;
     if (!AllocateFrames(be, plan)) {
         return false;

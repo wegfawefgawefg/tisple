@@ -160,8 +160,9 @@ void TestLifeCarries(TestResults& results) {
             step_carries++;
         }
     }
-    // the eight neighbour counts are 0 or 1: none of the seven additions carries
-    CHECK(results, step_carries == 7);
+    // the eight neighbour counts are 0 or 1: none of the seven additions carries, and the
+    // backend knows it (value ranges), so no CLC is left there to find
+    CHECK(results, step_carries == 0);
     // and the row pointers step by 42
     bool strided = false;
     for (const tisple::Finding& f : gaps.findings) {

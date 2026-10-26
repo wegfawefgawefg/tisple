@@ -158,6 +158,7 @@ void ToPointer(Gen& g, PlaceRef& place) {
 
 // the pointer a load or store goes through, in zero page
 bool PointerBase(Gen& g, ExprId pointer, ExprId later, bool emit, PlaceRef& out) {
+    pointer = BoundTarget(g, pointer);
     const Expr& pe = At(g, pointer);
     if (pe.kind == ExprKind::VarRef) {
         out.ptr_var = pe.ref;
@@ -264,6 +265,9 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
     const Expr& e = At(g, id);
     switch (e.kind) {
     case ExprKind::VarRef: {
+        if (BoundTarget(g, id) != id) {
+            return Resolve(g, BoundTarget(g, id), later, emit, out);
+        }
         if (e.ref == g.pin[0] || e.ref == g.pin[1]) {
             return false;
         }

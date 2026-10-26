@@ -188,8 +188,29 @@ bool UseCounterDerived(Gen& g, PlaceRef& place, TypeId type) {
 
 } // namespace
 
+ExprId BoundTarget(const Gen& g, ExprId id) {
+    for (int depth = 0; depth < kMaxIndexDepth; depth++) {
+        const Expr& e = At(g, id);
+        if (e.kind != ExprKind::VarRef) {
+            return id;
+        }
+        ExprId arg = -1;
+        for (const auto& b : g.bound) {
+            if (b.first == e.ref) {
+                arg = b.second;
+            }
+        }
+        if (arg < 0) {
+            return id;
+        }
+        id = arg;
+    }
+    return id;
+}
+
 ExprId AliasTarget(const Gen& g, ExprId id) {
     for (int depth = 0; depth < kMaxIndexDepth; depth++) {
+        id = BoundTarget(g, id);
         const Expr& e = At(g, id);
         if (e.kind != ExprKind::VarRef) {
             return id;
@@ -205,6 +226,7 @@ ExprId AliasTarget(const Gen& g, ExprId id) {
 
 ExprId ForwardTarget(const Gen& g, ExprId id) {
     for (int depth = 0; depth < kMaxIndexDepth; depth++) {
+        id = BoundTarget(g, id);
         const Expr& e = At(g, id);
         if (e.kind != ExprKind::VarRef || !g.be->aliases[static_cast<std::size_t>(e.ref)].forward) {
             return id;

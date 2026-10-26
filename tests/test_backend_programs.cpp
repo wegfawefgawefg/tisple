@@ -156,6 +156,27 @@ void TestLife(TestResults& results, std::uint64_t& step, std::uint64_t& draw,
     CHECK(results, same);
 }
 
+// a hi-res line of 280 pixels: each pixel divides x by 7 for its byte and bit
+void TestHiresLine(TestResults& results, std::uint64_t& cycles, std::uint32_t& bytes) {
+    Compiled c = CompileFile("examples/hires_plot.tsp");
+    Diff d;
+    CHECK(results, StartDiff(d, c));
+    if (!c.ok) {
+        return;
+    }
+    CheckDiff(results, d, "hires_plot.hline", {0, 280, 100});
+    cycles = d.last_cycles;
+    bytes = FunctionBytes(c, "hires_plot.plot") + FunctionBytes(c, "hires_plot.hline");
+    CheckDiff(results, d, "hires_plot.hline", {3, 200, 191});
+    CheckDiff(results, d, "hires_plot.plot", {279, 0});
+    // the screen is not a global, so compare it here
+    bool same = true;
+    for (std::uint32_t a = 0x2000; a < 0x4000; a++) {
+        same = same && d.in.memory[a] == d.sim.machine->mem[a];
+    }
+    CHECK(results, same);
+}
+
 void TestOtherExamples(TestResults& results) {
     Compiled keys = CompileFile("examples/keys.tsp");
     Diff d;
@@ -334,6 +355,9 @@ void CycleReport(TestResults& results) {
     std::uint64_t life_draw = 0;
     std::uint32_t life_bytes = 0;
     TestLife(results, life_step, life_draw, life_bytes);
+    std::uint64_t hline = 0;
+    std::uint32_t hline_bytes = 0;
+    TestHiresLine(results, hline, hline_bytes);
     std::printf("cycles: fill 8 KB %llu (%.1f a byte), %u bytes\n",
                 static_cast<unsigned long long>(fill), static_cast<double>(fill) / 8192.0,
                 fill_bytes);
@@ -350,6 +374,9 @@ void CycleReport(TestResults& results) {
                 static_cast<unsigned long long>(life_step), static_cast<double>(life_step) / 1920.0,
                 static_cast<unsigned long long>(life_draw), static_cast<double>(life_draw) / 1920.0,
                 life_bytes);
+    std::printf("cycles: hi-res line of 280 %llu (%.1f a pixel), %u bytes\n",
+                static_cast<unsigned long long>(hline), static_cast<double>(hline) / 280.0,
+                hline_bytes);
 }
 
 } // namespace

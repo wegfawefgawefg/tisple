@@ -37,8 +37,9 @@ void AluByte(Gen& g, Op op, const Opnd& o, int k) {
     OpA(g, AluMn(op), o, k);
 }
 
-// A = A op b, 8-bit, skipping identities
-void Alu8(Gen& g, Op op, const Opnd& b) {
+// A = A op b, 8-bit, skipping identities. no_carry: the sum is known to stay below 256, so
+// the ADC leaves the carry clear (and the next one needs no CLC)
+void Alu8(Gen& g, Op op, const Opnd& b, bool no_carry = false) {
     int v = ImmByte(b, 0);
     if (v == 0 && (op == Op::Add || op == Op::Sub || op == Op::Or || op == Op::Xor)) {
         return;
@@ -46,12 +47,20 @@ void Alu8(Gen& g, Op op, const Opnd& b) {
     if (op == Op::And && v == 0xFF) {
         return;
     }
-    if (op == Op::Add) {
+    if (op == Op::Add && !CarryClearNow(g)) {
         Emit(g, Mn::CLC, Mode::Imp);
     } else if (op == Op::Sub) {
         Emit(g, Mn::SEC, Mode::Imp);
     }
     AluByte(g, op, b, 0);
+    if (op == Op::Add && no_carry) {
+        g.out->back().carry = Carry::Clear;
+    }
+}
+
+// the 8-bit sum of a and b stays below 256
+bool SumFits(const Gen& g, ExprId a, ExprId b) {
+    return MaxOf(g, a) + MaxOf(g, b) <= 0xFF;
 }
 
 // multiplying by a constant with at most this many set bits is inlined as shifts and adds
@@ -63,18 +72,6 @@ int Popcount(std::uint32_t v) {
         n++;
     }
     return n;
-}
-
-// log2 of a power of two, else -1
-int PowerOfTwo(std::uint32_t v) {
-    if (v == 0 || (v & (v - 1)) != 0) {
-        return -1;
-    }
-    int k = 0;
-    while ((v >> k) != 1) {
-        k++;
-    }
-    return k;
 }
 
 // A = A * c, top-down shift and add with the multiplicand in a temporary
@@ -155,10 +152,13 @@ bool EvalChain8(Gen& g, const Expr& e) {
         first = 0;
     }
     EvalA(g, leaves[first]);
+    std::uint32_t sum = MaxOf(g, leaves[first]);
     for (std::size_t i = 0; i < leaves.size(); i++) {
-        if (i != first) {
-            Alu8(g, e.op, TrySimple(g, leaves[i]));
+        if (i == first) {
+            continue;
         }
+        sum += MaxOf(g, leaves[i]);
+        Alu8(g, e.op, TrySimple(g, leaves[i]), e.op == Op::Add && sum <= 0xFF);
     }
     return true;
 }
@@ -216,14 +216,6 @@ bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst
     return true;
 }
 
-Runtime DivRoutine(bool is_signed, bool wide) {
-
-    if (wide) {
-        return is_signed ? Runtime::DivS16 : Runtime::DivU16;
-    }
-    return is_signed ? Runtime::DivS8 : Runtime::DivU8;
-}
-
 } // namespace
 
 void CallRuntime(Gen& g, Runtime routine) {
@@ -242,23 +234,24 @@ void EvalArith8(Gen& g, const Expr& e) {
         if (EvalChain8(g, e)) {
             return;
         }
+        bool fits = op == Op::Add && SumFits(g, e.a, e.b);
         Opnd b = TrySimple(g, e.b);
         if (b.size != 0) {
             EvalA(g, e.a);
-            Alu8(g, op, b);
+            Alu8(g, op, b, fits);
             return;
         }
         Opnd a = TrySimple(g, e.a);
         if (a.size != 0 && !MayWriteOpnd(g, e.b, a) && Commutes(op)) {
             EvalA(g, e.b);
-            Alu8(g, op, a);
+            Alu8(g, op, a, fits);
             return;
         }
         EvalA(g, e.a);
         Opnd ta = SpillA(g);
         EvalA(g, e.b);
         if (Commutes(op)) {
-            Alu8(g, op, ta);
+            Alu8(g, op, ta, fits);
             return;
         }
         Opnd tb = SpillA(g);
@@ -291,35 +284,6 @@ void EvalArith8(Gen& g, const Expr& e) {
         CallRuntime(g, Runtime::Mul8);
         return;
     }
-    case Op::Div:
-    case Op::Mod: {
-        std::uint16_t c = 0;
-        int k = ConstValue(*g.program, e.b, c) ? PowerOfTwo(c & 0xFF) : -1;
-        if (k >= 0 && !IsSignedKind(ExprKindOf(*g.program, e.a))) {
-            // unsigned by 2^k: a shift or a mask
-            EvalA(g, e.a);
-            if (op == Op::Mod) {
-                Emit(g, Mn::AND, Mode::Imm, Num((1 << k) - 1));
-                return;
-            }
-            for (int i = 0; i < k; i++) {
-                Emit(g, Mn::LSR, Mode::Acc);
-            }
-            return;
-        }
-        Opnd a;
-        Opnd b;
-        Operands8(g, e.a, e.b, a, b);
-        LoadA(g, b, 0);
-        Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
-        LoadA(g, a, 0);
-        Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_a));
-        CallRuntime(g, DivRoutine(IsSignedKind(ExprKindOf(*g.program, e.a)), false));
-        if (op == Op::Mod) {
-            Emit(g, Mn::LDA, Mode::Abs, SymValue(g.be->rt_r));
-        }
-        return;
-    }
     default:
         Fail(g, e.loc, "internal: not an 8-bit arithmetic operator");
         return;
@@ -340,28 +304,36 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
     }
     bool carry = false;
     for (int k = 0; k < 2; k++) {
-        int v = ImmByte(b, k);
+        // A already holds b's byte (just stored or loaded): add a to it instead
+        bool flip = Commutes(op) && AHoldsByte(g, b, k) && !IsImm(b);
+        const Opnd& x = flip ? b : a;
+        const Opnd& y = flip ? a : b;
+        int v = ImmByte(y, k);
         switch (op) {
         case Op::Add:
         case Op::Sub:
             if (!carry && v == 0) {
-                LoadA(g, a, k);
+                LoadA(g, x, k);
                 break;
             }
-            LoadA(g, a, k);
+            if (!carry && op == Op::Add && ImmByte(x, k) == 0) {
+                LoadA(g, y, k);
+                break;
+            }
+            LoadA(g, x, k);
             if (!carry) {
                 Emit(g, op == Op::Add ? Mn::CLC : Mn::SEC, Mode::Imp);
                 carry = true;
             }
-            AluByte(g, op, b, k);
+            AluByte(g, op, y, k);
             break;
         case Op::And:
             if (v == 0) {
                 Emit(g, Mn::LDA, Mode::Imm, Num(0));
             } else {
-                LoadA(g, a, k);
+                LoadA(g, x, k);
                 if (v != 0xFF) {
-                    AluByte(g, op, b, k);
+                    AluByte(g, op, y, k);
                 }
             }
             break;
@@ -369,16 +341,16 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
             if (v == 0xFF) {
                 Emit(g, Mn::LDA, Mode::Imm, Num(0xFF));
             } else {
-                LoadA(g, a, k);
+                LoadA(g, x, k);
                 if (v != 0) {
-                    AluByte(g, op, b, k);
+                    AluByte(g, op, y, k);
                 }
             }
             break;
         default:
-            LoadA(g, a, k);
+            LoadA(g, x, k);
             if (v != 0) {
-                AluByte(g, op, b, k);
+                AluByte(g, op, y, k);
             }
             break;
         }
@@ -433,8 +405,11 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
             MulConst16(g, b, e.value, scaled);
             b = scaled;
         }
+        if (e.kind == ExprKind::PtrAdd) {
+            return Add16(g, a, b, dst);
+        }
         Opnd d = dst ? *dst : NewTemp(g, 2);
-        Combine16(g, e.kind == ExprKind::PtrAdd ? Op::Add : Op::Sub, a, b, d);
+        Combine16(g, Op::Sub, a, b, d);
         return d;
     }
     Op op = e.op;
@@ -443,7 +418,16 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
     }
     std::uint16_t c = 0;
     bool b_const = ConstValue(*g.program, e.b, c);
-    bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
+    if (op == Op::Mul && b_const && MaxOf(g, e.a) * c <= 0xFF) {
+        // the product fits a byte: work it out in A, the high byte is 0
+        EvalA(g, e.a);
+        MulConst8A(g, c);
+        Opnd t = SpillA(g);
+        t.size = 2;
+        t.b[1] = ByteRef();
+        t.b[1].value = Num(0);
+        return t;
+    }
     if (op == Op::Mul && b_const && Popcount(c) <= kMaxInlineMulBits) {
         Opnd a = Eval(g, e.a, nullptr);
         Opnd d = dst ? *dst : NewTemp(g, 2);
@@ -456,34 +440,21 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         MulConst16(g, b, c, d);
         return d;
     }
-    if ((op == Op::Div || op == Op::Mod) && b_const && PowerOfTwo(c) >= 0 && !is_signed) {
-        Opnd a = Eval(g, e.a, nullptr);
-        if (op == Op::Mod) {
-            Opnd d = dst ? *dst : NewTemp(g, 2);
-            Combine16(g, Op::And, a, ImmOpnd(static_cast<std::uint16_t>(c - 1), 2), d);
-            return d;
-        }
-        return ShiftConst16(g, Op::Shr, false, a, static_cast<std::uint16_t>(PowerOfTwo(c)), dst);
-    }
     Opnd a = Eval(g, e.a, nullptr);
     if (MayWriteOpnd(g, e.b, a)) {
         a = Snapshot(g, a);
     }
     Opnd b = Eval(g, e.b, nullptr);
-    if (op == Op::Mul || op == Op::Div || op == Op::Mod) {
-        Opnd rt_a = MemOpnd(SymValue(g.be->rt_a), 2, 1);
-        Opnd rt_b = MemOpnd(SymValue(g.be->rt_b), 2, 1);
-        CopyOpnd(g, a, rt_a);
-        CopyOpnd(g, b, rt_b);
+    if (op == Op::Mul) {
+        CopyOpnd(g, a, MemOpnd(SymValue(g.be->rt_a), 2, 1));
+        CopyOpnd(g, b, MemOpnd(SymValue(g.be->rt_b), 2, 1));
         Opnd d = dst ? *dst : NewTemp(g, 2);
-        if (op == Op::Mul) {
-            CallRuntime(g, Runtime::Mul16);
-            StoreAX(g, d);
-            return d;
-        }
-        CallRuntime(g, DivRoutine(IsSignedKind(ExprKindOf(*g.program, e.a)), true));
-        CopyOpnd(g, op == Op::Div ? rt_a : MemOpnd(SymValue(g.be->rt_r), 2, 1), d);
+        CallRuntime(g, Runtime::Mul16);
+        StoreAX(g, d);
         return d;
+    }
+    if (op == Op::Add) {
+        return Add16(g, a, b, dst);
     }
     Opnd d = dst ? *dst : NewTemp(g, 2);
     Combine16(g, op, a, b, d);

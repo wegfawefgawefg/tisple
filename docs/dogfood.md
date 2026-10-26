@@ -83,6 +83,250 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     built a pointer as `(as (ptr u8) (+ row (as u16 x)))`; they now write
     `(+ (as (ptr u8) row) x)`, the same code.
 
+5. Gap list item 1, division (2026-10-26). hires_plot's `(/ x 7)` and
+   `(% x 7)` each called divu16 with a 16-bit divisor: about 750 cycles each.
+   Now (src/backend/gen_div.cpp) unsigned division by a constant below 128
+   that is not a power of two is long division with the divisor as an
+   immediate, one unrolled step (`ROL q / ROL A / CMP #c / BCC / SBC #c`) per
+   dividend bit. The remainder stays below 128, so it lives in A and the
+   runtime's path for a remainder past 255 is gone. The first steps of a byte,
+   before the remainder can reach the divisor, only shift. A 16-bit dividend
+   divides its high byte first, which is no work at all when that byte is
+   below the divisor (x < 1792 for 7). An 8-bit dividend by 128 or more is one
+   compare. Inside a loop the steps are inline (about 70 bytes for 8 bits, 160
+   for 16); elsewhere every site calls one routine per divisor and width
+   (`rt.divu16_7`). A `/` and `%` of the same operands divide once: the second
+   reads rt_a or rt_r while no label, call or write to them came between and
+   no statement since may have written what the operands read. Signed and
+   variable divisors still use the runtime, and pair the same way.
+   Tests: tests/test_backend_div.cpp (every u8 dividend by every constant
+   0..255 as pairs, in both orders and alone; u16 dividends over the whole
+   range by 0..20 and 17 larger constants; signed, variable-divisor and pair
+   edges: an operand set between, the result written into the dividend, a
+   store through another pointer to the dividend, an index changed, a
+   division in only one arm or in a loop that may not run, calls between,
+   i/o dividends, the loop counter as dividend). The fuzz generator writes
+   constant divisors (small odd and even, 128 and up, powers of two, signed)
+   and `/` `%` pairs on the same operands, sometimes with a statement between
+   or into the dividend itself. Changing the generator changes what each seed
+   writes, so the fuzz farm's 14 programs are kept in tests/programs/fuzz_farm.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | hi-res line of 280 pixels (new in the cycle report) | 471373 (1683.5 a pixel) | 72373 (258.5 a pixel) |
+   | fill, hgr rows, sprites, multiply, life step/draw | 156411, 54922, 942, 572, 180689/46405 | the same |
+   | Life generations in 10 M cycles | 43 | 43 |
+   | gaps flagged: life, dot, sprites | 18.22%, 63.68%, 13.90% | the same (no division) |
+   | gaps --fuzz 3000: runtime routines | 5.1% | 4.8% (the new generator) |
+
+6. Gap list item 2, carry facts (2026-10-26). A new peephole pass
+   (src/backend/carry.cpp) follows the carry along the function's control
+   flow: CLC and SEC that find it already so go, and a CLC right after a
+   label that every jump to the label brings clear (only falling in needs
+   it) moves before the label, out of the loop. Facts come from the
+   instructions (CLC, SEC, both edges of BCC and BCS, so the `CMP / BCS`
+   guard of a loop) and from code generation through `AsmItem::carry`: the
+   back edge of a u8 counted loop (`INX / CPX end / BNE`) leaves C clear,
+   since the counter only counts up to the end (not for signed counters,
+   which compare unsigned), and an add whose sum cannot pass 255 leaves C
+   clear, so the next add needs no CLC. Function starts and labels named by
+   jump tables or patched operands may have any carry.
+   Sums come from value ranges (src/backend/ranges.cpp): a global, constant
+   table or local of a byte type, or an array of them, whose every write is
+   known holds no more than the largest value written. Stores through
+   pointers count for every variable the pointer may reach under the
+   provenance rule, followed through lets, sets, arguments, returns, and
+   pointers kept in memory (arrays, struct fields, through pointers) lumped
+   together; a function the program never calls gets any pointers. A null
+   global pointer reaches nothing; one made with `as` only memory no
+   variable uses. Life's worlds only ever hold 0 and 1, so the neighbour sum
+   is `LDA (p),Y` then seven `ADC (p),Y` with one CLC before the row.
+   Tests: tests/test_backend_carry.cpp (sums over an array of 0 and 1 with
+   one 255 stored directly, through a pointer parameter, a returned pointer,
+   a struct field, an array of pointers, a pointer to a pointer and a global
+   pointer; a value just small enough and one 2 too big; a local set big in
+   a branch; signed counters, the carry set before a loop, variable ends,
+   break, continue, nested loops, a loop through 255, a jump table in the
+   body). Every one of those fails when the fact it checks is dropped from
+   the analysis. The fuzz generator has `sm`, an array of small values (0 to
+   3) stored directly and through pointers and read in sums of three, and in
+   a fifth of programs a store of 250 to 255 into it.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | life step (cycle report) | 180689 (94.1 a cell) | 154005 (80.2 a cell) |
+   | life draw | 46405 | 46421 (a BCC in the row multiply now crosses a page; same code) |
+   | sprite step over 32 | 942 | 878 |
+   | fill 8 KB | 156411 | 156409 |
+   | hgr rows, multiply, hi-res line | 54922, 572, 72373 | the same |
+   | Life generations in 10 M cycles | 43 | 49 |
+   | gaps flagged: life, dot, sprites | 18.22%, 63.68%, 13.90% | 7.64%, 63.68%, 7.73% |
+
+   Life's remaining CLCs are in `row_of`'s multiply by 42 (items 3 and 4).
+
+7. Gap list item 3, strength reduction (2026-10-26). A 16-bit let at the
+   top of a u8 loop's body whose value is the counter times a constant plus
+   values the body never changes is worked out once before the loop and
+   moved by the constant at the end of every iteration
+   (src/backend/gen_reduce.cpp): `(let above (ptr u8) (row_of cur (- y 1)))`
+   is now `LDA above / CLC / ADC #42 / STA above / BCC / INC above+1` per
+   row instead of the inlined multiply by 42 (about 70 cycles). The value is
+   followed through adds, constant multiplies and shifts, conversions,
+   pointer arithmetic and calls to one-expression functions like `row_of`
+   (parameters standing for the arguments). A byte part such as `(- y 1)`
+   or `(<< r 1)` must not wrap for any value the counter takes, so `(- y 1)`
+   from 0 or `(+ y 1)` with a variable end stays as it was. The rest must
+   have no effects, not read the counter, and read no variable the body may
+   write, nor memory when the body stores. The let's variable is never set
+   and its address never taken, so it equals the value through its scope.
+   Tests: tests/test_backend_reduce.cpp (Life's above/here/below rows, a
+   byte part that wraps from 0 and at 255, a variable end, the base changed
+   in the body directly, through a call and through a pointer the body
+   stores through, the let set later, continue and break around it, shifts,
+   a product that wraps mod 65536, a pointer minus, a byte product near
+   255, nested loops); each of those checks fails when its rule is dropped.
+   The fuzz generator writes such lets at the top of u8 loops (a row of wb
+   through a `rowp` like `row_of`, a pointer plus the counter times a
+   stride, a u16 product that may wrap), each read twice.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | life step | 154005 (80.2 a cell) | 137331 (71.5 a cell) |
+   | life draw | 46421 (24.2 a cell) | 42074 (21.9 a cell) |
+   | other kernels | 156409, 54922, 878, 572, 72373 | the same |
+   | Life generations in 10 M cycles | 49 | 54 |
+   | gaps flagged: life, dot, sprites | 7.64%, 63.68%, 7.73% | 0.78%, 63.68%, 7.73% |
+
+8. Gap list item 4, known-zero bytes (2026-10-26). 16-bit values keep a
+   byte that is known to be 0 as the number 0 in their operand instead of
+   storing it, and the code that reads them skips it. A shift left by 8 or
+   more of a widened byte is the low byte moved up with a 0 below it; a
+   shift whose value fits a byte by the value ranges (`(& y 7)` shifted by
+   up to 5) is an 8-bit shift with a 0 above; a left shift by 5 to 7 of a
+   byte is `LSR A / STA hi / LDA #0 / ROR A / STA lo` (and the like) with no
+   third byte; a right shift of a byte is 8-bit; a product that fits a byte
+   (`(* (as u16 (>> y 6)) 40)`) is an 8-bit multiply. Adds
+   (src/backend/gen_wide.cpp) make a byte that is two numbers a number, and
+   a byte that adds 0 to another byte, with no carry coming in, that other
+   byte where it is: `$2000 + (y << 10)` is one byte of work. A copy of a
+   byte onto itself is skipped.
+   Tests: tests/test_backend_wide.cpp (every u8 through shifts by 0 to 15 of
+   widened, masked, 16-bit, signed and offset values; products that just
+   fit a byte and just don't; adds with constant bytes that carry, passed
+   bytes, hgr.init's row address, destinations that are their own operands
+   with the bytes swapped, pointers plus widened bytes). The fuzz generator
+   writes 16-bit arithmetic on masked, shifted and widened bytes; it found
+   that the value ranges took `(/ z n)` to be at most z, but a divisor of 0
+   gives all ones (fixed, with a test).
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | hgr row tables (hgr.init) | 54922, 202 bytes | 44746, 173 bytes |
+   | other kernels | 156409, 878, 572, 137331/42074, 72373 | the same |
+   | Life generations in 10 M cycles | 54 | 54 |
+   | gaps on hgr.init (of a 10 M-cycle dot run) | 2880 cycles at 7 sites | 2112 at 5 |
+   | gaps flagged: life, dot, sprites | 0.78%, 63.68%, 7.73% | 0.78%, 63.73%, 7.73% |
+
+9. Gap list item 5, dead loads and ALU results (2026-10-26). A peephole
+   pass (src/backend/dead_regs.cpp) runs liveness of A, X, Y and the N, Z,
+   C, V flags backwards over the function until it settles, and drops an
+   instruction whose only effect is registers and flags that are all dead
+   before their next write. Reads that may be I/O never go (numbers,
+   symbols at $C000 and up, anything through a pointer), nor stores, stack
+   or memory read-modify-writes; a call, a return or a jump out of the
+   function reads everything. Tests: tests/test_backend_peep.cpp (unused
+   I/O reads, direct, through a pointer made from a number and as u16;
+   flags read after labels and calls; an unused pointer let leaves no
+   load). Dropping the I/O rule or the branches' use of Z fails the tests
+   and hundreds of fuzz programs.
+
+   | Measure | Before | After |
+   | --- | --- | --- |
+   | kernels, Life generations | (item 4) | the same: none has a dead value |
+   | 300 fuzz programs (default run) | 791262 cycles | 772479 cycles |
+   | gaps --fuzz 3000: dead values | 0.65% | 0.16% |
+   | gaps --fuzz 3000: compiled code flagged | 7.63% | 7.00% |
+
+10. Gap list item 6, reloads only for flags (2026-10-26). The peephole's
+    register pass knows whether N and Z show A's value (after LDA, an ALU
+    op, a transfer or a shift of A, and through stores, CLC/SEC and
+    branches). A load of what A already holds goes even when a branch reads
+    its flags if they already show A, and is `AND #$FF` (2 cycles, the same
+    flags) when they don't, as after a CMP. A byte stored from a register
+    that holds another byte is known to equal that byte until either is
+    written, so `STA b / ... / LDA b` with A still holding the source goes
+    too. Tests: in tests/test_backend_peep.cpp, flags after `STA`, after
+    `CMP` inside `and`, a copy whose source is then set, a byte written
+    through a pointer between.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | hgr row tables | 44746, 173 bytes | 43594, 169 bytes |
+    | hi-res line of 280 | 72373 (258.5 a pixel) | 70553 (252.0 a pixel) |
+    | other kernels, Life generations | 156409, 878, 572, 137331/42074, 54 | the same |
+    | gaps flagged: life, dot, sprites | 0.78%, 63.73%, 7.73% | 0.78%, 53.95%, 7.73% |
+    | gaps --fuzz 3000: loads already held | 1.22% | 1.19% |
+
+11. Gap list item 7, inlined parameters bound to their arguments
+    (2026-10-26). When a call is inlined, a parameter whose argument is a
+    plain variable reads that variable where it is instead of a copy in the
+    callee's frame (`Gen::bound`, followed wherever code generation looks
+    through a variable: values, places, pointers, byte indices). Only when
+    the parameter is never set and its address never taken, the variable is
+    not a let read in its place (index aliases, forwarded lets), nothing in
+    the callee or in the later arguments may change the variable, and it is
+    not a loop counter held in a register (a copy in memory serves the
+    callee better). hires_plot's `plot.x` and `plot.y` and Life's
+    `row_of.world` lose their copies. Tests: tests/test_backend_bind.cpp
+    (the callee sets the variable or its parameter, a later argument sets
+    it, the callee stores through a pointer to it; pointer, index and 16-bit
+    parameters, nested inlining, counters in memory); each fails when its
+    rule is dropped. The fuzz generator calls small helpers that take
+    pointers (`peek2`, `poke2`) with pointer variables.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | hi-res line of 280 | 70553 (252.0 a pixel) | 65513 (234.0 a pixel) |
+    | life step / draw | 137331 / 42074 | 137101 / 41909 |
+    | other kernels | 156409, 43594, 878, 572 | the same |
+    | Life generations in 10 M cycles | 54 | 55 |
+    | gaps flagged: life, dot, sprites | 0.78%, 53.95%, 7.73% | 0.76%, 53.95%, 7.73% |
+
+12. Gap list item 8, commuted adds (2026-10-26). A 16-bit add, and, or or
+    xor whose second operand's byte the last instruction just stored from
+    A (or loaded into it) works on that byte in A and reads the first
+    operand instead: `STA t / LDA a / CLC / ADC t` is `CLC / ADC a`, and the
+    store goes when nothing else reads t. Subtraction keeps its order.
+    Tests: in tests/test_backend_wide.cpp, sums, ands, ors and xors of a
+    variable and a value just computed, for every u8, and subtractions;
+    commuting a subtraction fails them.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | hgr row tables | 43594, 169 bytes | 40138, 157 bytes |
+    | life step | 137101 | 136984 |
+    | life draw | 41909 | 41913 (2 instructions fewer, but Life's worlds moved 40 bytes down and draw's rows cross 16 more pages) |
+    | other kernels, Life generations | 156409, 878, 572, 65513, 55 | the same |
+    | gaps flagged: life, dot, sprites | 0.76%, 53.95%, 7.73% | 0.76%, 53.97%, 7.73% |
+
+13. Gap list item 9, registers kept across indexed stores (2026-10-26). An
+    indexed store `STA arr,X` only changes arr (indices stay in bounds, as
+    the backend assumes everywhere), so both the code generator's index
+    tracker and the peephole's register pass now forget only what they knew
+    about arr, instead of everything in memory. sprites' spawn writes all
+    four fields of `(at sprites sprite_count)` with one `LDX sprite_count`
+    instead of four. Tests: in tests/test_backend_peep.cpp, an index kept
+    across stores into other arrays and a struct array, and an index that is
+    an element of the array it indexes (`(at a (at a 1))`), which the store
+    changes. The fuzz generator indexes byte arrays of 256 by their own
+    elements.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | sprites.spawn | 4 `LDX sprite_count` | 1 |
+    | kernels, Life generations | 156409, 40138, 878, 572, 136984/41913, 65513, 55 | the same |
+    | gaps flagged: sprites | 7.73% at 6 findings | 7.73% at 3 (the rest follow the data) |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
@@ -170,38 +414,51 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
-1. Divide once for a `/` and `%` pair on the same operands, and specialise
-   division by a constant: no 16-bit divisor, and no high-divisor path for
-   divisors under 128. This is about 45% of hires_plot's hline, and most of
-   the 5% that fuzz runs spend in the runtime.
-2. Carry facts. A counted loop's exit test (`CPX/CPY/CMP` then `BNE`, or
-   the `BCS` guard) leaves C clear in the body, so the first CLC there can
-   go: 6.7% of sprites, and the first of Life's 7. For the other 6, value
-   ranges for arrays whose every store is a small constant (world_a and
-   world_b only ever hold 0 and 1) show the sum can't carry: 10% of Life.
-3. Strength-reduce `(* y STRIDE)` on a loop counter, including through an
-   inlined `row_of`. Keep the row pointer and add the stride each time:
-   about 5% of Life.
-4. Known-zero bytes in 16-bit arithmetic on widened bytes. Don't store,
-   shift or add high bytes that are known to be 0 (`(<< (as u16 (& y 7))
-   10)`, `y*42` while y < 64). This is most of hgr.init's 24% and about 1%
-   of Life.
-5. A register-liveness pass in the peephole: drop loads and ALU results
-   whose register and flags are both dead before the next write. This is
-   0.7% of fuzz runs and the most common exact superoptimizer result.
-6. Reloads made only for flags. When the flags already follow A, as after
-   an LDA or ALU op, drop them. Otherwise test the flags another way
-   (`AND #$FF`, 2 cycles). Top load shape in fuzz runs; dot's main loop.
-7. When inlining, bind parameters that are plain variables to those
-   variables instead of copying them in: Life's `row_of.world`,
-   hires_plot's `plot.x` and `plot.y`, and the let chains in macros.shuffle
-   (18 to 6 cycles, proved).
-8. Commuted adds. For `(+ a b)` with b just computed in A, add a to it
-   instead of storing b and reloading a: 3 cycles each, proved, in Life's
-   and hgr.init's row arithmetic.
-9. Keep what registers hold across indexed stores that can't reach zero
-   page (`STA abs,X` with abs >= $100): sprites' spawn, and fuzz shapes
-   `TAX ; LDA abs,X` and `label ; LDA zp`.
+Items 1 to 9 are done (Fixed 5 to 13); what is left of them:
+
+7. The let chains in macros.shuffle (18 to 6 cycles, proved): `(let x u8
+   a)` copies a parameter the function then changes through x; seeing that
+   the copy and the swap just rename bytes needs value numbering across
+   lets, not inlining. (Inlined parameters are done, see Fixed 11.)
+9. What registers hold after a label: `label ; LDA zp` in fuzz runs (0.10%)
+   needs the register tracker to merge what every way into the label
+   brings. (Indexed stores are done, see Fixed 13; `TAX ; LDA abs,X` in
+   fuzz runs is values that happen to equal their index.)
+
+### After the fixes (2026-10-26)
+
+All nine items, from the gap finder's merge to the last of them:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| fill 8 KB | 156411 (19.1 a byte) | 156409 (19.1 a byte) |
+| hgr row tables (hgr.init) | 54922 | 40138 |
+| sprite step over 32 | 942 | 878 |
+| 16-bit multiply | 572, worst 773 | 572, worst 773 |
+| life step | 180689 (94.1 a cell) | 136984 (71.3 a cell) |
+| life draw | 46405 (24.2 a cell) | 41913 (21.8 a cell) |
+| hi-res line of 280 | 471373 (1683.5 a pixel) | 65513 (234.0 a pixel) |
+| Life generations in 10 M cycles | 43 | 55 |
+| gaps flagged: life | 18.22% | 0.76% |
+| gaps flagged: dot (its idle loop) | 63.68% | 53.97% |
+| gaps flagged: sprites | 13.90% | 7.73% |
+
+The new top of each report:
+
+- **life** (0.76%): the row lets' steps themselves (`STA bottom`, strided
+  by -88 or +42: already the add), loads of `here` and `below` that happen
+  to equal what A holds (`here` is `above` + 42), and the remaining CLCs of
+  the multiply by 42 that sets the rows up once per generation.
+- **dot** (53.97%): the idle loop with no key pressed (a compare that never
+  branches, the key stored and overwritten, `action` stored as it was);
+  these follow the data.
+- **sprites** (7.73%): `(if (at sprites i active) ...)` never false and the
+  loop guard never taken, both following the data.
+- **fuzz, seeds 1..3000** (6.0% of compiled code, with the new generator):
+  strided values 1.8% (mostly u16 loops' own counters and pointers), dead
+  stores 1.3% (the programs' own repeated sets), stores of what memory held
+  1.1%, loads of what a register held 1.1% (`label ; LDA zp` the top shape
+  left), dead values 0.17%.
 
 ## Benchmarks
 
@@ -209,4 +466,6 @@ Cycles are per 10 M-cycle run unless noted.
 | --- | --- | --- | --- |
 | life | generations in 10 M cycles (about 10 s on a IIe) | 10 | 2026-10-26 |
 | life | the same, byte indices as (p),Y (item 4) | 43 | 2026-10-26 |
+| life | the same, gap finder items 1 to 9 (Fixed 5 to 13) | 55 | 2026-10-26 |
+| hires_plot | cycles a pixel of a 280-pixel line | 1683.5 -> 234.0 | 2026-10-26 |
 

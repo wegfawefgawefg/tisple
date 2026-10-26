@@ -190,6 +190,15 @@ std::string Gen::ByteForm() {
     if (rng.Chance(15)) {
         // a byte that stores through pointers into wb can change under a kept index
         v = "(at wb " + std::to_string(rng.Below(4)) + ")";
+    } else if (rng.Chance(10)) {
+        // an element of a byte array of 256, which may index that same array, and a store
+        // into it then changes the index
+        for (const ArrayInfo& a : arrays) {
+            if (a.elem == T::U8 && a.count == 256 && !a.is_const) {
+                v = "(at " + a.name + " " + std::to_string(rng.Below(4)) + ")";
+                break;
+            }
+        }
     }
     static const char* const kDeltas[] = {"1", "1", "2", "3", "200"};
     std::string k = kDeltas[rng.Below(5)];
@@ -269,7 +278,12 @@ std::string Gen::IntExpr(T t, int depth) {
         return std::string("(") + (rng.Chance(50) ? "<<" : ">>") + " " + NonLit(t, depth - 1) +
                " " + Count() + ")";
     case 4:
-        // mostly odd divisors; now and then any, zero included, which has a defined result
+        // constant divisors, mostly odd ones, and now and then any, zero included, which has
+        // a defined result
+        if (rng.Chance(35)) {
+            return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
+                   " " + Divisor(t) + ")";
+        }
         if (rng.Chance(20)) {
             return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
                    " " + Expr(t, depth - 1) + ")";
@@ -284,6 +298,9 @@ std::string Gen::IntExpr(T t, int depth) {
         return std::string("(as ") + Name(t) + " " + NonLit(from, depth - 1) + ")";
     }
     case 6:
+        if (t == T::U16 && rng.Chance(40)) {
+            return WideByte(depth);
+        }
         return "(~ " + NonLit(t, depth - 1) + ")";
     case 7:
         return "(if " + Expr(T::Bool, depth - 1) + " " + Expr(t, depth - 1) + " " +
@@ -293,6 +310,9 @@ std::string Gen::IntExpr(T t, int depth) {
         return call.empty() ? Leaf(t) : call;
     }
     case 9: {
+        if (t == T::U8 && rng.Chance(25)) {
+            return SmallSum(depth);
+        }
         std::vector<const ArrayInfo*> arrs = ArraysOf(t, false);
         if (arrs.empty()) {
             return Leaf(t);
@@ -307,6 +327,10 @@ std::string Gen::IntExpr(T t, int depth) {
         }
         return Leaf(t);
     case 11: {
+        const PtrInfo* p = t == T::U8 ? Pointer(T::U8) : nullptr;
+        if (p && rng.Chance(25)) {
+            return "(peek2 " + p->name + " " + Expr(T::U8, depth - 1) + ")";
+        }
         std::string load = PointerRead(t, depth);
         return load.empty() ? Leaf(t) : load;
     }
@@ -315,6 +339,61 @@ std::string Gen::IntExpr(T t, int depth) {
                Expr(t, depth - 1) + ") (_ " + Expr(t, depth - 1) + "))";
     default:
         return Leaf(t);
+    }
+}
+
+std::string Gen::Divisor(T t) {
+    static const int kUnsigned[] = {3,  5,  6,   7,   9,   10,  12,  15,
+                                    25, 40, 100, 127, 128, 129, 200, 255};
+    static const int kWide[] = {256, 300, 1000, 4097};
+    static const int kSigned[] = {3, 5, 7, 10, 100, 127, -3, -7, -100, -128};
+    if (t == T::I8 || t == T::I16) {
+        return std::to_string(kSigned[rng.Below(10)]);
+    }
+    if (t == T::U16 && rng.Chance(20)) {
+        return std::to_string(kWide[rng.Below(4)]);
+    }
+    if (rng.Chance(10)) {
+        return std::to_string(1 << rng.Below(8));
+    }
+    return std::to_string(kUnsigned[rng.Below(16)]);
+}
+
+std::string Gen::SmallSum(int depth) {
+    auto at = [&]() {
+        if (rng.Chance(50)) {
+            return "(at sm " + std::to_string(rng.Below(4)) + ")";
+        }
+        return "(at sm (& " + NonLit(T::U8, 0) + " 31))";
+    };
+    std::string last = rng.Chance(40) ? std::to_string(rng.Below(250)) : Expr(T::U8, depth - 1);
+    return "(+ (+ " + at() + " " + at() + ") (+ " + at() + " " + last + "))";
+}
+
+std::string Gen::WideByte(int depth) {
+    auto byte = [&]() {
+        std::string x = NonLit(T::U8, depth - 1);
+        switch (rng.Below(4)) {
+        case 0:
+            return "(as u16 (& " + x + " " + std::to_string(1 + rng.Below(15)) + "))";
+        case 1:
+            return "(as u16 (>> " + x + " " + std::to_string(1 + rng.Below(7)) + "))";
+        case 2:
+            return "(as u16 " + x + ")";
+        default:
+            return "(<< (as u16 " + x + ") " + std::to_string(rng.Below(16)) + ")";
+        }
+    };
+    std::string a = byte();
+    switch (rng.Below(4)) {
+    case 0:
+        return "(<< " + a + " " + std::to_string(rng.Below(16)) + ")";
+    case 1:
+        return "(* " + a + " " + std::to_string(1 + rng.Below(100)) + ")";
+    case 2:
+        return "(+ " + std::to_string(rng.Below(4) * 0x1000 + rng.Below(2) * 0xF0) + " " + a + ")";
+    default:
+        return "(+ " + a + " " + byte() + ")";
     }
 }
 

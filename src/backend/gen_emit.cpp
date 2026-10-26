@@ -203,7 +203,16 @@ void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
         if (!c.known || !c.mem) {
             continue;
         }
-        bool hit = direct ? SameValue(c.v, value) : !pointer || PointerMayReach(g, c.v);
+        // an indexed store stays inside its array (indices are in bounds), a store through a
+        // pointer inside what the pointer may reach
+        bool hit = false;
+        if (direct) {
+            hit = SameValue(c.v, value);
+        } else if (pointer) {
+            hit = PointerMayReach(g, c.v);
+        } else {
+            hit = value.sym < 0 || value.sym == c.v.sym;
+        }
         if (hit) {
             c.known = false;
         }
@@ -245,6 +254,38 @@ void LoadIndexConst(Gen& g, int reg, std::uint8_t value) {
 }
 
 } // namespace
+
+bool CarryClearNow(const Gen& g) {
+    if (g.out->empty()) {
+        return false;
+    }
+    const AsmItem& last = g.out->back();
+    if (last.kind != ItemKind::Ins || IsBranch(last.mn)) {
+        return false;
+    }
+    return last.mn == Mn::CLC || last.carry == Carry::Clear;
+}
+
+bool AHoldsByte(const Gen& g, const Opnd& o, int k) {
+    const ByteRef& b = o.b[k];
+    if (o.in_a || b.kind != ByteKind::Mem || b.value.sym < 0) {
+        return false;
+    }
+    for (std::size_t i = g.out->size(); i-- > 0;) {
+        const AsmItem& item = (*g.out)[i];
+        if (item.kind == ItemKind::Note) {
+            continue;
+        }
+        bool access = item.kind == ItemKind::Ins && (item.mn == Mn::STA || item.mn == Mn::LDA) &&
+                      (item.mode == Mode::Abs || item.mode == Mode::Zp);
+        return access && SameValue(item.value, b.value);
+    }
+    return false;
+}
+
+std::uint32_t MaxOf(const Gen& g, ExprId id) {
+    return ExprMax(*g.program, g.be->ranges, id);
+}
 
 std::int32_t NewLabel(Gen& g) {
     return NewSym(*g.be, "L" + std::to_string(g.be->as.symbols.size()), SymRole::Label, -1);
