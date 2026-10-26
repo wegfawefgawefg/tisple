@@ -23,7 +23,7 @@
     (if (< key 0x80)
         (return Action.none))
     (io_read u8 KEY_STROBE)
-    (match (bit_and key 0x7F)
+    (match (& key 0x7F)
         (0x08 Action.left)
         (0x15 Action.right)
         (0x0B Action.up)

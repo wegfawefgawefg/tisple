@@ -1,6 +1,6 @@
 # Tisple ][ language: first subset
 
-Started: 2026-10-26. Everything here is *proposed* until the owner settles it.
+Started: 2026-10-26. Settled unless marked *proposed*.
 
 Rule (owner, 2026-10-26): minimal. The goal is a compiler that is cheap to
 write and produces very fast Apple II code, not a pleasant general language. A
@@ -63,8 +63,8 @@ whole program, so files are namespaces, not separate compilation units.
 
 ## Keywords
 
-`:name` marks a declaration option, and that is all it does: `:in`, `:align`,
-`:boundary`, `:address` on `let`. Not values, not named
+`:name` marks a declaration option, and that is all it does: `:address`,
+`:align`, `:boundary` (and later `:in`) on `let`. Not values, not named
 arguments, not struct fields. Struct literals are positional:
 `(Sprite 10 20 true)`.
 
@@ -88,7 +88,8 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 - No implicit widening or promotion. Both sides of `+`, `=`, `<` and so on must
   have the same type. `(+ (u16 a) b)` widens `a` explicitly.
 - Conversions: `(u8 x)`, `(i8 x)`, `(u16 x)`, `(i16 x)`. Narrowing truncates;
-  widening zero-extends from unsigned and sign-extends from signed.
+  widening zero-extends from unsigned and sign-extends from signed. Pointers
+  convert only with `cast`, so `(ptr ...)` is always a type.
 - A literal has no type of its own. It takes the type its context needs and is
   an error if out of range (`(+ x 300)` with `x : u8` fails). With no context
   (`(let n 5)`) it is `u8` if it fits, else `u16`. Negative literals default to
@@ -96,8 +97,10 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 - Arithmetic wraps: `(+ 255 1)` at `u8` is `0`. Comparisons are signed for
   `i8`/`i16`, unsigned otherwise.
 - `*` exists at every width and compiles to a routine; `/` and `%` likewise,
-  later. Shifts: `(shl x n)`, `(shr x n)` (logical for unsigned, arithmetic
-  for signed).
+  later.
+- Bit operators are symbols, like arithmetic: `(& a b)`, `(| a b)`, `(^ a b)`,
+  `(~ a)`, `(<< x n)`, `(>> x n)`. `>>` is logical for unsigned, arithmetic for
+  signed.
 
 ## Forms
 
@@ -105,21 +108,21 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | --- | --- |
 | `(const name type value)` | compile-time constant; `type` optional |
 | `(let name type value)` | variable; `type` or `value` may be omitted, not both |
-| `(set place value)` | assign to a name, `(at ...)`, `(. ...)` or `(load ...)` |
+| `(set place value)` | assign to a name, `(at ...)` or `(. ...)` |
 | `(fn name (args (p t) ...) body ...)` | function; `args` omitted when none |
 | `(if c then else)` | both arms one form; with `else` it has a value, without it is a statement |
 | `(do body ...)` | group forms; value is the last |
 | `(while c body ...)` | loop |
-| `(for i start end body ...)` | `i` from `start` up to, not including, `end` |
+| `(for i type start end body ...)` | `i` from `start` up to, not including, `end`; `type` optional, so `(for i u8 0 256 ...)` covers every byte |
 | `(match x (pattern form) ...)` | first matching clause; patterns are literals, enum members, or `_` |
-| `(return value)` / `(break)` / `(continue)` | early exits |
+| `(return value)` / `(return)` / `(break)` / `(continue)` | early exits |
 | `(and a b)` `(or a b)` `(not a)` | short-circuit, on `bool` |
 | `(at arr i)` | array element; `i : u8` when the array has at most 256 elements |
 | `(. s name ...)` | struct field; chains, so `(. s pos x)` is `s.pos.x` |
-| `(load p)` / `(store p v)` | through a pointer |
+| `(load p)` / `(store p v)` | read / write through a pointer; the only way to do either |
 | `(addr place)` | address of a variable, element or field |
-| `(ptr t n)` | the `u16` address `n` as a `(ptr t)` |
-| `(io_read t addr)` / `(io_write addr v)` | hardware access, never dropped, merged or reordered |
+| `(cast (ptr t) n)` | the `u16` address `n` as a `(ptr t)`, and back with `(cast u16 p)` |
+| `(io_read t addr)` / `(io_write addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
 
 A function's value is its last form, unless it ends in a statement, in which
 case it returns nothing. Return type is inferred from the last form and every
@@ -198,9 +201,20 @@ main.tsp:20:5: let declares a variable here, it has no body; put the body after 
 `tisple build --asm` prints each function's generated 6502 code under its
 source line; `tisple expand` prints the program after macro expansion.
 
+## Placement
+
+In the first subset; the linker checks them and fails the build if one can't
+hold. Named regions (`:in`) come later.
+
+| Option | Meaning |
+| --- | --- |
+| `:address 0x6000` | start at exactly this address |
+| `:align 256` | start on a multiple of 256 |
+| `:boundary 256` | whole object inside one 256-byte block |
+
 ## Out of the first subset
 
-Placement controls, strings, function pointers, recursion, inline assembly,
+Named regions, strings, function pointers, recursion, inline assembly,
 `/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
 
 ## Open questions for the owner

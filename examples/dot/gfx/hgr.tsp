@@ -15,15 +15,15 @@
 (fn init
     (for y 0 192
         (let addr
-            (+ (+ HGR_PAGE1 (shl (u16 (bit_and y 7)) 10))
-                (+ (shl (u16 (bit_and (shr y 3) 7)) 7) (* (u16 (shr y 6)) 40))))
+            (+ (+ HGR_PAGE1 (<< (u16 (& y 7)) 10))
+                (+ (<< (u16 (& (>> y 3) 7)) 7) (* (u16 (>> y 6)) 40))))
         (set (at row_lo y) (u8 addr))
-        (set (at row_hi y) (u8 (shr addr 8))))
+        (set (at row_hi y) (u8 (>> addr 8))))
     (let byte u8 0)
     (let bit u8 0)
     (for x 0 280
         (set (at col_byte x) byte)
-        (set (at col_bit x) (shl 1 bit))
+        (set (at col_bit x) (<< 1 bit))
         (set bit (+ bit 1))
         (if (= bit 7)
             (do
@@ -39,6 +39,6 @@
 
 ; xor one pixel, so drawing twice erases it
 (fn flip (args (x u16) (y u8))
-    (let row (bit_or (shl (u16 (at row_hi y)) 8) (u16 (at row_lo y))))
-    (let p (ptr u8 (+ row (u16 (at col_byte x)))))
-    (store p (bit_xor (load p) (at col_bit x))))
+    (let row (| (<< (u16 (at row_hi y)) 8) (u16 (at row_lo y))))
+    (let p (cast (ptr u8) (+ row (u16 (at col_byte x)))))
+    (store p (^ (load p) (at col_bit x))))
