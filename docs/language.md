@@ -312,14 +312,16 @@ Ideas, in order of cost, taken up when real programs need them:
 2. Recursion at compile time: pure functions called with constant arguments
    run in the interpreter while compiling (`(fib 10)` becomes `55`). Comes
    with computing macros.
-3. Bounded recursion: `:max_depth 16` on a function gives it 16 frames as
-   split tables indexed by depth in X (`LDA frame_x,X`); no hardware stack.
-   Going deeper stops with a clear error. For flood fill, tree walks, parsers.
-4. Downward-only lambdas: a lambda passed to a call and never stored is
+3. Downward-only lambdas: a lambda passed to a call and never stored is
    compiled by specializing the callee per call site with the body inlined;
    captured variables are slots in the caller's static frame. Overlaps with
    computing macros; macros first, lambdas only if those prove clumsy.
    Stored (escaping) closures need a heap and stay out.
+
+Bounded recursion is not a feature: write the loop with an explicit stack
+(fixed arrays plus a counter), which compiles to the same indexed code. A
+computing macro can generate the stack if it gets repetitive (owner,
+2026-10-26).
 
 ## Out of the first subset
 
