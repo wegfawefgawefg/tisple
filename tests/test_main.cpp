@@ -1,5 +1,6 @@
 #include "check.hpp"
 #include "source_file.hpp"
+#include "test_emu.hpp"
 
 #include <cstdio>
 
@@ -19,6 +20,7 @@ int main() {
 
     // one line per test group
     tisple_tests::RunSourceFileTests(results);
+    tisple_tests::RunEmuTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;

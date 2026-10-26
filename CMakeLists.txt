@@ -37,8 +37,10 @@ endfunction()
 file(GLOB_RECURSE TISPLE_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 list(FILTER TISPLE_SOURCES EXCLUDE REGEX ".*/src/main\\.cpp$")
 add_library(tisple_core STATIC ${TISPLE_SOURCES})
-target_include_directories(tisple_core PUBLIC src)
+target_include_directories(tisple_core PUBLIC src third_party/chips)
 tisple_warnings(tisple_core)
+# vendored single-file C library: no warnings-as-errors for its one compile unit
+set_source_files_properties(src/emu/chips_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
 
 add_executable(tisple src/main.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
