@@ -28,7 +28,8 @@ void PrintUsage() {
                 "  expand  print a program after macro expansion\n"
                 "  interp  run main in the reference interpreter (--max-steps N)\n");
     std::printf("  build   compile to a 6502 binary (-o out.bin, --origin A, --asm)\n"
-                "  run     build and run main in the simulator (--max-cycles N)\n");
+                "  run     build and run on the apple iie (window; --frames N etc. headless;\n"
+                "          --sim for the bare simulator)\n");
     std::printf("  machine run a raw binary in the built-in Apple IIe (--window, --screenshot)\n");
 }
 
@@ -71,7 +72,7 @@ int main(int argc, char** argv) {
         return tisple::RunBuildCommand(argc, argv);
     }
     if (std::strcmp(argv[1], "run") == 0) {
-        return tisple::RunRunCommand(argc, argv);
+        return tisple::RunRunCommand(argc, argv, kMachineWindow);
     }
 
     std::fprintf(stderr, "tisple: unknown command '%s'\n", argv[1]);

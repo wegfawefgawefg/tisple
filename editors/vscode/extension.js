@@ -107,13 +107,11 @@ function runOnApple2() {
     const doc = editor.document;
     doc.save().then(() => {
         const tool = tisplePath(doc.fileName);
-        const bin = path.join(os.tmpdir(), path.basename(doc.fileName, ".tsp") + ".bin");
         const q = (s) => `'${s.replace(/'/g, "'\\''")}'`;
         const terminal = vscode.window.terminals.find((t) => t.name === "Tisple ][") ||
             vscode.window.createTerminal("Tisple ][");
         terminal.show(true);
-        terminal.sendText(`${q(tool)} build ${q(doc.fileName)} -o ${q(bin)} && ` +
-            `${q(tool)} machine ${q(bin)} --window`);
+        terminal.sendText(`${q(tool)} run ${q(doc.fileName)}`);
     });
 }
 

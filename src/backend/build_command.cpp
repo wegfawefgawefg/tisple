@@ -3,11 +3,13 @@
 #include "backend/backend.hpp"
 #include "backend/sim_run.hpp"
 #include "check/check.hpp"
+#include "machine/machine_command.hpp"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace tisple {
 
@@ -19,7 +21,21 @@ struct BuildArgs {
     BuildOptions options;
     bool listing = false;
     std::uint64_t max_cycles = 100000000;
+    bool sim = false;                // run: the bare simulator, not the machine
+    bool headless = false;           // run: no window even with SDL
+    std::vector<char*> machine_args; // run: flags passed through to the machine
 };
+
+// machine flags that mean "no window": the run has an end and leaves files behind
+bool IsHeadlessFlag(const char* arg) {
+    const char* flags[] = {"--cycles", "--frames", "--screenshot", "--wav", "--save-snapshot"};
+    for (const char* flag : flags) {
+        if (std::strcmp(arg, flag) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool ParseNumber(const char* text, std::uint64_t& out) {
     int base = 0;
@@ -51,8 +67,16 @@ bool ParseArgs(int argc, char** argv, bool run, BuildArgs& args) {
                 return false;
             }
             args.max_cycles = number;
+        } else if (run && std::strcmp(arg, "--sim") == 0) {
+            args.sim = true;
+        } else if (run && std::strcmp(arg, "--headless") == 0) {
+            args.headless = true;
         } else if (!args.path && arg[0] != '-') {
             args.path = arg;
+        } else if (run && args.path) {
+            // everything else after the file belongs to the machine, values included
+            args.headless = args.headless || IsHeadlessFlag(arg);
+            args.machine_args.push_back(argv[i]);
         } else {
             return false;
         }
@@ -121,10 +145,14 @@ int RunBuildCommand(int argc, char** argv) {
     return 0;
 }
 
-int RunRunCommand(int argc, char** argv) {
+int RunRunCommand(int argc, char** argv, MachineWindowFn window) {
     BuildArgs args;
     if (!ParseArgs(argc, argv, true, args)) {
-        std::fprintf(stderr, "usage: tisple run main.tsp [--max-cycles N] [--origin A]\n");
+        std::fprintf(stderr,
+                     "usage: tisple run main.tsp [--origin A] [machine flags...]\n"
+                     "       tisple run main.tsp --sim [--max-cycles N]\n"
+                     "runs in the apple iie window; --frames, --cycles, --screenshot, --wav or\n"
+                     "--headless run without one (see tisple machine for every flag)\n");
         return 1;
     }
     Program program;
@@ -133,8 +161,18 @@ int RunRunCommand(int argc, char** argv) {
         return 1;
     }
     if (compiled.main < 0) {
-        std::fprintf(stderr, "%s: no fn main to run; add (fn main ...)\n", args.path);
+        std::fprintf(stderr, "%s: no fn main to run; add (fn main () void ...)\n", args.path);
         return 1;
+    }
+    if (!args.sim) {
+        PrintSizes(compiled);
+        static char window_flag[] = "--window";
+        if (!args.headless && window != nullptr) {
+            args.machine_args.push_back(window_flag);
+        }
+        return RunMachineOnBinary(compiled.image, compiled.origin,
+                                  static_cast<int>(args.machine_args.size()),
+                                  args.machine_args.data(), window);
     }
     SimRunner run;
     SimMain result = RunCompiledMain(run, compiled, args.max_cycles);
