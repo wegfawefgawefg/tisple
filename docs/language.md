@@ -206,9 +206,52 @@ runs before the checker, so nothing later sees a macro.
 - Names the template writes resolve in the macro's own module, so a macro in
   `gfx/hgr` can call `plot` and mean `hgr.plot` wherever it is used. Unquoted
   arguments resolve where the macro is called (owner, 2026-10-26).
-  Macros that compute at compile time can come later by running the reference
-  interpreter on macro bodies.
 - `tisple expand file.tsp` prints the expanded program through the formatter.
+
+### Next: computing macros
+
+Planned right after the first backend (owner, 2026-10-26). A macro body runs
+in the compiler and returns the forms to paste in. Its values are integers of
+any size, symbols and lists, with a few list operations (`list`, `repeat`,
+`map`, `range`, ...). Recursion is fine there, since it never runs on the
+Apple II. One feature instead of separate table, unroll and generics features.
+This is the old Lisp trick of writing the fast code as a generator: the
+program says what to compute, the macro writes out the straight-line code.
+
+Two levels, one syntax: code that runs on the Apple II is typed, static and
+non-recursive, because tags, a heap, closures and deep stacks are what make
+dynamic languages slow on a 1 MHz 6502. Code that runs in the compiler (macro
+bodies) uses the same forms, `fn`, `let`, `if`, `match`, with relaxed rules:
+any-size integers, lists, symbols, recursion, no annotations needed. A plain
+Tisple function like `row_start` can be called from a macro at compile time and
+also compiled for the Apple II.
+
+```scheme
+(macro unroll (args n body)
+    `(do ,@(repeat n body)))
+
+(macro row_table (args name)
+    `(const ,name (array u16 192) ,@(map row_start (range 0 192))))
+```
+
+What it is for:
+
+1. Lookup tables: hi-res row addresses, `x / 7` and `x % 7`, masks, sine
+   tables, squares tables for fast multiply.
+2. Pre-shifted hi-res sprites: the 7 shifted copies, generated from one drawing.
+3. Graphics, fonts and tiles from ASCII art.
+4. Music: note names to period and duration tables for the speaker.
+5. Text: strings to Apple II screen bytes (bit 7 set), so no string type.
+6. Generics: fixed-capacity pools and lists for any struct, e.g.
+   `(pool Bullet 16 (x u8) (y u8))` gives the struct, array, count, spawn and
+   despawn.
+7. Unrolling: clears, copies and blits written as loops, emitted straight.
+8. Specialized copies of a routine, e.g. one `plot` per color.
+9. Flag constants and enums from one list.
+10. Level and map data from text.
+
+Not macros: exact cycle delays need a backend primitive (`wait_cycles`),
+because a macro emits Tisple, not instructions.
 
 ## Memory and calls (first backend)
 
@@ -255,11 +298,70 @@ may point anywhere, a hi-res page included (`(let screen (array u8 8192)
 :address 0x2000)`); automatic placement never uses zero page, the stack, text
 page 1, hi-res page 1 or `$C000` and up.
 
+## Planned after the first backend (owner, 2026-10-26)
+
+- Function pointers, no closures: dispatch tables, per-object update
+  functions. Cheap on the 6502 (indirect `JMP` or push-address + `RTS`).
+- Tail calls: a call in tail position compiles to `JMP`, not `JSR` + `RTS`.
+  Backend only, no syntax.
+
+Ideas, in order of cost, taken up when real programs need them:
+
+1. Tail recursion as loops: a self-call in tail position jumps to the top, no
+   frame. Comes free with tail calls, so the no-recursion rule can relax for it.
+2. Recursion at compile time: pure functions called with constant arguments
+   run in the interpreter while compiling (`(fib 10)` becomes `55`). Comes
+   with computing macros.
+3. Downward-only lambdas: a lambda passed to a call and never stored is
+   compiled by specializing the callee per call site with the body inlined;
+   captured variables are slots in the caller's static frame. Overlaps with
+   computing macros; macros first, lambdas only if those prove clumsy.
+   Stored (escaping) closures need a heap and stay out.
+
+Bounded recursion is not a feature: write the loop with an explicit stack
+(fixed arrays plus a counter), which compiles to the same indexed code. A
+computing macro can generate the stack if it gets repetitive (owner,
+2026-10-26).
+
 ## Out of the first subset
 
-Named regions, strings, function pointers, recursion, inline assembly. `/` and
+Named regions, strings, general recursion, inline assembly. `/` and
 `%` pass the checker and interpreter; the backend gets them later. All planned;
 none needed to prove the backend.
+
+## Pending change (owner, 2026-10-26)
+
+Applied once the backend branch lands, so it doesn't conflict with it:
+
+- The parameter list is always written, `()` when empty, and `args` goes away:
+  `(fn flip ((x u16) (y u8)) void ...)`, `(macro inc (place) ...)`.
+- The return type is always the third item, `void` when nothing is returned,
+  and `(returns t)` goes away: `(fn read_key () u8 ...)`.
+- `as` is the only conversion: `(as u16 y)`, `(as u8 addr)`,
+  `(as (ptr u8) addr)`, `(as u8 action)`. `(u8 x)`-style conversions go away.
+- Struct literals are `(make Sprite :x 10 :y 20 :active true)`. With this and
+  `as`, a type never heads a form: the first word of every form is a special
+  form, built-in, macro or function, so macros and tools can tell any form
+  apart by its head alone.
+- Declarations always have the form name, type, value: `let`, `const` and `for` always
+  state the type: `(let key u8 (io_read u8 a2.KBD))`, `(for i u8 0 n ...)`.
+- `make` builds every compound value, arrays too, so a value slot always holds
+  one form: `(const ROW_ADDR (array u16 192) (make (array u16 192) 0x2000 ...))`.
+- Field and member lists look like parameter lists:
+  `(struct Sprite ((x u8) (y u8) (active bool)))`, `(enum Action (none left right))`.
+- `match` clauses take a body like `fn`/`while`/`for`, so `(_ (do))` is `(_)`.
+  Only `if`'s two arms are single forms.
+- Access paths: `(at arr i path...)` like `(load p path...)`, e.g.
+  `(at sprites i x)`. Hand code uses `name.x`, `at` or `load`; `(. base x)`
+  stays only for macro templates.
+- Shapes after this batch: declare `(kind name type value options...)`, build
+  `(make Type ...)`, access (`name.x`, `at`, `load`), control
+  `(form head... body...)` with `if` the one two-arm exception. Stop there:
+  fewer shapes would force different meanings into one.
+- Declarations stay `(let dog u8 5)`; `(u8 dog 5)` would clash with struct
+  literals and make declarations hard to search for.
+- No multiple return values for now. The backend may return a `bool` in the
+  carry flag, the ROM's own convention, with no syntax change.
 
 ## Settled 2026-10-26
 

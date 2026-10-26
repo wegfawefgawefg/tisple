@@ -15,3 +15,10 @@ Status: early. Design and milestones in `docs/design.md`.
 cmake --preset dev && cmake --build --preset dev
 ./build-debug/tisple_tests
 ```
+
+## License
+
+GPL-3.0-or-later (`LICENSE`), with a runtime exception: the startup and runtime
+code the compiler puts into your programs is also MIT, so programs built with
+Tisple can use any license. See `COPYRIGHT`. Code under `third_party/` keeps
+its own license.
