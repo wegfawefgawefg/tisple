@@ -1,0 +1,319 @@
+#include "fuzz_gen_internal.hpp"
+
+// expressions: literals, variables, operators, calls, loads, I/O
+
+namespace tisple_tests::fuzz {
+
+std::string Gen::Fresh(const char* prefix) {
+    return prefix + std::to_string(names++);
+}
+
+std::string Gen::Literal(T t) {
+    switch (t) {
+    case T::U8: {
+        int pick = rng.Below(6);
+        int v = pick == 0 ? 0 : pick == 1 ? 255 : pick == 2 ? 128 : rng.Below(pick == 3 ? 8 : 256);
+        return std::to_string(v);
+    }
+    case T::I8:
+        return std::to_string(rng.Chance(20) ? (rng.Chance(50) ? -128 : 127)
+                                             : rng.Below(256) - 128);
+    case T::U16: {
+        int pick = rng.Below(5);
+        long v = pick == 0   ? 65535
+                 : pick == 1 ? rng.Below(300)
+                             : static_cast<long>(rng.Next() & 0xFFFF);
+        return std::to_string(v);
+    }
+    case T::I16:
+        return std::to_string(rng.Chance(20) ? (rng.Chance(50) ? -32768 : 32767)
+                                             : static_cast<long>(rng.Next() & 0xFFFF) - 32768);
+    case T::Bool:
+        return rng.Chance(50) ? "true" : "false";
+    default:
+        return "E.e" + std::to_string(rng.Below(kEnumMembers));
+    }
+}
+
+// variables of this type in scope: locals, params, globals
+std::vector<const VarInfo*> Gen::VarsOf(T t, bool writable) {
+    std::vector<const VarInfo*> found;
+    for (const auto& scope : scopes) {
+        for (const VarInfo& v : scope) {
+            if (v.type == t && (!writable || !v.read_only)) {
+                found.push_back(&v);
+            }
+        }
+    }
+    for (const VarInfo& v : globals) {
+        if (v.type == t) {
+            found.push_back(&v);
+        }
+    }
+    return found;
+}
+
+std::vector<const ArrayInfo*> Gen::ArraysOf(T t, bool writable) {
+    std::vector<const ArrayInfo*> found;
+    for (const ArrayInfo& a : arrays) {
+        if (a.elem == t && (!writable || !a.is_const)) {
+            found.push_back(&a);
+        }
+    }
+    return found;
+}
+
+// an index that stays inside the array
+std::string Gen::Index(const ArrayInfo& a) {
+    if (a.count > 256) {
+        return "(& " + NonLit(T::U16, 1) + " " + std::to_string(a.count - 1) + ")";
+    }
+    if (rng.Chance(30)) {
+        return std::to_string(rng.Below(static_cast<int>(a.count)));
+    }
+    if (a.count == 256) {
+        return NonLit(T::U8, 1);
+    }
+    return "(& " + NonLit(T::U8, 1) + " " + std::to_string(a.count - 1) + ")";
+}
+
+std::string Gen::Var(T t) {
+    std::vector<const VarInfo*> vars = VarsOf(t, false);
+    return vars[static_cast<std::size_t>(rng.Below(static_cast<int>(vars.size())))]->name;
+}
+
+std::string Gen::Leaf(T t) {
+    int pick = rng.Below(10);
+    if (pick < 3) {
+        return Literal(t);
+    }
+    if (pick < 8 || t == T::Enum) {
+        return Var(t);
+    }
+    if (t == T::Bool || t == T::I16 || t == T::U8) {
+        if (rng.Chance(50)) {
+            return StructField(t);
+        }
+    }
+    std::vector<const ArrayInfo*> arrs = ArraysOf(t, false);
+    if (arrs.empty()) {
+        return Var(t);
+    }
+    const ArrayInfo& a = *arrs[static_cast<std::size_t>(rng.Below(static_cast<int>(arrs.size())))];
+    return "(at " + a.name + " " + std::to_string(rng.Below(static_cast<int>(a.count))) + ")";
+}
+
+// a field of type t: of an element of sa, or of gs
+std::string Gen::StructField(T t) {
+    std::vector<int> fields;
+    for (int f = 0; f < 4; f++) {
+        if (kFieldTypes[f] == t) {
+            fields.push_back(f);
+        }
+    }
+    if (fields.empty()) {
+        return Var(t);
+    }
+    const char* field =
+        kFields[fields[static_cast<std::size_t>(rng.Below(static_cast<int>(fields.size())))]];
+    if (rng.Chance(40)) {
+        return std::string("gs.") + field;
+    }
+    return "(. (at sa (& " + NonLit(T::U8, 0) + " 7)) " + field + ")";
+}
+
+// never a bare literal: those need a type from their context
+std::string Gen::NonLit(T t, int depth) {
+    for (int tries = 0; tries < 4; tries++) {
+        std::string e = Expr(t, depth);
+        // an if or match may get its type only from literal arms
+        bool untyped = e.rfind("(if ", 0) == 0 || e.rfind("(match ", 0) == 0;
+        bool name = e[0] >= 'a' && e[0] <= 'z' && e != "true" && e != "false";
+        if ((e[0] == '(' && !untyped) || name) {
+            return e;
+        }
+    }
+    return Var(t);
+}
+
+std::string Gen::Count() {
+    if (rng.Chance(50)) {
+        return std::to_string(rng.Below(18));
+    }
+    return "(& " + NonLit(T::U8, 1) + " 15)";
+}
+
+std::string Gen::Call(T t, int depth) {
+    std::vector<std::size_t> callees;
+    for (std::size_t f = 0; f < current; f++) {
+        if (fns[f].has_ret && fns[f].ret == t) {
+            callees.push_back(f);
+        }
+    }
+    if (callees.empty() || depth <= 0) {
+        return "";
+    }
+    return CallText(
+        fns[callees[static_cast<std::size_t>(rng.Below(static_cast<int>(callees.size())))]], depth);
+}
+
+std::string Gen::CallText(const FnInfo& fn, int depth) {
+    std::string text = "(" + fn.name;
+    for (T p : fn.params) {
+        text += " " + Expr(p, depth - 1);
+    }
+    return text + ")";
+}
+
+std::string Gen::Pointer(T t) {
+    std::vector<const PtrInfo*> found;
+    for (const PtrInfo& p : ptrs) {
+        if (!p.to_struct && p.elem == t) {
+            found.push_back(&p);
+        }
+    }
+    if (found.empty()) {
+        return "";
+    }
+    return found[static_cast<std::size_t>(rng.Below(static_cast<int>(found.size())))]->name;
+}
+
+std::string Gen::PointerRead(T t, int depth) {
+    if (t == T::I16 || t == T::U8) {
+        for (const PtrInfo& p : ptrs) {
+            if (p.to_struct && rng.Chance(50)) {
+                return std::string("(load ") + p.name + " " + (t == T::I16 ? "b" : "d") + ")";
+            }
+        }
+    }
+    std::string p = Pointer(t);
+    if (p.empty()) {
+        return "";
+    }
+    if (rng.Chance(50)) {
+        return "(load " + p + ")";
+    }
+    return "(load (+ " + p + " (u16 (& " + NonLit(T::U8, depth - 1) + " 3))))";
+}
+
+std::string Gen::IntExpr(T t, int depth) {
+    static const char* const arith[] = {"+", "-", "*", "&", "|", "^", "+", "-"};
+    if (!wide.empty() && (t == T::U8 || t == T::U16) && rng.Chance(20)) {
+        if (t == T::U16) {
+            return rng.Chance(50) ? "(at ww " + wide + ")" : wide;
+        }
+        return rng.Chance(50) ? "(at wb " + wide + ")" : "(load (+ " + wide_ptr + " " + wide + "))";
+    }
+    int pick = rng.Below(14);
+    switch (pick) {
+    case 0:
+    case 1:
+    case 2:
+        return std::string("(") + arith[rng.Below(8)] + " " + NonLit(t, depth - 1) + " " +
+               Expr(t, depth - 1) + ")";
+    case 3:
+        return std::string("(") + (rng.Chance(50) ? "<<" : ">>") + " " + NonLit(t, depth - 1) +
+               " " + Count() + ")";
+    case 4:
+        return std::string("(") + (rng.Chance(50) ? "/" : "%") + " " + NonLit(t, depth - 1) +
+               " (| " + NonLit(t, depth - 1) + " 1))";
+    case 5: {
+        T from = kInts[rng.Below(4)];
+        if (rng.Chance(15) && t == T::U8) {
+            return "(u8 " + NonLit(T::Enum, depth - 1) + ")";
+        }
+        return std::string("(") + Name(t) + " " + NonLit(from, depth - 1) + ")";
+    }
+    case 6:
+        return "(~ " + NonLit(t, depth - 1) + ")";
+    case 7:
+        return "(if " + Expr(T::Bool, depth - 1) + " " + Expr(t, depth - 1) + " " +
+               Expr(t, depth - 1) + ")";
+    case 8: {
+        std::string call = Call(t, depth);
+        return call.empty() ? Leaf(t) : call;
+    }
+    case 9: {
+        std::vector<const ArrayInfo*> arrs = ArraysOf(t, false);
+        if (arrs.empty()) {
+            return Leaf(t);
+        }
+        const ArrayInfo& a =
+            *arrs[static_cast<std::size_t>(rng.Below(static_cast<int>(arrs.size())))];
+        return "(at " + a.name + " " + Index(a) + ")";
+    }
+    case 10:
+        if (t == T::U8 || t == T::U16) {
+            return std::string("(io_read ") + Name(t) + " " + IoAddress() + ")";
+        }
+        return Leaf(t);
+    case 11: {
+        std::string load = PointerRead(t, depth);
+        return load.empty() ? Leaf(t) : load;
+    }
+    case 12:
+        return "(match (& " + NonLit(T::U8, depth - 1) + " 3) (0 " + Expr(t, depth - 1) + ") (2 " +
+               Expr(t, depth - 1) + ") (_ " + Expr(t, depth - 1) + "))";
+    default:
+        return Leaf(t);
+    }
+}
+
+std::string Gen::BoolExpr(int depth) {
+    static const char* const compares[] = {"<", "<=", ">", ">=", "=", "!="};
+    int pick = rng.Below(9);
+    switch (pick) {
+    case 0:
+    case 1:
+    case 2: {
+        T t = kInts[rng.Below(4)];
+        return std::string("(") + compares[rng.Below(6)] + " " + NonLit(t, depth - 1) + " " +
+               Expr(t, depth - 1) + ")";
+    }
+    case 3:
+        return std::string("(") + (rng.Chance(50) ? "and" : "or") + " " + Expr(T::Bool, depth - 1) +
+               " " + Expr(T::Bool, depth - 1) + ")";
+    case 4:
+        return "(not " + Expr(T::Bool, depth - 1) + ")";
+    case 5:
+        return std::string("(") + (rng.Chance(50) ? "=" : "!=") + " " + NonLit(T::Enum, depth - 1) +
+               " " + Expr(T::Enum, depth - 1) + ")";
+    case 6: {
+        std::string call = Call(T::Bool, depth);
+        return call.empty() ? Leaf(T::Bool) : call;
+    }
+    default:
+        return Leaf(T::Bool);
+    }
+}
+
+std::string Gen::Expr(T t, int depth) {
+    if (depth <= 0 || rng.Chance(25)) {
+        return Leaf(t);
+    }
+    if (t == T::Bool) {
+        return BoolExpr(depth);
+    }
+    if (t == T::Enum) {
+        if (rng.Chance(30)) {
+            return "(if " + Expr(T::Bool, depth - 1) + " " + Literal(T::Enum) + " " +
+                   Expr(T::Enum, depth - 1) + ")";
+        }
+        return Leaf(t);
+    }
+    return IntExpr(t, depth);
+}
+
+std::string Gen::IoAddress() {
+    return std::to_string(0xC000 + rng.Below(256));
+}
+
+T Gen::AnyType() {
+    int pick = rng.Below(10);
+    if (pick < 8) {
+        return kInts[pick % 4];
+    }
+    return pick == 8 ? T::Bool : T::Enum;
+}
+
+} // namespace tisple_tests::fuzz

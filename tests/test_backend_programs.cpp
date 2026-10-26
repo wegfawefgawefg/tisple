@@ -194,6 +194,64 @@ void TestFrameOverlap(TestResults& results) {
     CheckDiff(results, d, "t.f", {1000});
 }
 
+// more frame bytes than zero page holds: the coldest go to memory frames
+void TestBigFrames(TestResults& results) {
+    std::string text = "(let out u16 0)\n(fn deep (args (x u16)) (returns u16)\n";
+    for (int i = 0; i < 130; i++) {
+        text += "    (let v" + std::to_string(i) + " (+ x " + std::to_string(i * 3) + "))\n";
+    }
+    text += "    (let s u16 0)\n";
+    for (int i = 0; i < 130; i++) {
+        text += "    (set s (+ s (^ v" + std::to_string(i) + " " + std::to_string(i) + ")))\n";
+    }
+    text += "    s)\n(fn f (args (x u16)) (returns u16) (let a (deep x)) (+ a (deep (+ x 1))))\n";
+    Compiled c = CompileText(text);
+    CHECK(results, c.ok);
+    if (!c.ok) {
+        std::fprintf(stderr, "%s\n", c.errors.c_str());
+        return;
+    }
+    CHECK(results, c.code.mem_frames > 0);
+    Diff d;
+    CHECK(results, StartDiff(d, c));
+    CheckDiff(results, d, "t.f", {1234});
+    CheckDiff(results, d, "t.f", {0xFFF0});
+}
+
+// explicit addresses: in zero page, below the program, and out where the startup stores
+// the starting values
+void TestPlacements(TestResults& results) {
+    Compiled c = CompileText("(let zp_count u8 5 :address 0x80)\n"
+                             "(let zp_ptr (ptr u8) :address 0x06)\n"
+                             "(let low (array u8 4) :address 0x0300)\n"
+                             "(let low_init u16 0xBEEF :address 0x0310)\n"
+                             "(let aligned (array u8 16) :align 256)\n"
+                             "(fn f (returns u16)\n"
+                             "    (set zp_ptr (addr_of (at low 1)))\n"
+                             "    (store zp_ptr 9)\n"
+                             "    (set zp_count (+ zp_count (load zp_ptr)))\n"
+                             "    (set (at aligned 3) zp_count)\n"
+                             "    (+ low_init (u16 (at low 1))))");
+    CHECK(results, c.ok);
+    if (!c.ok) {
+        std::fprintf(stderr, "%s\n", c.errors.c_str());
+        return;
+    }
+    const tisple::Program& program = c.built.program;
+    auto address = [&](const char* name) {
+        return c.code.layout.vars[static_cast<std::size_t>(tisple::FindVar(program, name))].address;
+    };
+    CHECK(results, address("t.zp_count") == 0x80 && address("t.zp_ptr") == 0x06);
+    CHECK(results, address("t.low_init") == 0x0310 && address("t.aligned") % 256 == 0);
+    Diff d;
+    CHECK(results, StartDiff(d, c));
+    CheckDiff(results, d, "t.f", {});
+    CheckDiff(results, d, "t.f", {});
+    // a code/data overlap is an error, not a silent clobber
+    Compiled clash = CompileText("(let x u8 :address 0x6002)\n(fn f (set x 1))");
+    CHECK(results, !clash.ok && clash.errors.find("overlaps the program") != std::string::npos);
+}
+
 void TestErrors(TestResults& results) {
     Compiled big = CompileText("(let a (array u8 30000))\n(fn main (set (at a 5) 1))");
     CHECK(results, !big.ok && big.errors.find("no room") != std::string::npos);
@@ -237,6 +295,8 @@ void RunBackendProgramTests(TestResults& results) {
     TestOtherExamples(results);
     TestStartup(results);
     TestFrameOverlap(results);
+    TestBigFrames(results);
+    TestPlacements(results);
     TestErrors(results);
     CycleReport(results);
 }

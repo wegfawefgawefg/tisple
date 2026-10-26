@@ -260,7 +260,12 @@ Opnd PlaceOpnd(Gen& g, const PlaceRef& place, TypeId type);
 // a sub-place: field at packed offset, element with a constant index
 PlaceRef FieldPlace(const Gen& g, const PlaceRef& place, std::uint32_t offset);
 PlaceRef ElementPlace(const Gen& g, const PlaceRef& place, TypeId array_type, std::uint32_t i);
-// an expression that needs no code to read, or size 0
+// the place's parts without emitting anything; false if that needs code
+bool ResolveForRead(Gen& g, ExprId id, PlaceRef& out);
+bool IsNormalPlace(const Gen& g, const PlaceRef& place, TypeId type);
+// the place's address so far into a zero-page pointer temporary
+void PlaceToPointer(Gen& g, PlaceRef& place);
+// an expression that needs no code to read, or size 0 (gen_simple.cpp)
 Opnd TrySimple(Gen& g, ExprId id);
 // &place as a 16-bit value
 Opnd AddressOf(Gen& g, ExprId place, const Opnd* dst);
@@ -282,6 +287,11 @@ void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
 // multiply a 16-bit operand by a constant into dst
 void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst);
 void CallRuntime(Gen& g, Runtime routine);
+// shifts (gen_shift.cpp): 8-bit into A, 16-bit into dst or a temporary
+void EvalShift8(Gen& g, const Expr& e);
+Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst);
+Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t count,
+                  const Opnd* dst);
 // io_read or io_write as a statement
 void GenIo(Gen& g, ExprId id);
 

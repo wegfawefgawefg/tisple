@@ -1,6 +1,13 @@
 #pragma once
 
 // Startup code and the small runtime routines (multiply, divide), as assembler items.
+//
+// License: this code is copied into every program Tisple builds, so besides
+// GPL-3.0-or-later it is offered under MIT (the runtime exception). It was written for
+// Tisple from the textbook algorithms (save/restore loops, shift-and-add multiply,
+// restoring division with sign fix-up) and is not derived from any other project's code.
+// Keep it that way: never paste routines from GPL sources here, nor into code generation
+// that emits fixed sequences into every binary.
 
 #include "backend/gen.hpp"
 
