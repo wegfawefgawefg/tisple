@@ -89,7 +89,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
   have the same type. `(+ (u16 a) b)` widens `a` explicitly.
 - Conversions: `(u8 x)`, `(i8 x)`, `(u16 x)`, `(i16 x)`. Narrowing truncates;
   widening zero-extends from unsigned and sign-extends from signed. Pointers
-  convert only with `cast`, so `(ptr ...)` is always a type.
+  convert only with `as`, so `(ptr ...)` is always a type.
 - A literal has no type of its own. It takes the type its context needs and is
   an error if out of range (`(+ x 300)` with `x : u8` fails). With no context
   (`(let n 5)`) it is `u8` if it fits, else `u16`. Negative literals default to
@@ -121,7 +121,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(. s name ...)` | struct field; chains, so `(. s pos x)` is `s.pos.x` |
 | `(load p)` / `(store p v)` | read / write through a pointer; the only way to do either |
 | `(addr place)` | address of a variable, element or field |
-| `(cast (ptr t) n)` | the `u16` address `n` as a `(ptr t)`, and back with `(cast u16 p)` |
+| `(as (ptr t) n)` | the `u16` address `n` as a `(ptr t)`, and back with `(as u16 p)` |
 | `(io_read t addr)` / `(io_write addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
 
 A function's value is its last form, unless it ends in a statement, in which
