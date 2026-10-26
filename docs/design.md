@@ -90,9 +90,6 @@ Settled:
 - Comments (`;`) and single blank lines between forms are kept.
 - Formatting twice gives the same text.
 
-*Proposed*: a bare name that refers to a zero-parameter function is a call.
-Taking the function itself needs an explicit form, e.g. `(fn_addr read_key)`.
-
 An indentation-only syntax (wisp, SRFI 119; Racket's Rhombus) could be added
 later as a second reader producing the same tree. Not planned.
 

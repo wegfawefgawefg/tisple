@@ -118,11 +118,13 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(. s name ...)` | struct field; chains, so `(. s pos x)` is `s.pos.x` |
 | `(load p)` / `(store p v)` | through a pointer |
 | `(addr place)` | address of a variable, element or field |
+| `(ptr t n)` | the `u16` address `n` as a `(ptr t)` |
 | `(io_read t addr)` / `(io_write addr v)` | hardware access, never dropped, merged or reordered |
 
 A function's value is its last form, unless it ends in a statement, in which
 case it returns nothing. Return type is inferred from the last form and every
-`return`. A bare name of a zero-argument function is a call.
+`return`. Calls always use parentheses, `(read_key)`; only the declaration
+omits an empty `args`.
 
 Locals declared with `let` inside a body live to the end of the enclosing body.
 No shadowing in the same body.
@@ -134,13 +136,14 @@ No shadowing in the same body.
 
 (fn handle (args (a Action))
     (match a
-        (move_left (step 255))
-        (move_right (step 1))
-        (fire (do
+        (Action.move_left (step 255))
+        (Action.move_right (step 1))
+        (Action.fire (do
             (shoot)
             (play_click)))))
 ```
 
+- Members are always written qualified, `Action.fire`, in patterns too.
 - Members number from 0 in order. `(enum Action (fire 7) ...)` sets a value.
 - `match` on an enum without `_` must name every member. On integers it needs
   `_`. Like `if`, it has a value when every clause gives one.
