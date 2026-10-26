@@ -206,9 +206,44 @@ runs before the checker, so nothing later sees a macro.
 - Names the template writes resolve in the macro's own module, so a macro in
   `gfx/hgr` can call `plot` and mean `hgr.plot` wherever it is used. Unquoted
   arguments resolve where the macro is called (owner, 2026-10-26).
-  Macros that compute at compile time can come later by running the reference
-  interpreter on macro bodies.
 - `tisple expand file.tsp` prints the expanded program through the formatter.
+
+### Next: computing macros
+
+Planned right after the first backend (owner, 2026-10-26). A macro body runs
+in the compiler and returns the forms to paste in. Its values are integers of
+any size, symbols and lists, with a few list operations (`list`, `repeat`,
+`map`, `range`, ...). Recursion is fine there, since it never runs on the
+Apple II. One feature instead of separate table, unroll and generics features.
+This is the old Lisp trick of writing the fast code as a generator: the
+program says what to compute, the macro writes out the straight-line code.
+
+```scheme
+(macro unroll (args n body)
+    `(do ,@(repeat n body)))
+
+(macro row_table (args name)
+    `(const ,name (array u16 192) ,@(map row_start (range 0 192))))
+```
+
+What it is for:
+
+1. Lookup tables: hi-res row addresses, `x / 7` and `x % 7`, masks, sine
+   tables, squares tables for fast multiply.
+2. Pre-shifted hi-res sprites: the 7 shifted copies, generated from one drawing.
+3. Graphics, fonts and tiles from ASCII art.
+4. Music: note names to period and duration tables for the speaker.
+5. Text: strings to Apple II screen bytes (bit 7 set), so no string type.
+6. Generics: fixed-capacity pools and lists for any struct, e.g.
+   `(pool Bullet 16 (x u8) (y u8))` gives the struct, array, count, spawn and
+   despawn.
+7. Unrolling: clears, copies and blits written as loops, emitted straight.
+8. Specialized copies of a routine, e.g. one `plot` per color.
+9. Flag constants and enums from one list.
+10. Level and map data from text.
+
+Not macros: exact cycle delays need a backend primitive (`wait_cycles`),
+because a macro emits Tisple, not instructions.
 
 ## Memory and calls (first backend)
 
