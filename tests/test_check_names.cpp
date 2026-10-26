@@ -99,6 +99,11 @@ void ResolveTests(TestResults& results) {
                                  "(macro get_x (args s) `(. ,s x))\n"
                                  "(fn f (returns u8) (get_x p))");
     CHECK(results, from_macro.ok);
+    if (from_macro.ok) {
+        tisple::Interp in;
+        StartInterp(in, from_macro);
+        CHECK(results, CallOk(results, in, "t.f", {}) == 7);
+    }
     // a module's macros are visible through its prefix
     Built twice = BuildText("(import gfx/hgr)\n(fn f (hgr.twice (hgr.plot 1 2)))", kHgr);
     CHECK(results, twice.ok);
