@@ -206,6 +206,9 @@ void TypedCallTests(TestResults& results) {
                      "(macro v () (f))\n(const X u8 (v))",
                      "t.tsp:4:13: f can't run at compile time: it calls t.key, which uses "
                      "io_read; macro code at t.tsp:3:13 (in macro v)");
+    ExpectMacroError(results, "(fn f () u8 (jsr 0x0300))\n(macro v () (f))\n(const X u8 (v))",
+                     "t.tsp:3:13: f can't run at compile time: it uses jsr; macro code at "
+                     "t.tsp:2:13 (in macro v)");
     ExpectMacroError(results, "(let g u8 5)\n(fn f () u8 g)\n(macro v () (f))\n(const X u8 (v))",
                      "t.tsp:4:13: f can't run at compile time: it uses the top-level let t.g, "
                      "which only has a value at run time; macro code at t.tsp:3:13 (in macro v)");

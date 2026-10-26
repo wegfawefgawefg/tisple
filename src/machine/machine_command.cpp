@@ -2,7 +2,9 @@
 
 #include "disk/machine_disks.hpp"
 #include "machine/disk2.hpp"
+#include "machine/mouse.hpp"
 #include "machine/png.hpp"
+#include "machine/scripted_input.hpp"
 #include "machine/speaker_audio.hpp"
 
 #include <chrono>
@@ -31,6 +33,8 @@ struct MachineArgs {
     const char* save_snapshot = nullptr;
     const char* wav = nullptr;
     const char* keys = nullptr;
+    const char* mouse = nullptr;     // scripted mouse input
+    const char* mouse_rom = nullptr; // the owner's MouseInterface.rom; null for ours
     uint32_t origin = kDefaultOrigin;
     uint64_t cycles = kDefaultCycles;
     bool cycles_given = false;
@@ -58,89 +62,16 @@ void PrintMachineUsage() {
         "  --disk F | --disk2 F  a disk ii in slot 6 with F (.dsk .do .po .nib) in drive 1 / 2;\n"
         "                      with no program and no --rom, boot it with our boot rom\n"
         "  --disk-rom F        the card's boot rom (Apple's DISK2.rom) instead of ours\n"
+        "  --mouse \"C:X,Y,B;...\"  the mouse card (slot 4) is at X,Y with the button B (0 or\n"
+        "                      1) from cycle C\n"
+        "  --mouse-rom F       the card's real firmware (MouseInterface.rom) instead of ours;\n"
+        "                      it needs an Apple rom too (--rom)\n"
         "  --write-back        save written disks back to their files at the end\n"
         "  --load-snapshot F | --save-snapshot F   machine state in and out\n"
         "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
         "numbers take $hex, 0xhex or decimal; a cycle may be given in frames as 30f\n"
         "exit code 3 when the program hits an illegal opcode or jumps into empty rom space\n");
-}
-
-bool ParseNumber(const char* text, uint64_t& out) {
-    char* end = nullptr;
-    if (text[0] == '$') {
-        out = std::strtoull(text + 1, &end, 16);
-        return text[1] != '\0' && *end == '\0';
-    }
-    out = std::strtoull(text, &end, 0);
-    return text[0] != '\0' && *end == '\0';
-}
-
-// a number of cycles, or of frames with an f suffix
-bool ParseCycle(const std::string& text, uint64_t& out) {
-    if (!text.empty() && text.back() == 'f') {
-        uint64_t frames = 0;
-        if (!ParseNumber(text.substr(0, text.size() - 1).c_str(), frames)) {
-            return false;
-        }
-        out = frames * kCyclesPerFrame;
-        return true;
-    }
-    return ParseNumber(text.c_str(), out);
-}
-
-bool ParseKeyName(const std::string& name, uint8_t& code) {
-    struct Named {
-        const char* name;
-        uint8_t code;
-    };
-    static const Named kNames[] = {
-        {"RETURN", 0x0D}, {"RET", 0x0D},    {"ESC", 0x1B},  {"LEFT", 0x08},
-        {"RIGHT", 0x15},  {"UP", 0x0B},     {"DOWN", 0x0A}, {"SPACE", 0x20},
-        {"TAB", 0x09},    {"DELETE", 0x7F}, {"DEL", 0x7F},  {"COMMA", 0x2C},
-    };
-    for (const Named& n : kNames) {
-        if (name == n.name) {
-            code = n.code;
-            return true;
-        }
-    }
-    if (name.size() == 1) {
-        char c = name[0];
-        code = static_cast<uint8_t>(c >= 'a' && c <= 'z' ? c - 32 : c);
-        return true;
-    }
-    uint64_t value = 0;
-    if ((name[0] == '$' || name.rfind("0x", 0) == 0) && ParseNumber(name.c_str(), value) &&
-        value < 0x80) {
-        code = static_cast<uint8_t>(value);
-        return true;
-    }
-    return false;
-}
-
-bool ScheduleKeys(Apple2& a, const char* spec, std::string& error) {
-    std::string text = spec;
-    size_t pos = 0;
-    while (pos < text.size()) {
-        size_t comma = text.find(',', pos);
-        std::string entry =
-            text.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
-        pos = comma == std::string::npos ? text.size() : comma + 1;
-        size_t colon = entry.find(':');
-        uint64_t cycle = 0;
-        uint8_t code = 0;
-        if (colon == std::string::npos || !ParseCycle(entry.substr(0, colon), cycle) ||
-            !ParseKeyName(entry.substr(colon + 1), code)) {
-            error = "bad key '" + entry + "', want cycle:key";
-            return false;
-        }
-        if (!ScheduleKey(a, cycle, code)) {
-            error = "too many scripted keys";
-            return false;
-        }
-    }
-    return true;
 }
 
 bool ParseScreenshot(const char* text, ScreenshotArg& shot) {
@@ -189,6 +120,10 @@ bool ParseArgs(int argc, char** argv, bool want_program, MachineArgs& args) {
             args.scale = static_cast<int>(number);
         } else if (std::strcmp(arg, "--keys") == 0 && has_value) {
             args.keys = argv[++i];
+        } else if (std::strcmp(arg, "--mouse") == 0 && has_value) {
+            args.mouse = argv[++i];
+        } else if (std::strcmp(arg, "--mouse-rom") == 0 && has_value) {
+            args.mouse_rom = argv[++i];
         } else if (std::strcmp(arg, "--screenshot") == 0 && has_value) {
             ScreenshotArg shot;
             if (!ParseScreenshot(argv[++i], shot)) {
@@ -251,6 +186,30 @@ bool WriteFile(const char* path, const std::vector<uint8_t>& bytes) {
     }
     bool ok = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
     return std::fclose(file) == 0 && ok;
+}
+
+// the mouse card in slot 4, with our firmware or the owner's
+bool SetUpMouse(Apple2& a, const MachineArgs& args, std::string& error) {
+    if (args.mouse_rom == nullptr) {
+        InsertMouseCard(a, kMouseSlot, nullptr);
+        return true;
+    }
+    if (args.rom == nullptr) {
+        error = "the real mouse firmware calls the monitor rom (IORTS at $FF58); add "
+                "--rom Apple2e.rom";
+        return false;
+    }
+    std::vector<uint8_t> rom;
+    if (!ReadFile(args.mouse_rom, rom)) {
+        error = std::string("cannot read '") + args.mouse_rom + "'";
+        return false;
+    }
+    if (rom.size() != kMouseRomBytes) {
+        error = "MouseInterface.rom is 2048 bytes, not " + std::to_string(rom.size());
+        return false;
+    }
+    InsertMouseCard(a, kMouseSlot, rom.data());
+    return true;
 }
 
 bool SaveShot(const Apple2& a, const ScreenshotArg& shot, VideoLook look, bool live) {
@@ -368,6 +327,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         std::printf("\n");
     }
     std::fputs(DescribeDisks(a).c_str(), stdout);
+    std::fputs(DescribeMouse(a).c_str(), stdout);
     std::fputs(DescribeStubNotes(a.stub_notes).c_str(), stdout);
     if (!ok) {
         return 1;
@@ -393,8 +353,12 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
             return 1;
         }
     }
-    // a snapshot carries its card and disks; --disk then only names the write-back files
+    // a snapshot carries its cards and disks; --disk then only names the write-back files
     if (args.disks.any() && args.load_snapshot == nullptr && !SetUpDisks(*a, args.disks, error)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        return 1;
+    }
+    if (args.load_snapshot == nullptr && !SetUpMouse(*a, args, error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         return 1;
     }
@@ -421,6 +385,10 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
         return 1;
     }
     if (args.keys != nullptr && !ScheduleKeys(*a, args.keys, error)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        return 1;
+    }
+    if (args.mouse != nullptr && !ScheduleMouseInput(*a, args.mouse, error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         return 1;
     }

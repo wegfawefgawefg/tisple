@@ -1,7 +1,14 @@
-// `tisple machine --window`: the machine at real speed in an SDL3 window, with keyboard and
-// speaker audio. built only with TISPLE_SDL. it never raises itself or grabs input; closing
-// the window returns at once.
+// `tisple machine --window`: the machine at real speed in an SDL3 window, with keyboard,
+// speaker audio and the mouse card. built only with TISPLE_SDL. it never raises itself, and
+// closing the window returns at once.
+//
+// the mouse: while the pointer is over the window, its motion moves the card's mouse (one
+// hi-res pixel per two screen pixels at scale 1). it is never grabbed until a click into the
+// window, which only captures it (relative mode: hidden, held in the window); then motion
+// and the left button go to the card until Esc (which the Apple does not see) or losing
+// focus lets it go.
 
+#include "machine/mouse.hpp"
 #include "machine/speaker_audio.hpp"
 #include "machine/window.hpp"
 
@@ -28,6 +35,9 @@ struct WindowState {
     bool turbo = false;
     VideoLook look = VideoLook::kColor;
     bool reported_stop = false;
+    bool mouse_captured = false;
+    float mouse_dx = 0; // motion not yet passed on: under one apple pixel
+    float mouse_dy = 0;
     Framebuffer fb;
     SpeakerRenderer speaker;
     std::vector<int16_t> samples;
@@ -77,10 +87,88 @@ void UpdateTitle(WindowState& w, const Apple2& a, const WindowOptions& options) 
     if (w.look != VideoLook::kColor) {
         title += std::string("  [") + VideoLookName(w.look) + "]";
     }
+    if (w.mouse_captured) {
+        title += "  [mouse captured: Esc lets go]";
+    }
     if (a.stopped) {
         title += "  [" + DescribeStop(a) + "]";
     }
     SDL_SetWindowTitle(w.window, title.c_str());
+}
+
+void ReleaseMouse(WindowState& w, Apple2& a, const WindowOptions& options) {
+    if (!w.mouse_captured) {
+        return;
+    }
+    w.mouse_captured = false;
+    SDL_SetWindowRelativeMouseMode(w.window, false);
+    SetMouseButton(a, false);
+    UpdateTitle(w, a, options);
+}
+
+void CaptureMouse(WindowState& w, Apple2& a, const WindowOptions& options) {
+    if (w.mouse_captured || !SDL_SetWindowRelativeMouseMode(w.window, true)) {
+        return;
+    }
+    w.mouse_captured = true;
+    UpdateTitle(w, a, options);
+}
+
+// host motion in window coordinates to apple pixels: 280 x 192 over the letterboxed picture
+void FeedMouseMotion(WindowState& w, Apple2& a, float xrel, float yrel) {
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSize(w.window, &width, &height);
+    float scale_x = static_cast<float>(width) / 280.0f;
+    float scale_y = static_cast<float>(height) / 192.0f;
+    float scale = scale_x < scale_y ? scale_x : scale_y; // window units per apple pixel
+    if (scale <= 0) {
+        return;
+    }
+    w.mouse_dx += xrel / scale;
+    w.mouse_dy += yrel / scale;
+    int32_t dx = static_cast<int32_t>(w.mouse_dx);
+    int32_t dy = static_cast<int32_t>(w.mouse_dy);
+    w.mouse_dx -= static_cast<float>(dx);
+    w.mouse_dy -= static_cast<float>(dy);
+    if (dx != 0 || dy != 0) {
+        MoveMouse(a, dx, dy);
+    }
+}
+
+// returns true when the event was the mouse's
+bool HandleMouseEvent(WindowState& w, Apple2& a, const WindowOptions& options, const SDL_Event& e) {
+    switch (e.type) {
+    case SDL_EVENT_MOUSE_MOTION:
+        FeedMouseMotion(w, a, e.motion.xrel, e.motion.yrel);
+        return true;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (e.button.button != SDL_BUTTON_LEFT) {
+            return true;
+        }
+        if (!w.mouse_captured) {
+            CaptureMouse(w, a, options); // this click only captures
+            return true;
+        }
+        SetMouseButton(a, true);
+        return true;
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (e.button.button == SDL_BUTTON_LEFT && w.mouse_captured) {
+            SetMouseButton(a, false);
+        }
+        return true;
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        ReleaseMouse(w, a, options);
+        return true;
+    case SDL_EVENT_KEY_DOWN:
+        if (e.key.key == SDLK_ESCAPE && w.mouse_captured) {
+            ReleaseMouse(w, a, options);
+            return true;
+        }
+        return false;
+    default:
+        return false;
+    }
 }
 
 // SDL keys that are not plain text
@@ -130,6 +218,9 @@ bool AnyKeyHeld() {
 
 // returns false when the window should close
 bool HandleEvent(WindowState& w, Apple2& a, const WindowOptions& options, const SDL_Event& e) {
+    if (HasMouseCard(a) && HandleMouseEvent(w, a, options, e)) {
+        return true;
+    }
     switch (e.type) {
     case SDL_EVENT_QUIT:
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -299,6 +390,7 @@ int RunMachineWindow(Apple2& a, const WindowOptions& options) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (!HandleEvent(w, a, options, e)) {
+                ReleaseMouse(w, a, options);
                 Close(w);
                 return 0;
             }

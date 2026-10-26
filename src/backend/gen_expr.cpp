@@ -387,6 +387,8 @@ Opnd Eval(Gen& g, ExprId id, const Opnd* dst) {
         return EvalCall(g, id, dst);
     case ExprKind::IoRead:
         return EvalIoRead(g, e, dst);
+    case ExprKind::Jsr:
+        return EvalJsr(g, id);
     case ExprKind::AddrOf:
         return AddressOf(g, e.a, dst);
     case ExprKind::If:

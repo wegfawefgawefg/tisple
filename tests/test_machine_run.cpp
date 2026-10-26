@@ -234,6 +234,7 @@ void RunMachineTests(TestResults& results) {
     RunMachineIoTests(results);
     RunMachineRunTests(results);
     RunMachineVideoTests(results);
+    RunMachineMouseTests(results);
 }
 
 } // namespace tisple_tests

@@ -1,6 +1,7 @@
 #include "machine/slots.hpp"
 
 #include "machine/disk2.hpp"
+#include "machine/mouse.hpp"
 
 namespace tisple {
 
@@ -30,6 +31,8 @@ uint8_t CardIoAccess(Apple2& a, int slot, int reg, bool is_write, uint8_t value,
     }
     case CardKind::kDisk2:
         return Disk2IoAccess(a, reg, is_write, value, drives);
+    case CardKind::kMouse:
+        return MouseIoAccess(a, reg, is_write, value, drives);
     default:
         return 0;
     }
@@ -45,6 +48,9 @@ uint8_t CardRomAccess(Apple2& a, int slot, int offset, bool is_write, uint8_t va
     case CardKind::kDisk2:
         drives = !is_write;
         return a.slots.disk2.rom[offset];
+    case CardKind::kMouse:
+        drives = !is_write;
+        return MouseRomByte(a, offset);
     default:
         return 0;
     }
@@ -68,6 +74,7 @@ bool CardHasRom(const Apple2& a, int slot, bool expansion) {
     case CardKind::kTestCard:
         return true;
     case CardKind::kDisk2:
+    case CardKind::kMouse:
         return !expansion; // no $C800 rom
     default:
         return false;
@@ -83,6 +90,8 @@ uint8_t CardRomPeek(const Apple2& a, int slot, uint16_t addr) {
         return a.slots.test_card.rom[addr & 0xFF];
     case CardKind::kDisk2:
         return addr >= 0xC800 ? 0 : a.slots.disk2.rom[addr & 0xFF];
+    case CardKind::kMouse:
+        return addr >= 0xC800 ? 0 : MouseRomByte(a, addr & 0xFF);
     default:
         return 0;
     }
@@ -92,6 +101,9 @@ void ResetCards(Apple2& a) {
     for (int slot = 1; slot <= 7; slot++) {
         if (a.slots.kind[slot] == CardKind::kDisk2) {
             ResetDisk2(a);
+        }
+        if (a.slots.kind[slot] == CardKind::kMouse) {
+            ResetMouse(a);
         }
     }
 }

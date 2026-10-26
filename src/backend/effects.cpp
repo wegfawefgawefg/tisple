@@ -59,6 +59,7 @@ Effects ComputeEffects(const Program& program) {
     for (std::size_t f = 0; f < fn_count; f++) {
         std::vector<bool>& writes = fx.writes[f];
         bool stores = false;
+        bool jsr = false;
         auto visit = [&](const Expr& e) {
             if (e.kind == ExprKind::Set) {
                 std::int32_t root = RootVar(program, e.a);
@@ -69,9 +70,16 @@ Effects ComputeEffects(const Program& program) {
                 writes[static_cast<std::size_t>(e.ref)] = true;
             } else if (e.kind == ExprKind::Store || e.kind == ExprKind::StoreField) {
                 stores = true;
+            } else if (e.kind == ExprKind::Jsr) {
+                jsr = true;
             }
         };
         Walk(program, program.functions[f].body, visit);
+        // machine code may change any global, and anything a pointer reaches
+        for (std::size_t v = 0; v < program.vars.size() && jsr; v++) {
+            writes[v] = writes[v] || program.vars[v].function < 0;
+        }
+        stores = stores || jsr;
         // a call writes the callee's parameters
         for (std::int32_t callee : program.functions[f].callees) {
             for (std::int32_t param : program.functions[static_cast<std::size_t>(callee)].params) {
@@ -119,6 +127,9 @@ bool CodeMayWrite(const Program& program, const Effects& effects, ExprId code, s
         case ExprKind::Store:
         case ExprKind::StoreField:
             found = reachable;
+            return;
+        case ExprKind::Jsr:
+            found = reachable || v.function < 0;
             return;
         case ExprKind::Call: {
             std::size_t f = static_cast<std::size_t>(e.ref);

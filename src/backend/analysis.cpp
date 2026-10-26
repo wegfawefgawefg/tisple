@@ -75,7 +75,7 @@ std::uint32_t ExprSize(const Program& program, ExprId id) {
 bool HasWrites(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         return e.kind == ExprKind::Call || e.kind == ExprKind::Store ||
-               e.kind == ExprKind::StoreField || e.kind == ExprKind::Set;
+               e.kind == ExprKind::StoreField || e.kind == ExprKind::Set || e.kind == ExprKind::Jsr;
     });
 }
 
@@ -93,6 +93,7 @@ bool HasEffects(const Program& program, ExprId id) {
         case ExprKind::Let:
         case ExprKind::IoRead:
         case ExprKind::IoWrite:
+        case ExprKind::Jsr:
         case ExprKind::Return:
         case ExprKind::Break:
         case ExprKind::Continue:
@@ -116,7 +117,7 @@ bool MayWriteVar(const Program& program, ExprId id, std::int32_t var) {
             return true;
         }
         return shared && (e.kind == ExprKind::Call || e.kind == ExprKind::Store ||
-                          e.kind == ExprKind::StoreField);
+                          e.kind == ExprKind::StoreField || e.kind == ExprKind::Jsr);
     });
 }
 

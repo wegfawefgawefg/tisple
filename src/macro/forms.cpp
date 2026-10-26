@@ -9,8 +9,8 @@ namespace {
 
 // Tisple code that means nothing at compile time; a template builds it instead
 const char* const kCodeOnlyForms[] = {
-    "const", "struct", "enum",  "macro",   "import",  "make",     "as",
-    "at",    "load",   "store", "addr_of", "io_read", "io_write", ".",
+    "const", "struct", "enum",    "macro",   "import",   "make", "as", "at",
+    "load",  "store",  "addr_of", "io_read", "io_write", "jsr",  ".",
 };
 
 const char* const kTypeWords[] = {"u8", "i8", "u16", "i16", "bool"};

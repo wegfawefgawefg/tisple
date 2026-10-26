@@ -57,6 +57,8 @@ const BuiltinInfo kBuiltinInfo[] = {
      "hardware read; never dropped, merged or reordered"},
     {"io_write", SymbolKind::Builtin, "(io_write u8 addr v)",
      "hardware write; never dropped, merged or reordered"},
+    {"jsr", SymbolKind::Builtin, "(jsr addr (a v) (x v) (y v))",
+     "calls machine code with registers set; gives A after; never dropped, merged or moved"},
     {"not", SymbolKind::Builtin, "(not b)", "bool negation"},
     {"+", SymbolKind::Builtin, "(+ a b)", "add; wraps; a pointer moves by elements"},
     {"-", SymbolKind::Builtin, "(- a b)", "subtract; wraps"},

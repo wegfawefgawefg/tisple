@@ -178,6 +178,8 @@ std::string ExprWhy(const Program& program, ExprId id) {
         return "uses io_read";
     case ExprKind::IoWrite:
         return "uses io_write";
+    case ExprKind::Jsr:
+        return "uses jsr";
     case ExprKind::Store:
     case ExprKind::StoreField:
         return "writes through a pointer";
