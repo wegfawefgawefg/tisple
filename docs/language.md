@@ -7,7 +7,7 @@ against. Grow it when real programs need more.
 ## Program
 
 A program is one or more `.tsp` files of top-level forms: `const`, `let`,
-`struct`, `fn`. Order does not matter at top level. `main` is the entry point.
+`struct`, `enum`, `fn`. Order does not matter at top level. `main` is the entry point.
 
 ```scheme
 (const max_sprites u8 32)
@@ -34,6 +34,7 @@ A program is one or more `.tsp` files of top-level forms: `const`, `let`,
 | `(ptr t)` | 16-bit address of a `t` |
 | `(array t n)` | `n` elements of `t`; `n` a constant |
 | struct name | a declared `struct` |
+| enum name | a declared `enum`; stored as `u8` |
 
 Struct names are `snake_case` like everything else (`sprite`, not `Sprite`).
 Types and values live in separate namespaces, so `(let sprite sprite)` is legal
@@ -67,6 +68,7 @@ if unwise.
 | `(do body ...)` | group forms; value is the last |
 | `(while c body ...)` | loop |
 | `(for i start end body ...)` | `i` from `start` up to, not including, `end` |
+| `(match x (pattern form) ...)` | first matching clause; patterns are literals, enum members, or `_` |
 | `(return value)` / `(break)` / `(continue)` | early exits |
 | `(and a b)` `(or a b)` `(not a)` | short-circuit, on `bool` |
 | `(at arr i)` | array element; `i : u8` when the array has at most 256 elements |
@@ -81,6 +83,28 @@ case it returns nothing. Return type is inferred from the last form and every
 
 Locals declared with `let` inside a body live to the end of the enclosing body.
 No shadowing in the same body.
+
+## Enums and match
+
+```scheme
+(enum action move_left move_right fire)
+
+(fn handle (args (a action))
+    (match a
+        (move_left (step 255))
+        (move_right (step 1))
+        (fire (do
+            (shoot)
+            (play_click)))))
+```
+
+- Members number from 0 in order. `(enum action (fire 7) ...)` sets a value.
+- `match` on an enum without `_` must name every member. On integers it needs
+  `_`. Like `if`, it has a value when every clause gives one.
+- Payload enums (Dudu-style) are later.
+- Dense patterns compile to a jump table (push-address + `RTS` on NMOS,
+  `JMP (table,X)` on 65C02); sparse ones to compare chains. The backend picks
+  by size and cycles.
 
 ## Memory and calls (first backend)
 
@@ -103,4 +127,4 @@ macros, modules, `/` and `%`. All planned; none needed to prove the backend.
 
 1. Settled 2026-10-26: field access is `(. s x)`.
 2. Settled 2026-10-26: `if` + `do`, no `when`/`unless`; `cond` only if else-if chains get ugly.
-3. Pointer arithmetic by elements (C-like) or by bytes.
+3. Pointer arithmetic: recommended by elements (C-like); `(ptr u8)` for byte offsets. Awaiting owner.
