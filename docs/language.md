@@ -318,6 +318,21 @@ Applied once the backend branch lands, so it doesn't conflict with it:
   `as`, a type never heads a form: the first word of every form is a special
   form, built-in, macro or function, so macros and tools can tell any form
   apart by its head alone.
+- Declarations always have the form name, type, value: `let`, `const` and `for` always
+  state the type: `(let key u8 (io_read u8 a2.KBD))`, `(for i u8 0 n ...)`.
+- `make` builds every compound value, arrays too, so a value slot always holds
+  one form: `(const ROW_ADDR (array u16 192) (make (array u16 192) 0x2000 ...))`.
+- Field and member lists look like parameter lists:
+  `(struct Sprite ((x u8) (y u8) (active bool)))`, `(enum Action (none left right))`.
+- `match` clauses take a body like `fn`/`while`/`for`, so `(_ (do))` is `(_)`.
+  Only `if`'s two arms are single forms.
+- Access paths: `(at arr i path...)` like `(load p path...)`, e.g.
+  `(at sprites i x)`. Hand code uses `name.x`, `at` or `load`; `(. base x)`
+  stays only for macro templates.
+- Shapes after this batch: declare `(kind name type value options...)`, build
+  `(make Type ...)`, access (`name.x`, `at`, `load`), control
+  `(form head... body...)` with `if` the one two-arm exception. Stop there:
+  fewer shapes would force different meanings into one.
 - Declarations stay `(let dog u8 5)`; `(u8 dog 5)` would clash with struct
   literals and make declarations hard to search for.
 - No multiple return values for now. The backend may return a `bool` in the
