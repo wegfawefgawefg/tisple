@@ -7,7 +7,8 @@
 // - JSR then RTS becomes JMP (a tail call; frames are static, so nothing to unwind)
 // - code after a JMP or RTS that no label reaches goes
 // - a store to a byte only this function reads (private_syms: its own locals and
-//   temporaries) goes when nothing reads that byte at all
+//   temporaries) goes when nothing reads it before the next store or the return
+//   (dead_stores.cpp)
 // Values are only tracked for symbols (never for numbers, which is where I/O lives), and
 // any label, call or indexed store forgets what memory holds.
 
@@ -17,5 +18,7 @@ namespace tisple {
 
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
               const std::vector<bool>& private_syms);
+// true if any store went
+bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& private_syms);
 
 } // namespace tisple

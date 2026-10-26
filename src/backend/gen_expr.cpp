@@ -176,6 +176,18 @@ Opnd InlineBody(Gen& g, const Function& fn, std::uint32_t size, const Opnd* dst)
     return wide ? ctx.dst : InA();
 }
 
+// to the end of an if whose then arm left its value in A: after LDA #k the flags say
+// whether k is zero, so a branch does it in two bytes instead of three
+void JumpOverElse(Gen& g, std::int32_t end) {
+    const AsmItem& last = g.out->back();
+    if (last.kind == ItemKind::Ins && last.mn == Mn::LDA && last.mode == Mode::Imm &&
+        last.value.sym < 0) {
+        Branch(g, (last.value.offset & 0xFF) != 0 ? Mn::BNE : Mn::BEQ, end);
+        return;
+    }
+    Jump(g, end);
+}
+
 Opnd EvalIf(Gen& g, const Expr& e, const Opnd* dst) {
     std::uint32_t size = SizeOf(g, e.type);
     std::uint16_t c = 0;
@@ -187,7 +199,7 @@ Opnd EvalIf(Gen& g, const Expr& e, const Opnd* dst) {
     GenBranch(g, e.a, false, other);
     if (size == 1) {
         EvalA(g, e.b);
-        Jump(g, end);
+        JumpOverElse(g, end);
         PlaceLabel(g, other);
         EvalA(g, e.c);
         PlaceLabel(g, end);
