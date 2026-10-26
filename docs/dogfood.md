@@ -360,6 +360,8 @@ Cycles are per 10 M-cycle run unless noted.
 
 ### Fixes the data argues for, by cycles
 
+Items 1 to 9 are done (Fixed 5 to 13); what is left of them:
+
 7. The let chains in macros.shuffle (18 to 6 cycles, proved): `(let x u8
    a)` copies a parameter the function then changes through x; seeing that
    the copy and the swap just rename bytes needs value numbering across
@@ -369,10 +371,47 @@ Cycles are per 10 M-cycle run unless noted.
    brings. (Indexed stores are done, see Fixed 13; `TAX ; LDA abs,X` in
    fuzz runs is values that happen to equal their index.)
 
+### After the fixes (2026-10-26)
+
+All nine items, from the gap finder's merge to the last of them:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| fill 8 KB | 156411 (19.1 a byte) | 156409 (19.1 a byte) |
+| hgr row tables (hgr.init) | 54922 | 40138 |
+| sprite step over 32 | 942 | 878 |
+| 16-bit multiply | 572, worst 773 | 572, worst 773 |
+| life step | 180689 (94.1 a cell) | 136984 (71.3 a cell) |
+| life draw | 46405 (24.2 a cell) | 41913 (21.8 a cell) |
+| hi-res line of 280 | 471373 (1683.5 a pixel) | 65513 (234.0 a pixel) |
+| Life generations in 10 M cycles | 43 | 55 |
+| gaps flagged: life | 18.22% | 0.76% |
+| gaps flagged: dot (its idle loop) | 63.68% | 53.97% |
+| gaps flagged: sprites | 13.90% | 7.73% |
+
+The new top of each report:
+
+- **life** (0.76%): the row lets' steps themselves (`STA bottom`, strided
+  by -88 or +42: already the add), loads of `here` and `below` that happen
+  to equal what A holds (`here` is `above` + 42), and the remaining CLCs of
+  the multiply by 42 that sets the rows up once per generation.
+- **dot** (53.97%): the idle loop with no key pressed (a compare that never
+  branches, the key stored and overwritten, `action` stored as it was);
+  these follow the data.
+- **sprites** (7.73%): `(if (at sprites i active) ...)` never false and the
+  loop guard never taken, both following the data.
+- **fuzz, seeds 1..3000** (6.0% of compiled code, with the new generator):
+  strided values 1.8% (mostly u16 loops' own counters and pointers), dead
+  stores 1.3% (the programs' own repeated sets), stores of what memory held
+  1.1%, loads of what a register held 1.1% (`label ; LDA zp` the top shape
+  left), dead values 0.17%.
+
 ## Benchmarks
 
 | Program | Measure | Result | Date |
 | --- | --- | --- | --- |
 | life | generations in 10 M cycles (about 10 s on a IIe) | 10 | 2026-10-26 |
 | life | the same, byte indices as (p),Y (item 4) | 43 | 2026-10-26 |
+| life | the same, gap finder items 1 to 9 (Fixed 5 to 13) | 55 | 2026-10-26 |
+| hires_plot | cycles a pixel of a 280-pixel line | 1683.5 -> 234.0 | 2026-10-26 |
 
