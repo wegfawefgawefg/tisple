@@ -59,6 +59,7 @@ bool PointerFields(Checker& ck, const Node& node, std::size_t end, TypeId pointe
                 sd.name + " has no field " + field.text + "; its fields are " + FieldList(sd));
             return false;
         }
+        Note(ck, field, 0, NameUseKind::Field, TypeOf(*ck.out, type).decl, index, false);
         offset += sd.fields[static_cast<std::size_t>(index)].offset;
         type = sd.fields[static_cast<std::size_t>(index)].type;
     }

@@ -49,6 +49,12 @@ constexpr std::int64_t kMaxIntegerLiteral = 0xFFFFFFFF;
 // tokens before the first error stay in out, so the viewer can still color them
 bool Lex(const SourceFile& file, std::vector<Token>& out, ReadError& error);
 
+// for editors: on a problem, notes it, skips the bad token and lexes on (a string to the end
+// of its line); at most kMaxReadErrors problems
+void LexRecovering(const SourceFile& file, std::vector<Token>& out, std::vector<ReadError>& errors);
+
+constexpr std::size_t kMaxReadErrors = 32;
+
 bool IsSpaceChar(char c);
 bool IsDelimiterChar(char c);
 bool IsQuoteMark(TokenKind kind);

@@ -235,6 +235,8 @@ bool EnsureStruct(Checker& ck, std::int32_t decl, const Node& at) {
         }
         ok = ok && type != kErrorType;
         fields.push_back(Field{name.text, type, offset});
+        Note(ck, name, 0, NameUseKind::Field, decl, static_cast<std::int32_t>(fields.size() - 1),
+             true);
         offset += TypeOf(*ck.out, type).size;
     }
     RestoreContext(ck, std::move(saved));
@@ -268,22 +270,27 @@ std::vector<std::string> SplitDotted(const std::string& text) {
 
 namespace {
 
+// `at` segment used - 1 names the decl
 void FromDecl(Checker& ck, const Decl& decl, const std::vector<std::string>& segments,
-              std::size_t used, NameRef& ref) {
+              std::size_t used, NameRef& ref, const Node& at) {
     ref.index = decl.index;
     ref.used = used;
     switch (decl.kind) {
     case DeclKind::Struct:
         ref.kind = NameKind::Struct;
+        Note(ck, at, used - 1, NameUseKind::Struct, decl.index, -1, false);
         return;
     case DeclKind::Const:
         ref.kind = NameKind::Const;
+        Note(ck, at, used - 1, NameUseKind::Const, decl.index, -1, false);
         return;
     case DeclKind::Var:
         ref.kind = NameKind::Var;
+        Note(ck, at, used - 1, NameUseKind::Var, decl.index, -1, false);
         return;
     case DeclKind::Function:
         ref.kind = NameKind::Function;
+        Note(ck, at, used - 1, NameUseKind::Function, decl.index, -1, false);
         return;
     case DeclKind::Macro:
         ref.kind = NameKind::None;
@@ -293,15 +300,19 @@ void FromDecl(Checker& ck, const Decl& decl, const std::vector<std::string>& seg
         break;
     }
     ref.kind = NameKind::Enum;
+    Note(ck, at, used - 1, NameUseKind::Enum, decl.index, -1, false);
     if (segments.size() <= used) {
         return;
     }
     const EnumDecl& ed = ck.out->enums[static_cast<std::size_t>(decl.index)];
-    for (const EnumMember& member : ed.members) {
+    for (std::size_t i = 0; i < ed.members.size(); i++) {
+        const EnumMember& member = ed.members[i];
         if (member.name == segments[used]) {
             ref.kind = NameKind::EnumMember;
             ref.value = member.value;
             ref.used = used + 1;
+            Note(ck, at, used, NameUseKind::EnumMember, decl.index, static_cast<std::int32_t>(i),
+                 false);
             return;
         }
     }
@@ -328,6 +339,7 @@ NameRef LookupName(Checker& ck, const std::vector<std::string>& segments, const 
                 ref.kind = NameKind::Var;
                 ref.index = entry->var;
                 ref.used = 1;
+                Note(ck, at, 0, NameUseKind::Var, entry->var, -1, false);
                 return ref;
             }
         }
@@ -335,13 +347,14 @@ NameRef LookupName(Checker& ck, const std::vector<std::string>& segments, const 
     const ModuleScope& scope = ck.modules[static_cast<std::size_t>(NameModule(ck, at))];
     auto decl = scope.names.find(first);
     if (decl != scope.names.end()) {
-        FromDecl(ck, decl->second, segments, 1, ref);
+        FromDecl(ck, decl->second, segments, 1, ref, at);
         return ref;
     }
     auto import = scope.imports.find(first);
     if (import == scope.imports.end()) {
         return ref;
     }
+    Note(ck, at, 0, NameUseKind::Module, import->second, -1, false);
     if (segments.size() == 1) {
         ref.kind = NameKind::Module;
         ref.index = import->second;
@@ -355,7 +368,7 @@ NameRef LookupName(Checker& ck, const std::vector<std::string>& segments, const 
         ref.missing_in = first;
         return ref;
     }
-    FromDecl(ck, member->second, segments, 2, ref);
+    FromDecl(ck, member->second, segments, 2, ref, at);
     return ref;
 }
 

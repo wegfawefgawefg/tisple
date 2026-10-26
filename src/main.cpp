@@ -1,6 +1,7 @@
 #include "backend/build_command.hpp"
 #include "check/commands.hpp"
 #include "emu/sim_command.hpp"
+#include "ide/index.hpp"
 #include "interp/interp_command.hpp"
 #include "machine/machine_command.hpp"
 #include "reader/commands.hpp"
@@ -26,7 +27,8 @@ void PrintUsage() {
                 "  gen-editors <dir>  regenerate the editor grammars\n");
     std::printf("  check   check a program and its imports\n"
                 "  expand  print a program after macro expansion\n"
-                "  interp  run main in the reference interpreter (--max-steps N)\n");
+                "  interp  run main in the reference interpreter (--max-steps N)\n"
+                "  index   names, types, definitions and errors as JSON, for editors (--stdin)\n");
     std::printf("  build   compile to a 6502 binary (-o out.bin, --origin A, --asm)\n"
                 "  run     build and run on the apple iie (window; --frames N etc. headless;\n"
                 "          --sim for the bare simulator)\n");
@@ -60,6 +62,9 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "expand") == 0) {
         return tisple::RunExpandCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "index") == 0) {
+        return tisple::RunIndexCommand(argc, argv);
     }
     if (std::strcmp(argv[1], "interp") == 0) {
         return tisple::RunInterpCommand(argc, argv);

@@ -46,6 +46,11 @@ struct Tree {
 
 bool ReadTree(const SourceFile& file, Tree& out, ReadError& error);
 
+// for editors: reads past problems so the forms around them still come out. A bad token is
+// skipped, an extra ')' is dropped, and a '(' at column 1 or the end of the file closes every
+// form still open. Every problem lands in errors (at most kMaxReadErrors)
+void ReadTreeRecovering(const SourceFile& file, Tree& out, std::vector<ReadError>& errors);
+
 // "path:line:col: error: ..." with the source line and a caret, plus the note
 std::string FormatReadError(const SourceFile& file, const ReadError& error);
 

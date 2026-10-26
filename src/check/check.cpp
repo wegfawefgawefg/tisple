@@ -31,6 +31,24 @@ ExprId Fail(Checker& ck, const Node& node, const std::string& message) {
     return ErrorExpr(ck, node);
 }
 
+void Note(Checker& ck, const Node& node, std::size_t segment, NameUseKind kind, std::int32_t target,
+          std::int32_t member, bool declaration) {
+    NoteNameUse(ck.names, ck.in->sources, ck.at.file, node, segment, kind, target, member,
+                declaration);
+}
+
+void NoteField(Checker& ck, const Node& node, std::size_t segment, ExprId field_expr) {
+    if (!ck.names || field_expr < 0) {
+        return;
+    }
+    const Expr& expr = ExprAt(ck, field_expr);
+    if (expr.kind != ExprKind::Field || expr.a < 0) {
+        return;
+    }
+    const Type& base = TypeOf(*ck.out, ExprType(ck, expr.a));
+    Note(ck, node, segment, NameUseKind::Field, base.decl, expr.ref, false);
+}
+
 Expr& ExprAt(Checker& ck, ExprId id) {
     return ck.out->exprs[static_cast<std::size_t>(id)];
 }
@@ -148,6 +166,7 @@ void ReadParams(Checker& ck, Function& fn, std::int32_t index, const Node& param
         var.function = index;
         var.loc = NodeLoc(ck, param.items[0]);
         std::int32_t id = AddVar(ck, var);
+        Note(ck, param.items[0], 0, NameUseKind::Var, id, -1, true);
         fn.params.push_back(id);
         ck.at.scopes.back().entries.push_back(ScopeEntry{var.name, id});
     }
@@ -318,12 +337,34 @@ void FindMain(Checker& ck) {
 
 } // namespace
 
-bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& errors) {
+namespace {
+
+// the editor index keeps what it needs of each constant
+void CopyConsts(Checker& ck) {
+    for (const ConstDecl& cd : ck.consts) {
+        ConstInfo info;
+        info.name = cd.name;
+        info.module = cd.module;
+        info.loc =
+            LocOf(ck.in->modules[static_cast<std::size_t>(cd.module)].file, cd.form->items[1]);
+        info.ok = cd.state == Progress::Done;
+        info.type = cd.type;
+        info.value = cd.value;
+        info.var = cd.var;
+        ck.names->consts.push_back(info);
+    }
+}
+
+} // namespace
+
+bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& errors,
+                  NameIndex* names) {
     out = Program();
     Checker ck;
     ck.in = &loaded;
     ck.out = &out;
     ck.errors = &errors;
+    ck.names = names;
     std::size_t before = errors.size();
     InternBaseTypes(ck);
     for (const Module& module : loaded.modules) {
@@ -365,6 +406,9 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
         }
     }
     FindMain(ck);
+    if (names) {
+        CopyConsts(ck);
+    }
     out.sources = std::move(loaded.sources);
     return errors.size() == before;
 }

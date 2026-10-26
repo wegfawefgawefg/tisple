@@ -98,6 +98,7 @@ ExprId AtPath(Checker& ck, const Node& node, ExprId element) {
             return Fail(ck, field, "(at arr i field ...) takes plain field names, like x");
         }
         value = FieldAccess(ck, field, value, field.text);
+        NoteField(ck, field, 0, value);
         if (ExprType(ck, value) == kErrorType) {
             return value;
         }
