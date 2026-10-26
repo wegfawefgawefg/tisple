@@ -35,9 +35,17 @@ there is nothing copyrighted to ship.
 The goal is perfectly accurate emulation with speed, snapshots and disk
 images to fiddle with during development, then real hardware.
 
-1. One machine, two starts: direct load (no ROM, instant, unit tests) and real
-   boot (a ROM file the owner supplies, kept outside the repo; the Disk II
-   card adapted from AppleWin; DOS 3.3 or ProDOS).
+1. One machine, two starts: direct load (no ROM, instant, unit tests) and
+   disk boot. No Apple code is needed for either (owner, 2026-10-26):
+   - Our disks boot themselves: `tisple disk` writes our own loader into
+     track 0 sector 0, which reads the program in and jumps to it. No DOS. A
+     real Apple II boots it with its own ROM.
+   - The emulator's Disk II card (adapted from AppleWin) gets our own boot ROM
+     that acts like Apple's: read track 0 sector 0 to `$0800`, jump to
+     `$0801`.
+   - A real Apple ROM (owner-supplied, never committed) is only for running
+     Apple's own software (DOS 3.3, ProDOS, Applesoft, a2audit) and for
+     accuracy comparisons.
 2. Snapshots: the whole machine state is plain data (a few hundred KB). Boot
    DOS once, snapshot at the prompt, restore in microseconds for every run.
    Also for debugging: snapshot before a bug and rerun it.
