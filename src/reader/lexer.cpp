@@ -238,6 +238,34 @@ bool LexOne(Lexer& lx) {
     return LexSymbol(lx);
 }
 
+// recovery: a bad token becomes spaces so the lexer can go on past it. A string runs to the
+// end of its line; anything else is the word around the problem, or one character
+void BlankBadToken(std::string& text, std::uint32_t offset) {
+    if (offset >= text.size()) {
+        return;
+    }
+    std::uint32_t start = offset;
+    std::uint32_t end = offset;
+    if (text[offset] == '"') {
+        while (end < text.size() && text[end] != '\n') {
+            end++;
+        }
+    } else {
+        while (start > 0 && !IsDelimiterChar(text[start - 1])) {
+            start--;
+        }
+        while (end < text.size() && !IsDelimiterChar(text[end])) {
+            end++;
+        }
+    }
+    if (end == start) {
+        end = start + 1;
+    }
+    for (std::uint32_t i = start; i < end; i++) {
+        text[i] = text[i] == '\n' ? '\n' : ' ';
+    }
+}
+
 } // namespace
 
 bool IsSpaceChar(char c) {
@@ -269,6 +297,23 @@ bool Lex(const SourceFile& file, std::vector<Token>& out, ReadError& error) {
         }
     }
     return true;
+}
+
+void LexRecovering(const SourceFile& file, std::vector<Token>& tokens,
+                   std::vector<ReadError>& errors) {
+    SourceFile work = file;
+    while (true) {
+        tokens.clear();
+        ReadError error;
+        if (Lex(work, tokens, error)) {
+            return;
+        }
+        errors.push_back(error);
+        if (errors.size() >= kMaxReadErrors) {
+            return;
+        }
+        BlankBadToken(work.text, error.offset);
+    }
 }
 
 } // namespace tisple

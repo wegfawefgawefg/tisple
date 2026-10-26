@@ -36,6 +36,8 @@ struct VirtualFile {
 struct LoadOptions {
     std::string lib_dir; // empty: the repo's lib/ compiled in as TISPLE_LIB_DIR
     std::vector<VirtualFile> files;
+    // editors: read past syntax errors (ReadTreeRecovering), so the rest still checks
+    bool recover = false;
 };
 
 // reads the entry file and every module it imports, relative to the entry file's folder

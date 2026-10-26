@@ -88,6 +88,7 @@ ExprId CheckName(Checker& ck, const Node& node) {
     }
     for (std::size_t i = ref.used; i < segments.size(); i++) {
         value = FieldAccess(ck, node, value, segments[i]);
+        NoteField(ck, node, i, value);
     }
     return value;
 }

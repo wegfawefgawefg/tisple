@@ -26,6 +26,7 @@ std::int32_t NewLocal(Checker& ck, const Node& name, TypeId type, bool loop_var)
     var.loc = NodeLoc(ck, name);
     var.loop_var = loop_var;
     std::int32_t id = AddVar(ck, var);
+    Note(ck, name, 0, NameUseKind::Var, id, -1, true);
     ck.out->functions[static_cast<std::size_t>(ck.at.function)].locals.push_back(id);
     return id;
 }

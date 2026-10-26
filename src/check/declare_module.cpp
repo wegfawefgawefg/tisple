@@ -20,6 +20,17 @@ bool AddDecl(Checker& ck, const Node& name, DeclKind kind, std::int32_t index) {
         return false;
     }
     scope.names[name.text] = Decl{kind, index, NodeLoc(ck, name)};
+    NameUseKind use = NameUseKind::Var;
+    if (kind == DeclKind::Struct) {
+        use = NameUseKind::Struct;
+    } else if (kind == DeclKind::Enum) {
+        use = NameUseKind::Enum;
+    } else if (kind == DeclKind::Const) {
+        use = NameUseKind::Const;
+    } else if (kind == DeclKind::Function) {
+        use = NameUseKind::Function;
+    }
+    Note(ck, name, 0, use, index, -1, true);
     return true;
 }
 
@@ -118,6 +129,9 @@ void DeclareEnum(Checker& ck, const Node& form) {
             continue;
         }
         ed.members.push_back(EnumMember{member_name->text, static_cast<std::uint8_t>(value)});
+        Note(ck, *member_name, 0, NameUseKind::EnumMember,
+             static_cast<std::int32_t>(ck.out->enums.size()),
+             static_cast<std::int32_t>(ed.members.size() - 1), true);
         next = value + 1;
     }
     std::int32_t index = static_cast<std::int32_t>(ck.out->enums.size());

@@ -3,6 +3,7 @@
 // shared by the check/*.cpp files; the public entry point is check/check.hpp
 
 #include "check/load.hpp"
+#include "check/name_index.hpp"
 #include "check/program.hpp"
 
 #include <map>
@@ -101,6 +102,7 @@ struct Checker {
     std::vector<std::size_t> body_starts;    // by function id
     std::map<std::tuple<int, int, std::uint32_t, int>, TypeId> interned;
     Context at;
+    NameIndex* names = nullptr; // editor tools only: what each written name is
 };
 
 // diagnostics and building
@@ -120,6 +122,12 @@ const std::string& HeadName(const Node& node);
 bool IsBareLiteral(const Node& node);
 Context SwitchContext(Checker& ck, std::int32_t module, std::int32_t function);
 void RestoreContext(Checker& ck, Context saved);
+
+// editor index: segment `segment` of node is this; no-op without ck.names
+void Note(Checker& ck, const Node& node, std::size_t segment, NameUseKind kind, std::int32_t target,
+          std::int32_t member, bool declaration);
+// field_expr came from FieldAccess: notes it when it is a Field
+void NoteField(Checker& ck, const Node& node, std::size_t segment, ExprId field_expr);
 
 // types (declare.cpp)
 TypeId InternType(Checker& ck, const Type& type);

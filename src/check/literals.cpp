@@ -41,10 +41,12 @@ ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type) {
             return Fail(ck, key, key.text + " has no value; write " + key.text + " value");
         }
         std::string name = key.text.substr(1);
-        if (FindFieldIndex(*ck.out, type, name) < 0) {
+        std::int32_t field = FindFieldIndex(*ck.out, type, name);
+        if (field < 0) {
             return Fail(ck, key,
                         sd.name + " has no field " + name + "; its fields are " + FieldList(sd));
         }
+        Note(ck, key, 0, NameUseKind::Field, TypeOf(*ck.out, type).decl, field, false);
         for (const std::string& other : names) {
             if (other == name) {
                 return Fail(ck, key, key.text + " is given twice; give each field once");

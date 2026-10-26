@@ -24,6 +24,7 @@ struct Expander {
     std::uint32_t fresh_counter = 0;
     std::uint32_t expansions = 0;
     bool failed = false;
+    NameIndex* names = nullptr; // editor tools only
 };
 
 // one expansion in progress
@@ -83,6 +84,12 @@ bool ReadMacro(Expander& ex, std::int32_t module, const Node& form, MacroDef& de
         Fail(ex, def.loc, list_fix + def.name + " () `(...))");
         return false;
     }
+    if (items.size() < 3) {
+        Fail(ex, def.loc,
+             "a macro needs parameters and a template; write (macro " + def.name +
+                 " (a b) `(...))");
+        return false;
+    }
     const Node& params = items[2];
     if (params.kind != NodeKind::List || params.mark != QuoteMark::None ||
         HeadText(params) == "args") {
@@ -119,6 +126,30 @@ bool ReadMacro(Expander& ex, std::int32_t module, const Node& form, MacroDef& de
     return true;
 }
 
+// the editor index: a macro, its name and its parameters, in the order ex.macros has them
+void NoteMacro(Expander& ex, std::uint32_t file, const Node& form, const MacroDef& def) {
+    if (!ex.names) {
+        return;
+    }
+    std::int32_t index = static_cast<std::int32_t>(ex.names->macros.size());
+    MacroInfo info;
+    info.name = def.name;
+    info.module = def.module;
+    info.loc = LocOf(file, form.items[1]);
+    info.form = def.loc;
+    info.params = def.params;
+    info.body = def.body;
+    const Sources& sources = ex.program->sources;
+    NoteNameUse(ex.names, sources, file, form.items[1], 0, NameUseKind::Macro, index, -1, true);
+    const std::vector<Node>& params = form.items[2].items;
+    for (std::size_t i = 0; i < params.size(); i++) {
+        info.param_locs.push_back(LocOf(file, params[i]));
+        NoteNameUse(ex.names, sources, file, params[i], 0, NameUseKind::MacroParam, index,
+                    static_cast<std::int32_t>(i), true);
+    }
+    ex.names->macros.push_back(std::move(info));
+}
+
 void CollectMacros(Expander& ex) {
     std::size_t module_count = ex.program->modules.size();
     ex.by_module.resize(module_count);
@@ -140,6 +171,7 @@ void CollectMacros(Expander& ex) {
             }
             ex.by_module[m][def.name] = static_cast<std::int32_t>(ex.macros.size());
             module.macro_names.push_back(def.name);
+            NoteMacro(ex, module.file, form, def);
             ex.macros.push_back(std::move(def));
         }
         module.tree.forms = std::move(kept);
@@ -356,8 +388,33 @@ void ExpandChildren(Expander& ex, std::int32_t module, Node& node, int depth) {
     ExpandItemsFrom(ex, module, node, 1, depth);
 }
 
+// the editor index: the call's head names the macro, after a module prefix if it has one
+void NoteMacroCall(Expander& ex, std::int32_t module, const Node& call, const MacroDef& def) {
+    if (!ex.names) {
+        return;
+    }
+    const Node& head = call.items[0];
+    std::uint32_t file = ex.program->modules[static_cast<std::size_t>(module)].file;
+    const Sources& sources = ex.program->sources;
+    std::size_t segment = 0;
+    std::size_t dot = head.text.find('.');
+    if (dot != std::string::npos) {
+        std::string prefix = head.text.substr(0, dot);
+        for (const Import& import : ex.program->modules[static_cast<std::size_t>(module)].imports) {
+            if (import.prefix == prefix) {
+                NoteNameUse(ex.names, sources, file, head, 0, NameUseKind::Module, import.module,
+                            -1, false);
+            }
+        }
+        segment = 1;
+    }
+    std::int32_t index = static_cast<std::int32_t>(&def - ex.macros.data());
+    NoteNameUse(ex.names, sources, file, head, segment, NameUseKind::Macro, index, -1, false);
+}
+
 void ExpandNode(Expander& ex, std::int32_t module, Node& node, int depth) {
     while (const MacroDef* def = FindMacro(ex, module, node)) {
+        NoteMacroCall(ex, module, node, *def);
         if (depth >= kMaxExpansionDepth) {
             std::uint32_t file = ex.program->modules[static_cast<std::size_t>(module)].file;
             Fail(ex, LocOf(file, node),
@@ -377,10 +434,11 @@ void ExpandNode(Expander& ex, std::int32_t module, Node& node, int depth) {
 
 } // namespace
 
-bool ExpandProgram(LoadedProgram& program, std::vector<Diagnostic>& errors) {
+bool ExpandProgram(LoadedProgram& program, std::vector<Diagnostic>& errors, NameIndex* names) {
     Expander ex;
     ex.program = &program;
     ex.errors = &errors;
+    ex.names = names;
     CollectMacros(ex);
     for (std::size_t m = 0; m < program.modules.size(); m++) {
         for (Node& form : program.modules[m].tree.forms) {

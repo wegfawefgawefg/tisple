@@ -206,10 +206,19 @@ std::int32_t LoadModule(Loader& ld, const std::string& path, const std::string& 
     Module module;
     module.name = name;
     module.file = file_index;
-    ReadError read_error;
-    if (!ReadTree(ld.out->sources.files.back(), module.tree, read_error)) {
-        AddReadError(ld, file_index, ld.out->sources.files.back(), read_error);
-        module.tree = Tree();
+    const SourceFile& read_file = ld.out->sources.files.back();
+    if (ld.options->recover) {
+        std::vector<ReadError> read_errors;
+        ReadTreeRecovering(read_file, module.tree, read_errors);
+        for (const ReadError& read_error : read_errors) {
+            AddReadError(ld, file_index, read_file, read_error);
+        }
+    } else {
+        ReadError read_error;
+        if (!ReadTree(read_file, module.tree, read_error)) {
+            AddReadError(ld, file_index, read_file, read_error);
+            module.tree = Tree();
+        }
     }
     module.tree.comments.clear();
 

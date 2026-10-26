@@ -12,6 +12,9 @@ struct Frame {
 struct Reader {
     const SourceFile* file = nullptr;
     Tree* tree = nullptr;
+    bool recover = false; // editors: note problems and read on
+    std::vector<ReadError>* errors = nullptr;
+    std::uint32_t last_end = 0; // end of the last token read
     std::vector<Frame> stack;
     std::uint32_t open_parens = 0;
     // first '(' at column 1 seen inside an unclosed form: a hint for missing ')'
@@ -181,6 +184,72 @@ void FailUnclosed(Reader& rd, ReadError& error) {
     }
 }
 
+// recovery: every open form ends at the last token read; a mark with no form yet is dropped
+void CloseAllOpen(Reader& rd) {
+    while (!rd.stack.empty()) {
+        Frame frame = std::move(rd.stack.back());
+        rd.stack.pop_back();
+        if (frame.is_mark) {
+            continue;
+        }
+        frame.node.span.end = rd.last_end;
+        AddForm(rd, std::move(frame.node));
+    }
+    rd.open_parens = 0;
+    rd.has_column_one_open = false;
+}
+
+bool AtColumnOne(const Reader& rd, const Token& token) {
+    return PosFromOffset(*rd.file, token.span.start).column == 1;
+}
+
+bool ReadTokens(Reader& rd, const std::vector<Token>& tokens) {
+    for (const Token& token : tokens) {
+        if (rd.recover && rd.errors->size() >= kMaxReadErrors) {
+            break;
+        }
+        if (token.kind == TokenKind::Comment) {
+            rd.tree->comments.push_back(token.span);
+            continue;
+        }
+        if (token.kind == TokenKind::OpenParen) {
+            if (rd.recover && rd.open_parens > 0 && AtColumnOne(rd, token)) {
+                // a top-level form starts here, so the form around it is missing a ')'
+                rd.has_column_one_open = true;
+                rd.column_one_open = token.span.start;
+                ReadError error;
+                FailUnclosed(rd, error);
+                rd.errors->push_back(error);
+                CloseAllOpen(rd);
+            }
+            OpenList(rd, token);
+        } else if (token.kind == TokenKind::CloseParen) {
+            ReadError error;
+            if (!CloseList(rd, token, error)) {
+                rd.errors->push_back(error);
+                if (!rd.recover) {
+                    return false;
+                }
+            }
+        } else if (IsQuoteMark(token.kind)) {
+            OpenMark(rd, token);
+        } else {
+            AddForm(rd, AtomFromToken(rd, token));
+        }
+        rd.last_end = token.span.end;
+    }
+    if (!rd.stack.empty()) {
+        ReadError error;
+        FailUnclosed(rd, error);
+        rd.errors->push_back(error);
+        if (!rd.recover) {
+            return false;
+        }
+        CloseAllOpen(rd);
+    }
+    return true;
+}
+
 } // namespace
 
 bool ReadTree(const SourceFile& file, Tree& out, ReadError& error) {
@@ -189,30 +258,28 @@ bool ReadTree(const SourceFile& file, Tree& out, ReadError& error) {
     if (!Lex(file, tokens, error)) {
         return false;
     }
-
+    std::vector<ReadError> errors;
     Reader rd;
     rd.file = &file;
     rd.tree = &out;
-    for (const Token& token : tokens) {
-        if (token.kind == TokenKind::Comment) {
-            out.comments.push_back(token.span);
-        } else if (token.kind == TokenKind::OpenParen) {
-            OpenList(rd, token);
-        } else if (token.kind == TokenKind::CloseParen) {
-            if (!CloseList(rd, token, error)) {
-                return false;
-            }
-        } else if (IsQuoteMark(token.kind)) {
-            OpenMark(rd, token);
-        } else {
-            AddForm(rd, AtomFromToken(rd, token));
-        }
-    }
-    if (!rd.stack.empty()) {
-        FailUnclosed(rd, error);
+    rd.errors = &errors;
+    if (!ReadTokens(rd, tokens)) {
+        error = errors[0];
         return false;
     }
     return true;
+}
+
+void ReadTreeRecovering(const SourceFile& file, Tree& out, std::vector<ReadError>& errors) {
+    out = Tree();
+    std::vector<Token> tokens;
+    LexRecovering(file, tokens, errors);
+    Reader rd;
+    rd.file = &file;
+    rd.tree = &out;
+    rd.recover = true;
+    rd.errors = &errors;
+    ReadTokens(rd, tokens);
 }
 
 std::string FormatReadError(const SourceFile& file, const ReadError& error) {
