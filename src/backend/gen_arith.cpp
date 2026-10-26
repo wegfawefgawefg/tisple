@@ -115,7 +115,109 @@ void Operands8(Gen& g, ExprId a, ExprId b, Opnd& oa, Opnd& ob) {
     }
 }
 
+// the operands of a run of one associative 8-bit op: (+ (+ a b) (+ c d)) is a b c d
+void ChainLeaves(Gen& g, Op op, ExprId id, std::vector<ExprId>& out) {
+    const Expr& e = ExprOf(*g.program, id);
+    if (e.kind == ExprKind::Binary && e.op == op && ExprSize(*g.program, id) == 1) {
+        ChainLeaves(g, op, e.a, out);
+        ChainLeaves(g, op, e.b, out);
+        return;
+    }
+    out.push_back(id);
+}
+
+// a op b op c ... with nothing but reads in it, as one run through A: the leaf that needs
+// code first, then every other leaf read straight from memory. The result is the same in
+// any order (the op is associative and commutative at 8 bits) and no leaf writes anything.
+bool EvalChain8(Gen& g, const Expr& e) {
+    if (!Commutes(e.op)) {
+        return false;
+    }
+    std::vector<ExprId> leaves;
+    ChainLeaves(g, e.op, e.a, leaves);
+    ChainLeaves(g, e.op, e.b, leaves);
+    if (leaves.size() < 3) {
+        return false;
+    }
+    std::size_t first = leaves.size();
+    for (std::size_t i = 0; i < leaves.size(); i++) {
+        if (HasEffects(*g.program, leaves[i])) {
+            return false;
+        }
+        if (TrySimple(g, leaves[i]).size == 0) {
+            if (first < leaves.size()) {
+                return false;
+            }
+            first = i;
+        }
+    }
+    if (first == leaves.size()) {
+        first = 0;
+    }
+    EvalA(g, leaves[first]);
+    for (std::size_t i = 0; i < leaves.size(); i++) {
+        if (i != first) {
+            Alu8(g, e.op, TrySimple(g, leaves[i]));
+        }
+    }
+    return true;
+}
+
+// every byte a number or a plain memory byte, which only a write to it changes
+bool IsPlainMemory(const Opnd& o) {
+    if (o.in_a || o.size == 0) {
+        return false;
+    }
+    for (int k = 0; k < o.size; k++) {
+        if (o.b[k].kind != ByteKind::Imm && o.b[k].kind != ByteKind::Mem) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// a byte (a's high byte a known 0) times a constant, mod 65536: the low byte shifts in A,
+// the high byte in memory, and each set bit adds the byte with a carry into the high byte
+bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
+    if (ImmByte(a, 1) != 0 || !IsPlainMemory(a) || ImmByte(a, 0) >= 0) {
+        return false;
+    }
+    Opnd high = dst;
+    high.size = 1;
+    high.b[0] = dst.b[1];
+    if (dst.b[1].kind != ByteKind::Mem || Overlaps(a, dst)) {
+        high = NewTemp(g, 1);
+    }
+    Emit(g, Mn::LDA, Mode::Imm, Num(0));
+    StoreA(g, high, 0);
+    LoadA(g, a, 0);
+    int top = 15;
+    while (((factor >> top) & 1) == 0) {
+        top--;
+    }
+    for (int bit = top - 1; bit >= 0; bit--) {
+        Emit(g, Mn::ASL, Mode::Acc);
+        RmwByte(g, Mn::ROL, high, 0);
+        if ((factor >> bit) & 1) {
+            std::int32_t skip = NewLabel(g);
+            Emit(g, Mn::CLC, Mode::Imp);
+            OpA(g, Mn::ADC, a, 0);
+            Branch(g, Mn::BCC, skip);
+            RmwByte(g, Mn::INC, high, 0);
+            PlaceLabel(g, skip);
+        }
+    }
+    StoreA(g, dst, 0);
+    if (high.b[0].kind != dst.b[1].kind || high.b[0].value.sym != dst.b[1].value.sym ||
+        high.b[0].value.offset != dst.b[1].value.offset) {
+        LoadA(g, high, 0);
+        StoreA(g, dst, 1);
+    }
+    return true;
+}
+
 Runtime DivRoutine(bool is_signed, bool wide) {
+
     if (wide) {
         return is_signed ? Runtime::DivS16 : Runtime::DivU16;
     }
@@ -137,6 +239,9 @@ void EvalArith8(Gen& g, const Expr& e) {
     case Op::And:
     case Op::Or:
     case Op::Xor: {
+        if (EvalChain8(g, e)) {
+            return;
+        }
         Opnd b = TrySimple(g, e.b);
         if (b.size != 0) {
             EvalA(g, e.a);
@@ -287,11 +392,15 @@ void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
         CopyOpnd(g, ImmOpnd(0, 2), dst);
         return;
     }
+    if (MulByteConst16(g, a, factor, dst)) {
+        return;
+    }
     // the product builds up in r, which shifts in place; x is read once per set bit
     bool plain = dst.b[0].kind == ByteKind::Mem && dst.b[1].kind == ByteKind::Mem;
     Opnd r = plain ? dst : NewTemp(g, 2);
     Opnd x = a;
-    if (Popcount(factor) > 1 && !a.temp && !IsImm(a)) {
+    bool stable = IsPlainMemory(a) && !Overlaps(a, r);
+    if (Popcount(factor) > 1 && !a.temp && !IsImm(a) && !stable) {
         x = NewTemp(g, 2);
         CopyOpnd(g, a, x);
     }

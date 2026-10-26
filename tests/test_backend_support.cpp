@@ -151,6 +151,20 @@ void CheckDiff(TestResults& results, Diff& d, const std::string& function,
     CHECK(results, ok);
 }
 
+int CountMn(const Compiled& c, const std::string& function, tisple::Mn mn) {
+    int count = 0;
+    for (const tisple::FunctionSpan& span : c.code.spans) {
+        if (span.name != function) {
+            continue;
+        }
+        for (std::size_t i = span.first; i < span.end; i++) {
+            const tisple::AsmItem& item = c.code.as.items[i];
+            count += item.kind == tisple::ItemKind::Ins && item.mn == mn ? 1 : 0;
+        }
+    }
+    return count;
+}
+
 void CheckProgram(TestResults& results, const std::string& text, const std::string& function,
                   const std::vector<std::uint16_t>& args) {
     Compiled c = CompileText(text);

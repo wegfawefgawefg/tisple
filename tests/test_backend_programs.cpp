@@ -107,6 +107,55 @@ void TestSprites(TestResults& results, std::uint64_t& cycles, std::uint32_t& byt
     CheckDiff(results, d, "sprites.step_sprites", {});
 }
 
+// a global pointer set to the start of a global array, in both memories
+void SetPointer(Diff& d, const Compiled& c, const char* pointer, const char* target) {
+    const tisple::Program& program = c.built.program;
+    std::int32_t p = tisple::FindVar(program, pointer);
+    std::int32_t t = tisple::FindVar(program, target);
+    std::uint16_t at = c.code.layout.vars[static_cast<std::size_t>(p)].address;
+    std::uint16_t value = c.code.layout.vars[static_cast<std::size_t>(t)].address;
+    for (std::uint16_t k = 0; k < 2; k++) {
+        std::uint8_t byte = static_cast<std::uint8_t>(k == 0 ? value & 0xFF : value >> 8);
+        d.in.memory[at + k] = byte;
+        d.sim.machine->mem[at + k] = byte;
+    }
+}
+
+// Life on lo-res: one generation (40 x 48 cells) and one screen of it
+void TestLife(TestResults& results, std::uint64_t& step, std::uint64_t& draw,
+              std::uint32_t& bytes) {
+    Compiled c = CompileFile("programs/life/main.tsp");
+    Diff d;
+    CHECK(results, StartDiff(d, c));
+    if (!c.ok) {
+        return;
+    }
+    SetPointer(d, c, "main.cur", "main.world_a");
+    SetPointer(d, c, "main.next", "main.world_b");
+    CheckDiff(results, d, "main.scatter", {});
+    CheckDiff(results, d, "main.step", {});
+    step = d.last_cycles;
+    CheckDiff(results, d, "main.swap", {});
+    CheckDiff(results, d, "main.draw", {});
+    draw = d.last_cycles;
+    bytes = FunctionBytes(c, "main.step") + FunctionBytes(c, "main.draw");
+    // every cell is read and written through (p),Y with the column in Y: one LDY, before the
+    // column loop
+    CHECK(results, CountMn(c, "main.step", tisple::Mn::LDY) == 1);
+    CHECK(results, CountMn(c, "main.draw", tisple::Mn::LDY) == 1);
+    for (int generation = 0; generation < 3; generation++) {
+        CheckDiff(results, d, "main.step", {});
+        CheckDiff(results, d, "main.swap", {});
+    }
+    CheckDiff(results, d, "main.draw", {});
+    // the screen is not a global, so compare it here
+    bool same = true;
+    for (std::uint32_t a = 0x400; a < 0x800; a++) {
+        same = same && d.in.memory[a] == d.sim.machine->mem[a];
+    }
+    CHECK(results, same);
+}
+
 void TestOtherExamples(TestResults& results) {
     Compiled keys = CompileFile("examples/keys.tsp");
     Diff d;
@@ -281,6 +330,10 @@ void CycleReport(TestResults& results) {
     CheckDiff(results, d, "t.mul", {0xFFFF, 0xFFFF});
     std::uint64_t mul_worst = d.last_cycles;
     std::uint32_t mul_bytes = FunctionBytes(mul, "t.mul") + RuntimeBytes(mul);
+    std::uint64_t life_step = 0;
+    std::uint64_t life_draw = 0;
+    std::uint32_t life_bytes = 0;
+    TestLife(results, life_step, life_draw, life_bytes);
     std::printf("cycles: fill 8 KB %llu (%.1f a byte), %u bytes\n",
                 static_cast<unsigned long long>(fill), static_cast<double>(fill) / 8192.0,
                 fill_bytes);
@@ -292,6 +345,11 @@ void CycleReport(TestResults& results) {
                 "routine\n",
                 static_cast<unsigned long long>(mul_cycles),
                 static_cast<unsigned long long>(mul_worst), mul_bytes);
+    // 40 x 48 cells; draw writes two cells per screen byte
+    std::printf("cycles: life step %llu (%.1f a cell), draw %llu (%.1f a cell), %u bytes\n",
+                static_cast<unsigned long long>(life_step), static_cast<double>(life_step) / 1920.0,
+                static_cast<unsigned long long>(life_draw), static_cast<double>(life_draw) / 1920.0,
+                life_bytes);
 }
 
 } // namespace

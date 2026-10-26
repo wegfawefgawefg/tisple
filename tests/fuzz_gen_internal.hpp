@@ -54,6 +54,7 @@ struct VarInfo {
     std::string name;
     T type = T::U8;
     bool read_only = false;
+    bool small = false; // a u16 that stays below 256: an index let
 };
 
 struct ArrayInfo {
@@ -76,6 +77,7 @@ struct PtrInfo {
     T elem = T::U8;
     bool to_struct = false;
     std::size_t depth = 0; // the scope it was declared in
+    bool room = false;     // into wb with 510 bytes after it: any byte count stays inside
 };
 
 // struct S (a u8) (b i16) (c bool) (d u8)
@@ -96,6 +98,8 @@ struct Gen {
     // a u16 loop variable known to stay below 512, and a pointer into wb, inside its loop
     std::string wide;
     std::string wide_ptr;
+    // the innermost u8 for counter, which byte indices like to use
+    std::string counter;
     bool in_while = false;
     int budget = 0;
 
@@ -115,7 +119,13 @@ struct Gen {
     std::string Count();
     std::string Call(T t, int depth);
     std::string CallText(const FnInfo& fn, int depth);
-    std::string Pointer(T t);
+    const PtrInfo* Pointer(T t);
+    // a count for (+ p count): any byte for a pointer with room, else 0 to 3
+    std::string PointerCount(const PtrInfo& p, int depth);
+    // a u8 made of a variable or counter and a constant: x, (+ x k), (- x k), (+ k x)
+    std::string ByteForm();
+    // a u16 count below 256: a widened byte form or value, an index let, a constant
+    std::string ByteIndex(int depth);
     std::string PointerRead(T t, int depth);
     std::string IntExpr(T t, int depth);
     std::string BoolExpr(int depth);
@@ -134,6 +144,12 @@ struct Gen {
     std::string While(int depth);
     std::string Match(int depth);
     std::string PointerLet();
+    // (let ix u16 (as u16 (+ x k))): a local that only names a byte index
+    std::string IndexLet();
+    std::string RoomPointerLet();
+    // a load or store through a pointer with room, most often by the loop counter
+    std::string RoomStmt();
+
     std::string Store();
     std::string WideStmt();
     std::string Stmt(int depth);

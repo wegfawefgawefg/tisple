@@ -62,7 +62,12 @@ bool GenStep(Gen& g, const Opnd& d, bool up) {
 }
 
 void GenLet(Gen& g, const Expr& e) {
+    const IndexAlias& alias = g.be->aliases[static_cast<std::size_t>(e.ref)];
+    if (alias.index_only || alias.forward) {
+        return; // every read reads the value itself (index_alias.hpp)
+    }
     const Var& var = g.program->vars[static_cast<std::size_t>(e.ref)];
+
     std::uint32_t size = TypeOf(*g.program, var.type).size;
     AsmValue base = SymValue(g.be->var_sym[static_cast<std::size_t>(e.ref)]);
     if (IsStructType(g, var.type)) {

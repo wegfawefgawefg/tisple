@@ -43,6 +43,9 @@ void CheckDiff(TestResults& results, Diff& d, const std::string& function,
 void CheckProgram(TestResults& results, const std::string& text, const std::string& function,
                   const std::vector<std::uint16_t>& args);
 
+// instructions of one mnemonic in a function's code
+int CountMn(const Compiled& c, const std::string& function, tisple::Mn mn);
+
 // compares every global byte; false with a message
 bool SameGlobals(const Diff& d, std::string& message);
 
@@ -50,6 +53,7 @@ void RunAsmTests(TestResults& results);
 void RunBackendTests(TestResults& results);
 void RunBackendOpTests(TestResults& results);
 void RunBackendProgramTests(TestResults& results);
+void RunBackendIndexTests(TestResults& results);
 void RunBackendFuzzTests(TestResults& results);
 
 } // namespace tisple_tests
