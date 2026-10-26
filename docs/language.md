@@ -206,8 +206,10 @@ runs before the checker, so nothing later sees a macro.
   function gets a static frame; the backend may overlap frames that can't be
   live at the same time.
 - Return value: `u8`/`i8`/`bool` in A, 16-bit in A (low) and X (high).
-- Arrays of structs are stored one array per field unless something takes an
-  element's address; then they are packed.
+- Arrays of structs are stored one array per field, and arrays of `u16`, `i16`
+  and pointers as a low-byte table and a high-byte table, unless something
+  takes an element's address; then they are packed (little-endian). Either way
+  `(at arr i)` with `i : u8` is one or two `LDA abs,X`.
 - `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes (settled).
 
 ## Diagnostics
@@ -240,9 +242,9 @@ hold. Named regions (`:in`) come later.
 Named regions, strings, function pointers, recursion, inline assembly,
 `/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
 
-## Open questions for the owner
+## Settled 2026-10-26
 
-1. Array literal spelling: `(const ROW_ADDR (array u16 192) 0x2000 0x2400 ...)`,
-   values straight after the type (used in `examples/hires_plot.tsp`).
-2. Should `(array u16 n)` be stored as split low/high byte tables
-   automatically, like struct fields? Removes hand-made `row_lo`/`row_hi`.
+- Array literals: `(const ROW_ADDR (array u16 192) 0x2000 0x2400 ...)`, values
+  straight after the type.
+- `(. name x)` is an error in hand-written code (write `name.x`) but allowed in
+  macro output, since a template cannot glue `,s` and `.x` into one name.
