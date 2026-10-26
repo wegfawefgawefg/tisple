@@ -351,6 +351,24 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
     | plasma frames in 10 s | 201 | 200 (its tables moved: more indexed reads cross a page) |
 
+15. Tables across pages (2026-10-26). Automatic placement put data at the
+    first free address, so plasma's 256-byte SINE and ramp tables started
+    mid-page and most `LDA RAMP_LO,Y` reads paid a cycle for the crossing;
+    dropping dead code moved them and cost a frame. Now an array with no
+    :align or :boundary of its own keeps each byte table (an element type
+    without arrays, up to 256 entries; split tables at their own spacing)
+    inside one page when some free start allows it, and later variables fill
+    the gaps (src/link/layout.cpp). Tests: in tests/test_layout.cpp, a
+    256-entry table after a small one, a split u16 192 and i16 200, 40- and
+    48-byte tables in the gap before it, three tables of 200 that no start
+    keeps in pages, and nothing overlapping.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | plasma frames in 10 s | 200 | 205; file 2254 to 2304 bytes |
+    | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
+    | 300 fuzz programs (default run) | 948645 cycles | 948546 cycles |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

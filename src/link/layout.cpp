@@ -178,6 +178,76 @@ std::uint32_t NextCandidate(const Placer& pl, std::uint32_t start, const VarPlac
     return start;
 }
 
+// an array's byte tables, which indexed reads (abs,X) go through: a read whose index takes it
+// into the next page costs a cycle more, so automatic placement keeps each table in a page
+struct Tables {
+    std::uint32_t count = 0;  // bytes in each
+    std::uint32_t tables = 0; // 0: not worth keeping in pages
+    std::uint32_t stride = 0; // from one table to the next
+};
+
+Tables PageTables(const Placer& pl, std::int32_t id, const VarPlace& place, bool per_plane) {
+    const Var& var = pl.program->vars[static_cast<std::size_t>(id)];
+    const Type& type = TypeOf(*pl.program, var.type);
+    Tables out;
+    bool asked = var.placement.align > 1 || var.placement.boundary != 0 || per_plane;
+    if (asked || type.kind != TypeKind::Array || type.count < 2 || type.count > 256 ||
+        HasArray(*pl.program, type.elem)) {
+        return out;
+    }
+    std::uint32_t elem_size = TypeOf(*pl.program, type.elem).size;
+    if (!place.split && elem_size != 1) {
+        return out;
+    }
+    out.count = type.count;
+    out.tables = place.split ? elem_size : 1;
+    out.stride = place.split ? place.plane_stride : type.count;
+    return out;
+}
+
+// the first start at or after `start` where every table stays inside one page; false when
+// the tables' spacing allows none
+bool TablesInPages(const Tables& t, std::uint32_t& start) {
+    for (std::uint32_t tries = 0; tries < 4 * t.tables + 4; tries++) {
+        bool moved = false;
+        for (std::uint32_t j = 0; j < t.tables && !moved; j++) {
+            std::uint32_t at = start + j * t.stride;
+            if (at % 256 + t.count > 256) {
+                start = AlignUp(at + 1, 256) - j * t.stride;
+                moved = true;
+            }
+        }
+        if (!moved) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// the first free start from `start` on, its tables in pages when `paged`; false if none
+bool FindStart(const Placer& pl, const VarPlace& place, const Tables& tables, bool paged,
+               std::uint32_t inside, std::uint32_t align, std::uint32_t boundary,
+               std::uint32_t& start) {
+    while (start + place.size <= pl.options->data_end) {
+        if (paged) {
+            std::uint32_t moved = start;
+            if (!TablesInPages(tables, moved)) {
+                return false;
+            }
+            if (moved != start) {
+                start = AlignUp(moved, align);
+                continue;
+            }
+        }
+        std::uint32_t next = NextCandidate(pl, start, place, inside, align, boundary);
+        if (next == start) {
+            return true;
+        }
+        start = next;
+    }
+    return false;
+}
+
 void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
     const Var& var = pl.program->vars[static_cast<std::size_t>(id)];
     std::uint32_t align = std::max<std::uint32_t>(var.placement.align, 1);
@@ -191,15 +261,18 @@ void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
     }
     // per plane, only one table has to stay inside a block
     std::uint32_t inside = per_plane ? TypeOf(*pl.program, var.type).count : place.size;
-    std::uint32_t start = AlignUp(pl.options->data_start, align);
-    while (start + place.size <= pl.options->data_end) {
-        std::uint32_t next = NextCandidate(pl, start, place, inside, align, boundary);
-        if (next == start) {
+    Tables tables = PageTables(pl, id, place, per_plane);
+    std::uint32_t first = AlignUp(pl.options->data_start, align);
+    for (bool paged : {true, false}) {
+        if (paged && tables.tables == 0) {
+            continue;
+        }
+        std::uint32_t start = first;
+        if (FindStart(pl, place, tables, paged, inside, align, boundary, start)) {
             place.address = static_cast<std::uint16_t>(start);
             pl.used.push_back(Used{start, start + place.size, id});
             return;
         }
-        start = next;
     }
     AddError(*pl.errors, var.loc,
              "no room for " + ShortName(var) + " (" + std::to_string(place.size) +

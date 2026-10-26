@@ -136,11 +136,68 @@ void PlacementTests(TestResults& results) {
                 "t.tsp:1:6: no room for a (40000 bytes) in the data region $0C00-$BFFF");
 }
 
+// every byte table of this array inside one page
+bool TablesInPages(const Built& built, const std::string& name, std::uint32_t count,
+                   std::uint32_t tables) {
+    const tisple::VarPlace& place = PlaceOf(built, name);
+    std::uint32_t stride = place.split ? place.plane_stride : count;
+    for (std::uint32_t j = 0; j < tables; j++) {
+        if ((place.address + j * stride) % 256 + count > 256) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// automatic placement keeps byte tables inside pages, so indexed reads never cross one,
+// and fills the gaps it leaves with what comes later
+void PageTableTests(TestResults& results) {
+    Built built = BuildText("(struct Rgb ((r u8) (g u8) (b u8)))\n"
+                            "(let first (array u8 7))\n"
+                            "(let sine (array u8 256))\n"
+                            "(let rows (array u16 192))\n"
+                            "(let col (array u8 40))\n"
+                            "(let row (array u8 48))\n"
+                            "(let pairs (array i16 200))\n"
+                            "(let colors (array Rgb 200))\n"
+                            "(let wide (array u8 300))\n"
+                            "(let mine (array u8 100) :align 2)\n"
+                            "(fn f () u8 (at sine (at col (at row 3))))");
+    CHECK(results, built.ok);
+    if (!built.ok) {
+        std::fprintf(stderr, "%s", ErrorText(built).c_str());
+        return;
+    }
+    CHECK(results, PlaceOf(built, "t.sine").address % 256 == 0);
+    CHECK(results, TablesInPages(built, "t.rows", 192, 2));
+    CHECK(results, TablesInPages(built, "t.col", 40, 1));
+    CHECK(results, TablesInPages(built, "t.row", 48, 1));
+    CHECK(results, TablesInPages(built, "t.pairs", 200, 2));
+    // col and row go in the gap before sine
+    CHECK(results, PlaceOf(built, "t.col").address < PlaceOf(built, "t.sine").address);
+    CHECK(results, PlaceOf(built, "t.row").address < PlaceOf(built, "t.sine").address);
+    // :align is the author's choice
+    CHECK(results, PlaceOf(built, "t.mine").address % 2 == 0);
+    // three tables of 200, 200 apart, have no start that keeps all three in pages: placed
+    // anyway, and nothing overlaps
+    CHECK(results, PlaceOf(built, "t.colors").address >= 0x0C00);
+    for (std::size_t i = 0; i < built.layout.vars.size(); i++) {
+        for (std::size_t j = i + 1; j < built.layout.vars.size(); j++) {
+            const tisple::VarPlace& a = built.layout.vars[i];
+            const tisple::VarPlace& b = built.layout.vars[j];
+            bool frame = built.program.vars[i].function >= 0 || built.program.vars[j].function >= 0;
+            bool apart = a.address + a.size <= b.address || b.address + b.size <= a.address;
+            CHECK(results, frame || a.size == 0 || b.size == 0 || apart);
+        }
+    }
+}
+
 } // namespace
 
 void RunLayoutTests(TestResults& results) {
     RepresentationTests(results);
     PlacementTests(results);
+    PageTableTests(results);
 }
 
 } // namespace tisple_tests

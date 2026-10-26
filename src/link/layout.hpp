@@ -58,7 +58,9 @@ struct Layout {
 bool ShapeProgram(const Program& program, Layout& out, std::vector<Diagnostic>& errors);
 
 // globals and const arrays first (in declaration order), then every function's
-// parameters and locals in a static frame of its own; then CheckConstantPointers
+// parameters and locals in a static frame of its own; then CheckConstantPointers. An array
+// with no :align or :boundary of its own keeps each byte table (up to 256 bytes) inside one
+// page when some free start allows it, so indexed reads never pay for a page crossing
 bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout& out,
                    std::vector<Diagnostic>& errors);
 
