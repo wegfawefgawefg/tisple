@@ -233,6 +233,42 @@ void TestRegressions(TestResults& results) {
                  "        (for k u8 3 5 (store (+ wp n) k)))\n"
                  "    (at wb 251))",
                  "t.f", {});
+    // fuzz seeds 2000046127 and 9000008810: a 16-bit element indexed by the low byte of its
+    // own destination; writing the low byte first changed the index the high byte read
+    // with (a plain set, an add, a store through a pointer to the index)
+    CheckProgram(results,
+                 "(let g3 i16 32767)\n"
+                 "(let g4 u16 0x0102)\n"
+                 "(let w u16 5)\n"
+                 "(let arr (array i16 256))\n"
+                 "(let ws (array u16 256))\n"
+                 "(fn f () void\n"
+                 "    (for i u8 0 255\n"
+                 "        (set (at arr i) (* (as i16 i) 300))\n"
+                 "        (set (at ws i) (* (as u16 i) 517)))\n"
+                 "    (set (at arr 255) 300)\n"
+                 "    (set g3 (at arr (as u8 g3)))\n"
+                 "    (set g4 (+ (at ws (as u8 g4)) 1))\n"
+                 "    (let pw (ptr u16) (addr_of w))\n"
+                 "    (store pw (at ws (as u8 w))))",
+                 "t.f", {});
+    // fuzz seed 7000005809: a let read once by an index let was forwarded, so the index
+    // read its value after a later set; the same through two forwarded lets
+    CheckProgram(results,
+                 "(let g0 u8 12)\n"
+                 "(let h u8 0)\n"
+                 "(let wb (array u8 64))\n"
+                 "(fn f () void\n"
+                 "    (let p (ptr u8) (addr_of (at wb 1)))\n"
+                 "    (let ix39 u8 g0)\n"
+                 "    (let ix40 u8 (+ ix39 1))\n"
+                 "    (set g0 40)\n"
+                 "    (store (+ p (as u16 (- ix40 1))) 187)\n"
+                 "    (let a u8 (* g0 5))\n"
+                 "    (let b u8 (* a 3))\n"
+                 "    (set g0 5)\n"
+                 "    (set h b))",
+                 "t.f", {});
     // u16 loops in every shape: page crossing, ending on a page, through the top
     CheckProgram(results,
                  "(let wb (array u8 1024))\n"
