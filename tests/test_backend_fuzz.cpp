@@ -2,6 +2,7 @@
 // TISPLE_FUZZ=N runs N programs (default 300), TISPLE_FUZZ_SEED picks the first seed.
 
 #include "fuzz_gen.hpp"
+#include "source_file.hpp"
 #include "test_backend.hpp"
 
 #include <cstdio>
@@ -76,9 +77,36 @@ void FuzzOne(std::uint64_t seed, FuzzStats& stats) {
     Report("mismatch", seed, text, d.message, stats.mismatches);
 }
 
+// TISPLE_FUZZ_FILE=path: run that one program's main both ways and say how they differ
+bool DiffFile(TestResults& results) {
+    const char* path = std::getenv("TISPLE_FUZZ_FILE");
+    if (!path || !*path) {
+        return false;
+    }
+    tisple::SourceFile file;
+    std::string error;
+    if (!tisple::LoadSourceFile(path, file, error)) {
+        std::fprintf(stderr, "%s\n", error.c_str());
+        CHECK(results, false);
+        return true;
+    }
+    Compiled c = CompileText(file.text);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+    std::printf("%s: %s\n", path, ok ? "same" : d.message.c_str());
+    if (c.ok) {
+        std::printf("%s", tisple::ListProgram(c.built.program, c.code).c_str());
+    }
+    CHECK(results, ok);
+    return true;
+}
+
 } // namespace
 
 void RunBackendFuzzTests(TestResults& results) {
+    if (DiffFile(results)) {
+        return;
+    }
     std::uint64_t count = EnvNumber("TISPLE_FUZZ", kDefaultPrograms);
     std::uint64_t first = EnvNumber("TISPLE_FUZZ_SEED", 1);
     FuzzStats stats;

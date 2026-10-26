@@ -181,6 +181,22 @@ void TestRegressions(TestResults& results) {
                  "    (set (. (at sa 2) a) 5)\n"
                  "    (set (. (at sa (& g 7)) b) (. (at sa (& (. (at sa (& g 6)) a) 7)) b)))",
                  "t.f", {});
+    // fuzz seeds 504457 and 572343: (<< g 8) reads g's low byte as its high byte, so
+    // writing g low byte first clobbered it
+    CheckProgram(results,
+                 "(let g u16 0x1234)\n"
+                 "(let h u16 0x5678)\n"
+                 "(let k (array u16 4))\n"
+                 "(let p (ptr u16))\n"
+                 "(fn f (returns u16)\n"
+                 "    (set (at k 1) 93)\n"
+                 "    (set g (+ (<< g 8) (at k 1)))\n"
+                 "    (set h (~ (<< h 8)))\n"
+                 "    (set p (addr_of h))\n"
+                 "    (store p (| (<< (load p) 8) (>> (load p) 8)))\n"
+                 "    (set g (<< g 8))\n"
+                 "    (+ g h))",
+                 "t.f", {});
 }
 
 } // namespace

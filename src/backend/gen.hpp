@@ -61,6 +61,7 @@ struct Backend {
     std::vector<std::int32_t> ptemp_sym;
     std::vector<std::uint32_t> temp_size;
     std::vector<std::uint32_t> ptemp_size;
+    bool raw_pointers = false;              // some (as (ptr t) n): a pointer may point anywhere
     std::vector<bool> deref;                // by var: some load or store goes straight through it
     std::vector<std::vector<AsmItem>> code; // by function
     std::int32_t scratch = -1;              // 2 bytes
@@ -107,6 +108,7 @@ struct Opnd {
     std::uint8_t size = 0; // 0: none
     bool in_a = false;     // 8-bit value in A right now
     bool temp = false;     // lives in a temporary nobody else writes
+    bool moved = false;    // some byte comes from another byte position: (<< x 8)
     ByteRef b[2];
     Index index;
 };
@@ -188,6 +190,11 @@ void LoadAX(Gen& g, const Opnd& o);
 void StoreAX(Gen& g, const Opnd& dst);
 // A holds an 8-bit value: keep it in a temporary
 Opnd SpillA(Gen& g);
+// writing dst byte by byte from low to high could overwrite a byte of src that is read
+// later (only byte-moving operands and type-punned pointers make this possible)
+bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst);
+// may the operands share memory at all
+bool Overlaps(const Gen& g, const Opnd& a, const Opnd& d);
 // copy to a temporary unless it is already safe from later code
 Opnd Snapshot(Gen& g, const Opnd& o);
 

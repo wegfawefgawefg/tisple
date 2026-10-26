@@ -54,6 +54,53 @@ void Alu8(Gen& g, Op op, const Opnd& b) {
     AluByte(g, op, b, 0);
 }
 
+// multiplying by a constant with at most this many set bits is inlined as shifts and adds
+constexpr int kMaxInlineMulBits = 4;
+
+int Popcount(std::uint32_t v) {
+    int n = 0;
+    for (; v != 0; v &= v - 1) {
+        n++;
+    }
+    return n;
+}
+
+// log2 of a power of two, else -1
+int PowerOfTwo(std::uint32_t v) {
+    if (v == 0 || (v & (v - 1)) != 0) {
+        return -1;
+    }
+    int k = 0;
+    while ((v >> k) != 1) {
+        k++;
+    }
+    return k;
+}
+
+// A = A * c, top-down shift and add with the multiplicand in a temporary
+void MulConst8A(Gen& g, std::uint32_t c) {
+    c &= 0xFF;
+    if (c == 0) {
+        Emit(g, Mn::LDA, Mode::Imm, Num(0));
+        return;
+    }
+    Opnd x;
+    if (Popcount(c) > 1) {
+        x = SpillA(g);
+    }
+    int top = 7;
+    while (((c >> top) & 1) == 0) {
+        top--;
+    }
+    for (int bit = top - 1; bit >= 0; bit--) {
+        Emit(g, Mn::ASL, Mode::Acc);
+        if ((c >> bit) & 1) {
+            Emit(g, Mn::CLC, Mode::Imp);
+            OpA(g, Mn::ADC, x, 0);
+        }
+    }
+}
+
 // a free index register for a counter; X unless pinned
 int CounterReg(const Gen& g) {
     if (g.pin[0] < 0) {
@@ -216,6 +263,42 @@ void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool f
         StoreA(g, d, 1);
         return;
     }
+    if (fixed && c >= 5) {
+        // shift the other way through a third byte, 8 - c steps instead of c
+        int steps = 8 - c;
+        if (left) {
+            // [hi lo 00] >> steps: the middle and low bytes are the result
+            LoadA(g, a, 0);
+            StoreA(g, d, 1);
+            Emit(g, Mn::LDA, Mode::Imm, Num(0));
+            StoreA(g, d, 0);
+            LoadA(g, a, 1);
+            for (int i = 0; i < steps; i++) {
+                Emit(g, Mn::LSR, Mode::Acc);
+                RmwByte(g, Mn::ROR, d, 1);
+                RmwByte(g, Mn::ROR, d, 0);
+            }
+            return;
+        }
+        // [sign hi lo] << steps: the top and middle bytes are the result
+        Opnd low = NewTemp(g, 1);
+        LoadA(g, a, 0);
+        StoreA(g, low, 0);
+        LoadA(g, a, 1);
+        StoreA(g, d, 0);
+        if (is_signed) {
+            SignByteA(g);
+        } else {
+            Emit(g, Mn::LDA, Mode::Imm, Num(0));
+        }
+        for (int i = 0; i < steps; i++) {
+            RmwByte(g, Mn::ASL, low, 0);
+            RmwByte(g, Mn::ROL, d, 0);
+            Emit(g, Mn::ROL, Mode::Acc);
+        }
+        StoreA(g, d, 1);
+        return;
+    }
     // the low byte shifts in memory, the high byte in A
     LoadA(g, a, 0);
     StoreA(g, d, 0);
@@ -292,6 +375,17 @@ void EvalArith8(Gen& g, const Expr& e) {
         Shift8(g, e);
         return;
     case Op::Mul: {
+        std::uint16_t c = 0;
+        if (ConstValue(*g.program, e.b, c) && Popcount(c & 0xFF) <= kMaxInlineMulBits) {
+            EvalA(g, e.a);
+            MulConst8A(g, c);
+            return;
+        }
+        if (ConstValue(*g.program, e.a, c) && Popcount(c & 0xFF) <= kMaxInlineMulBits) {
+            EvalA(g, e.b);
+            MulConst8A(g, c);
+            return;
+        }
         Opnd a;
         Opnd b;
         Operands8(g, e.a, e.b, a, b);
@@ -303,6 +397,20 @@ void EvalArith8(Gen& g, const Expr& e) {
     }
     case Op::Div:
     case Op::Mod: {
+        std::uint16_t c = 0;
+        int k = ConstValue(*g.program, e.b, c) ? PowerOfTwo(c & 0xFF) : -1;
+        if (k >= 0 && !IsSignedKind(ExprKindOf(*g.program, e.a))) {
+            // unsigned by 2^k: a shift or a mask
+            EvalA(g, e.a);
+            if (op == Op::Mod) {
+                Emit(g, Mn::AND, Mode::Imm, Num((1 << k) - 1));
+                return;
+            }
+            for (int i = 0; i < k; i++) {
+                Emit(g, Mn::LSR, Mode::Acc);
+            }
+            return;
+        }
         Opnd a;
         Opnd b;
         Operands8(g, e.a, e.b, a, b);
@@ -323,6 +431,12 @@ void EvalArith8(Gen& g, const Expr& e) {
 }
 
 void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& dst) {
+    if (CrossAliases(g, a_in, dst) || CrossAliases(g, b_in, dst)) {
+        Opnd t = NewTemp(g, 2);
+        Combine16(g, op, a_in, b_in, t);
+        CopyOpnd(g, t, dst);
+        return;
+    }
     Opnd a = a_in;
     Opnd b = b_in;
     if (Commutes(op) && IsImm(a) && !IsImm(b)) {
@@ -382,39 +496,29 @@ void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
         CopyOpnd(g, ImmOpnd(0, 2), dst);
         return;
     }
-    if ((factor & (factor - 1)) == 0) {
-        Opnd t = (CanRmw(g, dst, 0) && CanRmw(g, dst, 1)) ? dst : NewTemp(g, 2);
-        CopyOpnd(g, a, t);
-        for (std::uint32_t f = factor; f > 1; f >>= 1) {
-            RmwByte(g, Mn::ASL, t, 0);
-            RmwByte(g, Mn::ROL, t, 1);
-        }
-        if (t.b[0].value.sym != dst.b[0].value.sym ||
-            t.b[0].value.offset != dst.b[0].value.offset) {
-            CopyOpnd(g, t, dst);
-        }
-        return;
+    // the product builds up in r, which shifts in place; x is read once per set bit
+    bool plain = dst.b[0].kind == ByteKind::Mem && dst.b[1].kind == ByteKind::Mem;
+    Opnd r = plain ? dst : NewTemp(g, 2);
+    Opnd x = a;
+    if (Popcount(factor) > 1 && !a.temp && !IsImm(a)) {
+        x = NewTemp(g, 2);
+        CopyOpnd(g, a, x);
     }
-    // shift and add: shifted copy in t, sum in r
-    Opnd t = NewTemp(g, 2);
-    Opnd r = NewTemp(g, 2);
-    CopyOpnd(g, a, t);
-    bool started = false;
-    for (std::uint32_t f = factor; f != 0; f >>= 1) {
-        if (f & 1) {
-            if (!started) {
-                CopyOpnd(g, t, r);
-                started = true;
-            } else {
-                Combine16(g, Op::Add, r, t, r);
-            }
-        }
-        if (f > 1) {
-            RmwByte(g, Mn::ASL, t, 0);
-            RmwByte(g, Mn::ROL, t, 1);
+    CopyOpnd(g, x, r);
+    int top = 15;
+    while (((factor >> top) & 1) == 0) {
+        top--;
+    }
+    for (int bit = top - 1; bit >= 0; bit--) {
+        RmwByte(g, Mn::ASL, r, 0);
+        RmwByte(g, Mn::ROL, r, 1);
+        if ((factor >> bit) & 1) {
+            Combine16(g, Op::Add, r, x, r);
         }
     }
-    CopyOpnd(g, r, dst);
+    if (!plain) {
+        CopyOpnd(g, r, dst);
+    }
 }
 
 Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
@@ -450,7 +554,36 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
             }
         }
         Opnd d = ShiftTarget(g, dst);
+        if (Overlaps(g, a, d)) {
+            d = NewTemp(g, 2);
+        }
         Shift16(g, op, IsSignedKind(ExprKindOf(*g.program, e.a)), a, d, fixed, c, count);
+        return d;
+    }
+    std::uint16_t c = 0;
+    bool b_const = ConstValue(*g.program, e.b, c);
+    bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
+    if (op == Op::Mul && b_const && Popcount(c) <= kMaxInlineMulBits) {
+        Opnd a = Eval(g, e.a, nullptr);
+        Opnd d = dst ? *dst : NewTemp(g, 2);
+        MulConst16(g, a, c, d);
+        return d;
+    }
+    if (op == Op::Mul && ConstValue(*g.program, e.a, c) && Popcount(c) <= kMaxInlineMulBits) {
+        Opnd b = Eval(g, e.b, nullptr);
+        Opnd d = dst ? *dst : NewTemp(g, 2);
+        MulConst16(g, b, c, d);
+        return d;
+    }
+    if ((op == Op::Div || op == Op::Mod) && b_const && PowerOfTwo(c) >= 0 && !is_signed) {
+        Opnd a = Eval(g, e.a, nullptr);
+        if (op == Op::Mod) {
+            Opnd d = dst ? *dst : NewTemp(g, 2);
+            Combine16(g, Op::And, a, ImmOpnd(static_cast<std::uint16_t>(c - 1), 2), d);
+            return d;
+        }
+        Opnd d = ShiftTarget(g, dst);
+        Shift16(g, Op::Shr, false, a, d, true, static_cast<std::uint16_t>(PowerOfTwo(c)), Opnd());
         return d;
     }
     Opnd a = Eval(g, e.a, nullptr);

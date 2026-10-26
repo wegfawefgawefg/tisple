@@ -351,6 +351,93 @@ PlaceRef ElementPlace(const Gen& g, const PlaceRef& place, TypeId array_type, st
     return out;
 }
 
+namespace {
+
+bool IsImmByte(const ByteRef& b, int value) {
+    return b.kind == ByteKind::Imm && b.value.sym < 0 && (b.value.offset & 0xFF) == value;
+}
+
+// both operands' index needs as one (they may share one index, or only one has any)
+bool MergeIndex(const Opnd& a, const Opnd& b, Index& out) {
+    if (!a.index.used) {
+        out = b.index;
+        return true;
+    }
+    if (!b.index.used) {
+        out = a.index;
+        return true;
+    }
+    out = a.index;
+    return a.index.is_reg == b.index.is_reg && a.index.reg == b.index.reg &&
+           a.index.value.sym == b.index.value.sym && a.index.value.offset == b.index.value.offset;
+}
+
+// 16-bit a op b with no code: every byte comes from one side because the other is a known
+// 0 (or $FF for and), so no carry ever moves between bytes
+Opnd SelectBytes(Gen& g, const Expr& e) {
+    if (e.op != Op::Or && e.op != Op::Xor && e.op != Op::Add && e.op != Op::And) {
+        return Opnd();
+    }
+    Opnd a = TrySimple(g, e.a);
+    Opnd b = a.size ? TrySimple(g, e.b) : Opnd();
+    Opnd out;
+    if (b.size == 0 || !MergeIndex(a, b, out.index)) {
+        return Opnd();
+    }
+    out.size = 2;
+    out.moved = a.moved || b.moved;
+    for (int k = 0; k < 2; k++) {
+        if (e.op == Op::And) {
+            if (IsImmByte(a.b[k], 0) || IsImmByte(b.b[k], 0)) {
+                out.b[k] = ByteRef();
+                out.b[k].value = Num(0);
+            } else if (IsImmByte(b.b[k], 0xFF)) {
+                out.b[k] = a.b[k];
+            } else if (IsImmByte(a.b[k], 0xFF)) {
+                out.b[k] = b.b[k];
+            } else {
+                return Opnd();
+            }
+            continue;
+        }
+        if (IsImmByte(a.b[k], 0)) {
+            out.b[k] = b.b[k];
+        } else if (IsImmByte(b.b[k], 0)) {
+            out.b[k] = a.b[k];
+        } else {
+            return Opnd();
+        }
+    }
+    return out;
+}
+
+// (>> x 8) and (<< x 8) of a 16-bit operand just move a byte
+Opnd ByteShift(Gen& g, const Expr& e) {
+    std::uint16_t c = 0;
+    if ((e.op != Op::Shl && e.op != Op::Shr) || !ConstValue(*g.program, e.b, c) || c != 8 ||
+        (e.op == Op::Shr && IsSignedKind(KindOf(*g.program, e.type)))) {
+        return Opnd();
+    }
+    Opnd a = TrySimple(g, e.a);
+    if (a.size != 2) {
+        return Opnd();
+    }
+    Opnd out = a;
+    out.moved = true;
+    ByteRef zero;
+    zero.value = Num(0);
+    if (e.op == Op::Shr) {
+        out.b[0] = a.b[1];
+        out.b[1] = zero;
+    } else {
+        out.b[1] = a.b[0];
+        out.b[0] = zero;
+    }
+    return out;
+}
+
+} // namespace
+
 Opnd TrySimple(Gen& g, ExprId id) {
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
@@ -389,6 +476,13 @@ Opnd TrySimple(Gen& g, ExprId id) {
             return o;
         }
         return Opnd();
+    }
+    case ExprKind::Binary: {
+        if (SizeOf(g, e.type) != 2) {
+            return Opnd();
+        }
+        Opnd shifted = ByteShift(g, e);
+        return shifted.size != 0 ? shifted : SelectBytes(g, e);
     }
     case ExprKind::AddrOf: {
         PlaceRef place;

@@ -418,9 +418,68 @@ AsmValue NewPtrTemp(Gen& g) {
                     static_cast<std::int32_t>(at));
 }
 
+namespace {
+
+bool IsMemoryByte(const ByteRef& b) {
+    return b.kind == ByteKind::Mem || b.kind == ByteKind::MemIdx || b.kind == ByteKind::IndY;
+}
+
+// could byte x of src and byte y of dst be the same memory (no pointer reaches a temporary)
+bool MaySameByte(const Gen& g, const Opnd& src, const ByteRef& x, const Opnd& dst,
+                 const ByteRef& y) {
+    if (!IsMemoryByte(x) || !IsMemoryByte(y)) {
+        return false;
+    }
+    if (dst.temp || src.temp) {
+        return x.kind == y.kind && x.value.sym == y.value.sym && x.value.offset == y.value.offset;
+    }
+    if (x.kind == ByteKind::IndY || y.kind == ByteKind::IndY) {
+        return src.moved || g.be->raw_pointers;
+    }
+    return x.value.sym == y.value.sym && x.value.offset == y.value.offset;
+}
+
+} // namespace
+
+bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst) {
+    if (src.in_a || src.size < 2 || dst.size < 2) {
+        return false;
+    }
+    if (!src.moved && !g.be->raw_pointers) {
+        return false;
+    }
+    // dst byte 0 is written before src byte 1 is read
+    return MaySameByte(g, src, src.b[1], dst, dst.b[0]);
+}
+
+bool Overlaps(const Gen& g, const Opnd& a, const Opnd& d) {
+    for (int i = 0; i < a.size; i++) {
+        for (int k = 0; k < d.size; k++) {
+            if (MaySameByte(g, a, a.b[i], d, d.b[k])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void CopyOpnd(Gen& g, const Opnd& src, const Opnd& dst) {
     if (src.in_a) {
         StoreA(g, dst, 0);
+        return;
+    }
+    if (CrossAliases(g, src, dst)) {
+        // high byte first works unless dst byte 1 is also src byte 0; else go through a temp
+        if (!MaySameByte(g, src, src.b[0], dst, dst.b[1])) {
+            LoadA(g, src, 1);
+            StoreA(g, dst, 1);
+            LoadA(g, src, 0);
+            StoreA(g, dst, 0);
+            return;
+        }
+        Opnd t = NewTemp(g, 2);
+        CopyOpnd(g, src, t);
+        CopyOpnd(g, t, dst);
         return;
     }
     for (int k = 0; k < dst.size; k++) {

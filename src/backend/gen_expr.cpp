@@ -211,6 +211,9 @@ Opnd EvalUnary(Gen& g, ExprId id, const Expr& e, const Opnd* dst) {
     }
     Opnd a = Eval(g, e.a, nullptr);
     Opnd d = Dest16(g, dst);
+    if (CrossAliases(g, a, d)) {
+        d = NewTemp(g, 2);
+    }
     for (int k = 0; k < 2; k++) {
         LoadA(g, a, k);
         Emit(g, Mn::EOR, Mode::Imm, Num(0xFF));

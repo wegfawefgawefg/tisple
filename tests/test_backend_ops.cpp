@@ -180,9 +180,95 @@ void TestType(TestResults& results, const char* type, TypeKind kind) {
     CHECK(results, run.failures == 0);
 }
 
+// the right operand a constant: multiplies and divides by constants and shifts by fixed
+// counts take their own paths (shifts and adds, masks, byte moves)
+void TestConstants(TestResults& results, const char* type, TypeKind kind) {
+    bool wide = tisple::KindBits(kind) == 16;
+    bool is_signed = tisple::IsSignedKind(kind);
+    std::vector<std::int32_t> constants = {0, 1, 2, 3, 5, 7, 8, 10, 40, 64, 127};
+    if (!is_signed) {
+        constants.push_back(128);
+        constants.push_back(255);
+    } else {
+        constants.push_back(-1);
+        constants.push_back(-2);
+        constants.push_back(-128);
+    }
+    if (wide) {
+        for (std::int32_t c : {256, 280, 1000, 0x7FFF}) {
+            constants.push_back(c);
+        }
+        constants.push_back(is_signed ? -32768 : 0xFFFF);
+    }
+    std::string text = "(let gx " + std::string(type) + ")\n";
+    struct Case {
+        std::string fn;
+        Op op;
+        std::uint16_t c;
+    };
+    std::vector<Case> cases;
+    for (const OpCase& oc : kOps) {
+        for (std::int32_t c : constants) {
+            if ((oc.op == Op::Div || oc.op == Op::Mod) && c == 0) {
+                continue;
+            }
+            if (oc.count && (c < 0 || c > 20)) {
+                continue;
+            }
+            std::string fn = std::string("k") + oc.name + "_" + std::to_string(cases.size());
+            std::string ret = IsCompare(oc.op) ? "bool" : type;
+            text += "(fn " + fn + " (args (a " + type + ")) (returns " + ret + ") (" + oc.form +
+                    " a " + std::to_string(c) + "))\n";
+            std::uint16_t raw = static_cast<std::uint16_t>(c & (wide ? 0xFFFF : 0xFF));
+            if (oc.count) {
+                raw = static_cast<std::uint16_t>(c);
+            }
+            cases.push_back(Case{fn, oc.op, raw});
+        }
+    }
+    // in place: the destination is also the operand
+    text += "(fn inplace (args (a " + std::string(type) + ")) (returns " + type +
+            ")\n"
+            "    (set gx a) (set gx (* gx 3)) (set gx (<< gx 3)) (set gx (+ gx (>> gx 2))) gx)\n";
+    Compiled c = CompileText(text);
+    if (!c.ok) {
+        std::fprintf(stderr, "constant ops for %s: %s\n", type, c.errors.c_str());
+        CHECK(results, c.ok);
+        return;
+    }
+    OpRunner run;
+    run.results = &results;
+    run.c = &c;
+    std::string error;
+    CHECK(results, tisple::StartCompiled(run.sim, c.code, error));
+    std::uint16_t mask = wide ? 0xFFFF : 0xFF;
+    for (std::uint16_t a : Values(kind)) {
+        for (const Case& k : cases) {
+            bool by_zero = false;
+            run.Expect(k.fn, a, 0, tisple::EvalBinaryOp(k.op, kind, a, k.c, by_zero) & mask);
+        }
+        std::uint16_t v = a;
+        bool by_zero = false;
+        v = tisple::EvalBinaryOp(Op::Mul, kind, v, 3, by_zero);
+        v = tisple::EvalBinaryOp(Op::Shl, kind, v, 3, by_zero);
+        v = tisple::EvalBinaryOp(Op::Add, kind, v,
+                                 tisple::EvalBinaryOp(Op::Shr, kind, v, 2, by_zero), by_zero);
+        run.Expect("inplace", a, 0, v & mask);
+    }
+    if (run.failures != 0) {
+        std::fprintf(stderr, "%s constants: %d of %llu results differ\n", type, run.failures,
+                     static_cast<unsigned long long>(run.calls));
+    }
+    CHECK(results, run.failures == 0);
+}
+
 } // namespace
 
 void RunBackendOpTests(TestResults& results) {
+    TestConstants(results, "u8", TypeKind::U8);
+    TestConstants(results, "i8", TypeKind::I8);
+    TestConstants(results, "u16", TypeKind::U16);
+    TestConstants(results, "i16", TypeKind::I16);
     TestType(results, "u8", TypeKind::U8);
     TestType(results, "i8", TypeKind::I8);
     TestType(results, "u16", TypeKind::U16);

@@ -149,6 +149,11 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
         return false;
     }
     be.deref = FindDerefPointers(program);
+    for (const Expr& e : program.exprs) {
+        if (e.kind == ExprKind::Reinterpret && KindOf(program, e.type) == TypeKind::Ptr) {
+            be.raw_pointers = true;
+        }
+    }
     MakeSymbols(be);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         GenFunction(be, static_cast<std::int32_t>(f));
