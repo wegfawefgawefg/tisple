@@ -58,9 +58,14 @@ struct Layout {
 bool ShapeProgram(const Program& program, Layout& out, std::vector<Diagnostic>& errors);
 
 // globals and const arrays first (in declaration order), then every function's
-// parameters and locals in a static frame of its own
+// parameters and locals in a static frame of its own; then CheckConstantPointers
 bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout& out,
                    std::vector<Diagnostic>& errors);
+
+// pointer provenance (docs/language.md): (as (ptr t) n) reaches only memory the program does
+// not declare, so a constant n inside a laid-out variable is an error that says to use addr_of
+bool CheckConstantPointers(const Program& program, const Layout& layout,
+                           std::vector<Diagnostic>& errors);
 
 struct Cursor {
     std::uint16_t address = 0;

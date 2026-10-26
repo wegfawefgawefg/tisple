@@ -1,5 +1,7 @@
 #include "check/program.hpp"
 
+#include "check/arith.hpp"
+
 namespace tisple {
 
 bool IsIntegerKind(TypeKind kind) {
@@ -96,6 +98,70 @@ std::int32_t FindFieldIndex(const Program& program, TypeId struct_type, const st
         }
     }
     return -1;
+}
+
+bool ConstValue(const Program& program, ExprId id, std::uint16_t& value) {
+    const Expr& e = program.exprs[static_cast<std::size_t>(id)];
+    std::uint16_t a = 0;
+    std::uint16_t b = 0;
+    switch (e.kind) {
+    case ExprKind::Literal:
+        value = static_cast<std::uint16_t>(e.value);
+        return true;
+    case ExprKind::Unary:
+        if (!ConstValue(program, e.a, a)) {
+            return false;
+        }
+        value = EvalUnaryOp(e.op, KindOf(program, e.type), a);
+        return true;
+    case ExprKind::Binary: {
+        if (!ConstValue(program, e.a, a) || !ConstValue(program, e.b, b)) {
+            return false;
+        }
+        bool div_by_zero = false;
+        value =
+            EvalBinaryOp(e.op, KindOf(program, program.exprs[static_cast<std::size_t>(e.a)].type),
+                         a, b, div_by_zero);
+        return !div_by_zero;
+    }
+    case ExprKind::Convert:
+        if (!ConstValue(program, e.a, a)) {
+            return false;
+        }
+        value = ConvertBits(KindOf(program, program.exprs[static_cast<std::size_t>(e.a)].type),
+                            KindOf(program, e.type), a);
+        return true;
+    case ExprKind::Reinterpret:
+        return ConstValue(program, e.a, value);
+    case ExprKind::And:
+    case ExprKind::Or: {
+        if (!ConstValue(program, e.a, a)) {
+            return false;
+        }
+        // the short circuit decides without b
+        if ((e.kind == ExprKind::And && a == 0) || (e.kind == ExprKind::Or && a != 0)) {
+            value = e.kind == ExprKind::Or ? 1 : 0;
+            return true;
+        }
+        if (!ConstValue(program, e.b, b)) {
+            return false;
+        }
+        value = b != 0 ? 1 : 0;
+        return true;
+    }
+    case ExprKind::PtrAdd:
+    case ExprKind::PtrSub: {
+        if (!ConstValue(program, e.a, a) || !ConstValue(program, e.b, b)) {
+            return false;
+        }
+        std::uint32_t bytes = static_cast<std::uint32_t>(b) * e.value;
+        std::uint32_t sum = e.kind == ExprKind::PtrAdd ? a + bytes : a - bytes;
+        value = static_cast<std::uint16_t>(sum & 0xFFFF);
+        return true;
+    }
+    default:
+        return false;
+    }
 }
 
 } // namespace tisple

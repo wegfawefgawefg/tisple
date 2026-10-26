@@ -25,9 +25,6 @@ bool ReadsVar(const Program& program, ExprId id, std::int32_t var);
 // reads memory through a pointer
 bool HasLoads(const Program& program, ExprId id);
 
-// the raw bits of a constant expression (folded with the target's arithmetic)
-bool ConstValue(const Program& program, ExprId id, std::uint16_t& value);
-
 // the same pure place or value, written the same way
 bool SameExpr(const Program& program, ExprId a, ExprId b);
 

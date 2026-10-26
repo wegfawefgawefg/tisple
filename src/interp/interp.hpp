@@ -8,7 +8,8 @@
 //   Arithmetic wraps per width (check/arith.hpp, shared with constant folding).
 // - Every variable, parameters and locals included, lives in memory at its Layout address;
 //   functions have static frames (there is no recursion). The image starts zeroed, then
-//   top-level initial values are written; a local let always has a value.
+//   top-level initial values are written; a local let always has a value. Run it on the
+//   backend's Layout (Compiled::layout) so addresses agree with the compiled program.
 // - Evaluation is left to right: operands, call arguments, the place of a set before its
 //   value, the pointer of a store before its value. A struct value is read whole before
 //   it is written, so overlapping copies through pointers are well defined.

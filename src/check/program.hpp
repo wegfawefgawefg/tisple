@@ -240,4 +240,8 @@ std::int32_t FindFunction(const Program& program, const std::string& qualified);
 std::int32_t FindVar(const Program& program, const std::string& qualified);
 std::int32_t FindFieldIndex(const Program& program, TypeId struct_type, const std::string& name);
 
+// the raw bits of a constant expression, folded with the target's arithmetic; false when it
+// is not constant (a division by zero counts as not constant)
+bool ConstValue(const Program& program, ExprId id, std::uint16_t& value);
+
 } // namespace tisple

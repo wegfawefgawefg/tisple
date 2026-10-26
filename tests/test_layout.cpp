@@ -120,6 +120,18 @@ void PlacementTests(TestResults& results) {
                 "t.tsp:1:6: a at $60F8 crosses a 256-byte block; start it at $6100");
     ExpectError(results, "(let a (array u8 512) :address 0xFF00)",
                 "t.tsp:1:6: a at $FF00 is 512 bytes and runs past $FFFF; move it lower");
+    // pointer provenance: a constant address inside a declared variable must be addr_of
+    ExpectError(results,
+                "(let screen (array u8 8192) :address 0x2000)\n"
+                "(fn f () void (store (as (ptr u8) (+ 0x2000 5)) 1))",
+                "t.tsp:2:22: the constant address $2005 is inside screen ($2000-$3FFF); a pointer "
+                "into a variable comes from addr_of, as in (addr_of screen)");
+    ExpectError(results, "(let buf (array u8 16))\n(fn f () u8 (load (as (ptr u8) 0x0C05)))",
+                "t.tsp:2:19: the constant address $0C05 is inside buf ($0C00-$0C0F); a pointer "
+                "into a variable comes from addr_of, as in (addr_of buf)");
+    CHECK(results, BuildText("(let buf (array u8 16))\n"
+                             "(fn f () u8 (load (as (ptr u8) 0x2005)))")
+                       .ok);
     ExpectError(results, "(let a (array u8 40000))",
                 "t.tsp:1:6: no room for a (40000 bytes) in the data region $0C00-$BFFF");
 }

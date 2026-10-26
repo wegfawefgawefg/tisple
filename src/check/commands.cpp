@@ -1,8 +1,8 @@
 #include "check/commands.hpp"
 
+#include "backend/backend.hpp"
 #include "check/check.hpp"
 #include "check/expand.hpp"
-#include "link/layout.hpp"
 #include "reader/format.hpp"
 
 #include <cstdio>
@@ -14,12 +14,13 @@ int RunCheckCommand(int argc, char** argv) {
         std::fprintf(stderr, "usage: tisple check file.tsp\n");
         return 1;
     }
+    // laid out the way the backend does it, so layout errors match tisple build
     Program program;
     std::vector<Diagnostic> errors;
     bool ok = BuildProgram(argv[2], LoadOptions(), program, errors);
     if (ok) {
-        Layout layout;
-        ok = LayoutProgram(program, LayoutOptions(), layout, errors);
+        Compiled compiled;
+        ok = CompileProgram(program, BuildOptions(), compiled, errors);
     }
     if (!ok) {
         std::fputs(FormatDiagnostics(program.sources, errors).c_str(), stderr);
