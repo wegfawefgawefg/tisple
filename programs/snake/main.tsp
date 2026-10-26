@@ -2,7 +2,11 @@
 ; a crash starts a new game; Esc quits
 
 (import apple2 a2)
+(import keys)
 (import lores)
+(import random)
+(import speaker)
+(import timing)
 
 (enum Dir (up down left right))
 
@@ -19,26 +23,7 @@
 (let grow u8 0) ; segments still to add
 (let dir Dir Dir.right)
 (let quit bool false)
-(let seed u16 0x7A3D)
 (let score u16 0)
-
-; xorshift, 16 bits
-(fn random () u8
-    (set seed (^ seed (<< seed 7)))
-    (set seed (^ seed (>> seed 9)))
-    (set seed (^ seed (<< seed 8)))
-    (as u8 seed))
-
-; bit 7 of RDVBLBAR is 0 during vertical blank on a IIe: leave this blank, wait for the next
-(fn wait_frame () void
-    (while (< (io_read u8 a2.RDVBLBAR) 0x80))
-    (while (>= (io_read u8 a2.RDVBLBAR) 0x80)))
-
-; count clicks, half a period of delay loop apart
-(fn buzz ((half u8) (count u8)) void
-    (for i u8 0 count
-        (io_read u8 a2.SPKR)
-        (for d u8 0 half)))
 
 (fn draw_walls () void
     (for x u8 0 40
@@ -51,8 +36,8 @@
 ; somewhere empty inside the walls
 (fn place_food () void
     (while true
-        (let x u8 (+ (% (random) 38) 1))
-        (let y u8 (+ (% (random) 46) 1))
+        (let x u8 (+ (random.below 38) 1))
+        (let y u8 (+ (random.below 46) 1))
         (if (= (lores.get x y) lores.BLACK)
             (do
                 (lores.plot x y FOOD)
@@ -73,11 +58,7 @@
 
 ; no turning back on yourself
 (fn read_input () void
-    (let key u8 (io_read u8 a2.KBD))
-    (if (< key 0x80)
-        (return))
-    (io_read u8 a2.KBDSTRB)
-    (match (& key 0x7F)
+    (match (keys.read)
         (a2.KEY_UP
             (if (!= dir Dir.down)
                 (set dir Dir.up)))
@@ -107,7 +88,7 @@
         (do
             (set grow (+ grow 3))
             (set score (+ score 1))
-            (buzz 20 4)
+            (speaker.buzz 20 4)
             (place_food))
         (if (!= hit lores.BLACK)
             (return false)))
@@ -127,12 +108,10 @@
     (lores.show)
     (new_game)
     (while (not quit)
-        (for f u8 0 4
-            (wait_frame))
+        (timing.frames 4)
         (read_input)
         (if (not (step))
             (do
-                (buzz 120 40)
-                (for f u8 0 60
-                    (wait_frame))
+                (speaker.buzz 120 40)
+                (timing.frames 60)
                 (new_game)))))

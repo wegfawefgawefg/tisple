@@ -2,7 +2,9 @@
 ; any key starts a new random world; Esc quits
 
 (import apple2 a2)
+(import keys)
 (import lores)
+(import random)
 
 (const STRIDE u16 42) ; 40 cells and a dead border cell on each side
 (const DEAD u8 0)
@@ -14,19 +16,11 @@
 (let cur (ptr u8))
 (let next (ptr u8))
 
-(let seed u16 0xACE1)
 (let generation u16 0)
 
 ; block colors for a cell in the top and the bottom half of a screen byte
 (const TOP_COLOR (array u8 2) (make (array u8 2) 0 lores.GREEN))
 (const BOTTOM_COLOR (array u8 2) (make (array u8 2) 0 0xC0))
-
-; xorshift, 16 bits
-(fn random () u8
-    (set seed (^ seed (<< seed 7)))
-    (set seed (^ seed (>> seed 9)))
-    (set seed (^ seed (<< seed 8)))
-    (as u8 seed))
 
 ; the first cell of row y; row 0 is the top border
 (fn row_of ((world (ptr u8)) (y u8)) (ptr u8)
@@ -37,7 +31,7 @@
     (for y u8 1 49
         (let r (ptr u8) (row_of cur y))
         (for x u8 1 41
-            (store (+ r x) (if (< (random) 80)
+            (store (+ r x) (if (< (random.byte) 80)
                 LIVE
                 DEAD)))))
 
@@ -86,10 +80,8 @@
         (step)
         (swap)
         (set generation (+ generation 1))
-        (let key u8 (io_read u8 a2.KBD))
-        (if (>= key 0x80)
-            (do
-                (io_read u8 a2.KBDSTRB)
-                (if (= (& key 0x7F) a2.KEY_ESC)
-                    (return))
-                (scatter)))))
+        (let key u8 (keys.read))
+        (if (= key a2.KEY_ESC)
+            (return))
+        (if (!= key 0)
+            (scatter))))
