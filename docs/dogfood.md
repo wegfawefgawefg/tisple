@@ -41,6 +41,8 @@ entry says what happened and what it should do.
    `p + x - 1` reads through a loop pointer `p - 1` set once per row, so the
    inner loop has no LDY at all. `(let l u16 (as u16 (- x 1)))` lets that only
    index cost nothing. Step is 94 cycles a cell, draw 24 (cycle report).
+   Since item 2, Life writes `(load (+ above (- x 1)))` with no index lets:
+   the same instructions, 6 bytes less frame.
 
 ## Gap finder (2026-10-26)
 
