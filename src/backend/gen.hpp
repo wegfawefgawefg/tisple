@@ -249,9 +249,14 @@ Opnd SpillA(Gen& g);
 // writing dst byte by byte from low to high could overwrite a byte of src that is read
 // later (only byte-moving operands make this possible; pointers are always aligned to what
 // they were made from, see effects.hpp)
-bool CrossAliases(const Opnd& src, const Opnd& dst);
+bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst);
 // may the operands share memory at all
-bool Overlaps(const Opnd& a, const Opnd& d);
+bool Overlaps(const Gen& g, const Opnd& a, const Opnd& d);
+// may writing byte y of dst change what reading byte x of src gives: the byte itself, or the
+// index or pointer bytes its address comes from
+bool MayChangeRead(const Gen& g, const Opnd& src, int x, const Opnd& dst, int y);
+// a store through a pointer can reach this byte (pointer provenance, effects.hpp)
+bool PointerMayReach(const Gen& g, const AsmValue& v);
 // may running `code` (-1: nothing) change what o reads
 bool MayWriteOpnd(const Gen& g, ExprId code, const Opnd& o);
 // may running `code` change var

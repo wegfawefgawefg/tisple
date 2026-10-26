@@ -93,23 +93,57 @@ bool MaySameByte(const Opnd& src, const ByteRef& x, const Opnd& dst, const ByteR
     return x.value.sym == y.value.sym && x.value.offset == y.value.offset;
 }
 
+// may a store to byte y land on the memory byte m
+bool MayStoreTo(const Gen& g, const ByteRef& y, const AsmValue& m) {
+    switch (y.kind) {
+    case ByteKind::Mem:
+        return y.value.sym == m.sym && y.value.offset == m.offset;
+    case ByteKind::MemIdx:
+        return y.value.sym == m.sym; // some element of that array
+    case ByteKind::IndY:
+        return PointerMayReach(g, m);
+    default:
+        return false;
+    }
+}
+
+// may a store to byte y move the address byte x of src reads: its index, or its pointer
+bool MayMoveAddress(const Gen& g, const Opnd& src, const ByteRef& x, const ByteRef& y) {
+    bool indexed = x.kind == ByteKind::MemIdx || (x.kind == ByteKind::IndY && x.y_index);
+    if (indexed && src.index.used && !src.index.is_reg && MayStoreTo(g, y, src.index.value)) {
+        return true;
+    }
+    if (x.kind != ByteKind::IndY) {
+        return false;
+    }
+    AsmValue high = x.value;
+    high.offset++;
+    return MayStoreTo(g, y, x.value) || MayStoreTo(g, y, high);
+}
+
 } // namespace
 
-bool CrossAliases(const Opnd& src, const Opnd& dst) {
+bool MayChangeRead(const Gen& g, const Opnd& src, int x, const Opnd& dst, int y) {
+    if (src.in_a) {
+        return false;
+    }
+    return MaySameByte(src, src.b[x], dst, dst.b[y]) || MayMoveAddress(g, src, src.b[x], dst.b[y]);
+}
+
+bool CrossAliases(const Gen& g, const Opnd& src, const Opnd& dst) {
     if (src.in_a || src.size < 2 || dst.size < 2) {
         return false;
     }
-    if (!src.moved) {
-        return false;
-    }
-    // dst byte 0 is written before src byte 1 is read
-    return MaySameByte(src, src.b[1], dst, dst.b[0]);
+    // dst byte 0 is written before src byte 1 is read: (<< x 8) reads a moved byte, and
+    // (at a (as u8 v)) into v reads its index again
+    return (src.moved && MaySameByte(src, src.b[1], dst, dst.b[0])) ||
+           MayMoveAddress(g, src, src.b[1], dst.b[0]);
 }
 
-bool Overlaps(const Opnd& a, const Opnd& d) {
+bool Overlaps(const Gen& g, const Opnd& a, const Opnd& d) {
     for (int i = 0; i < a.size; i++) {
         for (int k = 0; k < d.size; k++) {
-            if (MaySameByte(a, a.b[i], d, d.b[k])) {
+            if (MayChangeRead(g, a, i, d, k)) {
                 return true;
             }
         }
@@ -122,9 +156,10 @@ void CopyOpnd(Gen& g, const Opnd& src, const Opnd& dst) {
         StoreA(g, dst, 0);
         return;
     }
-    if (CrossAliases(src, dst)) {
-        // high byte first works unless dst byte 1 is also src byte 0; else go through a temp
-        if (!MaySameByte(src, src.b[0], dst, dst.b[1])) {
+    if (CrossAliases(g, src, dst)) {
+        // high byte first works unless dst byte 1 is what src byte 0 reads; else go through a
+        // temp
+        if (!MayChangeRead(g, src, 0, dst, 1)) {
             LoadA(g, src, 1);
             StoreA(g, dst, 1);
             LoadA(g, src, 0);

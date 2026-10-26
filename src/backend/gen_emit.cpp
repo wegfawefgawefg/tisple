@@ -73,20 +73,6 @@ void TrackIndexWrite(Gen& g, int r, Mn mn, Mode mode, const AsmValue& value) {
     c.known = false;
 }
 
-// a store through a pointer can reach this byte: only address-taken variables, globals and
-// memory no variable declares (pointer provenance, effects.hpp)
-bool PointerMayReach(const Gen& g, const AsmValue& v) {
-    if (v.sym < 0) {
-        return true;
-    }
-    const SymInfo& info = g.be->info[static_cast<std::size_t>(v.sym)];
-    if (info.role == SymRole::Var) {
-        const Var& var = g.program->vars[static_cast<std::size_t>(info.owner)];
-        return var.function < 0 || var.address_taken;
-    }
-    return info.role == SymRole::Data;
-}
-
 std::uint64_t LoopWeight(int depth) {
     if (depth > 6) {
         depth = 6;
@@ -149,6 +135,19 @@ Mode PrepareByte(Gen& g, const Opnd& o, int k, Mn mn, AsmValue& address) {
 }
 
 } // namespace
+
+// only address-taken variables, globals and memory no variable declares
+bool PointerMayReach(const Gen& g, const AsmValue& v) {
+    if (v.sym < 0) {
+        return true;
+    }
+    const SymInfo& info = g.be->info[static_cast<std::size_t>(v.sym)];
+    if (info.role == SymRole::Var) {
+        const Var& var = g.program->vars[static_cast<std::size_t>(info.owner)];
+        return var.function < 0 || var.address_taken;
+    }
+    return info.role == SymRole::Data;
+}
 
 std::int32_t NewSym(Backend& be, const std::string& name, SymRole role, std::int32_t owner) {
     std::int32_t sym = NewSymbol(be.as, name);

@@ -185,7 +185,7 @@ bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst
     Opnd high = dst;
     high.size = 1;
     high.b[0] = dst.b[1];
-    if (dst.b[1].kind != ByteKind::Mem || Overlaps(a, dst)) {
+    if (dst.b[1].kind != ByteKind::Mem || Overlaps(g, a, dst)) {
         high = NewTemp(g, 1);
     }
     Emit(g, Mn::LDA, Mode::Imm, Num(0));
@@ -327,7 +327,7 @@ void EvalArith8(Gen& g, const Expr& e) {
 }
 
 void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& dst) {
-    if (CrossAliases(a_in, dst) || CrossAliases(b_in, dst)) {
+    if (CrossAliases(g, a_in, dst) || CrossAliases(g, b_in, dst)) {
         Opnd t = NewTemp(g, 2);
         Combine16(g, op, a_in, b_in, t);
         CopyOpnd(g, t, dst);
@@ -399,7 +399,7 @@ void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
     bool plain = dst.b[0].kind == ByteKind::Mem && dst.b[1].kind == ByteKind::Mem;
     Opnd r = plain ? dst : NewTemp(g, 2);
     Opnd x = a;
-    bool stable = IsPlainMemory(a) && !Overlaps(a, r);
+    bool stable = IsPlainMemory(a) && !Overlaps(g, a, r);
     if (Popcount(factor) > 1 && !a.temp && !IsImm(a) && !stable) {
         x = NewTemp(g, 2);
         CopyOpnd(g, a, x);

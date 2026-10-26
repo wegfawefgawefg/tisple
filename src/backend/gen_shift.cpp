@@ -224,7 +224,7 @@ void EvalShift8(Gen& g, const Expr& e) {
 Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t count,
                   const Opnd* dst) {
     Opnd d = ShiftTarget(g, dst);
-    if (Overlaps(a, d)) {
+    if (Overlaps(g, a, d)) {
         d = NewTemp(g, 2);
     }
     Shift16(g, op, is_signed, a, d, true, count, Opnd());
@@ -248,7 +248,7 @@ Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst) {
         }
     }
     Opnd d = ShiftTarget(g, dst);
-    if (Overlaps(a, d)) {
+    if (Overlaps(g, a, d)) {
         d = NewTemp(g, 2);
     }
     Shift16(g, op, IsSignedKind(ExprKindOf(*g.program, e.a)), a, d, fixed, c, count);
