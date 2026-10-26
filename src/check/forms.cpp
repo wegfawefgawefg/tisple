@@ -256,6 +256,13 @@ ExprId CheckIf(Checker& ck, const Node& node, TypeId hint, bool used) {
     ExprId cond = CheckExpr(ck, node.items[1], kBoolType);
     RequireType(ck, node.items[1], cond, kBoolType, "the if condition");
     ExprId id = -1;
+    if (node.items.size() == 3 && used) {
+        // one error for (let k u8 (if c 1)), not "1 on its own does nothing" as well
+        CheckExpr(ck, node.items[2], hint < 0 ? kErrorType : hint);
+        return Fail(ck, node,
+                    "an if without an else gives no value; write (if " + Show(node.items[1]) + " " +
+                        Show(node.items[2]) + " other)");
+    }
     if (node.items.size() == 3) {
         ExprId then = CheckStatementArm(ck, node.items[2]);
         id = AddExpr(ck, ExprKind::If, kVoidType, node);
@@ -349,6 +356,17 @@ ExprId CheckFor(Checker& ck, const Node& node) {
             past /= 2;
         }
         through_max = end_node.value == past;
+    }
+    bool end_too_big = end < 0 && IsBareLiteral(end_node) && type > kErrorType &&
+                       KindBits(KindOf(*ck.out, type)) == 8 &&
+                       !LiteralFits(KindOf(*ck.out, type), end_node.value) && !through_max;
+    if (end_too_big) {
+        // (for i u8 0 300 ...): the loop needs the wider type
+        const char* wider = IsSignedKind(KindOf(*ck.out, type)) ? "i16" : "u16";
+        end = Fail(ck, end_node,
+                   end_node.text + " does not fit in " + ShowType(ck, type) +
+                       ", the loop's type; write (for " + items[1].text + " " + wider + " " +
+                       Show(start_node) + " " + end_node.text + " ...)");
     }
     if (!through_max) {
         if (end < 0) {

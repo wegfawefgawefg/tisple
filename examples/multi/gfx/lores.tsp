@@ -14,7 +14,7 @@
 
 ; even y is the low nibble, odd y the high one
 (fn plot ((x u8) (y u8) (color u8)) void
-    (let p (ptr u8) (as (ptr u8) (+ (row_base (>> y 1)) (as u16 x))))
+    (let p (ptr u8) (+ (as (ptr u8) (row_base (>> y 1))) x))
     (let old u8 (load p))
     (if (= (& y 1) 0)
         (store p (| (& old 0xF0) color))

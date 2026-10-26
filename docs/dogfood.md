@@ -5,6 +5,32 @@ entry says what happened and what it should do.
 
 ## Open
 
+From a scan of Life, Snake, dot, the other examples and the libraries
+(2026-10-26). Library and language ideas, not decided.
+
+5. Every program reads the keyboard the same way: `(io_read u8 a2.KBD)`,
+   return when it is under 0x80, `(io_read u8 a2.KBDSTRB)`, `(& key 0x7F)`
+   (Life, Snake, dot, keys, read_key). A `read_key` in lib/apple2 that gives
+   0 when no key is waiting would do, once a call that inlines costs nothing.
+6. Life and Snake carry the same 16-bit xorshift `random`. A lib/random
+   would share it.
+7. `inc` and `dec` macros are written again in dot and macros. Macros
+   import like everything else, so a library could hold them, and `when`
+   too: a one-armed `if` with several forms needs `(if c (do a b))` (6 in
+   Life, Snake and dot). Snake's step also nests `(if a (do ...) (if b
+   ...))` for lack of `else if`; a match on named constants covers some of
+   those.
+8. examples/dot/gfx/hgr.tsp splits the row addresses into row_lo and
+   row_hi by hand and joins them with `(| (<< (as u16 (at row_hi y)) 8)
+   (as u16 (at row_lo y)))`. An `(array u16 192)` is already stored as
+   two byte tables, so `(at row_start y)` would say it directly. Left as it
+   is because the interpreter, backend and gap finder tests use the two
+   tables.
+9. Backend: `(let l u8 (- x 1))` and then `(+ above l)` (and the same for
+   draw's `c`) compiles to 12 more bytes in Life than `(+ above (- x 1))`;
+   the byte-index
+   tracking doesn't see through a u8 let the way it does through
+   `(let l u16 (as u16 (- x 1)))`.
 
 ## Fixed
 
@@ -48,6 +74,14 @@ entry says what happened and what it should do.
    index cost nothing. Step is 94 cycles a cell, draw 24 (cycle report).
    Since item 2, Life writes `(load (+ above (- x 1)))` with no index lets:
    the same instructions, 6 bytes less frame.
+
+10. Found in the same scan and fixed 2026-10-26. `(let k u8 (if c 1))` gave
+    two errors, "1 on its own does nothing" and "gives no value"; it is now
+    one: an if without an else gives no value, write `(if c 1 other)`.
+    `(for i u8 0 300)` said only that 300 does not fit in u8; it now says to
+    write `(for i u16 0 300 ...)`. dot's hgr.flip and multi's lores.plot
+    built a pointer as `(as (ptr u8) (+ row (as u16 x)))`; they now write
+    `(+ (as (ptr u8) row) x)`, the same code.
 
 ## Gap finder (2026-10-26)
 

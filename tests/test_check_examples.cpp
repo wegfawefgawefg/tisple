@@ -10,6 +10,7 @@ void RunCheckExampleTests(TestResults& results) {
         "examples/macros.tsp",     "examples/read_key.tsp",        "examples/speaker.tsp",
         "examples/sprites.tsp",    "examples/dot/main.tsp",        "examples/dot/gfx/hgr.tsp",
         "examples/multi/main.tsp", "examples/multi/gfx/lores.tsp", "lib/apple2.tsp",
+        "lib/lores.tsp",           "programs/life/main.tsp",       "programs/snake/main.tsp",
     };
     for (const char* file : files) {
         Built built = BuildFile(file);
