@@ -196,7 +196,7 @@ void TestSnapshot(TestResults& results) {
     std::vector<uint8_t> snapshot = tisple::SaveSnapshot(*a);
     RunToStop(*a);
     tisple::Framebuffer first;
-    tisple::RenderFrame(a->video.done, false, first);
+    tisple::RenderFrame(a->video.done, tisple::VideoLook::kNtsc, first);
 
     std::unique_ptr<tisple::Apple2> b = tisple::NewApple2();
     std::string error;
@@ -204,7 +204,7 @@ void TestSnapshot(TestResults& results) {
     CHECK(results, tisple::Cycles(*b) >= 80000 && tisple::Cycles(*b) < 80010);
     RunToStop(*b);
     tisple::Framebuffer second;
-    tisple::RenderFrame(b->video.done, false, second);
+    tisple::RenderFrame(b->video.done, tisple::VideoLook::kNtsc, second);
     CHECK(results, tisple::Cycles(*a) == tisple::Cycles(*b));
     CHECK(results, std::equal(a->cpu.mem, a->cpu.mem + 0x10000, b->cpu.mem));
     CHECK(results, first.pixels == second.pixels);

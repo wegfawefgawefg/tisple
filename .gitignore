@@ -6,3 +6,4 @@ CMakeUserPresets.json
 .clangd/
 tests/data/
 .claude/
+examples/**/*.bin

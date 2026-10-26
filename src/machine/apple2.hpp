@@ -251,8 +251,17 @@ uint64_t SpeakerToggleCycle(const Apple2& a, uint64_t n);
 // video
 void CatchUpVideo(Apple2& a, uint64_t cycle);         // scanner fetches up to cycle
 void CaptureScreen(const Apple2& a, VideoFrame& out); // a full frame from memory as it is now
-void RenderFrame(const VideoFrame& frame, bool mono, Framebuffer& fb);
-void RenderScreen(const Apple2& a, bool mono, Framebuffer& fb); // CaptureScreen + RenderFrame
+// how color lines look: flat colors like an RGB monitor (the default), AppleWin's composite
+// ntsc model with its fringes and fine stripes, or a monochrome monitor
+enum class VideoLook : uint8_t {
+    kColor,
+    kNtsc,
+    kMono,
+};
+
+const char* VideoLookName(VideoLook look);
+void RenderFrame(const VideoFrame& frame, VideoLook look, Framebuffer& fb);
+void RenderScreen(const Apple2& a, VideoLook look, Framebuffer& fb); // CaptureScreen + RenderFrame
 uint16_t ScannerAddress(const SoftSwitches& sw, uint64_t cycle);
 bool InVblank(uint64_t cycle);
 

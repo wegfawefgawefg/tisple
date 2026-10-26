@@ -31,7 +31,7 @@ struct MachineArgs {
     uint32_t origin = kDefaultOrigin;
     uint64_t cycles = kDefaultCycles;
     bool cycles_given = false;
-    bool mono = false;
+    VideoLook look = VideoLook::kColor;
     bool window = false;
     int scale = 2;
     std::vector<ScreenshotArg> screenshots;
@@ -47,7 +47,7 @@ void PrintMachineUsage() {
         "                      RETURN ESC LEFT RIGHT UP DOWN SPACE TAB DELETE COMMA\n"
         "  --screenshot F.png[@C]  save the screen at cycle C (default: at the end)\n"
         "  --wav F.wav         save the speaker\n"
-        "  --mono              monochrome monitor\n"
+        "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color)\n"
         "  --rom F             a 12 or 16 KB rom image; with no program, reset through it\n"
         "  --load-snapshot F | --save-snapshot F   machine state in and out\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
@@ -150,7 +150,9 @@ bool ParseArgs(int argc, char** argv, bool want_program, MachineArgs& args) {
         bool has_value = i + 1 < argc;
         uint64_t number = 0;
         if (std::strcmp(arg, "--mono") == 0) {
-            args.mono = true;
+            args.look = VideoLook::kMono;
+        } else if (std::strcmp(arg, "--ntsc") == 0) {
+            args.look = VideoLook::kNtsc;
         } else if (std::strcmp(arg, "--window") == 0) {
             args.window = true;
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {
@@ -222,12 +224,12 @@ bool WriteFile(const char* path, const std::vector<uint8_t>& bytes) {
     return std::fclose(file) == 0 && ok;
 }
 
-bool SaveShot(const Apple2& a, const ScreenshotArg& shot, bool mono, bool live) {
+bool SaveShot(const Apple2& a, const ScreenshotArg& shot, VideoLook look, bool live) {
     Framebuffer fb;
     if (live) {
-        RenderFrame(a.video.live, mono, fb);
+        RenderFrame(a.video.live, look, fb);
     } else {
-        RenderScreen(a, mono, fb);
+        RenderScreen(a, look, fb);
     }
     std::string error;
     if (!WriteScreenPng(shot.path, fb, error)) {
@@ -268,7 +270,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
             const ScreenshotArg& shot = args.screenshots[i];
             if (!shot.at_end && !taken[i] && shot.cycle <= now) {
                 CatchUpVideo(a, now);
-                ok = SaveShot(a, shot, args.mono, true) && ok;
+                ok = SaveShot(a, shot, args.look, true) && ok;
                 taken[i] = true;
             }
         }
@@ -296,7 +298,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
 
     for (const ScreenshotArg& shot : args.screenshots) {
         if (shot.at_end) {
-            ok = SaveShot(a, shot, args.mono, false) && ok;
+            ok = SaveShot(a, shot, args.look, false) && ok;
         }
     }
     std::string error;
@@ -384,7 +386,7 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
     }
     WindowOptions options;
     options.scale = args.scale;
-    options.mono = args.mono;
+    options.look = args.look;
     options.max_cycles = args.cycles_given ? args.cycles : 0;
     if (args.program != nullptr) {
         options.title = std::string("Tisple ][ - ") + args.program;

@@ -26,6 +26,7 @@ struct WindowState {
     SDL_AudioStream* audio = nullptr;
     bool vsync = false;
     bool turbo = false;
+    VideoLook look = VideoLook::kColor;
     bool reported_stop = false;
     Framebuffer fb;
     SpeakerRenderer speaker;
@@ -72,6 +73,9 @@ void UpdateTitle(WindowState& w, const Apple2& a, const WindowOptions& options) 
     std::string title = options.title;
     if (w.turbo) {
         title += "  [unthrottled]";
+    }
+    if (w.look != VideoLook::kColor) {
+        title += std::string("  [") + VideoLookName(w.look) + "]";
     }
     if (a.stopped) {
         title += "  [" + DescribeStop(a) + "]";
@@ -132,6 +136,11 @@ bool HandleEvent(WindowState& w, Apple2& a, const WindowOptions& options, const 
         return false;
     case SDL_EVENT_KEY_DOWN: {
         SDL_Keycode key = e.key.key;
+        if (key == SDLK_F2 && !e.key.repeat) {
+            w.look = static_cast<VideoLook>((static_cast<int>(w.look) + 1) % 3);
+            UpdateTitle(w, a, options);
+            return true;
+        }
         if (key == SDLK_F1 && !e.key.repeat) {
             w.turbo = !w.turbo;
             UpdateTitle(w, a, options);
@@ -205,8 +214,8 @@ void RunForHostTime(WindowState& w, Apple2& a, const WindowOptions& options) {
     FeedAudio(w, a);
 }
 
-void Present(WindowState& w, const Apple2& a, const WindowOptions& options) {
-    RenderFrame(a.video.done, options.mono, w.fb);
+void Present(WindowState& w, const Apple2& a) {
+    RenderFrame(a.video.done, w.look, w.fb);
     SDL_UpdateTexture(w.texture, nullptr, w.fb.pixels.data(), kScreenWidth * 4);
     SDL_SetRenderDrawColor(w.renderer, 0, 0, 0, 255);
     SDL_RenderClear(w.renderer);
@@ -277,6 +286,7 @@ bool Open(WindowState& w, const WindowOptions& options) {
 
 int RunMachineWindow(Apple2& a, const WindowOptions& options) {
     WindowState w;
+    w.look = options.look;
     if (!Open(w, options)) {
         Close(w);
         return 1;
@@ -301,7 +311,7 @@ int RunMachineWindow(Apple2& a, const WindowOptions& options) {
             std::fflush(stdout);
             UpdateTitle(w, a, options);
         }
-        Present(w, a, options);
+        Present(w, a);
         if (!w.vsync) {
             uint64_t spent = SDL_GetTicksNS() - frame_start;
             uint64_t frame_ns = static_cast<uint64_t>(kNsPerSecond * kCyclesPerFrame / kCpuHz);

@@ -86,7 +86,7 @@ void TestText(TestResults& results) {
         return;
     }
     tisple::Framebuffer fb;
-    tisple::RenderScreen(*a, false, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kNtsc, fb);
     // byte X sits at $400 + X: $C1 at row 9 col 25, $01 at row 0 col 1, $41 at row 8 col 25
     CHECK(results, CellIs(fb, 9, 25, 'A', false));
     CHECK(results, CellIs(fb, 0, 1, 'A', true));
@@ -98,7 +98,7 @@ void TestText(TestResults& results) {
     tisple::VideoFrame frame;
     tisple::CaptureScreen(*a, frame);
     frame.flash_inverse = true;
-    tisple::RenderFrame(frame, false, fb);
+    tisple::RenderFrame(frame, tisple::VideoLook::kNtsc, fb);
     CHECK(results, CellIs(fb, 8, 25, 'A', true));
     CHECK(results, CellIs(fb, 9, 25, 'A', false));
 
@@ -128,7 +128,7 @@ void TestLores(TestResults& results) {
         return;
     }
     tisple::Framebuffer fb;
-    tisple::RenderScreen(*a, false, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kNtsc, fb);
     // column x is color x mod 16. a pixel's color depends on the last 12 dots, so only
     // pixels 9-11 of a 14-dot block see that block alone (the filter lags two dots)
     bool steady = true;
@@ -195,11 +195,11 @@ void TestHires(TestResults& results) {
         return;
     }
     tisple::Framebuffer fb;
-    tisple::RenderScreen(*a, true, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kMono, fb);
     CHECK(results, MonoHiresMatches(*a, fb, 1, 0, 192));
     CheckChecksum(results, "hires mono", fb, 0xF11A29C5);
 
-    tisple::RenderScreen(*a, false, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kNtsc, fb);
     // stripes of eight columns: white, violet, green, blue, orange
     bool white = true;
     bool steady = true;
@@ -239,11 +239,11 @@ void TestMixed(TestResults& results) {
     CHECK(results, frame.modes[160][0] == tisple::kVideoText);
     CHECK(results, frame.burst[170]); // the color burst stays on: text gets color fringes
     tisple::Framebuffer fb;
-    tisple::RenderScreen(*a, true, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kMono, fb);
     CHECK(results, MonoHiresMatches(*a, fb, 1, 0, 160));
     CHECK(results, CellIs(fb, 20, 0, 'M', false));
     CHECK(results, CellIs(fb, 21, 0, ' ', false));
-    tisple::RenderScreen(*a, false, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kNtsc, fb);
     CheckChecksum(results, "mixed", fb, 0x79BEA1FD);
 }
 
@@ -255,11 +255,11 @@ void TestPage2(TestResults& results) {
     }
     CHECK(results, a->sw.page2);
     tisple::Framebuffer fb;
-    tisple::RenderScreen(*a, true, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kMono, fb);
     CHECK(results, MonoHiresMatches(*a, fb, 2, 0, 192));
     CHECK(results, Pixel(fb, 7, 100) == kWhite);          // column 0
     CHECK(results, Pixel(fb, 2 * 14 + 7, 100) == kBlack); // column 2
-    tisple::RenderScreen(*a, false, fb);
+    tisple::RenderScreen(*a, tisple::VideoLook::kNtsc, fb);
     CheckChecksum(results, "page2", fb, 0x1D8747C5);
 }
 

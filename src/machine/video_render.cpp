@@ -7,6 +7,11 @@
 // that gives hi-res artifact color, the bit 7 half-dot shift, lo-res colors and color
 // fringes on text in mixed mode, as AppleWin's "color monitor ntsc" shows them. lines
 // without color burst (all-text screens) and the monochrome option use the plain dots.
+//
+// the ntsc table carries filter state from one entry to the next (as AppleWin does), so a
+// steady color comes out a little different at each of the 4 phases: fine stripes every 4
+// dots. the flat look avoids that: a dot's color is the last 4 dots, rotated back by the
+// phase to one of 16 steady patterns, each colored by the ntsc table averaged over phases.
 // text glyphs come from our own font (font.cpp), not Apple's character rom.
 
 #include "machine/apple2.hpp"
@@ -25,6 +30,7 @@ constexpr int kSequences = 4096;
 struct NtscTables {
     uint32_t hue[kPhases][kSequences];
     uint32_t mono[kSequences];
+    uint32_t flat[kPhases][16]; // by phase and the last 4 dots
 };
 
 // a second-order iir section; AppleWin keeps these as statics, so their state runs on from
@@ -131,10 +137,39 @@ void BuildNtscTables(NtscTables& t) {
     }
 }
 
+uint8_t RotateLeft4(int bits, int by) {
+    by &= 3;
+    return static_cast<uint8_t>(((bits << by) | (bits >> (4 - by))) & 15);
+}
+
+// a steady 4-dot pattern p, seen at phase k, has the last 4 dots RotateLeft4(p, k): each new
+// dot is the one 4 dots back, so the window rotates left once per dot as the phase steps
+void BuildFlatTable(NtscTables& t) {
+    uint32_t steady[16];
+    for (int p = 0; p < 16; p++) {
+        uint32_t sum[3] = {};
+        for (int k = 0; k < kPhases; k++) {
+            int w = RotateLeft4(p, k);
+            uint32_t rgb = t.hue[k][w | (w << 4) | (w << 8)];
+            sum[0] += (rgb >> 16) & 0xFF;
+            sum[1] += (rgb >> 8) & 0xFF;
+            sum[2] += rgb & 0xFF;
+        }
+        steady[p] = 0xFF000000u | ((sum[0] / kPhases) << 16) | ((sum[1] / kPhases) << 8) |
+                    (sum[2] / kPhases);
+    }
+    for (int k = 0; k < kPhases; k++) {
+        for (int w = 0; w < 16; w++) {
+            t.flat[k][w] = steady[RotateLeft4(w, 4 - k)];
+        }
+    }
+}
+
 const NtscTables& Tables() {
     static const NtscTables* tables = [] {
         static NtscTables built;
         BuildNtscTables(built);
+        BuildFlatTable(built);
         return &built;
     }();
     return *tables;
@@ -159,6 +194,7 @@ struct LineState {
     const NtscTables* tables = nullptr;
     uint32_t* row = nullptr;
     bool color = false;
+    bool flat = false;
     int out = 0;
     int phase = 0;
     uint16_t signal = 0;
@@ -167,7 +203,10 @@ struct LineState {
 
 void PushDot(LineState& s, uint16_t dot) {
     s.signal = static_cast<uint16_t>(((s.signal << 1) | dot) & 0xFFF);
-    uint32_t pixel = s.color ? s.tables->hue[s.phase][s.signal] : s.tables->mono[s.signal];
+    uint32_t pixel = s.tables->mono[s.signal];
+    if (s.color) {
+        pixel = s.flat ? s.tables->flat[s.phase][s.signal & 15] : s.tables->hue[s.phase][s.signal];
+    }
     if (s.out >= 0 && s.out < kScreenWidth) {
         s.row[s.out] = pixel;
     }
@@ -193,11 +232,12 @@ uint16_t TextBits(uint8_t byte, bool altchar, int glyph_row, bool flash_inverse)
     return kDouble[dots & 0x7F];
 }
 
-void RenderLine(const VideoFrame& frame, int line, bool mono, uint32_t* row) {
+void RenderLine(const VideoFrame& frame, int line, VideoLook look, uint32_t* row) {
     LineState s;
     s.tables = &Tables();
     s.row = row;
-    s.color = frame.burst[line] && !mono;
+    s.color = frame.burst[line] && look != VideoLook::kMono;
+    s.flat = look == VideoLook::kColor;
     // the color filter lags two dots; AppleWin starts colored lines two dots early
     s.out = s.color ? -2 : 0;
     for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
@@ -234,17 +274,29 @@ void RenderLine(const VideoFrame& frame, int line, bool mono, uint32_t* row) {
 
 } // namespace
 
-void RenderFrame(const VideoFrame& frame, bool mono, Framebuffer& fb) {
+const char* VideoLookName(VideoLook look) {
+    switch (look) {
+    case VideoLook::kColor:
+        return "color";
+    case VideoLook::kNtsc:
+        return "ntsc";
+    case VideoLook::kMono:
+        return "mono";
+    }
+    return "color";
+}
+
+void RenderFrame(const VideoFrame& frame, VideoLook look, Framebuffer& fb) {
     fb.pixels.resize(kScreenWidth * kScreenHeight);
     for (int line = 0; line < kScreenHeight; line++) {
-        RenderLine(frame, line, mono, fb.pixels.data() + line * kScreenWidth);
+        RenderLine(frame, line, look, fb.pixels.data() + line * kScreenWidth);
     }
 }
 
-void RenderScreen(const Apple2& a, bool mono, Framebuffer& fb) {
+void RenderScreen(const Apple2& a, VideoLook look, Framebuffer& fb) {
     VideoFrame frame;
     CaptureScreen(a, frame);
-    RenderFrame(frame, mono, fb);
+    RenderFrame(frame, look, fb);
 }
 
 } // namespace tisple
