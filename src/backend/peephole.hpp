@@ -6,9 +6,10 @@
 //   branch to the next item goes, a branch over a JMP becomes the opposite branch
 // - JSR then RTS becomes JMP (a tail call; frames are static, so nothing to unwind)
 // - code after a JMP or RTS that no label reaches goes
-// - a store to a byte only this function reads (private_syms: its own locals and
-//   temporaries) goes when nothing reads it before the next store or the return
-//   (dead_stores.cpp)
+// - a store goes when nothing reads the byte before the next store to it: for bytes only
+//   this function reads (its own locals, parameters and temporaries, and the locals of the
+//   functions it inlines), before the return either; for globals and other functions'
+//   parameters (exposed), a call, a jump out or the return reads them all (dead_stores.cpp)
 // - a CLC or SEC that finds the carry already so goes, and a CLC only the way into a loop
 //   needs moves before the loop (carry.cpp)
 // - a load or ALU result whose registers and flags nothing reads goes (dead_regs.cpp)
@@ -19,10 +20,17 @@
 
 namespace tisple {
 
+// by symbol: what the dead-store pass may assume about who reads its bytes
+enum class StoreScope : std::uint8_t {
+    Untracked, // pointers may reach it, it has a fixed address (maybe I/O), or not a variable
+    Private,   // only this function's code reads it, after writing it
+    Exposed,   // read directly by any code: what calls, jumps out and the return may read
+};
+
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
-              const std::vector<bool>& private_syms);
+              const std::vector<StoreScope>& scopes);
 // true if any store went
-bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& private_syms);
+bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& scopes);
 // true if any CLC or SEC went or moved
 bool CarryPass(std::vector<AsmItem>& items);
 // true if any load or ALU result nothing reads went (dead_regs.cpp)

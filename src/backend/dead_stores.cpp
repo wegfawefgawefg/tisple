@@ -3,9 +3,12 @@
 
 #include <map>
 
-// Stores to the function's own bytes that nothing reads before they are written again or the
-// function returns. Liveness runs backwards over the items until it settles; a byte read by
-// an indexed or indirect mode, or whose address is taken (#<sym), counts as always live.
+// Stores that nothing reads before the byte is written again. Liveness runs backwards over
+// the items until it settles. A private byte is dead when the function returns; an exposed
+// one (a global, another function's parameter) is read by every call, jump out of the
+// function and return. A byte read by an indexed or indirect mode, or whose address is taken
+// (#<sym), counts as always live. Pointers never reach exposed bytes (provenance: they are
+// not address-taken), so a load through one reads none of them.
 
 namespace tisple {
 
@@ -99,9 +102,13 @@ void Successors(const Flow& f, std::size_t i, std::vector<std::size_t>& out) {
 
 } // namespace
 
-bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& private_syms) {
-    // private bytes read one at a time get numbers; a symbol read any other way is left alone
-    std::vector<bool> whole(private_syms.size(), false);
+bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& scopes) {
+    // tracked bytes read one at a time get numbers; a symbol read any other way is left alone
+    auto tracked = [&](std::int32_t sym) {
+        return sym >= 0 && static_cast<std::size_t>(sym) < scopes.size() &&
+               scopes[static_cast<std::size_t>(sym)] != StoreScope::Untracked;
+    };
+    std::vector<bool> whole(scopes.size(), false);
     Flow f;
     f.items = &items;
     for (std::size_t i = 0; i < items.size(); i++) {
@@ -109,12 +116,11 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& privat
         if (item.kind == ItemKind::Label) {
             f.labels[item.value.sym] = i;
         }
-        std::size_t sym = static_cast<std::size_t>(item.value.sym);
-        if (item.value.sym < 0 || sym >= private_syms.size() || !private_syms[sym]) {
+        if (!tracked(item.value.sym)) {
             continue;
         }
         if (item.kind != ItemKind::Ins || !IsPlain(item)) {
-            whole[sym] = true;
+            whole[static_cast<std::size_t>(item.value.sym)] = true;
         }
     }
     for (const AsmItem& item : items) {
@@ -123,18 +129,20 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& privat
         }
     }
     std::map<std::pair<std::int32_t, std::int32_t>, std::size_t> numbers;
+    std::vector<bool> exposed_numbers;
     std::vector<std::size_t> byte_of(items.size(), kNone);
     for (std::size_t i = 0; i < items.size(); i++) {
         const AsmItem& item = items[i];
-        std::size_t sym = static_cast<std::size_t>(item.value.sym);
-        if (item.kind != ItemKind::Ins || item.value.sym < 0 || sym >= private_syms.size() ||
-            !private_syms[sym] || whole[sym]) {
+        if (item.kind != ItemKind::Ins || !tracked(item.value.sym) ||
+            whole[static_cast<std::size_t>(item.value.sym)]) {
             continue;
         }
         auto key = std::make_pair(item.value.sym, item.value.offset);
         auto found = numbers.find(key);
         if (found == numbers.end()) {
             found = numbers.emplace(key, numbers.size()).first;
+            exposed_numbers.push_back(scopes[static_cast<std::size_t>(item.value.sym)] ==
+                                      StoreScope::Exposed);
         }
         byte_of[i] = found->second;
     }
@@ -144,6 +152,13 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& privat
     std::size_t words = (numbers.size() + 63) / 64;
     Bits empty;
     empty.words.assign(words, 0);
+    // what a call, a jump out and the return read
+    Bits exposed = empty;
+    for (std::size_t n = 0; n < exposed_numbers.size(); n++) {
+        if (exposed_numbers[n]) {
+            exposed.Set(n);
+        }
+    }
     std::vector<Bits> live_in(items.size(), empty);
     std::vector<Bits> live_out(items.size(), empty);
     std::vector<std::size_t> succ;
@@ -154,9 +169,14 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<bool>& privat
             for (std::size_t s : succ) {
                 if (s != kNone) {
                     live_out[i].Merge(live_in[s]);
+                } else {
+                    live_out[i].Merge(exposed);
                 }
             }
             Bits in = live_out[i];
+            if (items[i].kind == ItemKind::Ins && items[i].mn == Mn::JSR) {
+                in.Merge(exposed);
+            }
             std::size_t byte = byte_of[i];
             if (byte != kNone) {
                 if (IsStore(items[i].mn)) {

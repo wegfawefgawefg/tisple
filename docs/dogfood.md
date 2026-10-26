@@ -459,6 +459,43 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
     | 20000 fuzz programs | 86920245 cycles | 86336946 cycles |
 
+19. Dead stores to globals (2026-10-26). The dead-store pass only knew a
+    function's own locals and temporaries. It now also takes the locals of
+    the functions a function inlines (only code that writes them first
+    reads them), its own parameters, and globals and other functions'
+    parameters, which every call (JSR, jsr included), jump out of the
+    function and return reads. Pointers never reach these (provenance: they
+    are not address-taken); address-taken variables, explicit addresses
+    (maybe I/O) and bytes read indexed anywhere in the function stay as they
+    were (src/backend/dead_stores.cpp, StoreScope). Tests: in
+    tests/test_backend_peep.cpp, overwritten globals, a call or the return
+    in between on every path, loops, an address-taken global behind a
+    pointer, a fixed address, a callee's parameter; without the call rule or
+    the return rule they fail, and so do the fuzz run and the paint program
+    (tests/test_machine_mouse.cpp).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | 20000 fuzz programs | 86336946 cycles | 86163802 cycles |
+    | gaps --fuzz 3000: dead stores | 161200 cycles (1.29%) | 159688 (1.28%): the rest are the programs' own sets on some paths |
+    | kernels, Life, plasma | 156409, 40138, 878, 572, 137307/41902, 65513, 56, 243 | the same |
+
+20. Registers after a label (2026-10-26). The peephole's register pass
+    forgot everything at every label. A label that only forward branches and
+    JMPs of the same function name (no jump table, patched operand, JMP
+    (ind) or the entry) now starts with what the fall into it and every one
+    of those jumps agree on: registers, constants and copies in memory, and
+    whether N and Z show A (src/backend/peephole.cpp, Meet). Tests: in
+    tests/test_backend_peep.cpp, ifs, matches and breaks whose arms agree or
+    not; taking the fall's state alone fails them and about 350 of 20000
+    fuzz programs.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | life step / draw | 137307 / 41902 | 137300 / 41888 |
+    | 20000 fuzz programs | 86163802 cycles | 86156137 cycles |
+    | other kernels, Life generations, plasma | 156409, 40138, 878, 572, 65513, 56, 243 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

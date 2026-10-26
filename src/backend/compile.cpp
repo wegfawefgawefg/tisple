@@ -10,19 +10,37 @@ namespace tisple {
 
 namespace {
 
-// by symbol: bytes only this function's code reads (its locals and temporaries)
-std::vector<bool> PrivateSymbols(const Backend& be, std::int32_t function) {
-    std::vector<bool> out(be.info.size(), false);
+// a variable's bytes, as the dead-store pass may see them from this function's code: its own
+// locals and parameters and every function's locals are read only by code that writes them
+// first (a callee's locals by its inlined copies, or by itself); globals and other
+// functions' parameters by any code after a call or the return
+StoreScope VarScope(const Var& var, std::int32_t function) {
+    if (var.address_taken || var.placement.has_address) {
+        return StoreScope::Untracked;
+    }
+    if (var.kind == VarKind::Local || (var.kind == VarKind::Param && var.function == function)) {
+        return StoreScope::Private;
+    }
+    if (var.kind == VarKind::Global || var.kind == VarKind::Param) {
+        return StoreScope::Exposed;
+    }
+    return StoreScope::Untracked;
+}
+
+// by symbol, for this function's code
+std::vector<StoreScope> StoreScopes(const Backend& be, std::int32_t function) {
+    std::vector<StoreScope> out(be.info.size(), StoreScope::Untracked);
     for (std::size_t s = 0; s < be.info.size(); s++) {
         const SymInfo& info = be.info[s];
         if (info.role == SymRole::Var) {
-            const Var& var = be.program->vars[static_cast<std::size_t>(info.owner)];
-            out[s] = var.kind == VarKind::Local && !var.address_taken && var.function == function;
+            out[s] = VarScope(be.program->vars[static_cast<std::size_t>(info.owner)], function);
             continue;
         }
         bool frame = info.role == SymRole::Temps || info.role == SymRole::PtrTemps ||
                      info.role == SymRole::LoopPtrs;
-        out[s] = frame && info.owner == function;
+        if (frame && info.owner == function) {
+            out[s] = StoreScope::Private;
+        }
     }
     return out;
 }
@@ -283,7 +301,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         std::vector<std::uint64_t> weights = Weights(be);
         GenFunction(be, static_cast<std::int32_t>(f));
-        Peephole(be.as, be.code[f], PrivateSymbols(be, static_cast<std::int32_t>(f)));
+        Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)));
         added[f] = AddedSince(be, weights);
     }
     if (errors.size() != before) {

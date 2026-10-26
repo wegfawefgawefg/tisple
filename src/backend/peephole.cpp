@@ -214,6 +214,91 @@ struct Tracker {
     }
 };
 
+bool SamePair(const std::pair<AsmValue, AsmValue>& a, const std::pair<AsmValue, AsmValue>& b) {
+    return SameValue(a.first, b.first) && SameValue(a.second, b.second);
+}
+
+// what holds on both ways into a label
+Tracker Meet(const Tracker& a, const Tracker& b) {
+    Tracker out = a;
+    for (int r = 0; r < 3; r++) {
+        if (!SameContent(a.reg[r], b.reg[r])) {
+            out.reg[r].known = false;
+        }
+    }
+    auto keep = [](std::vector<std::pair<AsmValue, AsmValue>>& mine,
+                   const std::vector<std::pair<AsmValue, AsmValue>>& theirs) {
+        for (std::size_t i = mine.size(); i-- > 0;) {
+            bool both = false;
+            for (const auto& entry : theirs) {
+                both = both || SamePair(mine[i], entry);
+            }
+            if (!both) {
+                mine.erase(mine.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        }
+    };
+    keep(out.mem_const, b.mem_const);
+    keep(out.mem_copy, b.mem_copy);
+    out.nz_a = a.nz_a && b.nz_a;
+    return out;
+}
+
+bool IsJumpTo(const AsmItem& item) {
+    return item.kind == ItemKind::Ins &&
+           (IsBranch(item.mn) || (item.mn == Mn::JMP && item.mode == Mode::Abs));
+}
+
+// labels every way into which the scan has seen when it reaches them: only branches and
+// JMPs before them name them (no jump table, patched operand or JMP (ind)), and they are not
+// the function's entry, which calls reach
+std::vector<std::int32_t> MergeableLabels(const Pass& p) {
+    const std::vector<AsmItem>& items = *p.items;
+    std::map<std::int32_t, std::size_t> label_at;
+    bool entry = true;
+    std::vector<std::int32_t> bad;
+    for (std::size_t i = 0; i < items.size(); i++) {
+        const AsmItem& item = items[i];
+        if (p.dead[i]) {
+            continue;
+        }
+        if (item.kind == ItemKind::Label) {
+            label_at[item.value.sym] = i;
+            if (entry) {
+                bad.push_back(item.value.sym);
+            }
+            entry = false;
+        }
+        if (item.kind == ItemKind::Ins && item.mn == Mn::JMP && item.mode != Mode::Abs) {
+            return {};
+        }
+    }
+    std::vector<std::int32_t> out;
+    for (std::size_t i = 0; i < items.size(); i++) {
+        const AsmItem& item = items[i];
+        auto found = label_at.find(item.value.sym);
+        if (p.dead[i] || item.kind == ItemKind::Label || found == label_at.end()) {
+            continue;
+        }
+        if (IsJumpTo(item) && i < found->second) {
+            out.push_back(item.value.sym);
+        } else {
+            bad.push_back(item.value.sym);
+        }
+    }
+    std::vector<std::int32_t> kept;
+    for (std::int32_t sym : out) {
+        bool ok = true;
+        for (std::int32_t b : bad) {
+            ok = ok && b != sym;
+        }
+        if (ok) {
+            kept.push_back(sym);
+        }
+    }
+    return kept;
+}
+
 // symbols are RAM the program owns; numbers may be I/O
 bool Trackable(const Assembly& as, Mode mode, const AsmValue& v) {
     if ((mode != Mode::Abs && mode != Mode::Zp) || v.sym < 0 || v.part != Part::Whole) {
@@ -270,6 +355,18 @@ int StoreReg(Mn mn) {
 void RegisterPass(Pass& p) {
     Tracker t;
     t.as = p.as;
+    std::vector<std::int32_t> mergeable = MergeableLabels(p);
+    auto is_mergeable = [&](std::int32_t sym) {
+        for (std::int32_t m : mergeable) {
+            if (m == sym) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // what holds on the jumps seen so far into each mergeable label
+    std::map<std::int32_t, Tracker> arriving;
+    bool falls = true; // the item before may fall into this one
     for (std::size_t i = 0; i < p.items->size(); i++) {
         if (p.dead[i]) {
             continue;
@@ -278,10 +375,30 @@ void RegisterPass(Pass& p) {
         if (item.kind == ItemKind::Note) {
             continue;
         }
-        if (item.kind != ItemKind::Ins) {
-            t.ForgetAll();
+        if (item.kind == ItemKind::Label && is_mergeable(item.value.sym)) {
+            auto found = arriving.find(item.value.sym);
+            if (found != arriving.end()) {
+                t = falls ? Meet(t, found->second) : found->second;
+            } else if (!falls) {
+                t.ForgetAll();
+            }
+            falls = true;
             continue;
         }
+        if (item.kind != ItemKind::Ins) {
+            t.ForgetAll();
+            falls = item.kind == ItemKind::Label;
+            continue;
+        }
+        if (IsJumpTo(item) && is_mergeable(item.value.sym)) {
+            auto found = arriving.find(item.value.sym);
+            if (found == arriving.end()) {
+                arriving.emplace(item.value.sym, t);
+            } else {
+                found->second = Meet(found->second, t);
+            }
+        }
+        falls = !EndsFlow(item.mn);
         bool nz_before = t.nz_a;
         t.nz_a = NzFollowsA(item, nz_before);
         Mn mn = item.mn;
@@ -515,7 +632,7 @@ void FlowPass(Pass& p) {
 } // namespace
 
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
-              const std::vector<bool>& private_syms) {
+              const std::vector<StoreScope>& scopes) {
     for (int round = 0; round < kMaxRounds; round++) {
         Pass p;
         p.as = &as;
@@ -530,7 +647,7 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
             }
         }
         items.swap(kept);
-        bool stores = DropDeadStores(items, private_syms);
+        bool stores = DropDeadStores(items, scopes);
         bool carry = CarryPass(items);
         bool values = DropDeadValues(as, items);
         if (!p.changed && !stores && !carry && !values) {

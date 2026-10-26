@@ -101,8 +101,77 @@ void TestIndexedStores(TestResults& results) {
 
 } // namespace
 
+// stores to globals and to callees' parameters that nothing reads before the next store: a
+// call, a jump out or the return reads them all; arrays read indexed anywhere, pointers to
+// address-taken globals, and fixed addresses keep theirs
+void TestDeadGlobalStores(TestResults& results) {
+    const char* globals =
+        "(let g u8 0) (let w u16 0) (let arr (array u8 8)) (let t u8 0)\n"
+        "(let ag u8 0) (let pa (ptr u8))\n"
+        "(let screen u8 :address 0x0400)\n"
+        "(fn reader () u8 (+ g (at arr (& t 7))))\n"
+        "(fn big ((x u8)) u8 (let a u8 (+ x 1)) (let b u8 (+ a x)) (let c u8 (+ b a))\n"
+        "    (let d u8 (+ c b)) (let e u8 (+ d c)) (let h u8 (+ e d)) (let i u8 (+ h e))\n"
+        "    (let j u8 (+ i h)) (+ j (+ i (+ g (at arr (& x 7))))))\n";
+    const char* bodies[] = {
+        // overwritten: only the last one stays
+        "(fn f ((x u8)) u8 (set g 1) (set g (+ x 2)) (set w 7) (set w (as u16 x)) g)",
+        // a call between reads them
+        "(fn f ((x u8)) u8 (set g 1) (set t (big x)) (set g 2) (set (at arr 3) 5) (set t "
+        "(reader))\n"
+        "    (set (at arr 3) x) g)",
+        // the return reads them, on every path
+        "(fn f ((x u8)) u8 (set g 1) (if (> x 9) (return 4)) (set g 3) (if (= x 2) (set g 5)) x)",
+        // in a loop: read on the way round, or only at the end
+        "(fn f ((x u8)) u8 (for i u8 0 4 (set t (+ g i)) (set g x)) (for i u8 0 3 (set w (as u16 "
+        "i)))\n"
+        "    (set w 9) t)",
+        // a pointer to an address-taken global, and a fixed address
+        ("(fn f ((x u8)) u8 (set pa (addr_of ag)) (set ag 1) (set t (load pa)) (set ag 2)\n"
+         "    (set screen 1) (set screen x) t)"),
+        // a callee's parameter, written and then the call
+        "(fn f ((x u8)) u8 (set t (big (+ x 1))) (set t (+ t (big x))) t)",
+    };
+    for (const char* body : bodies) {
+        for (int x : {0, 2, 9, 10, 200}) {
+            CheckProgram(results, std::string(globals) + body, "t.f",
+                         {static_cast<std::uint16_t>(x)});
+        }
+    }
+    Compiled c = CompileText(std::string(globals) +
+                             "(fn f ((x u8)) void (set g 1) (set g (+ x 2)) (set w 7) (set w "
+                             "(as u16 x)))");
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::STA) == 3);
+    Compiled k = CompileText(std::string(globals) +
+                             "(fn f ((x u8)) void (set g 1) (set t (reader)) (set g 2))");
+    CHECK(results, CountMn(k, "t.f", tisple::Mn::STA) == 3);
+}
+
+// what registers and memory hold after a label is what every forward jump and the fall
+// into it agree on
+void TestLabelMerges(TestResults& results) {
+    const char* globals = "(let g u8 0) (let t u8 0) (let arr (array u8 8))\n";
+    const char* bodies[] = {
+        "(fn f ((x u8)) u8 (set t x) (if (> x 3) (set g x) (set g t)) (+ g t))",
+        "(fn f ((x u8)) u8 (set t 5) (if (> x 3) (set t 5) (set t 6)) (+ t x))",
+        "(fn f ((x u8)) u8 (set g x) (if (= x 0) (set g 1)) (if (> x 9) (set t g)) (+ g x))",
+        ("(fn f ((x u8)) u8 (set (at arr 1) x)\n"
+         "    (match (& x 3) (0 (set g x)) (1 (set g 2)) (_ (set g (at arr 1)))) (+ g (at arr "
+         "1)))"),
+        "(fn f ((x u8)) u8 (set g 0) (for i u8 0 x (if (> i 2) (break)) (set g (+ g i))) g)",
+    };
+    for (const char* body : bodies) {
+        for (int x : {0, 1, 2, 3, 4, 9, 10, 200}) {
+            CheckProgram(results, std::string(globals) + body, "t.f",
+                         {static_cast<std::uint16_t>(x)});
+        }
+    }
+}
+
 void RunBackendPeepTests(TestResults& results) {
     TestDeadValues(results);
+    TestLabelMerges(results);
+    TestDeadGlobalStores(results);
     TestFlagReloads(results);
     TestIndexedStores(results);
 }
