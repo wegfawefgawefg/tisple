@@ -369,6 +369,39 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
     | 300 fuzz programs (default run) | 948645 cycles | 948546 cycles |
 
+16. Constant parts after unrolling (2026-10-26). Unrolled copies and
+    macros leave `(+ (+ 5 t) 2)`, `(- (+ t 7) 1)`, `(* 1 3)`, `(set w (+ (+ w
+    1) 1))` and `(store (+ (+ p 1) 2) v)`; the backend folded only trees that
+    were all constant, so these were two adds, a temporary, a pointer sum per
+    copy. Now src/backend/fold.cpp rewrites a copy of the program before code
+    generation: chains of + and -, of *, and of &, | and ^ of one type have
+    their constants combined in the type's wrapping arithmetic (check/arith,
+    as the interpreter has it) after the other terms, which keep their order;
+    a net negative constant is a subtract (`(- x 1)`), x * 1, x + 0, x << 0
+    are x, x * 0, x & 0 and x | all-ones are the constant when x has no
+    effects, a constant tree is a literal, and pointer steps of one element
+    size combine (`(+ (+ p 0) 2)` is `(+ p 2)`, so `LDY #2 / STA (p),Y`). A
+    single constant stays where it was written. `(at col 7)` was already an
+    absolute address. Nodes nothing names any more become plain literals, so
+    passes that count reads see only the live tree. Tests:
+    tests/test_backend_fold.cpp (37 shapes, each for every byte: u8, i8, u16
+    and i16 chains across wrapping, mixed signs, a constant first, conversions
+    in between that must stop the chain, products with 0 of a call, the
+    other bitwise ops, pointer chains of u8 and u16 elements in loads and
+    stores, and an unroll like plasma's). Dropping the sign of a subtracted
+    chain or the effects check fails them and the fuzz runs. The fuzz
+    generator writes such chains (sums, differences, products, bitwise,
+    identities, products with 0, chained pointer steps in loads and stores)
+    in one program in eight, chosen from a stream of its own, so the other
+    seeds' programs are what they were (50 of seeds 1 to 400 changed).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | the shapes above, unrolled 3 times | 199 bytes | 124 bytes |
+    | plasma's unrolled draw | 1129 bytes, 205 frames | the same (nothing to fold: indices are already addresses) |
+    | kernels, Life generations | 156409, 40138, 878, 572, 137307/41902, 65513, 56 | the same |
+    | 20000 fuzz programs (new generator) | 79714606 cycles | 78987892 cycles |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

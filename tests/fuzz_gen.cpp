@@ -224,6 +224,9 @@ std::string Gen::Store() {
     }
     for (const PtrInfo& p : ptrs) {
         if (!p.to_struct && rng.Chance(60)) {
+            if (fold_shapes && side.Chance(25)) {
+                return "(store " + ChainedPointer(p, 2) + " " + Expr(p.elem, 2) + ")";
+            }
             std::string target = rng.Chance(p.room ? 20 : 50)
                                      ? p.name
                                      : "(+ " + p.name + " " + PointerCount(p, 2) + ")";
@@ -611,6 +614,15 @@ std::string GenerateProgram(std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.rng.Next();
     }
+    g.side.s = seed * 0xD1B54A32D192ED03ull + 0x9E37ull;
+    if (g.side.s == 0) {
+        g.side.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.side.Next();
+    }
+    // one program in eight
+    g.fold_shapes = g.side.Chance(12);
     return g.Program();
 }
 

@@ -27,3 +27,4 @@ variable's name); zero-page allocation moves them.
 | 2026-10-26 | (uncalled functions dropped) | life | generations in 10 s | 56; code 1680 to 1063 bytes |
 | 2026-10-26 | (uncalled functions dropped) | plasma | frames in 10 s | 200 (20.0 fps; its tables moved); code 1561 to 1346 bytes |
 | 2026-10-26 | (byte tables kept inside pages) | plasma | frames in 10 s | 205 (20.5 fps) |
+| 2026-10-26 | (constant folding after unroll) | plasma | frames in 10 s | 205 (unrolled draw unchanged, 1129 bytes) |

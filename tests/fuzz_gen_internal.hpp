@@ -87,6 +87,11 @@ constexpr int kEnumMembers = 5;
 
 struct Gen {
     Rng rng;
+    // for shapes added later: its own stream, so the programs of seeds that don't use them
+    // stay what they were (the fuzz farm's seeds keep their programs)
+    Rng side;
+    // constant chains, as unrolled copies leave them: (+ (+ x 5) 3), (* (* x 3) 0)
+    bool fold_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -129,6 +134,12 @@ struct Gen {
     // a u16 count below 256: a widened byte form or value, an index let, a constant
     std::string ByteIndex(int depth);
     std::string PointerRead(T t, int depth);
+    // a constant of type t from the side stream: small, an edge, or any
+    std::string SideLiteral(T t);
+    // x with constants chained onto it, which constant folding combines
+    std::string ConstChain(T t, int depth);
+    // p plus counts in a chain that stays where (+ p count) may go: (+ (+ p 1) 2)
+    std::string ChainedPointer(const PtrInfo& p, int depth);
     std::string IntExpr(T t, int depth);
     // a constant divisor: small odd and even ones, 128 and up, a few powers of two
     std::string Divisor(T t);

@@ -254,8 +254,11 @@ void Append(std::vector<AsmItem>& to, const std::vector<AsmItem>& from, Compiled
 
 } // namespace
 
-bool CompileProgram(const Program& program, const BuildOptions& options, Compiled& out,
+bool CompileProgram(const Program& source, const BuildOptions& options, Compiled& out,
                     std::vector<Diagnostic>& errors) {
+    // the same program with its constant arithmetic folded: what the code is made from
+    Program program = source;
+    FoldConstants(program);
     out = Compiled();
     out.origin = options.origin;
     out.main = program.main;

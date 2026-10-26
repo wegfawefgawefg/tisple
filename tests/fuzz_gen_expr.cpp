@@ -253,10 +253,93 @@ std::string Gen::PointerRead(T t, int depth) {
     if (!p) {
         return "";
     }
+    if (fold_shapes && side.Chance(25)) {
+        return "(load " + ChainedPointer(*p, depth) + ")";
+    }
     if (rng.Chance(p->room ? 20 : 50)) {
         return "(load " + p->name + ")";
     }
     return "(load (+ " + p->name + " " + PointerCount(*p, depth) + "))";
+}
+
+std::string Gen::SideLiteral(T t) {
+    int pick = side.Below(4);
+    std::int32_t v = static_cast<std::int32_t>(side.Next() & 0xFFFF);
+    if (pick == 0) {
+        v = side.Below(4);
+    } else if (pick == 1) {
+        static const std::int32_t kEdges[] = {1, 0xFFFF, 0x7F, 0x80, 0x7FFF, 0x8000};
+        v = kEdges[side.Below(6)];
+    }
+    switch (t) {
+    case T::U8:
+        return std::to_string(v & 0xFF);
+    case T::I8:
+        return std::to_string(static_cast<std::int8_t>(v & 0xFF));
+    case T::U16:
+        return std::to_string(v);
+    default:
+        return std::to_string(static_cast<std::int16_t>(v));
+    }
+}
+
+std::string Gen::ConstChain(T t, int depth) {
+    std::string x = NonLit(t, depth - 1);
+    std::string a = SideLiteral(t);
+    std::string b = SideLiteral(t);
+    switch (side.Below(10)) {
+    case 0:
+        return "(+ (+ " + x + " " + a + ") " + b + ")";
+    case 1:
+        return "(- (+ " + a + " " + x + ") " + b + ")";
+    case 2:
+        return "(- " + a + " (- " + x + " " + b + "))";
+    case 3:
+        return "(+ (- " + x + " " + a + ") (+ " + b + " " + NonLit(t, depth - 1) + "))";
+    case 4:
+        return "(* (* " + x + " " + a + ") " + b + ")";
+    case 5:
+        return side.Chance(50) ? "(* " + x + " 1)" : "(* 1 (+ " + x + " 0))";
+    case 6: {
+        static const char* const kOps[] = {"&", "|", "^"};
+        std::string op = kOps[side.Below(3)];
+        return "(" + op + " (" + op + " " + x + " " + a + ") " + b + ")";
+    }
+    case 7:
+        return side.Chance(50) ? "(- " + x + " 0)" : "(<< (+ 0 " + x + ") 0)";
+    case 8:
+        // a product with 0 still runs what x does
+        return "(+ (* (* " + x + " " + a + ") 0) " + NonLit(t, depth - 1) + ")";
+    default:
+        return "(+ (+ " + x + " " + a + ") (- " + b + " " + SideLiteral(t) + "))";
+    }
+}
+
+std::string Gen::ChainedPointer(const PtrInfo& p, int depth) {
+    if (p.room) {
+        int k1 = side.Below(128);
+        int k2 = side.Below(128);
+        switch (side.Below(3)) {
+        case 0:
+            return "(+ (+ " + p.name + " " + std::to_string(k1) + ") " + std::to_string(k2) + ")";
+        case 1:
+            return "(+ (+ " + p.name + " (as u16 (& " + NonLit(T::U8, depth - 1) + " 127))) " +
+                   std::to_string(k1) + ")";
+        default:
+            return "(- (+ " + p.name + " " + std::to_string(k1 + k2) + ") " + std::to_string(k2) +
+                   ")";
+        }
+    }
+    int k1 = side.Below(4);
+    int k2 = side.Below(4 - k1);
+    switch (side.Below(3)) {
+    case 0:
+        return "(+ (+ " + p.name + " " + std::to_string(k1) + ") " + std::to_string(k2) + ")";
+    case 1:
+        return "(- (+ " + p.name + " 3) " + std::to_string(k1) + ")";
+    default:
+        return "(+ (+ " + p.name + " 0) (as u16 (& " + NonLit(T::U8, depth - 1) + " 3)))";
+    }
 }
 
 std::string Gen::IntExpr(T t, int depth) {
@@ -266,6 +349,9 @@ std::string Gen::IntExpr(T t, int depth) {
             return rng.Chance(50) ? "(at ww " + wide + ")" : wide;
         }
         return rng.Chance(50) ? "(at wb " + wide + ")" : "(load (+ " + wide_ptr + " " + wide + "))";
+    }
+    if (fold_shapes && side.Chance(12)) {
+        return ConstChain(t, depth);
     }
     int pick = rng.Below(14);
     switch (pick) {

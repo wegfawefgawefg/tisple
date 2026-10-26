@@ -31,6 +31,10 @@ bool SameExpr(const Program& program, ExprId a, ExprId b);
 // how many expressions make up id (a size measure for inlining)
 std::uint32_t CountExprs(const Program& program, ExprId id);
 
+// constant parts of arithmetic combined, in the types' wrapping arithmetic: (+ (+ 5 t) 2) is
+// (+ t 7), (* x 1) is x, (+ (+ p 0) 2) is (+ p 2), a constant tree a literal (fold.cpp)
+void FoldConstants(Program& program);
+
 // pointer variables some load or store goes through directly: these live in zero page
 std::vector<bool> FindDerefPointers(const Program& program);
 
