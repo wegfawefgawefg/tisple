@@ -120,6 +120,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | Form | Meaning |
 | --- | --- |
 | `(const name type value)` | compile-time constant; `type` optional |
+| `(const NAME (array t n) v0 v1 ...)` | constant table: exactly `n` values straight after the type (settled 2026-10-26) |
 | `(let name type value)` | variable; `type` or `value` may be omitted, not both |
 | `(set place value)` | assign to a name, `s.x`, `(at ...)` or `(. ...)` |
 | `(fn name (args (p t) ...) (returns t) body ...)` | function; `args` omitted when none, `returns` omitted when it returns nothing |
@@ -146,7 +147,8 @@ is dropped and `(return)` takes no value. Calls always use parentheses,
 A dotted name means "look inside": a module (`hgr.plot`), an enum
 (`Action.fire`) or a struct value (`dot.x`). The checker resolves the first
 segment. Writing `(. dot x)` for a plain name is an error that says to write
-`dot.x`.
+`dot.x`. Code a macro made is exempt, since a template cannot glue `,s` and
+`.x` into one symbol: templates write `(. ,s x)` (owner, 2026-10-26).
 
 Built-in names (`at`, `load`, `addr_of`, `as`, ...) cannot be used for
 variables, functions or fields; the error says to rename.
@@ -207,7 +209,10 @@ runs before the checker, so nothing later sees a macro.
   live at the same time.
 - Return value: `u8`/`i8`/`bool` in A, 16-bit in A (low) and X (high).
 - Arrays of structs are stored one array per field unless something takes an
-  element's address; then they are packed.
+  element's address; then they are packed. Arrays of `u16`, `i16` and
+  pointers follow the same rule: a low-byte table and a high-byte table,
+  packed little-endian only when something takes an element's address
+  (owner, 2026-10-26).
 - `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes (settled).
 
 ## Diagnostics
@@ -239,10 +244,3 @@ hold. Named regions (`:in`) come later.
 
 Named regions, strings, function pointers, recursion, inline assembly,
 `/` and `%`. Macro expansion comes right after the first backend. All planned; none needed to prove the backend.
-
-## Open questions for the owner
-
-1. Array literal spelling: `(const ROW_ADDR (array u16 192) 0x2000 0x2400 ...)`,
-   values straight after the type (used in `examples/hires_plot.tsp`).
-2. Should `(array u16 n)` be stored as split low/high byte tables
-   automatically, like struct fields? Removes hand-made `row_lo`/`row_hi`.
