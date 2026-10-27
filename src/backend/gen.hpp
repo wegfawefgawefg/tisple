@@ -204,6 +204,16 @@ struct PagePointer {
     AsmValue ptr;
 };
 
+// a u16 variable a while loop steps only by one, whose page pointers keep their high bytes up
+// to date across the loop (gen_follow.cpp): the labels after its steps (true: up), after its
+// other sets, and the page pointers (indices into Gen::page_ptrs) it indexes
+struct Follow {
+    std::int32_t var = -1;
+    std::vector<std::pair<std::int32_t, bool>> steps;
+    std::vector<std::int32_t> sets;
+    std::vector<std::size_t> ptrs;
+};
+
 // a u16 variable a loop steps only by constants (set v (+ v c)), in memory: its arrays and
 // pointers are read through step pointers (gen_step.cpp)
 struct SteppedVar {
@@ -298,6 +308,7 @@ struct Gen {
     std::vector<SteppedVar> stepped;
     std::vector<StepFixup> step_fixups;
     std::vector<PagePointer> page_ptrs;
+    std::vector<Follow> follows; // of the while loop being generated
     // u16 for counters replaced by a let of their body (ReplacedLoop): counter, let, and the
     // let minus the counter
     std::vector<std::pair<std::int32_t, std::int32_t>> replaced;
@@ -588,6 +599,20 @@ struct ForParts {
 // a u16 for loop whose body has a let that moves by one with the counter, the counter
 // replaced by it (gen_counter.cpp); false (nothing kept) if there is none
 bool ReplacedLoop(Gen& g, const ForParts& f);
+// (set place value) steps place by one: (+ place 1), (- place 1), (+ place s) for a unit step s
+bool IsStepByOne(const Gen& g, ExprId place, ExprId value);
+// gen_follow.cpp: start following the u16 variables the while loop `loop` only steps by one;
+// false if none (or an outer loop follows)
+bool BeginFollow(Gen& g, ExprId loop);
+// the page pointer g.page_ptrs[ptr] is indexed by a followed variable: its high byte is kept
+// up to date, so the use sets nothing
+bool FollowPagePointer(Gen& g, const Opnd& index, std::size_t ptr);
+// a step by one of d carried into its high byte just before label
+void NoteFollowStep(Gen& g, const Opnd& d, bool up, std::int32_t label);
+// d was set some other way just before label
+void NoteFollowSet(Gen& g, const Opnd& d, std::int32_t label);
+// the followed pointers' code, put in (the loop's code is from init_at on)
+void EndFollow(Gen& g, std::size_t init_at);
 // the product of the factors of the loops around the code; a level past the known ones (code
 // that runs at the steps of a loop already done) weighs 4
 std::uint64_t LoopWeight(const Gen& g);

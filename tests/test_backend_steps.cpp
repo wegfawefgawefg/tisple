@@ -116,12 +116,54 @@ void TestBoundConversions(TestResults& results) {
     CHECK(results, CountMn(c, "t.c0", tisple::Mn::STA) <= 6);
 }
 
+// page pointers indexed by a u16 that a while loop only steps by one keep their high bytes
+// across the loop: up and down across pages, by a unit step and by constants, two tables, a
+// read before and after the step, a break, no trips, and a variable also set another way
+void TestFollow(TestResults& results) {
+    std::string text =
+        "(let big (array u8 1024))\n"
+        "(let other (array u8 1024))\n"
+        "(let g u16 0)\n"
+        // too big to inline: a JSR in the loops keeps their variables out of registers, so
+        // the page pointers are the ones that follow
+        "(fn noise () void (set g (+ g 1)) (set g (^ g 3)) (set g (+ g (as u16 (at big 1))))\n"
+        "    (set g (+ g (as u16 (at big 2)))) (set g (+ g (as u16 (at big 3))))\n"
+        "    (set g (+ g (as u16 (at big 4)))) (set g (+ g (as u16 (at big 5)))))\n"
+        // every page different
+        "(fn setup () void (for i u16 0 1024 (set (at big i) (as u8 (+ (* i 7) (* (>> i 8) 13))))\n"
+        "    (set (at other i) (as u8 (^ (>> i 1) (* (>> i 8) 91))))))\n"
+        "(fn f0 ((a u16) (b u16)) u16 (let s u16 1) (if (= (& b 1) 1) (set s 65535))\n"
+        "    (let x u16 (+ (& a 255) 150)) (let n u8 (as u8 (& (>> b 1) 127))) (let sum u16 0)\n"
+        "    (while (!= n 0) (noise) (set sum (+ sum (as u16 (at big x)))) (set x (+ x s))\n"
+        "        (set sum (^ sum (as u16 (at other x)))) (set n (- n 1)))\n"
+        "    (+ sum x))\n"
+        "(fn f1 ((a u16) (b u16)) u16 (let s u16 1) (if (>= b 0x8000) (set s 0xFFFF))\n"
+        "    (let x u16 (+ (& a 255) 260)) (let sum u16 0) (let n u8 0)\n"
+        "    (while true (noise) (set sum (+ sum (as u16 (at big x))))\n"
+        "        (if (= n (as u8 b)) (break)) (set x (+ s x)) (set n (+ n 1)))\n"
+        "    (+ sum x))\n"
+        "(fn f2 ((a u16) (b u16)) u16 (let x u16 (+ (& a 127) 200)) (let sum u16 0)\n"
+        "    (let n u8 (as u8 b))\n"
+        "    (while (!= n 0) (if (= (& n 1) 1) (set x (+ x 1)) (set x (- x 1)))\n"
+        "        (set sum (+ sum (as u16 (at big (+ x 0))))) (set n (- n 1))) (+ sum x))\n"
+        "(fn f3 ((a u16) (b u16)) u16 (let x u16 (+ (& a 255) 100)) (let sum u16 0)\n"
+        "    (let n u8 (as u8 b))\n"
+        "    (while (!= n 0) (set sum (+ sum (as u16 (at big x))))\n"
+        "        (if (= (& n 3) 0) (set x (+ x 3)) (set x (+ x 1))) (set n (- n 1))) (+ sum x))\n"
+        "(fn f4 ((a u16) (b u16)) u16 (let s u16 65535) (let x u16 (+ (& a 255) 64))\n"
+        "    (let sum u16 0) (let n u8 0)\n"
+        "    (while (< n (as u8 (& b 0x3F))) (noise) (set x (+ x s))\n"
+        "        (set sum (+ sum (as u16 (at other x)))) (set n (+ n 1))) (+ sum x))\n";
+    CheckPairs(results, text, {"f0", "f1", "f2", "f3", "f4"}, "setup");
+}
+
 } // namespace
 
 void RunBackendStepsTests(TestResults& results) {
     TestHighFirst(results);
     TestUnitSteps(results);
     TestBoundConversions(results);
+    TestFollow(results);
 }
 
 } // namespace tisple_tests

@@ -926,6 +926,34 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 34) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
 
+36. Race item 3, page pointers that follow (2026-10-27). line's plot reads
+    COL_BYTE and COL_BIT at x through page pointers (22), and set both
+    pointers' high bytes at every pixel (18 cycles), though x only crosses a
+    page a few times a line. Now a while loop finds the u16 variables it only
+    steps by one (gen_follow.cpp: (+ v 1), (- v 1), or a unit step, item 33),
+    and page pointers indexed by them keep their high bytes: set once before
+    the loop, moved by INC or DEC right where a step carries into the
+    variable's high byte. The steps are generated before every pointer is
+    known, so they note their labels and the pointer code goes in when the
+    loop is done; a set of the variable some other way (none so far) would
+    work the high bytes out again there. Loops with loops inside do not
+    follow (an inner loop's choices could keep the variable in a register).
+    Tests: in tests/test_backend_steps.cpp, loops with a call in them (so the
+    variable stays in memory) stepping up and down across pages, by unit
+    steps and by constants, two tables, reads before and after the step, a
+    break, no trips, a variable also stepped by 3; the tables differ on
+    every page (the first data repeated every 512 bytes and hid a wrong
+    page). The StepWhile fuzz shape now also indexes wb with a u16 it steps,
+    reading and writing there. Mutations: INC for DEC on the way down fails
+    7 of 3000 fuzz programs and 2 tests; the steps not noted, 9 and 3; no
+    high bytes before the loop, 24 and 3.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race line | 569746 | 507296 (Oscar64 576133); 375 to 383 bytes |
+    | other race kernels, Life generations, plasma | (as after 35) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

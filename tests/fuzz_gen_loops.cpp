@@ -177,7 +177,12 @@ std::string Gen::BoundWhile(int depth) {
 // a Bresenham step: a local only ever 1 or -1 moving a variable, and a 16-bit let compared
 // right after it is worked out (its high byte still in A)
 std::string Gen::StepWhile(int depth) {
-    T t = kInts[loops_rng.Below(4)];
+    // now and then a u16 index into wb (page pointers that follow it), kept inside wb: it
+    // starts at 300 to 555 and moves by at most 250. It reads and writes wb there (a write
+    // through a stale pointer shows in memory, where wb's zeros would hide a read), and reads
+    // through a pointer with Y, which keeps the u16 out of Y
+    bool table = loops_rng.Chance(40);
+    T t = table ? T::U16 : kInts[loops_rng.Below(4)];
     T wide_t = loops_rng.Chance(50) ? T::I16 : T::U16;
     bool is_signed = t == T::I8 || t == T::I16;
     std::string minus_one = is_signed ? "-1" : (t == T::U8 ? "255" : "65535");
@@ -185,11 +190,13 @@ std::string Gen::StepWhile(int depth) {
     std::string v = Fresh("v");
     std::string tw = Fresh("tw");
     std::string guard = Fresh("gd");
-    std::string text = "(do (let " + s + " " + Name(t) + " " +
-                       (loops_rng.Chance(50) ? std::string("1") : minus_one) + ") (if " +
-                       Expr(T::Bool, 1) + " (set " + s + " " +
-                       (loops_rng.Chance(50) ? minus_one : std::string("1")) + ")) (let " + v +
-                       " " + Name(t) + " " + Leaf(t) + ") (let " + guard + " u8 0)";
+    std::string q = Fresh("q");
+    std::string text =
+        "(do (let " + s + " " + Name(t) + " " +
+        (loops_rng.Chance(50) ? std::string("1") : minus_one) + ") (if " + Expr(T::Bool, 1) +
+        " (set " + s + " " + (loops_rng.Chance(50) ? minus_one : std::string("1")) + ")) (let " +
+        v + " " + Name(t) + " " + (table ? "(+ (as u16 " + NonLit(T::U8, 1) + ") 300)" : Leaf(t)) +
+        ") (let " + guard + " u8 0) (let " + q + " (ptr u8) (addr_of (at wb 3)))";
     scopes.emplace_back();
     scopes.back().push_back(VarInfo{v, t, true});
     std::string limit = std::to_string(1 + loops_rng.Below(250));
@@ -211,6 +218,16 @@ std::string Gen::StepWhile(int depth) {
         body = " (set " + v + " " + step + ") (let " + tw + " " + Name(wide_t) + " " + twice +
                ") (if " + cmp + " (set " + sink + " (+ " + sink + " 1))) (set " + guard + " (+ " +
                guard + " 1))";
+    }
+    if (table && !sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        std::string read = " (set " + sink + " (+ " + sink + " (at wb " + v + ")))";
+        std::string write = " (set (at wb " + v + ") (+ (at wb " + v + ") " + guard + "))";
+        std::string by_y =
+            " (set " + sink + " (^ " + sink + " (load (+ " + q + " " + guard + "))))";
+        body = (loops_rng.Chance(50) ? read : std::string()) + body + read + write +
+               (loops_rng.Chance(70) ? by_y : std::string());
     }
     bool was_while = in_while;
     in_while = false;

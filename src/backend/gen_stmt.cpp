@@ -68,12 +68,14 @@ bool GenStep(Gen& g, const Opnd& d, bool up) {
         RmwByte(g, Mn::INC, d, 0);
         Branch(g, Mn::BNE, skip);
         RmwByte(g, Mn::INC, d, 1);
+        NoteFollowStep(g, d, true, skip);
         PlaceLabel(g, skip);
         return true;
     }
     LoadA(g, d, 0);
     Branch(g, Mn::BNE, skip);
     RmwByte(g, Mn::DEC, d, 1);
+    NoteFollowStep(g, d, false, skip);
     PlaceLabel(g, skip);
     RmwByte(g, Mn::DEC, d, 0);
     return true;
@@ -176,6 +178,11 @@ void GenReturn(Gen& g, const Expr& e) {
 
 } // namespace
 
+bool IsStepByOne(const Gen& g, ExprId place, ExprId value) {
+    bool up = false;
+    return IsStep(g, place, value, up) || UnitStepOf(g, place, value) >= 0;
+}
+
 void GenSet(Gen& g, ExprId place, ExprId value) {
     TypeId type = At(g, place).type;
     PlaceRef p;
@@ -214,6 +221,11 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
         PlaceLabel(g, done);
     } else if (!step || !GenStep(g, d, up)) {
         EvalInto(g, value, d);
+        if (!g.follows.empty()) {
+            std::int32_t after = NewLabel(g);
+            NoteFollowSet(g, d, after);
+            PlaceLabel(g, after);
+        }
     }
     NoteSet(g, place, value);
 }

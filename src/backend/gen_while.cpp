@@ -400,6 +400,7 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     if (pinned) {
         g.while_pins++;
     }
+    bool following = BeginFollow(g, id);
     // the u16 variables the loop only steps, but not the ones it keeps in registers, index
     // through step pointers (gen_step.cpp)
     std::size_t stepped = BeginStepped(g, id, -1);
@@ -487,6 +488,9 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     }
     if (regs.bump >= 0) {
         g.bumped.pop_back();
+    }
+    if (following) {
+        EndFollow(g, init_at);
     }
     g.loops.pop_back();
     PlaceLabel(g, end);

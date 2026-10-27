@@ -232,10 +232,13 @@ bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
         found = &g.page_ptrs.back();
     }
     AsmValue ptr = found->ptr;
-    LoadA(g, index, 1);
-    Emit(g, Mn::CLC, Mode::Imp);
-    OpA(g, Mn::ADC, SymImmOpnd(base, 2), 1);
-    Emit(g, Mn::STA, Mode::Abs, SymValue(ptr.sym, ptr.offset + 1));
+    std::size_t which = static_cast<std::size_t>(found - g.page_ptrs.data());
+    if (!FollowPagePointer(g, index, which)) {
+        LoadA(g, index, 1);
+        Emit(g, Mn::CLC, Mode::Imp);
+        OpA(g, Mn::ADC, SymImmOpnd(base, 2), 1);
+        Emit(g, Mn::STA, Mode::Abs, SymValue(ptr.sym, ptr.offset + 1));
+    }
     Opnd low = index;
     low.size = 1;
     place.pointer = true;
