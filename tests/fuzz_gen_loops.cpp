@@ -152,6 +152,12 @@ std::string Gen::WordWhile(int depth) {
         step = "(& (+ (* " + n + " 3) " + d + ") 511)";
     }
     std::string limit = down ? "(> " + n + " 260)" : "(< " + n + " 300)";
+    // now and then n is only an index stepped by one (strlen): the guard alone bounds it
+    bool index_only = loops_rng.Chance(25);
+    if (index_only) {
+        step = down ? "(- " + n + " 1)" : "(+ " + n + " 1)";
+        limit = "(!= (at wb " + n + ") " + Leaf(T::U8) + ")";
+    }
     std::string cond =
         "(and (< " + guard + " " + std::to_string(2 + loops_rng.Below(40)) + ") " + limit + ")";
     if (loops_rng.Chance(40)) {
@@ -164,7 +170,7 @@ std::string Gen::WordWhile(int depth) {
     int parts = 1 + loops_rng.Below(4);
     bool stepped = false;
     for (int i = 0; i < parts && budget > 0; i++) {
-        switch (loops_rng.Below(7)) {
+        switch (loops_rng.Below(index_only ? 2 : 7)) {
         case 0:
             body += " (set (at wb " + n + ") " + Expr(T::U8, 1) + ")";
             break;

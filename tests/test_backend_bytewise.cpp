@@ -115,10 +115,10 @@ void TestShifts(TestResults& results) {
         fns.push_back(fn);
     }
     CheckEach(results, text, fns);
-    // the CRC step shifts once: one ASL and one ROL in the loop
+    // the CRC step shifts once: one ASL and one ROL a bit, the 8 bits unrolled
     Compiled c = CompileText(text);
-    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ASL) == 1);
-    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ROL) == 1);
+    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ASL) == 8);
+    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ROL) == 8);
 }
 
 } // namespace

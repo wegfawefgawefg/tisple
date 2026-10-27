@@ -404,6 +404,38 @@ void ApplyFixups(Gen& g, const std::vector<Derived>& used, const AsmValue& high,
     }
 }
 
+// when the loop only steps the high byte (INC or DEC, for steps of 1) and reads it nowhere,
+// and a derived pointer with a constant base moves with it: those steps go, and the high byte
+// is worked out from that pointer after the loop (the returned pointer); else nullptr
+const Derived* DropHighSteps(Gen& g, const std::vector<Derived>& used, const AsmValue& high,
+                             std::size_t first) {
+    const Derived* rebuild = nullptr;
+    for (const Derived& d : used) {
+        if (d.var < 0 && !rebuild) {
+            rebuild = &d;
+        }
+    }
+    if (!rebuild) {
+        return nullptr;
+    }
+    std::vector<std::size_t> steps;
+    for (std::size_t i = first; i < g.out->size(); i++) {
+        const AsmItem& item = (*g.out)[i];
+        if (item.kind != ItemKind::Ins || item.value.sym != high.sym ||
+            item.value.offset != high.offset || item.mode == Mode::Rel) {
+            continue;
+        }
+        if ((item.mn != Mn::INC && item.mn != Mn::DEC) || item.mode != Mode::Abs) {
+            return nullptr;
+        }
+        steps.push_back(i);
+    }
+    for (std::size_t k = steps.size(); k-- > 0;) {
+        g.out->erase(g.out->begin() + static_cast<std::ptrdiff_t>(steps[k]));
+    }
+    return rebuild;
+}
+
 // the body ends with (set var (+ var 1)): with the test at the top, its BNE over the page
 // step goes straight back to the test
 bool EndsWithUnitStep(const Gen& g, ExprId body, std::int32_t var) {
@@ -534,11 +566,14 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         g.loop_depth--;
         return false;
     }
+    const Derived* rebuild = nullptr;
+    std::vector<Derived> used;
     if (regs.var[1] >= 0) {
-        std::vector<Derived> used = TakeDerived(g, regs.var[1], init_at);
+        used = TakeDerived(g, regs.var[1], init_at);
         AsmValue high = regs.wide ? wide.high : AsmValue();
         if (regs.wide) {
             ApplyFixups(g, used, high, init_at);
+            rebuild = DropHighSteps(g, used, high, init_at);
         }
         InitDerived(g, used, init_at, high);
     }
@@ -548,6 +583,17 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         if (regs.var[r] >= 0 && regs.written[r]) {
             Emit(g, r == 0 ? Mn::STX : Mn::STY, Mode::Abs, sym[r]);
         }
+    }
+    if (rebuild) {
+        // the high byte from the pointer that moved with it
+        AsmValue base = rebuild->base;
+        base.offset = (base.offset + rebuild->offset) & 0xFFFF;
+        Opnd start = base.sym >= 0 ? SymImmOpnd(base, 2)
+                                   : ImmOpnd(static_cast<std::uint16_t>(base.offset), 2);
+        Emit(g, Mn::LDA, Mode::Abs, SymValue(rebuild->ptr.sym, rebuild->ptr.offset + 1));
+        Emit(g, Mn::SEC, Mode::Imp);
+        OpA(g, Mn::SBC, start, 1);
+        Emit(g, Mn::STA, Mode::Abs, wide.high);
     }
     for (int r = 0; r < 2; r++) {
         if (spilled[r] < 0) {

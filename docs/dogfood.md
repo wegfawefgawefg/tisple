@@ -766,6 +766,28 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 28) | the same |
     | 3000 fuzz programs before item 21's generator (against the base backend) | 10449220 | 9109808 cycles (-12.8%); 1712 faster, 139 slower |
 
+30. Race item 7, unrolling (2026-10-27). A u8 for loop whose body never
+    reads its counter, with up to 16 constant trips and at most 160
+    expressions in all the copies, runs as that many copies of its body, one
+    after the other: no counter, no test (a continue goes to the next copy).
+    crc16's 8 bits are 8 copies of the CRC step. And a wide while loop (item
+    21) that steps its u16 variable by one and reads it nowhere but through
+    its derived pointers, strlen's, no longer keeps the high byte up to date:
+    it is worked out once after the loop from the pointer (`LDA ptr+1 / SEC /
+    SBC #>base / STA high`), which saves an INC a page. Tests: in
+    tests/test_backend_while.cpp, unrolled loops with break and continue in
+    the copies and loops inside them (a continue that breaks fails them); the
+    strlen shapes check the high byte (subtracting the base's low byte fails
+    3 of them, and 27 of 3000 fuzz programs with a new shape, a u16 that is
+    only an index stepped by one).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race crc16 | 228281 | 188348 (Oscar64 221527); 75 to 202 bytes |
+    | race strlen | 36181 | 36136 (cc65 36153) |
+    | other race kernels, Life generations, plasma | (as after 29) | the same |
+    | programs/ sizes | snake 1011 code bytes, multi 203 | snake 1024, multi 205 (unrolled loops) |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

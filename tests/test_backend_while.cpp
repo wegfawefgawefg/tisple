@@ -336,6 +336,11 @@ void TestLoopControl(TestResults& results) {
         "        (if (= (& n 3) 1) (continue)) (set n (+ n 1))) n)",
         "(fn f ((x u8) (y u8)) u8 (let n u8 0)\n"
         "    (for a u8 0 10 (for b u8 0 7 (for c u8 0 3 (set n (+ n (at bt (+ n x))))))) n)",
+        // unrolled: a break and a continue in the copies, a loop in them
+        "(fn f ((x u8) (y u8)) u8 (let n u8 y)\n"
+        "    (for k u8 0 6 (set n (+ n 1)) (if (= n x) (break)) (if (= (& n 3) 1) (continue))\n"
+        "        (set n (+ n 2)))\n"
+        "    (for k u8 0 3 (for j u8 0 (& x 3) (set n (^ n (at bt j))))) n)",
         "(fn f ((x u8) (y u8)) u16 (let n u16 0)\n"
         "    (for k u8 0 8 (set n (+ n (as u16 (at bt (& x 63))))) (for j u8 0 x (set n (+ n "
         "1))))\n"
@@ -359,10 +364,10 @@ void TestLoopControl(TestResults& results) {
     for (const char* body : bodies) {
         CheckCalls(results, body, Bytes());
     }
-    // a counter the body never reads counts down to zero
-    Compiled c =
-        CompileText(std::string(kData) + "(fn f ((x u8)) u8 (let n u8 x) (for k u8 0 8 (set n (+ n "
-                                         "n))) n)");
+    // a counter the body never reads counts down to zero (too many trips to unroll)
+    Compiled c = CompileText(std::string(kData) +
+                             "(fn f ((x u8)) u8 (let n u8 x) (for k u8 0 40 (set n (+ n "
+                             "n))) n)");
     CHECK(results, CountMn(c, "t.f", tisple::Mn::DEX) + CountMn(c, "t.f", tisple::Mn::DEY) +
                            CountMn(c, "t.f", tisple::Mn::DEC) ==
                        1);

@@ -9,6 +9,10 @@ namespace {
 
 // a u8 counter nests this deep at most in registers (each level tries X, Y, memory)
 constexpr int kMaxPinnedDepth = 3;
+// a loop whose counter nothing reads runs as copies of its body when it is this small:
+// trips, and expressions in all the copies together
+constexpr std::int32_t kMaxUnrollTrips = 16;
+constexpr std::uint32_t kMaxUnrollExprs = 160;
 
 struct ForParts {
     ExprId id = -1;
@@ -137,6 +141,18 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
 }
 
 void MemoryLoop(Gen& g, const ForParts& f);
+
+// the body once per trip, one after the other: no counter and no test; a continue goes to
+// the next copy
+void UnrolledLoop(Gen& g, const ForParts& f) {
+    std::uint32_t trips = f.trips == 0 ? 256 : f.trips;
+    for (std::uint32_t i = 0; i < trips; i++) {
+        std::int32_t next = NewLabel(g);
+        g.loops.back().continue_label = next;
+        GenStmt(g, f.body);
+        PlaceLabel(g, next);
+    }
+}
 
 // a u8 counter runs from the start up to one below the end; i8 counters get no range
 CounterRange CounterRangeOf(const Program& program, const Expr& e, TypeKind kind) {
@@ -445,7 +461,14 @@ void GenFor(Gen& g, ExprId id) {
     g.loop_depth++;
     g.for_depth++;
     bool pin = g.for_depth <= kMaxPinnedDepth;
-    if (f.size == 1) {
+    std::uint32_t copies = f.trips == 0 ? 256 : f.trips;
+    bool unroll = f.down && copies <= static_cast<std::uint32_t>(kMaxUnrollTrips) &&
+                  CountExprs(program, f.body) * copies <= kMaxUnrollExprs;
+    if (unroll) {
+        // each copy runs once
+        g.loop_factors.back() = 1;
+        UnrolledLoop(g, f);
+    } else if (f.size == 1) {
         g.ranges.push_back(CounterRangeOf(program, e, kind));
         ByteLoop(g, f, pin);
         g.ranges.pop_back();
