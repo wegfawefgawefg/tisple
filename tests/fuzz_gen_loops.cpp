@@ -231,6 +231,30 @@ std::string Gen::StepWhile(int depth) {
     return text + ")";
 }
 
+// a scan (strlen): a u16 stepped by one and nothing else, from odd and even starts, often
+// across pages of wb
+std::string Gen::ScanWhile() {
+    std::string n = Fresh("n");
+    std::string start = "(as u16 " + NonLit(T::U8, 1) + ")";
+    if (loops_rng.Chance(30)) {
+        start = "(+ " + start + " " + std::to_string(loops_rng.Below(400)) + ")";
+    }
+    std::string limit = std::to_string(1 + loops_rng.Below(1000));
+    std::string stop = loops_rng.Chance(50) ? std::string("90") : Leaf(T::U8);
+    std::string read = loops_rng.Chance(70)
+                           ? "(at wb " + n + ")"
+                           : "(at wb (+ " + n + " " + std::to_string(loops_rng.Below(20)) + "))";
+    std::string text = "(do (let " + n + " u16 " + start + ") (while (and (< " + n + " " + limit +
+                       ") (!= " + read + " " + stop + ")) (set " + n + " (+ " + n + " 1)))";
+    std::vector<const VarInfo*> sinks = VarsOf(T::U16, true);
+    if (!sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        text += " (set " + sink + " (+ " + sink + " " + n + "))";
+    }
+    return text + ")";
+}
+
 std::string Gen::WordWhile(int depth) {
     std::string n = Fresh("n");
     std::string d = Fresh("d");
@@ -535,9 +559,11 @@ std::string Gen::BitSteps(int depth) {
 }
 
 std::string Gen::LoopShape(int depth) {
-    switch (loops_rng.Below(7)) {
+    switch (loops_rng.Below(8)) {
     case 0:
         return ByteWhile(depth);
+    case 7:
+        return ScanWhile();
     case 5:
         return BoundWhile(depth);
     case 6:

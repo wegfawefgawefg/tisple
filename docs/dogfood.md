@@ -884,6 +884,27 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 32) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
 
+34. Race item 7, scans two at a time (2026-10-27). A wide while loop (item
+    21) whose body is only its variable's step by one, strlen's, runs two
+    tests and steps a time: Y is even at the top, so the first INY never
+    leaves the page and needs no branch; only the second does (INY / BNE).
+    An odd Y starts at the second test (TYA / LSR A / BCS, once). The copies
+    count at half the loop's weight, since each runs half as often (without
+    that, the choices took a memory loop instead, twice as slow). strlen's
+    loop is 21 cycles for two bytes instead of 24. Tests: in
+    tests/test_backend_while.cpp, scans of t (whose zeros start pages, so
+    every scan crosses one) from odd and even starts, at an offset; a fuzz
+    shape (ScanWhile: a u16 from odd and even starts stepped by one while a
+    byte of wb is not some value, up to a limit across pages). Without the
+    odd start, 18 of 2000 fuzz programs and 2 tests fail; on the wrong
+    parity, 39 and 2.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race strlen | 36136 | 31642 (cc65 36153); 45 to 54 bytes |
+    | other race kernels, Life generations, plasma | (as after 33) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

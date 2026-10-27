@@ -88,8 +88,11 @@ std::vector<std::vector<std::uint16_t>> Bytes() {
 // a u16 variable stepped by the loop: low byte in Y, high byte in memory, pointers per base
 void TestWideWhile(TestResults& results) {
     const char* bodies[] = {
-        // strlen: the step last, the test at the top
+        // strlen: the step last, the test at the top, two tests a time; t's zeros start
+        // pages, so its scans cross one, from odd and even starts
         "(fn f ((n u16)) u16 (while (!= (at s n) 0) (set n (+ n 1))) n)",
+        "(fn f ((n u16)) u16 (while (!= (at t n) 0) (set n (+ n 1))) n)",
+        "(fn f ((n u16)) u16 (while (!= (at t (+ n 1)) 0) (set n (+ n 1))) n)",
         // through a pointer variable, and a pointer plus an offset
         "(fn f ((n u16)) u16 (let p (ptr u8) (addr_of (at s 0)))\n"
         "    (while (!= (load (+ p n)) 0) (set n (+ n 1))) n)",
@@ -143,10 +146,10 @@ void TestWideWhile(TestResults& results) {
     for (const char* body : bodies) {
         CheckCalls(results, body, Starts());
     }
-    // strlen's loop: no 16-bit add inside it
+    // strlen's loop: no 16-bit add inside it, two steps of Y a time
     Compiled c = CompileText(std::string(kData) +
                              "(fn f ((n u16)) u16 (while (!= (at s n) 0) (set n (+ n 1))) n)");
-    CHECK(results, CountMn(c, "t.f", tisple::Mn::INY) == 1);
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::INY) == 2);
     CHECK(results, CountMn(c, "t.f", tisple::Mn::ADC) == 1);
 }
 

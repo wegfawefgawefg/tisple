@@ -433,7 +433,26 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         g.bumped.push_back({regs.bump, t});
     }
     std::size_t top_at = 0;
-    if (top_test) {
+    const Expr& body = At(g, e.b);
+    bool only_step = body.kind == ExprKind::Set || (body.kind == ExprKind::Do && body.count == 1);
+    if (top_test && only_step && CountExprs(*g.program, e.a) <= kMaxRotatedTest &&
+        !HasCalls(*g.program, e.a)) {
+        // a scan (strlen): two tests and steps a time, Y even at the top, so the first step
+        // never leaves the page; an odd Y starts at the second
+        std::int32_t second = NewLabel(g);
+        // each copy runs half as often
+        g.loop_factors.back() = std::max<std::uint32_t>(1, g.loop_factors.back() / 2);
+        g.loop_depth--;
+        EmitPinned(g, Mn::TYA, Mode::Imp, AsmValue());
+        Emit(g, Mn::LSR, Mode::Acc);
+        Branch(g, Mn::BCS, second);
+        g.loop_depth++;
+        PlaceLabel(g, top);
+        GenBranch(g, e.a, false, end);
+        EmitPinned(g, Mn::INY, Mode::Imp, AsmValue());
+        PlaceLabel(g, second);
+        GenBranch(g, e.a, false, end);
+    } else if (top_test) {
         PlaceLabel(g, top);
         GenBranch(g, e.a, false, end);
     } else if (rotate) {
