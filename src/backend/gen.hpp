@@ -17,6 +17,9 @@
 //   of its own: the body is generated once per choice, a choice that touches its register is
 //   dropped, and the cheapest kept, cycles inside loops weighing more. With the counter in Y,
 //   p + counter + k is (p + k),Y through a loop pointer set before the loop.
+// - A while loop may keep byte variables in X and Y, or a u16 one in Y and memory, the same
+//   way (gen_while.cpp); the loop's sets of them write the register, and it is stored back
+//   after the loop.
 
 // - Temporaries are frame bytes of the function, so they survive calls (callee frames never
 //   overlap the caller's). Pointer temporaries always live in zero page.
@@ -172,12 +175,29 @@ struct InlineCtx {
 //   the counter's high byte does
 // - u8 counter: ptr = base + offset, used only where counter + offset never wraps (a constant
 //   delta on a byte index, see CounterRange)
+// - step pointer (owner set): ptr = base + offset + v for a u16 variable v in memory that the
+//   owner loop only steps by constants; it moves with every step (gen_step.cpp)
 struct Derived {
     std::int32_t loop = -1;  // the loop's counter variable
     AsmValue base;           // a symbol's address, a number, or (var) a pointer variable
     std::int32_t var = -1;   // the pointer variable, if the base is one
     std::int32_t offset = 0; // added to the base
     AsmValue ptr;
+    ExprId owner = -1; // a step pointer's loop
+};
+
+// a u16 variable a loop steps only by constants (set v (+ v c)), in memory: its arrays and
+// pointers are read through step pointers (gen_step.cpp)
+struct SteppedVar {
+    std::int32_t var = -1;
+    ExprId loop = -1; // the outermost such loop being generated
+};
+
+// where a step pointer must move with its variable: just before the label
+struct StepFixup {
+    std::int32_t label = -1;
+    std::int32_t var = -1;
+    std::uint16_t step = 0;
 };
 
 // the u16 loop counter in Y (low byte) and memory (high byte)
@@ -209,6 +229,29 @@ struct CounterRange {
     int hi = 255;
 };
 
+// what a condition tells about a u8 variable where it holds: inside an if's arm, a while's
+// body, the second half of an and; dead once a statement that may change the variable
+// starts (gen_facts.cpp)
+struct Fact {
+    std::int32_t var = -1;
+    int lo = 0;
+    int hi = 255;
+    bool live = true;
+};
+
+// where a wide while loop's derived pointers must follow a change of its variable's high
+// byte: just before the label, once the loop's pointers are known (gen_while.cpp)
+enum class WideFix : std::uint8_t {
+    Inc,     // the high byte went up by one
+    Dec,     // down by one
+    Compute, // anything: each pointer's high byte from the base's and the variable's
+};
+
+struct WideFixup {
+    std::int32_t label = -1;
+    WideFix fix = WideFix::Inc;
+};
+
 // the last division's operands: its quotient is in rt_a, and its remainder in rt_r when
 // have_rem, until code touches them (gen_div.cpp)
 struct DivDone {
@@ -232,6 +275,11 @@ struct Gen {
     std::vector<Derived> derived;     // of the loops being generated
     std::uint32_t lptr_top = 0;       // loop pointer bytes handed out in this function
     std::vector<CounterRange> ranges; // of the u8 loops being generated
+    std::vector<Fact> facts;
+    std::vector<WideFixup> wide_fixups; // of the wide while loop being generated
+    std::vector<SteppedVar> stepped;
+    std::vector<StepFixup> step_fixups;
+    int while_pins = 0; // while loops being generated with variables pinned
     DivDone div;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
     std::vector<ReducedByte> reduced_bytes;
@@ -263,6 +311,9 @@ bool CarryClearNow(const Gen& g);
 bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
+// byte k of o as a number known now: a plain number, or a byte of a symbol already placed
+// (an :address variable); -1 if it is not one
+int KnownImm(const Gen& g, const Opnd& o, int k);
 std::int32_t NewLabel(Gen& g);
 void PlaceLabel(Gen& g, std::int32_t label);
 // a label only forward branches over straight-line code reach, which leave X and Y alone:
@@ -339,6 +390,8 @@ struct PlaceRef {
     // reads, if any (its CounterRange may let the delta move into the address)
     std::uint8_t delta = 0;
     std::int32_t counter = -1;
+    // ptr is a step pointer, which later steps move: not a temporary of this place's own
+    bool step_ptr = false;
 };
 
 // evaluates the index and pointer parts of a place, in order, keeping in temporaries every
@@ -359,8 +412,9 @@ PlaceRef ElementPlace(const Gen& g, const PlaceRef& place, TypeId array_type, st
 // the place's parts without emitting anything; false if that needs code
 bool ResolveForRead(Gen& g, ExprId id, PlaceRef& out);
 bool IsNormalPlace(const Gen& g, const PlaceRef& place, TypeId type);
-// the place's address so far into a zero-page pointer temporary
-void PlaceToPointer(Gen& g, PlaceRef& place);
+// the place's address so far into a zero-page pointer temporary, or into `into` (plain
+// memory) when that is safe; place.ptr says where it went
+void PlaceToPointer(Gen& g, PlaceRef& place, const Opnd* into = nullptr);
 // an expression that needs no code to read, or size 0 (gen_simple.cpp)
 Opnd TrySimple(Gen& g, ExprId id);
 
@@ -396,6 +450,26 @@ std::vector<Derived> TakeDerived(Gen& g, std::int32_t loop, std::size_t first);
 // code setting each pointer, moved to item `at`, just before the loop; high is the u16
 // counter's high byte, or sym -1 for a u8 counter
 void InitDerived(Gen& g, const std::vector<Derived>& derived, std::size_t at, AsmValue high);
+// the pointers following a change of the counter's high byte (only A and the carry)
+void FollowHigh(Gen& g, const std::vector<Derived>& derived, WideFix fix, AsmValue high);
+
+// ---- step pointers (gen_step.cpp)
+
+// the u16 variables `loop` steps only by constants and no loop around it does; their step
+// pointers belong to this loop. counter: also a for loop's own u16 counter in memory (-1:
+// none). Returns the mark EndStepped takes.
+std::size_t BeginStepped(Gen& g, ExprId loop, std::int32_t counter);
+// after the loop: its step pointers set at item `at` (before the loop), and moved at every
+// step of their variable
+void EndStepped(Gen& g, ExprId loop, std::size_t mark, std::size_t at);
+// the address base + v (v a stepped variable) as its step pointer; false if it is not one
+bool UseStepPointer(Gen& g, PlaceRef& place);
+// var was just stepped by `step` (a set, or a for loop's own count): its pointers move here
+void NoteStep(Gen& g, std::int32_t var, std::uint16_t step);
+// (set place value) just ran: a step of a stepped variable moves its pointers
+void NoteSet(Gen& g, ExprId place, ExprId value);
+// a for loop's own step of its u16 counter in memory, after the body: its pointers move
+void StepOwnPointers(Gen& g, ExprId loop, std::int32_t var, std::uint16_t step);
 
 // &place as a 16-bit value
 Opnd AddressOf(Gen& g, ExprId place, const Opnd* dst);
@@ -451,8 +525,23 @@ void CondToA(Gen& g, ExprId id);
 // ---- statements (gen_stmt.cpp, gen_loop.cpp)
 
 void GenStmt(Gen& g, ExprId id);
-void GenFor(Gen& g, const Expr& e);
-void GenWhile(Gen& g, const Expr& e);
+void GenFor(Gen& g, ExprId id);
+void GenWhile(Gen& g, ExprId id);
+// (set var value) when a while loop keeps var in a register; false if it does not
+bool SetPinnedVar(Gen& g, ExprId place, ExprId value);
+// an instruction that writes the register a loop keeps its variable in, on purpose
+void EmitPinned(Gen& g, Mn mn, Mode mode = Mode::Imp, AsmValue value = AsmValue());
+
+// ---- facts (gen_facts.cpp)
+
+// the facts `cond` being `when` gives; with a scope (not -1), only about variables it never
+// changes. Returns the mark PopFacts takes.
+std::size_t PushFacts(Gen& g, ExprId cond, bool when, ExprId scope);
+void PopFacts(Gen& g, std::size_t mark);
+// before a statement runs: what it may change is no longer known
+void KillFacts(Gen& g, ExprId stmt);
+// the values a u8 variable can have here: loop ranges and live facts; false if nothing known
+bool VarRange(const Gen& g, std::int32_t var, int& lo, int& hi);
 void GenMatch(Gen& g, const Expr& e, const Opnd* dst, bool value);
 void GenSet(Gen& g, ExprId place, ExprId value);
 void GenStore(Gen& g, const Expr& e);

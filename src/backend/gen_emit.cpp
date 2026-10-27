@@ -287,6 +287,22 @@ std::uint32_t MaxOf(const Gen& g, ExprId id) {
     return ExprMax(*g.program, g.be->ranges, id);
 }
 
+int KnownImm(const Gen& g, const Opnd& o, int k) {
+    const ByteRef& b = o.b[k];
+    if (o.in_a || b.kind != ByteKind::Imm) {
+        return -1;
+    }
+    if (b.value.sym < 0) {
+        return b.value.offset & 0xFF;
+    }
+    const AsmSymbol& sym = g.be->as.symbols[static_cast<std::size_t>(b.value.sym)];
+    if (!sym.defined || b.value.part == Part::Whole) {
+        return -1;
+    }
+    std::uint32_t address = (sym.value + static_cast<std::uint32_t>(b.value.offset)) & 0xFFFF;
+    return static_cast<int>(b.value.part == Part::Low ? address & 0xFF : address >> 8);
+}
+
 std::int32_t NewLabel(Gen& g) {
     return NewSym(*g.be, "L" + std::to_string(g.be->as.symbols.size()), SymRole::Label, -1);
 }

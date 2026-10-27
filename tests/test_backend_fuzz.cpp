@@ -1,5 +1,6 @@
 // generative differential fuzzing: random programs on the 6502 against the interpreter.
-// TISPLE_FUZZ=N runs N programs (default 300), TISPLE_FUZZ_SEED picks the first seed.
+// TISPLE_FUZZ=N runs N programs (default 300), TISPLE_FUZZ_SEED picks the first seed,
+// TISPLE_FUZZ_CYCLES=1 prints each program's cycles (to compare two backends seed by seed).
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -69,6 +70,10 @@ void FuzzOne(std::uint64_t seed, FuzzStats& stats) {
     if (DiffCall(d, "t.main", {})) {
         stats.ran++;
         stats.cycles += d.last_cycles;
+        if (std::getenv("TISPLE_FUZZ_CYCLES")) {
+            std::printf("seed %llu: %llu cycles\n", static_cast<unsigned long long>(seed),
+                        static_cast<unsigned long long>(d.last_cycles));
+        }
         return;
     }
     if (d.message.rfind("interpreter stopped", 0) == 0) {

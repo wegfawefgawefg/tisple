@@ -23,15 +23,6 @@ Mn AluMn(Op op) {
     }
 }
 
-// -1 unless byte k is a plain number
-int ImmByte(const Opnd& o, int k) {
-    const ByteRef& b = o.b[k];
-    if (b.kind != ByteKind::Imm || b.value.sym >= 0) {
-        return -1;
-    }
-    return b.value.offset & 0xFF;
-}
-
 // A op= o, for one byte; carry already set up for ADC/SBC
 void AluByte(Gen& g, Op op, const Opnd& o, int k) {
     OpA(g, AluMn(op), o, k);
@@ -40,7 +31,7 @@ void AluByte(Gen& g, Op op, const Opnd& o, int k) {
 // A = A op b, 8-bit, skipping identities. no_carry: the sum is known to stay below 256, so
 // the ADC leaves the carry clear (and the next one needs no CLC)
 void Alu8(Gen& g, Op op, const Opnd& b, bool no_carry = false) {
-    int v = ImmByte(b, 0);
+    int v = KnownImm(g, b, 0);
     if (v == 0 && (op == Op::Add || op == Op::Sub || op == Op::Or || op == Op::Xor)) {
         return;
     }
@@ -179,7 +170,7 @@ bool IsPlainMemory(const Opnd& o) {
 // a byte (a's high byte a known 0) times a constant, mod 65536: the low byte shifts in A,
 // the high byte in memory, and each set bit adds the byte with a carry into the high byte
 bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
-    if (ImmByte(a, 1) != 0 || !IsPlainMemory(a) || ImmByte(a, 0) >= 0) {
+    if (KnownImm(g, a, 1) != 0 || !IsPlainMemory(a) || KnownImm(g, a, 0) >= 0) {
         return false;
     }
     Opnd high = dst;
@@ -344,7 +335,7 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
         bool flip = Commutes(op) && AHoldsByte(g, b, k) && !IsImm(b);
         const Opnd& x = flip ? b : a;
         const Opnd& y = flip ? a : b;
-        int v = ImmByte(y, k);
+        int v = KnownImm(g, y, k);
         switch (op) {
         case Op::Add:
         case Op::Sub:
@@ -352,7 +343,7 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
                 LoadA(g, x, k);
                 break;
             }
-            if (!carry && op == Op::Add && ImmByte(x, k) == 0) {
+            if (!carry && op == Op::Add && KnownImm(g, x, k) == 0) {
                 LoadA(g, y, k);
                 break;
             }

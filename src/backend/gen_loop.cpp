@@ -11,6 +11,7 @@ namespace {
 constexpr int kMaxPinnedDepth = 3;
 
 struct ForParts {
+    ExprId id = -1;
     std::int32_t var = -1;
     std::uint32_t size = 1;
     Opnd start;
@@ -164,11 +165,14 @@ void ByteLoop(Gen& g, const ForParts& f, bool pin) {
         }
         g = start;
         g.out->resize(mark);
+        // the body's stepped u16 variables, with this choice's code (gen_step.cpp)
+        std::size_t stepped = BeginStepped(g, f.id, -1);
         if (memory) {
             MemoryLoop(g, f);
         } else if (!TryPinned(g, f, choice)) {
             continue;
         }
+        EndStepped(g, f.id, stepped, mark);
         std::uint64_t cost = g.cost - start.cost;
         if (!found || cost < best_cost) {
             found = true;
@@ -212,12 +216,16 @@ bool TryWide(Gen& g, const ForParts& f) {
     g.wide = &wide;
     g.pin[1] = f.var;
     g.pin_body[1] = f.body;
+    std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
+    InitReducedLets(g, reduced);
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
     PlaceLabel(g, top);
     GenStmt(g, f.body);
     PlaceLabel(g, next);
+    StepReducedLets(g, reduced);
+    DropReducedLets(g, reduced);
     g.pin[1] = -1;
     g.pin_body[1] = -1;
     g.wide = nullptr;
@@ -272,16 +280,16 @@ bool TryWide(Gen& g, const ForParts& f) {
 void MemoryLoop(Gen& g, const ForParts& f) {
     Opnd v = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)]), f.size, 1);
     CopyOpnd(g, f.start, v);
-    std::vector<ReducedLet> reduced;
-    if (f.size == 1) {
-        reduced = FindReducedLets(g, f.var, f.body);
-    }
+    std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
     InitReducedLets(g, reduced);
     std::vector<ReducedByte> bytes;
     if (f.size == 1) {
         bytes = FindReducedBytes(g, f.var, f.body, reduced);
     }
     InitReducedBytes(g, bytes);
+    // a u16 counter indexes through step pointers that move with it (gen_step.cpp)
+    std::size_t at = g.out->size();
+    std::size_t stepped = f.size == 2 ? BeginStepped(g, f.id, f.var) : g.stepped.size();
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
@@ -304,31 +312,76 @@ void MemoryLoop(Gen& g, const ForParts& f) {
         MarkBackEdge(g, f);
         return;
     }
+    // the counter's step pointers move with it; the body made all of them by now
+    StepOwnPointers(g, f.id, f.var, 1);
     if (IsImmZeroByte(f.end, 0) && IsImmZeroByte(f.end, 1)) {
         RmwByte(g, Mn::INC, v, 0);
         Branch(g, Mn::BNE, top);
         RmwByte(g, Mn::INC, v, 1);
         Branch(g, Mn::BNE, top);
-        return;
+    } else if (IsImmZeroByte(f.end, 0)) {
+        // counting up one at a time, the counter can only reach the end at a page start
+        RmwByte(g, Mn::INC, v, 0);
+        Branch(g, Mn::BNE, top);
+        RmwByte(g, Mn::INC, v, 1);
+        LoadA(g, v, 1);
+        OpA(g, Mn::CMP, f.end, 1);
+        Branch(g, Mn::BNE, top);
+    } else {
+        std::int32_t carry = NewLabel(g);
+        RmwByte(g, Mn::INC, v, 0);
+        Branch(g, Mn::BNE, carry);
+        RmwByte(g, Mn::INC, v, 1);
+        PlaceLabel(g, carry);
+        LoadA(g, v, 0);
+        OpA(g, Mn::CMP, f.end, 0);
+        Branch(g, Mn::BNE, top);
+        LoadA(g, v, 1);
+        OpA(g, Mn::CMP, f.end, 1);
+        Branch(g, Mn::BNE, top);
     }
-    std::int32_t carry = NewLabel(g);
-    RmwByte(g, Mn::INC, v, 0);
-    Branch(g, Mn::BNE, carry);
-    RmwByte(g, Mn::INC, v, 1);
-    PlaceLabel(g, carry);
-    LoadA(g, v, 0);
-    OpA(g, Mn::CMP, f.end, 0);
-    Branch(g, Mn::BNE, top);
-    LoadA(g, v, 1);
-    OpA(g, Mn::CMP, f.end, 1);
-    Branch(g, Mn::BNE, top);
+    EndStepped(g, f.id, stepped, at);
 }
 
 } // namespace
 
-void GenFor(Gen& g, const Expr& e) {
+// the counter in Y (TryWide) or in memory, whichever costs the fewest cycles
+void WordLoop(Gen& g, const ForParts& f, bool pin) {
+    std::size_t mark = g.out->size();
+    Gen start = g;
+    // the body's stepped u16 variables, with each choice's code (gen_step.cpp)
+    std::size_t stepped = BeginStepped(g, f.id, -1);
+    if (!pin || !TryWide(g, f)) {
+        MemoryLoop(g, f);
+        EndStepped(g, f.id, stepped, mark);
+        return;
+    }
+    EndStepped(g, f.id, stepped, mark);
+    std::uint64_t wide_cost = g.cost - start.cost;
+    if (g.failed) {
+        return;
+    }
+    std::vector<AsmItem> wide_items(g.out->begin() + static_cast<std::ptrdiff_t>(mark),
+                                    g.out->end());
+    Gen wide = g;
+    g = start;
+    g.out->resize(mark);
+    stepped = BeginStepped(g, f.id, -1);
+    MemoryLoop(g, f);
+    EndStepped(g, f.id, stepped, mark);
+    if (g.failed || g.cost - start.cost < wide_cost) {
+        return;
+    }
+    g = wide;
+    g.out->resize(mark);
+    g.out->insert(g.out->end(), wide_items.begin(), wide_items.end());
+}
+
+void GenFor(Gen& g, ExprId id) {
     const Program& program = *g.program;
+    const Expr& e = ExprOf(program, id);
     ForParts f;
+    f.id = id;
     f.var = e.ref;
     TypeId type = program.vars[static_cast<std::size_t>(e.ref)].type;
     TypeKind kind = KindOf(program, type);
@@ -356,16 +409,14 @@ void GenFor(Gen& g, const Expr& e) {
     }
 
     f.end_label = NewLabel(g);
-    if (e.b >= 0) {
-        std::uint16_t cs = 0;
-        std::uint16_t ce = 0;
-        if (ConstValue(program, e.a, cs) && ConstValue(program, e.b, ce)) {
-            if (SignedValue(kind, cs) >= SignedValue(kind, ce)) {
-                return;
-            }
-        } else {
-            CompareJump(g, Op::Ge, is_signed, f.start, f.end, f.end_label);
-        }
+    std::uint16_t cs = 0;
+    std::uint16_t ce = 0;
+    bool fixed = e.b >= 0 && ConstValue(program, e.a, cs) && ConstValue(program, e.b, ce);
+    if (fixed && SignedValue(kind, cs) >= SignedValue(kind, ce)) {
+        return;
+    }
+    if (e.b >= 0 && !fixed) {
+        CompareJump(g, Op::Ge, is_signed, f.start, f.end, f.end_label);
     }
 
     LoopCtx ctx;
@@ -378,43 +429,13 @@ void GenFor(Gen& g, const Expr& e) {
         g.ranges.push_back(CounterRangeOf(program, e, kind));
         ByteLoop(g, f, pin);
         g.ranges.pop_back();
-    } else if (!pin || !TryWide(g, f)) {
-        MemoryLoop(g, f);
+    } else {
+        WordLoop(g, f, pin);
     }
     g.for_depth--;
     g.loop_depth--;
     g.loops.pop_back();
     PlaceLabel(g, f.end_label);
-}
-
-void GenWhile(Gen& g, const Expr& e) {
-    std::uint16_t c = 0;
-    bool fixed = ConstValue(*g.program, e.a, c);
-    if (fixed && c == 0) {
-        return;
-    }
-    std::int32_t top = NewLabel(g);
-    std::int32_t test = NewLabel(g);
-    std::int32_t end = NewLabel(g);
-    LoopCtx ctx;
-    ctx.break_label = end;
-    ctx.continue_label = fixed ? top : test;
-    g.loops.push_back(ctx);
-    g.loop_depth++;
-    if (!fixed) {
-        Jump(g, test);
-    }
-    PlaceLabel(g, top);
-    GenStmt(g, e.b);
-    if (fixed) {
-        Jump(g, top);
-    } else {
-        PlaceLabel(g, test);
-        GenBranch(g, e.a, true, top);
-    }
-    g.loop_depth--;
-    g.loops.pop_back();
-    PlaceLabel(g, end);
 }
 
 } // namespace tisple

@@ -115,9 +115,14 @@ void AddDelta(Gen& g, PlaceRef& place) {
     place.counter = -1;
 }
 
-// the place's address so far (base, offset, index) into a fresh zero-page pointer
-void ToPointer(Gen& g, PlaceRef& place) {
+// the place's address so far (base, offset, index) into a fresh zero-page pointer, or into
+// `into` (2 bytes of plain memory) when given and it holds none of what is read; a step
+// pointer when the index is a stepped variable (gen_step.cpp)
+void ToPointer(Gen& g, PlaceRef& place, const Opnd* into = nullptr) {
     AddDelta(g, place);
+    if (UseStepPointer(g, place)) {
+        return;
+    }
     Opnd base;
     std::uint32_t offset = place.cursor.address;
     if (place.pointer) {
@@ -128,8 +133,10 @@ void ToPointer(Gen& g, PlaceRef& place) {
         base = SymImmOpnd(address, 2);
         offset = 0;
     }
-    Opnd dst = MemOpnd(NewPtrTemp(g), 2, 1);
-    dst.temp = true;
+    bool direct =
+        into && !(place.has_index && Overlaps(g, place.index, *into)) && !Overlaps(g, base, *into);
+    Opnd dst = direct ? *into : MemOpnd(NewPtrTemp(g), 2, 1);
+    dst.temp = !direct;
     if (place.has_index) {
         Opnd index = Widen(place.index);
         if (place.mult != 1) {
@@ -467,8 +474,8 @@ bool IsNormalPlace(const Gen& g, const PlaceRef& place, TypeId type) {
     return IsNormal(g, place, type);
 }
 
-void PlaceToPointer(Gen& g, PlaceRef& place) {
-    ToPointer(g, place);
+void PlaceToPointer(Gen& g, PlaceRef& place, const Opnd* into) {
+    ToPointer(g, place, into);
 }
 
 } // namespace tisple

@@ -68,5 +68,6 @@ void RunBackendBuildTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
+void RunBackendWhileTests(TestResults& results);
 
 } // namespace tisple_tests

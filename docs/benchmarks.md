@@ -32,3 +32,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-26 | (byte expressions of loops stepped or hoisted) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-26 | db084d8 (backend items 14 to 20, main merged) | life | generations in 10 s | 56 |
 | 2026-10-26 | db084d8 (backend items 14 to 20, main merged) | plasma | frames in 10 s | 243 (24.3 fps); code 1203 bytes |
+| 2026-10-27 | (race item 1: step pointers, while loops in registers) | life | generations in 10 s | 56 |
+| 2026-10-27 | (race item 1: step pointers, while loops in registers) | plasma | frames in 10 s | 243 (24.3 fps); code 1203 bytes |

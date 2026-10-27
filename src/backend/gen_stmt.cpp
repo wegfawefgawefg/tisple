@@ -112,7 +112,10 @@ void GenIf(Gen& g, const Expr& e) {
     }
     std::int32_t other = NewLabel(g);
     GenBranch(g, e.a, false, other);
+    // each arm knows how the condition came out (gen_facts.cpp)
+    std::size_t facts = PushFacts(g, e.a, true, -1);
     GenStmt(g, e.b);
+    PopFacts(g, facts);
     if (e.c < 0) {
         PlaceLabel(g, other);
         return;
@@ -122,7 +125,9 @@ void GenIf(Gen& g, const Expr& e) {
         Jump(g, end);
     }
     PlaceLabel(g, other);
+    facts = PushFacts(g, e.a, false, -1);
     GenStmt(g, e.c);
+    PopFacts(g, facts);
     PlaceLabel(g, end);
 }
 
@@ -161,6 +166,9 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
         CopyStruct(g, value, p, type);
         return;
     }
+    if (SetPinnedVar(g, place, value)) {
+        return;
+    }
     bool up = false;
     bool step = IsStep(g, place, value, up);
     if (!ResolvePlace(g, place, step ? -1 : value, p)) {
@@ -169,10 +177,10 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
     NormalizePlace(g, p, type);
     PinPlace(g, p, type);
     Opnd d = PlaceOpnd(g, p, type);
-    if (step && GenStep(g, d, up)) {
-        return;
+    if (!step || !GenStep(g, d, up)) {
+        EvalInto(g, value, d);
     }
-    EvalInto(g, value, d);
+    NoteSet(g, place, value);
 }
 
 void GenStore(Gen& g, const Expr& e) {
@@ -193,6 +201,8 @@ void GenStmt(Gen& g, ExprId id) {
     const Expr& e = At(g, id);
     if (e.kind != ExprKind::Do) {
         SourceNote(g, e.loc);
+        // a do's forms each forget what they may change, in turn
+        KillFacts(g, id);
     }
     TempMark mark = MarkTemps(g);
     switch (e.kind) {
@@ -223,10 +233,10 @@ void GenStmt(Gen& g, ExprId id) {
         }
         break;
     case ExprKind::While:
-        GenWhile(g, e);
+        GenWhile(g, id);
         break;
     case ExprKind::For:
-        GenFor(g, e);
+        GenFor(g, id);
         break;
     case ExprKind::Match:
         GenMatch(g, e, nullptr, false);

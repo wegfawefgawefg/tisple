@@ -266,7 +266,12 @@ bool MayWriteOpnd(const Gen& g, ExprId code, const Opnd& o) {
         const ByteRef& b = o.b[k];
         switch (b.kind) {
         case ByteKind::Imm:
+            break;
         case ByteKind::Reg:
+            // a while loop's variable in a register changes with its sets
+            if (g.pin[b.reg] >= 0 && MayWriteVarIn(g, code, g.pin[b.reg])) {
+                return true;
+            }
             break;
         case ByteKind::Mem:
         case ByteKind::MemIdx:
@@ -289,7 +294,14 @@ Opnd Snapshot(Gen& g, const Opnd& o) {
     if (o.in_a) {
         return SpillA(g);
     }
-    if (!IsVolatile(o)) {
+    // a while loop's variable in a register may be set later; a for counter never is
+    bool reg = false;
+    for (int k = 0; k < o.size; k++) {
+        const ByteRef& b = o.b[k];
+        std::int32_t var = b.kind == ByteKind::Reg ? g.pin[b.reg] : -1;
+        reg = reg || (var >= 0 && !g.program->vars[static_cast<std::size_t>(var)].loop_var);
+    }
+    if (!IsVolatile(o) && !reg) {
         return o;
     }
     Opnd t = NewTemp(g, o.size);

@@ -190,6 +190,39 @@ ByteLin Byte(const Loop& l, ExprId id, const Ctx* ctx, int depth) {
     return out;
 }
 
+bool Word(const Loop& l, ExprId id, const Ctx* ctx, int depth, std::uint32_t& coef);
+
+// the address of a place, invariant + counter * coef: elements of a packed array (one whose
+// address is taken is stored packed) and their fields
+bool AddressWord(const Loop& l, ExprId place, const Ctx* ctx, int depth, std::uint32_t& coef) {
+    coef = 0;
+    if (depth > kMaxDepth) {
+        return false;
+    }
+    const Program& program = *l.g->program;
+    const Expr& e = At(l, place);
+    switch (e.kind) {
+    case ExprKind::VarRef: {
+        const Var& var = program.vars[static_cast<std::size_t>(e.ref)];
+        return var.address_taken && ArgumentFor(l, ctx, e.ref) < 0 && !IsCalleeLocal(l, ctx, e.ref);
+    }
+    case ExprKind::Field:
+        return AddressWord(l, e.a, ctx, depth + 1, coef);
+    case ExprKind::Index: {
+        std::uint32_t a = 0;
+        std::uint32_t b = 0;
+        if (!AddressWord(l, e.a, ctx, depth + 1, a) || !Word(l, e.b, ctx, depth + 1, b)) {
+            return false;
+        }
+        std::uint32_t size = TypeOf(program, e.type).size;
+        coef = (a + b * size) & 0xFFFF;
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
 // a 16-bit value invariant + counter * coef (mod 65536); false if it is not one
 bool Word(const Loop& l, ExprId id, const Ctx* ctx, int depth, std::uint32_t& coef) {
     coef = 0;
@@ -207,8 +240,15 @@ bool Word(const Loop& l, ExprId id, const Ctx* ctx, int depth, std::uint32_t& co
     switch (e.kind) {
     case ExprKind::VarRef: {
         ExprId arg = ArgumentFor(l, ctx, e.ref);
+        if (arg < 0 && !IsCalleeLocal(l, ctx, e.ref) && e.ref == l.counter &&
+            ExprSize(program, id) == 2) {
+            coef = 1; // a u16 counter
+            return true;
+        }
         return arg >= 0 && Word(l, arg, ctx->outer, depth + 1, coef);
     }
+    case ExprKind::AddrOf:
+        return AddressWord(l, e.a, ctx, depth + 1, coef);
     case ExprKind::Convert: {
         if (ExprSize(program, e.a) != 1) {
             return Word(l, e.a, ctx, depth + 1, coef);
@@ -333,8 +373,8 @@ std::vector<ReducedLet> FindReducedLets(Gen& g, std::int32_t counter, ExprId bod
     std::vector<ReducedLet> out;
     const Program& program = *g.program;
     const Expr& b = ExprOf(program, body);
-    if (b.kind != ExprKind::Do ||
-        KindOf(program, program.vars[static_cast<std::size_t>(counter)].type) != TypeKind::U8) {
+    TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(counter)].type);
+    if (b.kind != ExprKind::Do || (kind != TypeKind::U8 && kind != TypeKind::U16)) {
         return out;
     }
     Loop l;
@@ -400,6 +440,13 @@ void StepReducedLets(Gen& g, const std::vector<ReducedLet>& lets) {
         }
         // a step below 256 only reaches the high byte on a carry
         std::int32_t skip = NewLabel(g);
+        if (r.step == 1) {
+            Emit(g, Mn::INC, Mode::Abs, low);
+            Branch(g, Mn::BNE, skip);
+            Emit(g, Mn::INC, Mode::Abs, SymValue(low.sym, low.offset + 1));
+            PlaceLabel(g, skip);
+            continue;
+        }
         Emit(g, Mn::LDA, Mode::Abs, low);
         Emit(g, Mn::CLC, Mode::Imp);
         Emit(g, Mn::ADC, Mode::Imm, Num(r.step));

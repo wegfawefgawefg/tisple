@@ -403,6 +403,9 @@ std::string Gen::WideStmt() {
 
 std::string Gen::Stmt(int depth) {
     budget--;
+    if (loop_shapes && depth > 0 && loops_rng.Chance(12)) {
+        return LoopShape(depth);
+    }
     if (!wide.empty() && rng.Chance(35)) {
         return WideStmt();
     }
@@ -624,6 +627,15 @@ std::string GenerateProgram(std::uint64_t seed) {
     // each in one program in eight
     g.fold_shapes = g.side.Chance(12);
     g.table_shapes = g.side.Chance(12);
+    g.loops_rng.s = seed * 0xA24BAED4963EE407ull + 0x5851F42Dull;
+    if (g.loops_rng.s == 0) {
+        g.loops_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.loops_rng.Next();
+    }
+    // in one program in four
+    g.loop_shapes = g.loops_rng.Chance(25);
     return g.Program();
 }
 

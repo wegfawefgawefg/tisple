@@ -54,7 +54,8 @@ file(GLOB TISPLE_FAST_SOURCES CONFIGURE_DEPENDS src/superopt/*.cpp src/gaps/prof
 set_source_files_properties(${TISPLE_FAST_SOURCES} PROPERTIES COMPILE_OPTIONS "-O2")
 
 # the fuzz generator lives with the tests; `tisple gaps --fuzz` uses it too
-add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp)
+add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp
+               tests/fuzz_gen_loops.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
 target_include_directories(tisple PRIVATE tests)
 tisple_warnings(tisple)

@@ -496,6 +496,60 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | 20000 fuzz programs | 86163802 cycles | 86156137 cycles |
     | other kernels, Life generations, plasma | 156409, 40138, 878, 572, 65513, 56, 243 | the same |
 
+21. Race item 1, step pointers for u16 counters and while loops (2026-10-27).
+    The race (docs/races.md) showed `str + n` rebuilt with a 16-bit add every
+    byte (strlen), sieve's k and i in memory with their pointers rebuilt, and
+    search's `(addr_of (at text i))` worked out and copied every position.
+    Now:
+    - While loops keep variables in registers (src/backend/gen_while.cpp): a
+      u16 local in Y and memory like a u16 for counter, with every array and
+      pointer it indexes read through a derived pointer `base + (high << 8)`
+      set before the loop; its sets move the pointers' high bytes (INY / BNE /
+      INC, or worked out again), the code for that put in once the body is
+      done and the pointers are known. Up to two byte locals in X and Y the
+      same way (INX, DEY, TAX after a value). The loop's sets write the
+      register, which is stored back where the loop ends. As for u8 for
+      loops, each choice is generated and the cheapest kept; one whose code
+      touches its registers or calls anything is dropped. With the step of 1
+      last, the test goes to the top, so the step's BNE goes straight back.
+    - Facts (src/backend/gen_facts.cpp): in the second half of an and, an
+      if's arm and a while body, what the condition says about a u8 variable
+      holds until a statement that may change it starts, so `(at arr (- j
+      1))` after `(!= j 0)` is `arr-1,X` (sort).
+    - Step pointers (src/backend/gen_step.cpp): a u16 local a loop only steps
+      by constants, and a u16 for counter kept in memory, index their arrays
+      and pointers through `ptr = base + v`, set before the outermost such
+      loop and moved wherever v is stepped (sieve's outer loop, mandel's k).
+      A u16 for counter now goes to Y or memory by cost, not Y whenever it
+      can, and lets of its body that move with it (search's p) are stepped.
+    - Smaller: a let pointer is worked out straight into its variable; a
+      byte of an `:address` symbol is known, so a page-aligned base adds no
+      `ADC #$00`; a memory u16 counter ending on a page skips the low-byte
+      compare; CMP of a pinned register is CPX or CPY, and the peephole turns
+      `TXA / CMP` into `CPX` when A is not read after; a load whose flags
+      only flow through a label is still dropped when it is redundant.
+    Tests: tests/test_backend_while.cpp (wide while loops up and down across
+    pages, steps by 1, 3, 255, 256, 300 and by variables, other sets, steps in
+    arms and not last, break, continue, return, calls that are and are not
+    inlined, nested loops; byte while loops; facts with sets in arms, in
+    while bodies and in loops in arms; step pointers through pointers, in
+    nested loops, both ways; let pointers whose index reads them). Leaving out
+    the fixups, the step pointers' moves or the facts' ends fails them. The
+    fuzz generator writes such loops (tests/fuzz_gen_loops.cpp) in one program
+    in four, from a stream of its own; dropping the fixups or the moves fails
+    3000 fuzz programs, and dropping the facts' ends 4 of 20000.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race strlen | 108102 | 36181 (12 cycles a byte; cc65 36153) |
+    | race sieve | 1455915 | 1105991 (Oscar64 1258060) |
+    | race search | 317417 | 199654 |
+    | race sort | 717510 | 474565 |
+    | race mandel | 9149633 | 9141874 |
+    | other race kernels | 95624, 86293, 115266, 65930, 540509, 160650, 705567, 82295 | the same |
+    | 20000 fuzz programs (generator before this item) | 86156137 cycles | 83941902 cycles |
+    | kernels, Life generations, plasma | 156409, 40138, 878, 572, 137300/41888, 65513, 56, 243 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

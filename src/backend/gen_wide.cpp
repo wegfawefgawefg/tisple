@@ -10,15 +10,6 @@ namespace tisple {
 
 namespace {
 
-// -1 unless byte k is a plain number
-int KnownByte(const Opnd& o, int k) {
-    const ByteRef& b = o.b[k];
-    if (o.in_a || b.kind != ByteKind::Imm || b.value.sym >= 0) {
-        return -1;
-    }
-    return b.value.offset & 0xFF;
-}
-
 // a byte the result can name as it is: a number, or a plain memory byte
 bool Passable(const ByteRef& b) {
     return b.kind == ByteKind::Imm || b.kind == ByteKind::Mem;
@@ -43,8 +34,8 @@ Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst) {
     int number[2] = {0, 0};
     bool carry = false;
     for (int k = 0; k < 2 && !carry; k++) {
-        int x = KnownByte(a, k);
-        int y = KnownByte(b, k);
+        int x = KnownImm(g, a, k);
+        int y = KnownImm(g, b, k);
         if (x >= 0 && y >= 0 && x + y <= 0xFF) {
             from[k] = From::Number;
             number[k] = x + y;

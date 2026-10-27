@@ -247,19 +247,27 @@ Opnd EvalIf(Gen& g, const Expr& e, const Opnd* dst) {
     std::int32_t other = NewLabel(g);
     std::int32_t end = NewLabel(g);
     GenBranch(g, e.a, false, other);
+    // each arm knows how the condition came out, about what it does not change itself
+    std::size_t facts = PushFacts(g, e.a, true, e.b);
     if (size == 1) {
         EvalA(g, e.b);
+        PopFacts(g, facts);
         JumpOverElse(g, end);
         PlaceLabel(g, other);
+        facts = PushFacts(g, e.a, false, e.c);
         EvalA(g, e.c);
+        PopFacts(g, facts);
         PlaceLabel(g, end);
         return InA();
     }
     Opnd d = Dest16(g, dst);
     EvalInto(g, e.b, d);
+    PopFacts(g, facts);
     Jump(g, end);
     PlaceLabel(g, other);
+    facts = PushFacts(g, e.a, false, e.c);
     EvalInto(g, e.c, d);
+    PopFacts(g, facts);
     PlaceLabel(g, end);
     return d;
 }

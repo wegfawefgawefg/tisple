@@ -87,10 +87,11 @@ struct Pass {
         return i;
     }
 
-    // a later branch reads the flags this instruction sets
+    // a later branch reads the flags this instruction sets; the way on goes through labels,
+    // whatever other ways into them bring
     bool FlagsNeeded(std::size_t i) {
         for (std::size_t j = i + 1; j < items->size(); j++) {
-            if (dead[j] || At(j).kind == ItemKind::Note) {
+            if (dead[j] || At(j).kind == ItemKind::Note || At(j).kind == ItemKind::Label) {
                 continue;
             }
             const AsmItem& item = At(j);

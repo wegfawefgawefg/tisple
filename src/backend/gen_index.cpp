@@ -30,12 +30,14 @@ bool IsIndexBase(const Opnd& o) {
     return kind == ByteKind::Mem || kind == ByteKind::Reg || kind == ByteKind::Imm;
 }
 
+// the u8 variable the index base reads, whose range (a loop's or facts') may let a delta
+// move into the address
 std::int32_t CounterOf(const Gen& g, ExprId id, const Opnd& base) {
     if (base.b[0].kind == ByteKind::Reg) {
         return g.pin[base.b[0].reg];
     }
     const Expr& e = At(g, id);
-    if (e.kind == ExprKind::VarRef && g.program->vars[static_cast<std::size_t>(e.ref)].loop_var) {
+    if (e.kind == ExprKind::VarRef && ExprKindOf(*g.program, id) == TypeKind::U8) {
         return e.ref;
     }
     return -1;
@@ -246,16 +248,13 @@ bool IsSmallDelta(std::uint8_t delta) {
 }
 
 bool DeltaFits(const Gen& g, std::int32_t counter, std::uint8_t delta) {
-    if (counter < 0) {
+    int lo = 0;
+    int hi = 0;
+    if (counter < 0 || !VarRange(g, counter, lo, hi)) {
         return false;
     }
-    for (const CounterRange& r : g.ranges) {
-        if (r.var == counter) {
-            int d = Signed(delta);
-            return r.lo + d >= 0 && r.hi + d <= 0xFF;
-        }
-    }
-    return false;
+    int d = Signed(delta);
+    return lo + d >= 0 && hi + d <= 0xFF;
 }
 
 bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type) {
@@ -265,7 +264,7 @@ bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type) {
 AsmValue DerivedPointer(Gen& g, std::int32_t loop, AsmValue base, std::int32_t var,
                         std::int32_t offset) {
     for (const Derived& d : g.derived) {
-        bool same = d.loop == loop && d.var == var && d.offset == offset &&
+        bool same = d.owner < 0 && d.loop == loop && d.var == var && d.offset == offset &&
                     d.base.sym == base.sym && d.base.offset == base.offset &&
                     d.base.part == base.part;
         if (same) {
@@ -291,7 +290,7 @@ std::vector<Derived> TakeDerived(Gen& g, std::int32_t loop, std::size_t first) {
     std::vector<Derived> used;
     std::vector<Derived> rest;
     for (const Derived& d : g.derived) {
-        if (d.loop != loop) {
+        if (d.loop != loop || d.owner >= 0) {
             rest.push_back(d);
             continue;
         }
@@ -342,7 +341,57 @@ void SetDerived(Gen& g, const Derived& d, const AsmValue& high) {
     StoreA(g, t, 1);
 }
 
+// T's high byte again: (base + offset)'s plus the counter's high byte
+void SetDerivedHigh(Gen& g, const Derived& d, const AsmValue& high) {
+    AsmValue ptr_high = SymValue(d.ptr.sym, d.ptr.offset + 1);
+    if (d.var < 0) {
+        AsmValue address = d.base;
+        address.offset = (address.offset + d.offset) & 0xFFFF;
+        Opnd base = d.base.sym >= 0 ? SymImmOpnd(address, 2)
+                                    : ImmOpnd(static_cast<std::uint16_t>(address.offset), 2);
+        Emit(g, Mn::LDA, Mode::Abs, high);
+        Emit(g, Mn::CLC, Mode::Imp);
+        OpA(g, Mn::ADC, base, 1);
+        Emit(g, Mn::STA, Mode::Abs, ptr_high);
+        return;
+    }
+    Opnd base = MemOpnd(d.base, 2, 1);
+    if (d.offset == 0) {
+        Emit(g, Mn::LDA, Mode::Abs, high);
+        Emit(g, Mn::CLC, Mode::Imp);
+        OpA(g, Mn::ADC, base, 1);
+        Emit(g, Mn::STA, Mode::Abs, ptr_high);
+        return;
+    }
+    Opnd offset = ImmOpnd(static_cast<std::uint16_t>(d.offset & 0xFFFF), 2);
+    LoadA(g, base, 0);
+    Emit(g, Mn::CLC, Mode::Imp);
+    OpA(g, Mn::ADC, offset, 0);
+    LoadA(g, base, 1);
+    OpA(g, Mn::ADC, offset, 1);
+    Emit(g, Mn::CLC, Mode::Imp);
+    Emit(g, Mn::ADC, Mode::Abs, high);
+    Emit(g, Mn::STA, Mode::Abs, ptr_high);
+}
+
 } // namespace
+
+void FollowHigh(Gen& g, const std::vector<Derived>& derived, WideFix fix, AsmValue high) {
+    for (const Derived& d : derived) {
+        AsmValue ptr_high = SymValue(d.ptr.sym, d.ptr.offset + 1);
+        switch (fix) {
+        case WideFix::Inc:
+            Emit(g, Mn::INC, Mode::Abs, ptr_high);
+            break;
+        case WideFix::Dec:
+            Emit(g, Mn::DEC, Mode::Abs, ptr_high);
+            break;
+        case WideFix::Compute:
+            SetDerivedHigh(g, d, high);
+            break;
+        }
+    }
+}
 
 void InitDerived(Gen& g, const std::vector<Derived>& derived, std::size_t at, AsmValue high) {
     std::size_t before = g.out->size();

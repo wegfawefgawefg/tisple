@@ -94,6 +94,10 @@ struct Gen {
     bool fold_shapes = false;
     // an operation on two byte-table reads with computed indices, calls in them now and then
     bool table_shapes = false;
+    // loops with variables the backend may keep in registers or step pointers to, from a
+    // stream of their own (fuzz_gen_loops.cpp)
+    Rng loops_rng;
+    bool loop_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -186,6 +190,17 @@ struct Gen {
     // read twice; minus_one: the counter starts at 1 or more; small: it stays below 12
     std::string StrideLets(const std::string& loop_var, bool minus_one, bool small);
     std::string WideStmt();
+    // ---- loops (fuzz_gen_loops.cpp)
+    std::string ByteTable();
+    // a while over u8 locals: stepped, set in arms, compared, read as indices
+    std::string ByteWhile(int depth);
+    // a while over a u16 local stepped by constants or a variable, read as an index
+    std::string WordWhile(int depth);
+    // a u16 local stepped once a pass of a u8 for, read as an index
+    std::string SteppedFor(int depth);
+    // a u16 for whose body has a while of its own, reading arrays and addresses by the counter
+    std::string WordFor(int depth);
+    std::string LoopShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

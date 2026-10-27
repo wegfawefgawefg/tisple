@@ -203,12 +203,24 @@ Opnd AddressOf(Gen& g, ExprId id, const Opnd* dst) {
         return ImmOpnd(0, 2);
     }
     if (place.pointer || place.has_index) {
-        PlaceToPointer(g, place);
+        bool plain = dst && dst->b[0].kind == ByteKind::Mem && dst->b[1].kind == ByteKind::Mem;
+        PlaceToPointer(g, place, plain ? dst : nullptr);
+        if (plain && place.ptr.sym == dst->b[0].value.sym &&
+            place.ptr.offset == dst->b[0].value.offset) {
+            return *dst; // worked out right there
+        }
         Opnd out = MemOpnd(place.ptr, 2, 1);
-        out.temp = true;
+        out.temp = !place.step_ptr;
         if (dst) {
             CopyOpnd(g, out, *dst);
             return *dst;
+        }
+        if (place.step_ptr) {
+            // later steps move the step pointer: this value is a copy
+            Opnd copy = MemOpnd(NewPtrTemp(g), 2, 1);
+            copy.temp = true;
+            CopyOpnd(g, out, copy);
+            return copy;
         }
         return out;
     }

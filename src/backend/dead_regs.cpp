@@ -212,6 +212,17 @@ void Successors(const std::vector<AsmItem>& items, const Flow& f, std::size_t i,
     }
 }
 
+// TXA or TYA, and right after it a CMP that CPX or CPY can do
+bool RegisterCompare(const AsmItem& transfer, const AsmItem& cmp) {
+    if (transfer.kind != ItemKind::Ins || cmp.kind != ItemKind::Ins || cmp.mn != Mn::CMP) {
+        return false;
+    }
+    if (transfer.mn != Mn::TXA && transfer.mn != Mn::TYA) {
+        return false;
+    }
+    return cmp.mode == Mode::Imm || cmp.mode == Mode::Zp || cmp.mode == Mode::Abs;
+}
+
 } // namespace
 
 bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
@@ -263,6 +274,16 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
                     (e.defs & live_out[i]) == 0;
         if (dead) {
             dropped = true;
+            continue;
+        }
+        // TXA / CMP m with A unread after: CPX m (the compare sets every flag TXA did)
+        if (i + 1 < items.size() && RegisterCompare(items[i], items[i + 1]) &&
+            (live_out[i + 1] & kA) == 0) {
+            AsmItem cmp = items[i + 1];
+            cmp.mn = items[i].mn == Mn::TXA ? Mn::CPX : Mn::CPY;
+            kept.push_back(cmp);
+            dropped = true;
+            i++;
             continue;
         }
         kept.push_back(items[i]);

@@ -99,6 +99,42 @@ void SignedLess(Gen& g, const Opnd& b, int k, bool first) {
     PlaceLabel(g, skip);
 }
 
+// the last instruction left N and Z describing index register r
+bool FlagsFromReg(const Gen& g, int r) {
+    if (g.out->empty()) {
+        return false;
+    }
+    const AsmItem& item = g.out->back();
+    if (item.kind != ItemKind::Ins) {
+        return false;
+    }
+    if (r == 0) {
+        return item.mn == Mn::INX || item.mn == Mn::DEX || item.mn == Mn::LDX || item.mn == Mn::TAX;
+    }
+    return item.mn == Mn::INY || item.mn == Mn::DEY || item.mn == Mn::LDY || item.mn == Mn::TAY;
+}
+
+// a byte in a pinned register against a number or a memory byte: CPX or CPY, A untouched.
+// False if the compare is not one of those.
+bool RegCompare(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& b, std::int32_t label) {
+    if (a.in_a || b.in_a || a.b[0].kind != ByteKind::Reg) {
+        return false;
+    }
+    ByteKind kind = b.b[0].kind;
+    bool equality = op == Op::Eq || op == Op::Ne;
+    if ((kind != ByteKind::Imm && kind != ByteKind::Mem) || (is_signed && !equality)) {
+        return false;
+    }
+    int r = a.b[0].reg;
+    if (!(equality && IsImmZero(b) && FlagsFromReg(g, r))) {
+        Emit(g, r == 0 ? Mn::CPX : Mn::CPY, kind == ByteKind::Imm ? Mode::Imm : Mode::Abs,
+             b.b[0].value);
+    }
+    Mn mn = op == Op::Eq ? Mn::BEQ : op == Op::Ne ? Mn::BNE : op == Op::Lt ? Mn::BCC : Mn::BCS;
+    Branch(g, mn, label);
+    return true;
+}
+
 } // namespace
 
 void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t label) {
@@ -110,6 +146,11 @@ void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t lab
         b = SpillA(g);
     }
     bool lt = op == Op::Lt;
+    // (unsigned compares with 0 that always or never hold are below)
+    bool trivial = !is_signed && !(op == Op::Eq || op == Op::Ne) && IsImmZero(b);
+    if (a.size == 1 && !trivial && RegCompare(g, op, is_signed, a, b, label)) {
+        return;
+    }
     if (a.size == 1) {
         if (op == Op::Eq || op == Op::Ne) {
             LoadA(g, a, 0);
@@ -278,16 +319,22 @@ void GenBranch(Gen& g, ExprId id, bool when, std::int32_t label) {
     case ExprKind::And:
     case ExprKind::Or: {
         bool is_and = e.kind == ExprKind::And;
+        // the second half only runs when the first is true (and) or false (or)
+        std::size_t facts = 0;
         // and jumping on true, or jumping on false: both halves must agree
         if (is_and == when) {
             std::int32_t skip = NewLabel(g);
             GenBranch(g, e.a, !when, skip);
+            facts = PushFacts(g, e.a, is_and, e.b);
             GenBranch(g, e.b, when, label);
+            PopFacts(g, facts);
             PlaceLabel(g, skip);
             return;
         }
         GenBranch(g, e.a, when, label);
+        facts = PushFacts(g, e.a, is_and, e.b);
         GenBranch(g, e.b, when, label);
+        PopFacts(g, facts);
         return;
     }
     case ExprKind::Binary:
