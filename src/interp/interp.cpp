@@ -302,6 +302,9 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     }
     const Expr& e = At(in, id);
     in.steps++;
+    if (in.expr_counts != nullptr) {
+        (*in.expr_counts)[static_cast<std::size_t>(id)]++;
+    }
     if (in.steps > in.max_steps) {
         Stop(in, StopKind::StepLimit, "step limit of " + std::to_string(in.max_steps) + " reached",
              e.loc);

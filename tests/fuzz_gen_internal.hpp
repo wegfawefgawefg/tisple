@@ -115,6 +115,12 @@ struct Gen {
     int budget = 0;
     // sm, an array of small values (0 to 3), but now and then a program stores a big one
     bool sm_big = false;
+    // race mode (GenerateRaceProgram): nothing a C program cannot say the same way (no I/O),
+    // the last function is t.run, and a main and a checksum of the globals follow it
+    bool race = false;
+    std::string entry = "main";
+    // race mode: every global's start value, set by t.init so no compiler sees it
+    std::string race_init;
 
     std::string Fresh(const char* prefix);
     std::string Literal(T t);
@@ -209,6 +215,18 @@ struct Gen {
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();
+    // ---- race mode (fuzz_gen_race.cpp)
+    // a scalar global's start value (" 5", or "" for none) as a set in t.init; returns ""
+    std::string RaceStart(const std::string& name, T t, const std::string& init);
+    // an array's " (make (array t n) v...)" as sets in t.init; returns ""
+    std::string RaceArrayStart(const std::string& name, T elem, const std::string& init);
+    // gs's fields, set in t.init; returns ""
+    std::string RaceStructStart();
+    // a store of a byte into a variable or element, where a program outside race mode writes
+    // to or reads from I/O
+    std::string RaceStore();
+    // rv, chk, t.init, the checksum function and main, after the generated functions
+    std::string RaceTail();
 };
 
 } // namespace tisple_tests::fuzz

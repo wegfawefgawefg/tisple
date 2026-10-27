@@ -64,6 +64,61 @@ void TestRecursiveReturnIsNotTheEnd(TestResults& results) {
     CHECK(results, r.kernel_cycles == 2 * (6 + 2 + 6) + (6 + 3) + 3 * 6);
 }
 
+// the random-program race stops the clock at t.checksum and lets the kernel finish
+void TestClockStopsAtTheStopAddress(TestResults& results) {
+    RaceSim sim;
+    sim.Load(0x0800, {0x20, 0x10, 0x08, 0x00}); // JSR kernel ; BRK
+    // kernel: LDA $0900 ; JSR stop ; RTS
+    sim.Load(0x0810, {0xAD, 0x00, 0x09, 0x20, 0x20, 0x08, 0x60});
+    // stop: STA $0901 ; RTS
+    sim.Load(0x0820, {0x8D, 0x01, 0x09, 0x60});
+    tisple::RaceOptions options;
+    options.start = 0x0800;
+    options.entry = 0x0810;
+    options.has_stop = true;
+    options.stop = 0x0820;
+    options.patches.push_back({0x0900, {0x42}});
+    tisple::RaceResult r = tisple::RunRace(*sim.machine, options);
+    CHECK(results, r.returned);
+    CHECK(results, r.kernel_cycles == 4 + 6);
+    CHECK(results, r.total_cycles == 4 + 6 + 4 + 6 + 6);
+    CHECK(results, sim.machine->mem[0x0901] == 0x42);
+    CHECK(results, tisple::ExecutedRanges(*sim.machine, r.executed) == "0810 0815\n");
+
+    // a kernel that never gets there is an error
+    options.stop = 0x0830;
+    RaceSim again;
+    again.Load(0x0800, {0x20, 0x10, 0x08, 0x00});
+    again.Load(0x0810, {0xAD, 0x00, 0x09, 0x20, 0x20, 0x08, 0x60});
+    again.Load(0x0820, {0x8D, 0x01, 0x09, 0x60});
+    r = tisple::RunRace(*again.machine, options);
+    CHECK(results, !r.returned);
+    CHECK(results, r.error == "the kernel returned without reaching the stop address");
+}
+
+// and starts it when t.init returns
+void TestClockStartsAfterACall(TestResults& results) {
+    RaceSim sim;
+    sim.Load(0x0800, {0x20, 0x10, 0x08, 0x00}); // JSR kernel ; BRK
+    // kernel: JSR init ; LDA $0900 ; JSR stop ; RTS
+    sim.Load(0x0810, {0x20, 0x30, 0x08, 0xAD, 0x00, 0x09, 0x20, 0x20, 0x08, 0x60});
+    sim.Load(0x0820, {0x8D, 0x01, 0x09, 0x60});             // stop: STA $0901 ; RTS
+    sim.Load(0x0830, {0xA9, 0x07, 0x8D, 0x00, 0x09, 0x60}); // init: LDA #7 ; STA $0900 ; RTS
+    tisple::RaceOptions options;
+    options.start = 0x0800;
+    options.entry = 0x0810;
+    options.has_after = true;
+    options.after = 0x0830;
+    options.has_stop = true;
+    options.stop = 0x0820;
+    tisple::RaceResult r = tisple::RunRace(*sim.machine, options);
+    CHECK(results, r.returned);
+    CHECK(results, r.kernel_cycles == 4 + 6);
+    CHECK(results, r.total_cycles == 6 + (2 + 4 + 6) + 4 + 6 + (4 + 6) + 6);
+    CHECK(results, sim.machine->mem[0x0901] == 7);
+    CHECK(results, tisple::ExecutedRanges(*sim.machine, r.executed) == "0813 0818\n");
+}
+
 void TestKernelNeverEntered(TestResults& results) {
     RaceSim sim;
     sim.Load(0x0800, {0xEA, 0x00}); // NOP ; BRK
@@ -80,6 +135,8 @@ void TestKernelNeverEntered(TestResults& results) {
 void RunRaceTests(TestResults& results) {
     TestKernelTimedFromEntryToReturn(results);
     TestRecursiveReturnIsNotTheEnd(results);
+    TestClockStopsAtTheStopAddress(results);
+    TestClockStartsAfterACall(results);
     TestKernelNeverEntered(results);
 }
 

@@ -17,20 +17,24 @@ struct RaceArgs {
     RaceOptions options;
     bool has_start = false;
     bool has_entry = false;
-    std::string dump;     // memory after the kernel, all 64 KB
-    std::string executed; // ranges of the code that ran
+    std::string dump;                 // memory after the kernel, all 64 KB
+    std::string executed;             // ranges of the code that ran
+    std::vector<std::uint16_t> words; // u16s to print from memory after the kernel
 };
 
 void PrintRaceUsage() {
     std::fprintf(stderr,
                  "usage: tisple race --load FILE@ADDR... --start ADDR --entry ADDR\n"
                  "                   [--patch FILE@ADDR]... [--dump mem.bin] [--executed out.txt]\n"
-                 "                   [--max-cycles N]\n"
+                 "                   [--max-cycles N] [--after ADDR] [--stop ADDR]\n"
+                 "                   [--word ADDR]...\n"
                  "runs a binary from --start; when the pc first reaches --entry, writes the\n"
                  "patches (the kernel's inputs) and counts cycles until it returns. prints the\n"
                  "kernel's cycles and registers; --dump writes memory after it, --executed the\n"
-                 "address ranges of every instruction it ran. addresses take $hex, 0xhex or\n"
-                 "decimal\n");
+                 "address ranges of every instruction it ran. --after: the clock starts when the\n"
+                 "kernel's call of the function at ADDR returns; --stop: it stops when the pc\n"
+                 "first reaches ADDR, and the kernel runs on to its return. --word prints the\n"
+                 "u16 at ADDR after it. addresses take $hex, 0xhex or decimal\n");
 }
 
 bool ParseNumber(const char* text, std::uint64_t& out) {
@@ -85,6 +89,22 @@ bool ParseOne(int argc, char** argv, int& i, RaceArgs& args) {
     if (std::strcmp(arg, "--entry") == 0) {
         args.has_entry = true;
         return ParseAddress(value, args.options.entry);
+    }
+    if (std::strcmp(arg, "--word") == 0) {
+        std::uint16_t address = 0;
+        if (!ParseAddress(value, address)) {
+            return false;
+        }
+        args.words.push_back(address);
+        return true;
+    }
+    if (std::strcmp(arg, "--after") == 0) {
+        args.options.has_after = true;
+        return ParseAddress(value, args.options.after);
+    }
+    if (std::strcmp(arg, "--stop") == 0) {
+        args.options.has_stop = true;
+        return ParseAddress(value, args.options.stop);
     }
     if (std::strcmp(arg, "--max-cycles") == 0 && ParseNumber(value, number)) {
         args.options.max_cycles = number;
@@ -154,8 +174,14 @@ int RunRaceCommand(int argc, char** argv) {
     }
     std::printf("startup_cycles %llu\n", static_cast<unsigned long long>(result.startup_cycles));
     std::printf("kernel_cycles %llu\n", static_cast<unsigned long long>(result.kernel_cycles));
+    std::printf("total_cycles %llu\n", static_cast<unsigned long long>(result.total_cycles));
     std::printf("regs A=%02X X=%02X Y=%02X S=%02X P=%02X\n", result.regs.a, result.regs.x,
                 result.regs.y, result.regs.s, result.regs.p);
+    for (std::uint16_t address : args.words) {
+        unsigned value =
+            machine->mem[address] | (machine->mem[static_cast<std::uint16_t>(address + 1)] << 8);
+        std::printf("word $%04X %u\n", address, value);
+    }
     if (!result.returned) {
         std::printf("error %s\n", result.error.c_str());
         return 2;
