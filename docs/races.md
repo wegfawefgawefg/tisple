@@ -33,7 +33,7 @@ Cycles / bytes, best setting of each compiler:
 | mul16 | 101818 / 299 | 90156 / 130 | 65477 / 131 | 31296 / 222 | tisple | 0.48 |
 | fill | 63996 / 165 | 238896 / 58 | 90467 / 57 | 43022 / 109 | tisple | 0.67 |
 | memcpy | 59878 / 143 | 153449 / 75 | 65824 / 69 | 38151 / 102 | tisple | 0.64 |
-| sieve | 2285731 / 210 | 2510574 / 250 | 1258060 / 128 | 1102807 / 154 | tisple | 0.88 |
+| sieve | 2285731 / 210 | 2510574 / 250 | 1258060 / 128 | 1086425 / 154 | tisple | 0.86 |
 | strlen | 36153 / 39 | 186081 / 75 | 39103 / 36 | 31642 / 54 | tisple | 0.88 |
 | search | 536420 / 145 | 136618 / 142 | 150500 / 63 | 128734 / 74 | tisple | 0.94 |
 | sort | 2020054 / 122 | 463713 / 56 | 422725 / 47 | 356260 / 51 | tisple | 0.84 |
@@ -94,9 +94,9 @@ Winner: tisple. Tisple / best other: 0.64.
 | cc65 | 2285731 | 210 | -Oirs -Cl const |
 | llvm-mos | 2510574 | 250 | -O2 extern |
 | oscar64 | 1258060 | 128 | -O2 const |
-| tisple | 1102807 | 154 | - |
+| tisple | 1086425 | 154 | - |
 
-Winner: tisple. Tisple / best other: 0.88.
+Winner: tisple. Tisple / best other: 0.86.
 
 ### strlen: Length of a 3000-byte string
 
@@ -202,10 +202,10 @@ did it, and the slack left:
 - **fill 0.67, memcpy 0.64** (the `unroll.tsp` versions): constant offsets fold into
   `STA buf+C,X`, so the page-split loops are what cc65's library is, unrolled further. The
   plain `kernel.tsp` loops are as before (fill still reloads its value each byte).
-- **sieve 0.88.** The inner while keeps k's low byte in Y and indexes through a pointer on
-  its high byte; the outer `flags[i]` is a pointer stepped with i. Slack: the inner loop
-  still works the pointer's high byte out from k every pass (39 cycles a pass), and the
-  first loop reloads `LDA #1` every byte (16K) because its page step uses A.
+- **sieve 0.86.** The inner while keeps k's low byte in Y and indexes through a pointer on
+  its high byte; the outer `flags[i]` is a pointer stepped with i; the first loop's `LDA
+  #1` runs once. Slack: the inner loop still works the pointer's high byte out from k
+  every pass (39 cycles a pass).
 - **strlen 0.88.** n's low byte in Y, two tests and steps a time (Y even at the top).
 - **search 0.94.** The u16 counter is replaced by the text pointer itself (stepped by INC,
   compared with a constant stop), j in Y, the rotated inner test, jump threading past the

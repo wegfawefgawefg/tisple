@@ -558,6 +558,50 @@ int BranchOutcome(const Tracker& t, Mn mn) {
     }
 }
 
+// what a load puts in its register, when the tracker can say
+Content LoadContent(const Pass& p, const Tracker& t, const AsmItem& item) {
+    Content c;
+    std::uint8_t index = TrackableIndex(*p.as, item.mode, item.value);
+    if (item.mode == Mode::Imm) {
+        c.known = true;
+        c.v = item.value;
+    } else if (Trackable(*p.as, item.mode, item.value)) {
+        c = PlainMem(item.value);
+        if (const AsmValue* k = t.ConstAt(item.value)) {
+            c.mem = false;
+            c.v = *k;
+        }
+    } else if (index != kPlain) {
+        c = PlainMem(item.value);
+        c.index = index;
+    }
+    return c;
+}
+
+// A loop label that only the fall and jumps back reach, followed by a load whose value every
+// jump back brings already (fill's LDA v, when nothing in the loop changes A): the load goes
+// before the label, so it runs once. Returns the load's index, or 0.
+std::size_t HoistableLoad(Pass& p, const Tracker& fall, const Tracker& back, std::size_t label) {
+    std::size_t j = label + 1;
+    while (j < p.items->size() && (p.dead[j] || p.At(j).kind == ItemKind::Note)) {
+        j++;
+    }
+    if (j >= p.items->size() || p.At(j).kind != ItemKind::Ins) {
+        return 0;
+    }
+    const AsmItem& load = p.At(j);
+    int r = LoadReg(load.mn);
+    if (r < 0) {
+        return 0;
+    }
+    Content c = LoadContent(p, back, load);
+    if (!c.known || !SameContent(back.reg[r], c) || SameContent(fall.reg[r], c) ||
+        p.FlagsNeeded(j)) {
+        return 0;
+    }
+    return j;
+}
+
 int StoreReg(Mn mn) {
     return mn == Mn::STA ? 0 : mn == Mn::STX ? 1 : mn == Mn::STY ? 2 : -1;
 }
@@ -603,6 +647,18 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
             }
             if (loop_label) {
                 auto from_back = back ? back->find(item.value.sym) : BackStates::const_iterator();
+                std::size_t hoist =
+                    back && from_back != back->end() && falls && found == arriving.end()
+                        ? HoistableLoad(p, t, from_back->second, i)
+                        : 0;
+                if (hoist) {
+                    // the load, then the label: look at the load again
+                    std::swap(p.At(i), p.At(hoist));
+                    labels[p.At(hoist).value.sym] = hoist;
+                    p.changed = true;
+                    i--;
+                    continue;
+                }
                 if (!back || from_back == back->end()) {
                     t.ForgetAll();
                 } else {
@@ -673,21 +729,7 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
         Mn mn = item.mn;
         int r = LoadReg(mn);
         if (r >= 0) {
-            Content c;
-            std::uint8_t index = TrackableIndex(*p.as, item.mode, item.value);
-            if (item.mode == Mode::Imm) {
-                c.known = true;
-                c.v = item.value;
-            } else if (Trackable(*p.as, item.mode, item.value)) {
-                c = PlainMem(item.value);
-                if (const AsmValue* k = t.ConstAt(item.value)) {
-                    c.mem = false;
-                    c.v = *k;
-                }
-            } else if (index != kPlain) {
-                c = PlainMem(item.value);
-                c.index = index;
-            }
+            Content c = LoadContent(p, t, item);
             bool plain = c.index == kPlain;
             if (c.known &&
                 (SameContent(t.reg[r], c) || (c.mem && plain && t.Holds(r, item.value)) ||

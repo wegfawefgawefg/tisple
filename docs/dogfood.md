@@ -954,6 +954,25 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 35) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
 
+37. Race item 3, invariant loads out of loops (2026-10-27). With what the
+    jumps back to a loop label bring known (32), a load right after the
+    label whose value every jump back already holds, at a label only the
+    fall and those jumps reach, moves before the label and runs once (the
+    flags it sets must be unread). sieve's first loop stored `LDA #1` every
+    byte. And a u16 for loop with its counter's low byte in Y tests the end
+    at a page step with X when X is free (`LDX i+1 / CPX #hi`), so A keeps
+    what the body left there. (fill's `LDA v` stays: the store through the
+    loop pointer could, for all the peephole knows, change v.) Tests: the
+    fuzz programs; hoisting without checking the jumps back fails 476 of
+    3000 and 213 tests, without checking the flags 6 and 2.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race sieve | 1102807 | 1086425 (Oscar64 1258060) |
+    | life step (test) | 139025 | 138894 |
+    | other race kernels, Life generations, plasma | (as after 36) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | snake 1021, multi 203 |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

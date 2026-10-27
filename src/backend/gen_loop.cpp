@@ -267,11 +267,19 @@ bool TryWide(Gen& g, const ForParts& f) {
         next_page();
         Branch(g, Mn::BNE, top);
     } else if (end_low_zero) {
-        // the counter can only reach the end at a page start
+        // the counter can only reach the end at a page start; through X when it is free, so
+        // A keeps what the body left in it (fill's value)
         Branch(g, Mn::BNE, top);
         next_page();
-        Emit(g, Mn::LDA, Mode::Abs, high);
-        OpA(g, Mn::CMP, f.end, 1);
+        const ByteRef& end_high = f.end.b[1];
+        if (g.pin[0] < 0 && (end_high.kind == ByteKind::Imm || end_high.kind == ByteKind::Mem)) {
+            Emit(g, Mn::LDX, Mode::Abs, high);
+            Emit(g, Mn::CPX, end_high.kind == ByteKind::Imm ? Mode::Imm : Mode::Abs,
+                 end_high.value);
+        } else {
+            Emit(g, Mn::LDA, Mode::Abs, high);
+            OpA(g, Mn::CMP, f.end, 1);
+        }
         Branch(g, Mn::BNE, top);
     } else {
         std::int32_t wrap = NewLabel(g);
