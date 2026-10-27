@@ -32,11 +32,14 @@ bool TextLine(const SoftSwitches& sw, uint32_t line) {
     return sw.text || (sw.mixed && line >= kMixedTextLine);
 }
 
+// 80 columns on text lines; double-res on graphics lines when an3 is off as well
 uint8_t ModeFor(const SoftSwitches& sw, uint32_t line) {
     if (TextLine(sw, line)) {
-        return static_cast<uint8_t>(kVideoText | (sw.altchar ? kVideoAltChar : 0));
+        uint8_t alt = sw.altchar ? kVideoAltChar : 0;
+        return static_cast<uint8_t>(kVideoText | alt | (sw.col80 ? kVideoDouble : 0));
     }
-    return sw.hires ? kVideoHires : kVideoLores;
+    uint8_t double_res = sw.col80 && !sw.an[3] ? kVideoDouble : 0;
+    return static_cast<uint8_t>((sw.hires ? kVideoHires : kVideoLores) | double_res);
 }
 
 uint16_t LineBase(const SoftSwitches& sw, uint32_t line) {
@@ -54,6 +57,12 @@ void FetchColumns(const Apple2& a, VideoFrame& frame, uint32_t line, uint32_t fi
     for (uint32_t col = first; col < end; col++) {
         frame.bytes[line][col] = a.cpu.mem[base + col];
         frame.modes[line][col] = mode;
+    }
+    if ((mode & kVideoDouble) == 0) {
+        return;
+    }
+    for (uint32_t col = first; col < end; col++) {
+        frame.aux_bytes[line][col] = a.aux[base + col];
     }
 }
 

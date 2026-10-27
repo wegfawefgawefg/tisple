@@ -328,7 +328,6 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     }
     std::fputs(DescribeDisks(a).c_str(), stdout);
     std::fputs(DescribeMouse(a).c_str(), stdout);
-    std::fputs(DescribeStubNotes(a.stub_notes).c_str(), stdout);
     if (!ok) {
         return 1;
     }

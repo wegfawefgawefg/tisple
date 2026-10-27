@@ -223,9 +223,9 @@ std::string ScreenText(const tisple::Apple2& a) {
     return text;
 }
 
-// Zellyn Hunter's a2audit (scripts/fetch_a2audit.sh) through Apple's roms: its language card
-// and soft switch tests pass. its aux memory test is skipped (no aux memory yet) and its
-// video tests need a person to look
+// Zellyn Hunter's a2audit (scripts/fetch_a2audit.sh) through Apple's roms: it finds 128K, and
+// its language card, aux memory and soft switch tests pass. its video tests need a person to
+// look
 void TestA2Audit(TestResults& results) {
     std::vector<uint8_t> main_rom = OwnerRom("Apple2e.rom");
     std::vector<uint8_t> disk_rom = OwnerRom("DISK2.rom");
@@ -245,9 +245,12 @@ void TestA2Audit(TestResults& results) {
     std::string screen = ScreenText(*a);
     bool lc = screen.find("LANGUAGE CARD TESTS SUCCEEDED") != std::string::npos;
     bool switches = screen.find("SOFTSWITCH TESTS SUCCEEDED") != std::string::npos;
+    bool aux = screen.find("MEMORY:128K") != std::string::npos &&
+               screen.find("AUXMEM TESTS SUCCEEDED") != std::string::npos;
     CHECK(results, lc);
     CHECK(results, switches);
-    if (!lc || !switches) {
+    CHECK(results, aux);
+    if (!lc || !switches || !aux) {
         std::fprintf(stderr, "a2audit screen:\n%s", screen.c_str());
     }
 }

@@ -399,7 +399,6 @@ int RunMachineWindow(Apple2& a, const WindowOptions& options) {
         if (a.stopped && !w.reported_stop) {
             w.reported_stop = true;
             std::printf("stopped: %s\n", DescribeStop(a).c_str());
-            std::fputs(DescribeStubNotes(a.stub_notes).c_str(), stdout);
             std::fflush(stdout);
             UpdateTitle(w, a, options);
         }

@@ -60,12 +60,7 @@ void MemorySwitchWrite(Apple2& a, uint16_t addr, uint64_t t) {
         sw.altchar = on;
         break;
     }
-    if (on && (sw.ramrd || sw.ramwrt || sw.altzp)) {
-        a.stub_notes |= kNoteAuxMemory;
-    }
-    if (on && sw.col80) {
-        a.stub_notes |= kNote80Columns;
-    }
+    UpdateMemoryMap(a);
 }
 
 // $C011-$C01F status bits
@@ -149,10 +144,10 @@ void DisplaySwitch(Apple2& a, uint16_t addr, uint64_t t) {
         target = &sw.hires;
         break;
     default:
-        sw.an[which - 4] = on;
-        if (which == 7 && !on && sw.col80) {
-            a.stub_notes |= kNoteDoubleRes;
+        if (sw.an[which - 4] != on && which == 7) {
+            CatchUpVideo(a, t + 1); // an3 turns double-res on and off
         }
+        sw.an[which - 4] = on;
         return;
     }
     if (*target == on) {
@@ -161,8 +156,8 @@ void DisplaySwitch(Apple2& a, uint16_t addr, uint64_t t) {
     // the scanner draws everything up to this cycle with the old mode
     CatchUpVideo(a, t + 1);
     *target = on;
-    if (which == 2 && sw.store80) {
-        a.stub_notes |= kNoteAuxMemory;
+    if (which == 2) {
+        UpdateMemoryMap(a); // with 80store on, page 2 picks auxiliary text memory
     }
 }
 
@@ -289,15 +284,28 @@ uint8_t CxAccess(Apple2& a, uint16_t addr, bool is_write, uint8_t value) {
     return drives ? result : FloatingBus(a, AccessCycle(a));
 }
 
-uint8_t* LanguageCardByte(Apple2& a, uint16_t addr) {
+// main or auxiliary language card ram, by ALTZP
+const uint8_t* LanguageCardRam(const Apple2& a, uint16_t addr) {
+    const LanguageCard& lc = a.lc;
+    bool aux = a.sw.altzp;
     if (addr >= 0xE000) {
-        return &a.lc.e000[addr - 0xE000];
+        return aux ? &lc.aux_e000[addr - 0xE000] : &lc.e000[addr - 0xE000];
     }
-    return a.lc.bank2 ? &a.lc.bank2_d000[addr - 0xD000] : &a.lc.bank1_d000[addr - 0xD000];
+    if (lc.bank2) {
+        return aux ? &lc.aux_bank2_d000[addr - 0xD000] : &lc.bank2_d000[addr - 0xD000];
+    }
+    return aux ? &lc.aux_bank1_d000[addr - 0xD000] : &lc.bank1_d000[addr - 0xD000];
+}
+
+uint8_t* LanguageCardByte(Apple2& a, uint16_t addr) {
+    return const_cast<uint8_t*>(LanguageCardRam(a, addr));
 }
 
 uint8_t BusRead(void* ctx, uint16_t addr) {
     Apple2& a = *static_cast<Apple2*>(ctx);
+    if (addr < 0xC000) {
+        return *RamByte(a, addr, false); // only while auxiliary memory is switched in
+    }
     if (addr < 0xC100) {
         return IoAccess(a, addr, false, 0);
     }
@@ -312,6 +320,10 @@ uint8_t BusRead(void* ctx, uint16_t addr) {
 
 void BusWrite(void* ctx, uint16_t addr, uint8_t value) {
     Apple2& a = *static_cast<Apple2*>(ctx);
+    if (addr < 0xC000) {
+        *RamByte(a, addr, true) = value;
+        return;
+    }
     if (addr < 0xC100) {
         IoAccess(a, addr, true, value);
         return;
@@ -335,6 +347,7 @@ void InstallBus(Apple2& a) {
     hook.write = BusWrite;
     hook.ctx = &a;
     SetIoHook(a.cpu, hook);
+    UpdateMemoryMap(a);
 }
 
 uint8_t FloatingBus(const Apple2& a, uint64_t cycle) {
@@ -361,7 +374,7 @@ bool CanExecute(const Apple2& a, uint16_t addr) {
 
 uint8_t PeekMemory(const Apple2& a, uint16_t addr) {
     if (addr < 0xC000) {
-        return a.cpu.mem[addr];
+        return ReachesAux(a.sw, addr, false) ? a.aux[addr] : a.cpu.mem[addr];
     }
     if (addr < 0xC100) {
         return 0; // i/o: reading has effects, so peeking shows nothing
@@ -378,10 +391,7 @@ uint8_t PeekMemory(const Apple2& a, uint16_t addr) {
         return CardRomPeek(a, card_slot, addr);
     }
     if (a.lc.read_ram) {
-        if (addr >= 0xE000) {
-            return a.lc.e000[addr - 0xE000];
-        }
-        return a.lc.bank2 ? a.lc.bank2_d000[addr - 0xD000] : a.lc.bank1_d000[addr - 0xD000];
+        return *LanguageCardRam(a, addr);
     }
     return a.rom.present ? a.rom.bytes[addr - 0xC000] : NoRomByte(addr);
 }
@@ -404,6 +414,7 @@ void ResetSoftSwitches(Apple2& a) {
     a.lc.read_ram = false;
     a.lc.write_enable = true;
     a.lc.prewrite = false;
+    UpdateMemoryMap(a);
 }
 
 } // namespace tisple

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download Zellyn Hunter's a2audit disk (MIT, github.com/zellyn/a2audit) to
 # tests/data/a2audit/audit.dsk (gitignored). The tests boot it when Apple's roms are in
-# ~/.local/share/tisple/roms/ and check its language card and soft switch results.
+# ~/.local/share/tisple/roms/ and check its language card, aux memory and soft switch results.
 # By hand:
 #   tisple machine --disk tests/data/a2audit/audit.dsk \
 #       --rom ~/.local/share/tisple/roms/Apple2e.rom \

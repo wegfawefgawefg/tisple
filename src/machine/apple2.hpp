@@ -1,7 +1,7 @@
 #pragma once
 
-// an unenhanced apple iie (nmos 6502, 64 KB main ram, language card) around our
-// cycle-exact cpu wrapper. two starts:
+// an apple iie with an extended 80-column card (nmos 6502, 64 KB main ram and 64 KB auxiliary
+// ram, a language card in each) around our cycle-exact cpu wrapper. two starts:
 // - direct load: no rom, a raw binary copied into ram and started at its origin. BRK, the
 //   entry's final RTS, or a jump into rom space stops the machine.
 // - real boot: a rom image the user supplies (never committed), reset through $FFFC.
@@ -31,7 +31,16 @@
 // - without a rom, $D000-$FFFF and internal $Cxxx rom read as the address's high byte
 // - BRK and undocumented opcodes stop a direct-loaded program (the chip would vector or
 //   execute them); with a rom and no program loaded, they run as on the chip
-// - no interrupts; auxiliary memory, 80 columns and double-res are stubs (noted once)
+// - no interrupts
+// - auxiliary memory (memory_map.cpp): the card's ram as Sather describes it; with every
+//   switch off the cpu reaches main ram straight, otherwise every access below $C000 goes
+//   through the switches. the scanner's floating bus is always main ram
+// - 80 columns and double-res: the aux byte shows first, then the main byte, 7 dots each,
+//   with no delay between them; 80-column text is our font at half width; double lo-res
+//   shows aux nibbles rotated right one bit, as the hardware does; the flat look colours a
+//   double hi-res line by 4-dot groups from the line's start, the lo-res colours
+// - the alternate character set is the enhanced iie's (MouseText at $40-$5F, our own
+//   drawings), although the cpu is the unenhanced iie's nmos 6502
 // - speaker: an ideal two-position cone, box-filtered, with a 35 Hz high-pass
 // - disk ii (disk2.hpp): 4 cycles a bit cell exactly (a real drive's 4 microseconds are
 //   about 4.08 cycles) and a constant 300 rpm; the sequencer by its behaviour, not Apple's
@@ -44,6 +53,7 @@
 //   port the real card lacks
 
 #include "emu/machine.hpp"
+#include "link/segment.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -74,8 +84,7 @@ constexpr uint8_t kPaddleCentre = 127;
 constexpr uint32_t kSpeakerRingSize = 16384; // toggles kept for consumers; drain once a frame
 constexpr uint32_t kMaxScheduledKeys = 1024;
 
-// display switches and the iie memory switches. 80-column and auxiliary memory are tracked
-// (status reads return them) but not built yet: main memory and 40 columns are used.
+// display switches and the iie memory switches
 struct SoftSwitches {
     bool text = true;
     bool mixed = false;
@@ -93,7 +102,8 @@ struct SoftSwitches {
     bool intc8rom = false; // internal $C800-$CFFF rom, set by a $C3xx access
 };
 
-// 16 KB at $D000-$FFFF: two 4 KB banks at $D000 and 8 KB at $E000
+// 16 KB at $D000-$FFFF: two 4 KB banks at $D000 and 8 KB at $E000, in main ram and again in
+// auxiliary ram (ALTZP picks which); the switches are shared
 struct LanguageCard {
     bool bank2 = true;
     bool read_ram = false;
@@ -102,6 +112,9 @@ struct LanguageCard {
     uint8_t bank1_d000[0x1000] = {};
     uint8_t bank2_d000[0x1000] = {};
     uint8_t e000[0x2000] = {};
+    uint8_t aux_bank1_d000[0x1000] = {};
+    uint8_t aux_bank2_d000[0x1000] = {};
+    uint8_t aux_e000[0x2000] = {};
 };
 
 // an image of $C000-$FFFF; a 12 KB rom fills $D000-$FFFF only
@@ -142,10 +155,12 @@ enum VideoMode : uint8_t {
     kVideoLores = 1,
     kVideoHires = 2,
     kVideoAltChar = 0x08, // flag on text columns
+    kVideoDouble = 0x10,  // 80 columns or double-res: aux_bytes show first
 };
 
 struct VideoFrame {
     uint8_t bytes[kVisibleLines][kVisibleColumns] = {};
+    uint8_t aux_bytes[kVisibleLines][kVisibleColumns] = {}; // fetched in double modes only
     uint8_t modes[kVisibleLines][kVisibleColumns] = {};
     bool burst[kVisibleLines] = {}; // color burst seen on the line
     bool flash_inverse = false;
@@ -295,15 +310,9 @@ enum class MachineStop : uint8_t {
     kNoRom, // jumped into rom or slot space with nothing there
 };
 
-// stub notes: things a program used that are not built yet, reported once
-enum StubNote : uint32_t {
-    kNoteAuxMemory = 1u << 0,
-    kNote80Columns = 1u << 1,
-    kNoteDoubleRes = 1u << 2,
-};
-
 struct Apple2 {
-    Machine cpu; // registers, pins, cycle counter and the 64 KB of main ram
+    Machine cpu;              // registers, pins, cycle counter and the 64 KB of main ram
+    uint8_t aux[0xC000] = {}; // auxiliary ram below $C000; its language card is in lc
     SoftSwitches sw;
     LanguageCard lc;
     Rom rom;
@@ -320,7 +329,6 @@ struct Apple2 {
     MachineStop stop_reason = MachineStop::kRunning;
     uint16_t stop_pc = 0;
     uint8_t stop_opcode = 0;
-    uint32_t stub_notes = 0;
 };
 
 struct RunOutcome {
@@ -343,6 +351,9 @@ void PowerOn(Apple2& a);
 bool LoadRom(Apple2& a, const uint8_t* bytes, size_t size, std::string& error);
 // copies a raw binary to origin and starts there with $FFFE pushed as the return address
 bool LoadProgram(Apple2& a, const uint8_t* bytes, size_t size, uint16_t origin, std::string& error);
+// more of a program, before LoadProgram: main ram below $C000, the main language card's
+// $D000-$FFFF with bank 2 at $D000, or auxiliary ram below $C000
+bool LoadSegment(Apple2& a, const MemorySegment& segment, std::string& error);
 // the reset line: soft switches to their reset state, pc from $FFFC
 void ResetApple2(Apple2& a);
 
@@ -353,7 +364,6 @@ using MachineTraceFn = void (*)(void* ctx, const Machine& m);
 RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, void* trace_ctx);
 const char* MachineStopName(MachineStop reason);
 std::string DescribeStop(const Apple2& a); // "BRK at $6012", "jumped into rom at $FDED", ...
-std::string DescribeStubNotes(uint32_t notes);
 uint64_t Cycles(const Apple2& a);
 
 // input
@@ -365,6 +375,9 @@ void SetButton(Apple2& a, int index, bool down);
 
 // memory as the cpu would read it, without side effects
 uint8_t PeekMemory(const Apple2& a, uint16_t addr);
+// auxiliary ram, whatever the switches say: below $C000 as is, $C000-$CFFF its language
+// card's bank 1 $D000-$DFFF, then $D000-$FFFF with bank 2
+uint8_t PeekAux(const Apple2& a, uint16_t addr);
 
 // speaker: toggle n for n in [toggle_count - kSpeakerRingSize, toggle_count)
 uint64_t SpeakerToggleCycle(const Apple2& a, uint64_t n);
