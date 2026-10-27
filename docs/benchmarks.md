@@ -42,3 +42,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-27 | (race item 2: quarter-square multiplies in loops) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-27 | (race item 3: while loops take outer counters registers, trip-count weights) | life | generations in 10 s | 56 |
 | 2026-10-27 | (race item 3: while loops take outer counters registers, trip-count weights) | plasma | frames in 10 s | 243 (24.3 fps) |
+| 2026-10-27 | (race item 4: indexed bytes kept in registers) | life | generations in 10 s | 56 |
+| 2026-10-27 | (race item 4: indexed bytes kept in registers) | plasma | frames in 10 s | 243 (24.3 fps) |

@@ -58,14 +58,32 @@ bool EndsFlow(Mn mn) {
     return mn == Mn::JMP || mn == Mn::RTS || mn == Mn::RTI || mn == Mn::BRK;
 }
 
+// an indexed byte a register may hold: v,X or v,Y with the index register as it is now, or
+// (v),Y through the zero-page pointer v
+enum : std::uint8_t {
+    kPlain = 0,
+    kByX = 1,
+    kByY = 2,
+    kThroughY = 3,
+};
+
 struct Content {
     bool known = false;
     bool mem = false; // equals the memory byte at v, else the constant v
     AsmValue v;
+    std::uint8_t index = kPlain; // mem: how the byte at v is reached
 };
 
 bool SameContent(const Content& a, const Content& b) {
-    return a.known && b.known && a.mem == b.mem && SameValue(a.v, b.v);
+    return a.known && b.known && a.mem == b.mem && SameValue(a.v, b.v) && a.index == b.index;
+}
+
+Content PlainMem(const AsmValue& v) {
+    Content c;
+    c.known = true;
+    c.mem = true;
+    c.v = v;
+    return c;
 }
 
 struct Pass {
@@ -140,9 +158,24 @@ struct Tracker {
         mem_const.clear();
         mem_copy.clear();
     }
+    // what was read through index register r (1 X, 2 Y), which just changed
+    void ForgetIndex(int r) {
+        for (Content& c : reg) {
+            bool by = r == 1 ? c.index == kByX : c.index == kByY || c.index == kThroughY;
+            if (c.known && c.mem && by) {
+                c.known = false;
+            }
+        }
+    }
     void ForgetByte(const AsmValue& m) {
         for (Content& c : reg) {
-            if (c.known && c.mem && SameValue(c.v, m)) {
+            if (!c.known || !c.mem) {
+                continue;
+            }
+            // a byte of the same array; a pointer's own bytes or what it may point at
+            bool hit =
+                c.index == kPlain ? SameValue(c.v, m) : c.index == kThroughY || c.v.sym == m.sym;
+            if (hit) {
                 c.known = false;
             }
         }
@@ -161,7 +194,7 @@ struct Tracker {
     // an indexed store into the array at sym (it stays inside: indices are in bounds)
     void ForgetSym(std::int32_t sym) {
         for (Content& c : reg) {
-            if (c.known && c.mem && c.v.sym == sym) {
+            if (c.known && c.mem && (c.v.sym == sym || c.index == kThroughY)) {
                 c.known = false;
             }
         }
@@ -191,7 +224,7 @@ struct Tracker {
     // register r holds what the memory byte m holds: that byte, or one m is a copy of
     bool Holds(int r, const AsmValue& m) const {
         const Content& c = reg[r];
-        if (!c.known || !c.mem) {
+        if (!c.known || !c.mem || c.index != kPlain) {
             return false;
         }
         if (SameValue(c.v, m)) {
@@ -322,6 +355,28 @@ bool Trackable(const Assembly& as, Mode mode, const AsmValue& v) {
     return !sym.defined || sym.value < 0xC000;
 }
 
+// an indexed byte of RAM the program owns, which nothing but stores changes: abs,X and abs,Y of
+// a symbol whose page and the next are below the I/O, (zp),Y through a pointer
+std::uint8_t TrackableIndex(const Assembly& as, Mode mode, const AsmValue& v) {
+    if (v.sym < 0 || v.part != Part::Whole) {
+        return kPlain;
+    }
+    const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
+    if (sym.defined && sym.value + v.offset + 0x100 > 0xC000) {
+        return kPlain;
+    }
+    switch (mode) {
+    case Mode::AbsX:
+        return kByX;
+    case Mode::AbsY:
+        return kByY;
+    case Mode::IndY:
+        return kThroughY;
+    default:
+        return kPlain;
+    }
+}
+
 // do N and Z show A's value after this instruction (before: they did before it)
 bool NzFollowsA(const AsmItem& item, bool before) {
     switch (item.mn) {
@@ -419,20 +474,24 @@ void RegisterPass(Pass& p) {
         int r = LoadReg(mn);
         if (r >= 0) {
             Content c;
+            std::uint8_t index = TrackableIndex(*p.as, item.mode, item.value);
             if (item.mode == Mode::Imm) {
                 c.known = true;
                 c.v = item.value;
             } else if (Trackable(*p.as, item.mode, item.value)) {
-                c.known = true;
-                c.mem = true;
-                c.v = item.value;
+                c = PlainMem(item.value);
                 if (const AsmValue* k = t.ConstAt(item.value)) {
                     c.mem = false;
                     c.v = *k;
                 }
+            } else if (index != kPlain) {
+                c = PlainMem(item.value);
+                c.index = index;
             }
-            if (c.known && (SameContent(t.reg[r], c) || (c.mem && t.Holds(r, item.value)) ||
-                            (c.mem && SameContent(t.reg[r], Content{true, true, item.value})))) {
+            bool plain = c.index == kPlain;
+            if (c.known &&
+                (SameContent(t.reg[r], c) || (c.mem && plain && t.Holds(r, item.value)) ||
+                 (c.mem && plain && SameContent(t.reg[r], PlainMem(item.value))))) {
                 if (!p.FlagsNeeded(i) || (r == 0 && nz_before)) {
                     // nothing reads the flags, or they already show A
                     t.nz_a = nz_before;
@@ -447,13 +506,13 @@ void RegisterPass(Pass& p) {
                 }
             }
             // A holds it: TAX or TAY; X or Y holds it: TXA or TYA (same flags, cheaper)
-            bool from_memory = item.mode != Mode::Imm && c.known;
+            bool from_memory = item.mode != Mode::Imm && c.known && plain;
             for (int o = 0; o < 3 && c.known; o++) {
                 if (o == r || (o != 0 && r != 0)) {
                     continue;
                 }
                 bool same = SameContent(t.reg[o], c) ||
-                            (from_memory && SameContent(t.reg[o], Content{true, true, item.value}));
+                            (from_memory && SameContent(t.reg[o], PlainMem(item.value)));
                 if (!same) {
                     continue;
                 }
@@ -462,6 +521,10 @@ void RegisterPass(Pass& p) {
                 p.changed = true;
                 break;
             }
+            // what was read through X or Y is gone when it changes
+            if (r != 0) {
+                t.ForgetIndex(r);
+            }
             t.reg[r] = c;
             continue;
         }
@@ -469,18 +532,32 @@ void RegisterPass(Pass& p) {
         if (r >= 0) {
             if (!Trackable(*p.as, item.mode, item.value)) {
                 t.ForgetStore(item);
+                // the register now holds what the indexed byte holds
+                std::uint8_t index = TrackableIndex(*p.as, item.mode, item.value);
+                if (index != kPlain && !t.reg[r].known) {
+                    t.reg[r] = PlainMem(item.value);
+                    t.reg[r].index = index;
+                }
+                continue;
+            }
+            // a store of what the byte already holds (the flags stay as they were)
+            const Content& now = t.reg[r];
+            const AsmValue* there = t.ConstAt(item.value);
+            bool same = t.Holds(r, item.value) ||
+                        (now.known && !now.mem && there && SameValue(*there, now.v));
+            if (same) {
+                p.Kill(i);
                 continue;
             }
             t.ForgetByte(item.value);
             Content& c = t.reg[r];
             if (c.known && !c.mem) {
                 t.mem_const.push_back({item.value, c.v});
-            } else if (c.known && c.mem) {
+            } else if (c.known && c.mem && c.index == kPlain) {
                 t.mem_copy.push_back({item.value, c.v});
-            } else if (!c.known) {
-                c.known = true;
-                c.mem = true;
-                c.v = item.value;
+            } else {
+                // a plain byte outlasts an indexed one
+                c = PlainMem(item.value);
             }
             continue;
         }
@@ -496,19 +573,24 @@ void RegisterPass(Pass& p) {
                 continue;
             }
             t.reg[to] = t.reg[from];
+            if (to != 0) {
+                t.ForgetIndex(to);
+            }
             continue;
         }
         case Mn::INX:
         case Mn::DEX:
         case Mn::INY:
         case Mn::DEY: {
-            Content& c = t.reg[mn == Mn::INX || mn == Mn::DEX ? 1 : 2];
+            int index = mn == Mn::INX || mn == Mn::DEX ? 1 : 2;
+            Content& c = t.reg[index];
             if (c.known && !c.mem && c.v.sym < 0) {
                 bool up = mn == Mn::INX || mn == Mn::INY;
                 c.v.offset = (c.v.offset + (up ? 1 : -1)) & 0xFF;
             } else {
                 c.known = false;
             }
+            t.ForgetIndex(index);
             continue;
         }
         case Mn::INC:
@@ -535,6 +617,7 @@ void RegisterPass(Pass& p) {
             continue;
         case Mn::TSX:
             t.reg[1].known = false;
+            t.ForgetIndex(1);
             continue;
         case Mn::JSR:
         case Mn::JMP:

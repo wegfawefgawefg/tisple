@@ -650,6 +650,31 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | 3000 fuzz programs before item 21's generator (against the base backend) | 10448034 | 9190469 cycles (-12%, most of it multiplies); 1574 faster, 138 slower (multiplies by small numbers, data moved by the tables) |
     | Life generations, plasma | 56, 243 | the same |
 
+26. Race item 4, reusing what a register holds (2026-10-27). sprites stored
+    the new x with `STA $4000,Y` and loaded it twice more for its two
+    compares; the peephole's register pass only knew plain bytes. It now also
+    knows indexed ones (src/backend/peephole.cpp): after a load or store of
+    abs,X, abs,Y or (zp),Y the register holds that byte as long as the index
+    register keeps its value, nothing stores into that array (an indexed or
+    plain store of the same symbol, an INC, a store through a pointer), and,
+    for (zp),Y, nothing is stored at all and the pointer's bytes stay. A
+    store of what the byte already holds goes too (crc16 stored crc's low
+    byte back unchanged). Tests: in tests/test_backend_peep.cpp, the sprites
+    loop, stores to other elements of the same array, an index changed, a
+    store through a pointer into the array, struct fields of one array, an
+    INC through X while the stored byte is reached through Y, (zp),Y across a
+    store through another pointer and a pointer change. Never forgetting on
+    an index change fails 146 checks and 5 of 3000 fuzz programs; keeping
+    indexed bytes across stores into their array fails the INC test, and 6 of
+    10000 fuzz programs with a new loop shape (a store, an INC of the same
+    array, a reread).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race sprites | 82295 | 65959 (Oscar64 76125) |
+    | race crc16 | 540509 | 534365 |
+    | other race kernels, Life generations, plasma | (as after 25) | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

@@ -3,6 +3,7 @@
 
 #include "test_backend.hpp"
 
+#include <cstdio>
 #include <string>
 
 namespace tisple_tests {
@@ -168,8 +169,74 @@ void TestLabelMerges(TestResults& results) {
     }
 }
 
+// a register still holds the indexed byte it was stored to or loaded from, until the index,
+// that array, or (for (p),Y) any memory or the pointer changes
+void TestIndexedReuse(TestResults& results) {
+    const char* globals = "(struct Q ((a u8) (b u8) (c u8)))\n"
+                          "(let g u8 0) (let h u8 0)\n"
+                          "(let xs (array u8 64)) (let ys (array u8 64)) (let qs (array Q 32))\n"
+                          "(let pa (ptr u8)) (let pb (ptr u8))\n"
+                          "(fn setup () void\n"
+                          "    (for i u8 0 64 (set (at xs i) (* i 3)) (set (at ys i) (+ i 100)))\n"
+                          "    (for i u8 0 32 (set (at qs i a) i) (set (at qs i b) (* i 7)))\n"
+                          "    (set pa (addr_of (at xs 0))) (set pb (addr_of (at xs 0))))\n";
+    const char* bodies[] = {
+        // the sprites: store, then compare twice
+        "(fn f ((x u8) (y u8)) u8\n"
+        "    (for i u8 0 64 (set (at xs i) (+ (at xs i) (at ys i)))\n"
+        "        (if (or (< (at xs i) 8) (>= (at xs i) 240)) (set (at ys i) (- 0 (at ys i)))))\n"
+        "    (at xs (& x 63)))",
+        // a store to another element of the same array, the index changed, a store through a
+        // pointer into the array
+        "(fn f ((x u8) (y u8)) u8 (let i u8 (& x 63)) (let j u8 (& y 63))\n"
+        "    (set (at xs i) 11) (set (at xs j) 22) (set g (at xs i))\n"
+        "    (set (at xs i) 33) (set i (& (+ i 1) 63)) (set h (at xs i))\n"
+        "    (set (at xs i) 44) (store (+ pa (as u16 j)) 55) (+ (+ g h) (at xs i)))",
+        // an INC of the same array through the other index register (the counter in Y)
+        "(fn f ((x u8) (y u8)) u8 (let j u8 (& y 63))\n"
+        "    (for i u8 0 64 (set (at xs i) (+ x i)) (set (at xs j) (+ (at xs j) 1))\n"
+        "        (set (at ys i) (at xs i)))\n"
+        "    g)",
+        // stores to other arrays and fields keep it; a field of the same struct array does not
+        "(fn f ((x u8) (y u8)) u8 (let i u8 (& x 31)) (let j u8 (& y 31))\n"
+        "    (set (at qs i a) (+ x 1)) (set (at ys j) 9) (set g (at qs i a))\n"
+        "    (set (at qs i b) y) (set (at qs i c) (+ y 2)) (set h (at qs i b))\n"
+        "    (set (at qs j b) 77) (+ (+ g h) (at qs i b)))",
+        // (p),Y: kept while nothing is stored and the pointer stays; not across a store
+        // through another pointer to the same bytes, nor a change of the pointer
+        "(fn f ((x u8) (y u8)) u8 (let i u8 (& x 63)) (let j u8 (& y 63))\n"
+        "    (store (+ pa (as u16 i)) 5) (set g (load (+ pa (as u16 i))))\n"
+        "    (store (+ pa (as u16 i)) 6) (store (+ pb (as u16 j)) 7) (set h (load (+ pa (as u16 "
+        "i))))\n"
+        "    (store (+ pa (as u16 i)) 8) (set pa (+ pa 1)) (set g (+ g (load (+ pa (as u16 i)))))\n"
+        "    (set pa (- pa 1)) (+ g h))",
+        // in a loop over i with the index in a register, and a counter read back
+        "(fn f ((x u8) (y u8)) u8\n"
+        "    (for i u8 0 32 (set (at qs i b) (+ (at qs i b) x)) (set g (^ g (at qs i b)))\n"
+        "        (set (at qs (& (+ i y) 31) b) i) (set h (+ h (at qs i b))))\n"
+        "    (+ g h))",
+    };
+    for (const char* body : bodies) {
+        std::string text = std::string(globals) + body;
+        Compiled c = CompileText(text);
+        Diff d;
+        bool ok = StartDiff(d, c) && DiffCall(d, "t.setup", {});
+        for (int x : {0, 1, 2, 5, 31, 32, 63, 64, 200, 255}) {
+            for (int y : {0, 1, 5, 31, 63, 255}) {
+                ok = ok && DiffCall(d, "t.f",
+                                    {static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)});
+            }
+        }
+        if (!ok) {
+            std::fprintf(stderr, "indexed reuse:\n%s\n  %s\n", text.c_str(), d.message.c_str());
+        }
+        CHECK(results, ok);
+    }
+}
+
 void RunBackendPeepTests(TestResults& results) {
     TestDeadValues(results);
+    TestIndexedReuse(results);
     TestLabelMerges(results);
     TestDeadGlobalStores(results);
     TestFlagReloads(results);

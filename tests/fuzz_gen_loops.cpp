@@ -69,13 +69,21 @@ std::string Gen::ByteWhile(int depth) {
     loops++;
     int parts = 1 + loops_rng.Below(4);
     for (int i = 0; i < parts && budget > 0; i++) {
-        switch (loops_rng.Below(7)) {
+        switch (loops_rng.Below(8)) {
         case 0:
             body += " (set " + c + " " + Replace(kByteSteps[loops_rng.Below(6)], c) + ")";
             break;
         case 5:
             body += " (set " + read_below + " (+ " + v + " 7))";
             break;
+        case 6: {
+            // a store, a step of the same array at v (INC through the other register), a reread
+            std::string at_v =
+                table.empty() ? "(at sm (& " + v + " 31))" : "(at " + table + " " + v + ")";
+            body += " (set " + read + " (+ " + v + " " + c + ")) (set " + at_v + " (+ " + at_v +
+                    " 1)) (set " + v + " " + read + ")";
+            break;
+        }
         case 1:
             body += " (if " + Expr(T::Bool, 1) + " (set " + c + " " +
                     Replace(kByteSteps[loops_rng.Below(6)], c) + "))";
