@@ -186,6 +186,15 @@ struct Derived {
     ExprId owner = -1; // a step pointer's loop
 };
 
+// the pointer of one (at table i) with a u16 i: its low byte is the table's, stored once where
+// the function starts, its high byte the table's plus i's, and Y holds i's low byte
+// (gen_index.cpp, UsePagePointer)
+struct PagePointer {
+    ExprId site = -1;
+    AsmValue base; // the table's address, with the place's offset
+    AsmValue ptr;
+};
+
 // a u16 variable a loop steps only by constants (set v (+ v c)), in memory: its arrays and
 // pointers are read through step pointers (gen_step.cpp)
 struct SteppedVar {
@@ -279,6 +288,7 @@ struct Gen {
     std::vector<WideFixup> wide_fixups; // of the wide while loop being generated
     std::vector<SteppedVar> stepped;
     std::vector<StepFixup> step_fixups;
+    std::vector<PagePointer> page_ptrs;
     int while_pins = 0; // while loops being generated with variables pinned
     DivDone div;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
@@ -392,6 +402,7 @@ struct PlaceRef {
     std::int32_t counter = -1;
     // ptr is a step pointer, which later steps move: not a temporary of this place's own
     bool step_ptr = false;
+    ExprId site = -1; // the Index expression the index came from
 };
 
 // evaluates the index and pointer parts of a place, in order, keeping in temporaries every
@@ -441,6 +452,11 @@ bool DeltaFits(const Gen& g, std::int32_t counter, std::uint8_t delta);
 // the place as (derived),Y in the loop whose counter is in Y; no code now, the pointer is
 // set before the loop. False if the place is not one.
 bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type);
+// a byte of a table at a u16 index in memory as (page pointer),Y: the pointer's high byte
+// worked out now, Y the index's low byte. False if the place is not one.
+bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type);
+// each page pointer's low byte, stored where the function starts
+void InitPagePointers(Gen& g);
 // the derived pointer for base + offset in the loop of counter `loop` (made on first use)
 AsmValue DerivedPointer(Gen& g, std::int32_t loop, AsmValue base, std::int32_t var,
                         std::int32_t offset);
@@ -464,6 +480,8 @@ std::size_t BeginStepped(Gen& g, ExprId loop, std::int32_t counter);
 void EndStepped(Gen& g, ExprId loop, std::size_t mark, std::size_t at);
 // the address base + v (v a stepped variable) as its step pointer; false if it is not one
 bool UseStepPointer(Gen& g, PlaceRef& place);
+// the index is a stepped variable's two bytes
+bool IsSteppedIndex(const Gen& g, const Opnd& index);
 // var was just stepped by `step` (a set, or a for loop's own count): its pointers move here
 void NoteStep(Gen& g, std::int32_t var, std::uint16_t step);
 // (set place value) just ran: a step of a stepped variable moves its pointers

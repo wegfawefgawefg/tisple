@@ -550,6 +550,30 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | 20000 fuzz programs (generator before this item) | 86156137 cycles | 83941902 cycles |
     | kernels, Life generations, plasma | 156409, 40138, 878, 572, 137300/41888, 65513, 56, 243 | the same |
 
+22. Race item 1, the rest: page pointers (2026-10-27). line's plot reads
+    `(at COL_BYTE x)` and `(at COL_BIT x)` with a u16 x that no loop steps,
+    and built `table + x` with a 16-bit add for each. Now a byte of a table at
+    a u16 index in memory is (ptr),Y with Y the index's low byte: the
+    pointer's low byte is the table's, stored once where the function starts,
+    and only its high byte is worked out, the table's plus the index's (LDA /
+    CLC / ADC / STA, 10 cycles instead of 20). Each place in the code has a
+    pointer of its own, four a function at most, since one statement may read
+    the same table at another index while a store's pointer is waiting. The
+    peephole's register pass now also keeps what it knows across a label
+    nothing names (an inlined call's return label), so plot's second `LDY x`
+    goes. Tests: in tests/test_backend_index.cpp, a table starting mid-page
+    at indices around every page edge, three places of one table in one
+    statement, a store whose value reads another index of the same table
+    (one pointer for all places fails it), inlined copies.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race line | 705567 | 664333 |
+    | race life | 160650 | 160648 |
+    | other race kernels | (as after 21) | the same |
+    | life step / draw (cycle report) | 137300 / 41888 | 137389 / 41912 (2 TXA for LDA, but the code is 2 bytes shorter, so Life's worlds start 2 bytes lower and more rows cross pages) |
+    | Life generations, plasma | 56, 243 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

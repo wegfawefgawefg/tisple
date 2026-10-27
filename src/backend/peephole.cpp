@@ -287,6 +287,19 @@ std::vector<std::int32_t> MergeableLabels(const Pass& p) {
             bad.push_back(item.value.sym);
         }
     }
+    // labels nothing names: only the fall reaches them
+    std::vector<bool> named(p.as->symbols.size(), false);
+    for (std::size_t i = 0; i < items.size(); i++) {
+        const AsmItem& item = items[i];
+        if (!p.dead[i] && item.kind != ItemKind::Label && item.value.sym >= 0) {
+            named[static_cast<std::size_t>(item.value.sym)] = true;
+        }
+    }
+    for (const auto& label : label_at) {
+        if (!named[static_cast<std::size_t>(label.first)]) {
+            out.push_back(label.first);
+        }
+    }
     std::vector<std::int32_t> kept;
     for (std::int32_t sym : out) {
         bool ok = true;

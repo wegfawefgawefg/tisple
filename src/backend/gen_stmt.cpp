@@ -291,6 +291,7 @@ void GenFunction(Backend& be, std::int32_t function) {
     if (ExprOf(program, fn.body).type != kNeverType) {
         Emit(g, Mn::RTS, Mode::Imp);
     }
+    InitPagePointers(g);
 }
 
 } // namespace tisple

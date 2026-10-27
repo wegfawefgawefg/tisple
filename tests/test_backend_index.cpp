@@ -317,6 +317,42 @@ void TestShortCount(TestResults& results) {
     CHECK(results, short_form.code.image == long_form.code.image);
 }
 
+// a table at a u16 index in memory: (page pointer),Y with Y the index's low byte, one pointer
+// for each place in the code; the tables start mid-page, so (p),Y crosses pages
+void TestPagePointers(TestResults& results) {
+    const char* text = "(let pad (array u8 77))\n"
+                       "(let tab (array u8 600))\n"
+                       "(let two (array u8 300))\n"
+                       "(let sum u16 0)\n"
+                       "(fn get ((x u16)) u8 (at tab x))\n"
+                       "(fn setup () void\n"
+                       "    (for i u16 0 600 (set (at tab i) (as u8 (+ (* i 3) (>> i 8)))))\n"
+                       "    (for i u16 0 300 (set (at two i) (as u8 (* i 5)))))\n"
+                       "(fn f ((x u16) (z u16)) u16\n"
+                       "    (let a u16 (as u16 (at tab x)))\n"
+                       "    (set (at two (& z 255)) (at tab x))\n"
+                       "    (set (at tab z) (+ (at tab x) (at tab z)))\n"
+                       "    (set (at tab (+ z 1)) (+ (at tab x) 1))\n"
+                       "    (set (at tab (+ x 1)) (at two (& x 255)))\n"
+                       "    (let b u16 (as u16 (+ (get x) (get z))))\n"
+                       "    (let c u16 (as u16 (^ (at tab (- x 1)) (at two (+ (& z 255) 7)))))\n"
+                       "    (set sum (+ sum (+ a (+ (* b 3) (* c 5)))))\n"
+                       "    (+ sum (as u16 (at tab (+ z 2)))))\n";
+    Compiled c = CompileText(text);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.setup", {});
+    for (int x : {1, 2, 100, 178, 179, 180, 254, 255, 256, 257, 433, 434, 435, 510, 511, 597}) {
+        for (int z : {0, 1, 255, 256, 434, 597}) {
+            ok = ok &&
+                 DiffCall(d, "t.f", {static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(z)});
+        }
+    }
+    if (!ok) {
+        std::fprintf(stderr, "page pointers:\n%s\n  %s\n", text, d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
 } // namespace
 
 void RunBackendIndexTests(TestResults& results) {
@@ -328,6 +364,7 @@ void RunBackendIndexTests(TestResults& results) {
     TestForwardLets(results);
     TestChains(results);
     TestShortCount(results);
+    TestPagePointers(results);
 }
 
 } // namespace tisple_tests

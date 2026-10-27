@@ -188,7 +188,80 @@ bool UseCounterDerived(Gen& g, PlaceRef& place, TypeId type) {
     return true;
 }
 
+// a function keeps this many page pointers at most (they live in zero page)
+constexpr std::size_t kMaxPagePointers = 4;
+
 } // namespace
+
+bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
+    const Opnd& index = place.index;
+    if (place.pointer || !place.has_index || place.mult != 1 || place.delta != 0 ||
+        place.site < 0 || index.size != 2 || index.in_a || index.index.used) {
+        return false;
+    }
+    if (!IsScalarKind(KindOf(*g.program, type)) || TypeOf(*g.program, type).size != 1) {
+        return false;
+    }
+    ByteKind high = index.b[1].kind;
+    if (index.b[0].kind != ByteKind::Mem || (high != ByteKind::Mem && high != ByteKind::Imm) ||
+        IsSteppedIndex(g, index)) {
+        return false;
+    }
+    AsmValue base = place.base;
+    base.offset = static_cast<std::int32_t>((base.offset + place.cursor.address) & 0xFFFF);
+    const PagePointer* found = nullptr;
+    for (const PagePointer& p : g.page_ptrs) {
+        if (p.site == place.site && p.base.sym == base.sym && p.base.offset == base.offset) {
+            found = &p;
+        }
+    }
+    if (!found) {
+        if (g.page_ptrs.size() >= kMaxPagePointers) {
+            return false;
+        }
+        PagePointer p;
+        p.site = place.site;
+        p.base = base;
+        std::uint32_t at = g.lptr_top;
+        g.lptr_top += 2;
+        std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
+        max = g.lptr_top > max ? g.lptr_top : max;
+        p.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
+                         static_cast<std::int32_t>(at));
+        g.page_ptrs.push_back(p);
+        found = &g.page_ptrs.back();
+    }
+    AsmValue ptr = found->ptr;
+    LoadA(g, index, 1);
+    Emit(g, Mn::CLC, Mode::Imp);
+    OpA(g, Mn::ADC, SymImmOpnd(base, 2), 1);
+    Emit(g, Mn::STA, Mode::Abs, SymValue(ptr.sym, ptr.offset + 1));
+    Opnd low = index;
+    low.size = 1;
+    place.pointer = true;
+    place.ptr = ptr;
+    place.ptr2 = AsmValue();
+    place.cursor.address = 0;
+    place.index = low;
+    place.counter = -1;
+    return true;
+}
+
+void InitPagePointers(Gen& g) {
+    if (g.page_ptrs.empty()) {
+        return;
+    }
+    std::size_t before = g.out->size();
+    for (const PagePointer& p : g.page_ptrs) {
+        AsmValue low = p.base;
+        low.part = Part::Low;
+        Emit(g, Mn::LDA, Mode::Imm, low);
+        Emit(g, Mn::STA, Mode::Abs, p.ptr);
+    }
+    // just after the function's entry label
+    std::rotate(g.out->begin() + 1, g.out->begin() + static_cast<std::ptrdiff_t>(before),
+                g.out->end());
+}
 
 ExprId BoundTarget(const Gen& g, ExprId id) {
     for (int depth = 0; depth < kMaxIndexDepth; depth++) {

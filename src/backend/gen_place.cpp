@@ -319,6 +319,7 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         out.has_index = true;
         out.mult = (c1.address - c0.address) & 0xFFFFu;
         out.type = e.type;
+        out.site = id;
         if (out.delta != 0 && DeltaFits(g, out.counter, out.delta)) {
             // (at a (+ i k)) is a + k indexed by i: the sum never wraps
             std::int32_t k = out.delta < 0x80 ? out.delta : out.delta - 0x100;
@@ -354,7 +355,8 @@ bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out) {
 }
 
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type) {
-    if (IsNormal(g, place, type) || UseLoopPointer(g, place, type)) {
+    if (IsNormal(g, place, type) || UseLoopPointer(g, place, type) ||
+        UsePagePointer(g, place, type)) {
         return;
     }
     if (place.has_index && place.delta != 0) {

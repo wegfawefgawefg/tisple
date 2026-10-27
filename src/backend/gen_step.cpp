@@ -354,6 +354,10 @@ bool UseStepPointer(Gen& g, PlaceRef& place) {
     return true;
 }
 
+bool IsSteppedIndex(const Gen& g, const Opnd& index) {
+    return SteppedIndex(g, index) >= 0;
+}
+
 void StepOwnPointers(Gen& g, ExprId loop, std::int32_t var, std::uint16_t step) {
     std::vector<Derived> own;
     for (const Derived& d : g.derived) {
