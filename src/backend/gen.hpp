@@ -49,7 +49,7 @@ enum class SymRole : std::uint8_t {
 struct SymInfo {
     SymRole role = SymRole::Label;
     std::int32_t owner = -1;
-    std::uint64_t weight = 0; // uses, times 4 per loop level
+    std::uint64_t weight = 0; // uses, times each loop level's factor
 };
 
 enum class Runtime : std::uint8_t {
@@ -304,7 +304,9 @@ struct Gen {
     // parameters of the calls being inlined that read their argument, a plain variable the
     // callee never changes, instead of a copy of it
     std::vector<std::pair<std::int32_t, ExprId>> bound;
-    std::uint64_t cost = 0; // cycles emitted so far, times 4 per loop level
+    std::uint64_t cost = 0; // cycles emitted so far, times each loop level's factor
+    // by loop level: how many times its body may run, for weighing code (LoopFactor)
+    std::vector<std::uint32_t> loop_factors;
     bool violation = false; // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
@@ -323,6 +325,9 @@ void Unsupported(Gen& g, ExprId id, const char* what);
 // ---- emission (gen_emit.cpp)
 
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value = AsmValue());
+// how much a loop's body weighs against the code around it: a for loop with constant bounds
+// its trip count (2 to 64), a while loop 8, any other loop 4
+std::uint32_t LoopFactor(const Gen& g, ExprId loop);
 // the last item leaves the carry clear for certain: a CLC, or an add marked as not carrying
 bool CarryClearNow(const Gen& g);
 // A holds byte k of o: the last instruction stored it there or loaded it from there

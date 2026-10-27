@@ -14,6 +14,11 @@
 // As for u8 for loops, the body is generated once per choice, a choice whose code touches
 // its registers (or calls anything) is dropped, and the cheapest is kept, cycles inside loops
 // weighing more. Facts the condition gives hold in the body (gen_facts.cpp).
+//
+// A register an outer u8 for loop keeps its counter in may be taken too: the counter is
+// stored to its variable before the loop (it never changes inside, so reads read that) and
+// loaded back where the loop ends. A loop with a return in it does not, since the return
+// would leave without the counter.
 
 namespace tisple {
 
@@ -104,12 +109,55 @@ bool Pinnable(const Gen& g, std::int32_t var, const VarUse& use) {
     return true;
 }
 
-// the registers a loop tries: X and Y for byte variables, or Y for a u16 one (wide)
+// the registers a loop tries: X and Y for byte variables, or Y for a u16 one (wide); spill:
+// the register held an outer loop's counter, kept in memory meanwhile
 struct WhileRegs {
     std::int32_t var[2] = {-1, -1};
     bool wide = false;
     bool written[2] = {false, false};
+    bool spill[2] = {false, false};
 };
+
+bool HasReturn(const Program& program, ExprId id, int depth) {
+    if (id < 0 || depth > kMaxDepth) {
+        return false;
+    }
+    const Expr& e = ExprOf(program, id);
+    if (e.kind == ExprKind::Return) {
+        return true;
+    }
+    if (HasReturn(program, e.a, depth + 1) || HasReturn(program, e.b, depth + 1) ||
+        HasReturn(program, e.c, depth + 1)) {
+        return true;
+    }
+    if (e.kind == ExprKind::Do || e.kind == ExprKind::Call || e.kind == ExprKind::StructLit) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (HasReturn(program, ListItem(program, e, i), depth + 1)) {
+                return true;
+            }
+        }
+    }
+    if (e.kind == ExprKind::Match) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (HasReturn(program, program.clauses[e.first + i].body, depth + 1)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// register r holds a u8 for counter this loop may keep in memory instead
+bool Spillable(const Gen& g, int r, ExprId id) {
+    std::int32_t counter = g.pin[r];
+    if (counter < 0 || g.wide) {
+        return false;
+    }
+    const Var& v = g.program->vars[static_cast<std::size_t>(counter)];
+    TypeKind kind = KindOf(*g.program, v.type);
+    return v.loop_var && (kind == TypeKind::U8 || kind == TypeKind::I8) &&
+           !HasReturn(*g.program, id, 0);
+}
 
 std::vector<WhileRegs> Choices(const Gen& g, ExprId id) {
     std::vector<WhileRegs> out;
@@ -139,20 +187,22 @@ std::vector<WhileRegs> Choices(const Gen& g, ExprId id) {
     };
     std::stable_sort(bytes.begin(), bytes.end(), by_uses);
     std::stable_sort(words.begin(), words.end(), by_uses);
-    bool x_free = g.pin[0] < 0;
-    bool y_free = g.pin[1] < 0 && !g.wide;
+    bool free[2] = {g.pin[0] < 0, g.pin[1] < 0 && !g.wide};
+    bool spill[2] = {Spillable(g, 0, id), Spillable(g, 1, id)};
     auto add = [&](std::int32_t x, std::int32_t y, bool wide) {
-        if ((x >= 0 && !x_free) || (y >= 0 && !y_free)) {
-            return;
-        }
         WhileRegs r;
         r.var[0] = x;
         r.var[1] = y;
         r.wide = wide;
         for (int k = 0; k < 2; k++) {
-            if (r.var[k] >= 0) {
-                r.written[k] = uses[static_cast<std::size_t>(r.var[k])].written;
+            if (r.var[k] < 0) {
+                continue;
             }
+            if (!free[k] && !spill[k]) {
+                return;
+            }
+            r.spill[k] = !free[k];
+            r.written[k] = uses[static_cast<std::size_t>(r.var[k])].written;
         }
         out.push_back(r);
     };
@@ -370,6 +420,20 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     }
     AsmValue sym[2];
     std::size_t loads_at = g.out->size();
+    // an outer loop's counter goes to its variable while the loop has its register
+    std::int32_t spilled[2] = {-1, -1};
+    ExprId spilled_body[2] = {-1, -1};
+    for (int r = 0; r < 2; r++) {
+        if (!regs.spill[r]) {
+            continue;
+        }
+        spilled[r] = g.pin[r];
+        spilled_body[r] = g.pin_body[r];
+        AsmValue home = SymValue(g.be->var_sym[static_cast<std::size_t>(spilled[r])]);
+        Emit(g, r == 0 ? Mn::STX : Mn::STY, Mode::Abs, home);
+        g.pin[r] = -1;
+        g.pin_body[r] = -1;
+    }
     for (int r = 0; r < 2; r++) {
         if (regs.var[r] < 0) {
             continue;
@@ -406,6 +470,8 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     ctx.break_label = end;
     ctx.continue_label = fixed || top_test ? top : test;
     g.loops.push_back(ctx);
+    g.loop_factors.resize(static_cast<std::size_t>(g.loop_depth));
+    g.loop_factors.push_back(LoopFactor(g, id));
     g.loop_depth++;
     if (top_test) {
         PlaceLabel(g, top);
@@ -455,6 +521,15 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         if (regs.var[r] >= 0 && regs.written[r]) {
             Emit(g, r == 0 ? Mn::STX : Mn::STY, Mode::Abs, sym[r]);
         }
+    }
+    for (int r = 0; r < 2; r++) {
+        if (spilled[r] < 0) {
+            continue;
+        }
+        AsmValue home = SymValue(g.be->var_sym[static_cast<std::size_t>(spilled[r])]);
+        Emit(g, r == 0 ? Mn::LDX : Mn::LDY, Mode::Abs, home);
+        g.pin[r] = spilled[r];
+        g.pin_body[r] = spilled_body[r];
     }
     if (pinned) {
         g.violation = outer;

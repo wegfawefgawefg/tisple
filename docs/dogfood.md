@@ -627,6 +627,29 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | programs/ and examples/ sizes | (as after 23) | the same, no tables |
     | other race kernels, Life generations, plasma | (as after 23) | the same |
 
+25. Race item 3, registers for loop variables (2026-10-27). Item 21 put while
+    loops' variables in registers, but sort's inner loop could only have Y:
+    the outer for kept i in X, so v stayed in memory (`LDA v / CMP arr-1,Y`
+    every pass). Now a while loop with no return in it may take the register
+    an outer u8 for loop keeps its counter in: the counter is stored to its
+    variable before the loop (it never changes inside, so the loop's reads of
+    it read that) and loaded back where the loop ends. And the code weights
+    the choices compare by are no longer 4 per loop level: a for loop with
+    constant bounds weighs its trip count (2 to 64), a while loop 8, other
+    loops 4 (Gen::loop_factors), so an inner loop that runs 16000 times
+    against its outer loop's 255 wins the registers. Tests: in
+    tests/test_backend_while.cpp, the sort with the outer counter read
+    inside the while and after it, a while inside two for loops taking both
+    registers, a while with a return (which must not take them); leaving out
+    the load back fails 5 of them and 32 of 3000 fuzz programs.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race sort | 474565 | 460950 (24 cycles a pass, Oscar64 22) |
+    | other race kernels | (as after 24) | the same |
+    | 3000 fuzz programs before item 21's generator (against the base backend) | 10448034 | 9190469 cycles (-12%, most of it multiplies); 1574 faster, 138 slower (multiplies by small numbers, data moved by the tables) |
+    | Life generations, plasma | 56, 243 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

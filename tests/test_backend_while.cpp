@@ -195,6 +195,31 @@ void TestByteWhile(TestResults& results) {
         "    (while (< a 250) (set sum (+ sum (at w (as u16 a)))) (if (> (at bt a) 100) (set a (+ "
         "a 2)))\n"
         "        (set a (+ a 1))) sum)",
+        // the outer for counter's register taken by the while: the counter read inside, after,
+        // and by the for's own step (the sort, with the array the outer loop walks)
+        "(fn f ((x u8) (y u8)) u8\n"
+        "    (for i u8 1 (+ (& x 63) 2) (let v u8 (at bt i)) (let j u8 i)\n"
+        "        (while (and (!= j 0) (> (at bt (- j 1)) v)) (set (at bt j) (at bt (- j 1)))\n"
+        "            (set g (+ g i)) (set j (- j 1)))\n"
+        "        (set (at bt j) v) (set g (^ g (+ i j))))\n"
+        "    g)",
+        "(fn f ((x u8) (y u8)) u8\n"
+        "    (for i u8 0 (& y 31) (let a u8 x) (let b u8 i)\n"
+        "        (while (and (!= a b) (< a 250)) (set a (+ a 1)) (set b (- b 1)) (set g (+ g i)))\n"
+        "        (set g (+ g (+ a (at bt i)))))\n"
+        "    g)",
+        // two for counters in X and Y, a while inside both taking them
+        "(fn f ((x u8) (y u8)) u8\n"
+        "    (for i u8 0 (& x 7) (for k u8 0 (& y 7) (let a u8 (+ i k)) (let b u8 x)\n"
+        "        (while (> a 0) (set b (+ b (at bt (+ a k)))) (set a (- a 1)))\n"
+        "        (set g (^ g (+ b (+ i k))))))\n"
+        "    g)",
+        // a while with a return in it keeps its hands off the counter's register
+        "(fn f ((x u8) (y u8)) u8\n"
+        "    (for i u8 0 (& x 15) (let a u8 0) (let b u8 y)\n"
+        "        (while (< a 5) (set a (+ a 1)) (set b (+ b i)) (if (= b 77) (return i)))\n"
+        "        (set g (+ g b)))\n"
+        "    g)",
     };
     for (const char* body : bodies) {
         CheckCalls(results, body, Bytes());

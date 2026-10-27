@@ -422,6 +422,8 @@ void GenFor(Gen& g, ExprId id) {
     LoopCtx ctx;
     ctx.break_label = f.end_label;
     g.loops.push_back(ctx);
+    g.loop_factors.resize(static_cast<std::size_t>(g.loop_depth));
+    g.loop_factors.push_back(LoopFactor(g, id));
     g.loop_depth++;
     g.for_depth++;
     bool pin = g.for_depth <= kMaxPinnedDepth;

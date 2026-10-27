@@ -1,4 +1,5 @@
 #include "backend/gen.hpp"
+#include "check/arith.hpp"
 
 namespace tisple {
 
@@ -73,11 +74,16 @@ void TrackIndexWrite(Gen& g, int r, Mn mn, Mode mode, const AsmValue& value) {
     c.known = false;
 }
 
-std::uint64_t LoopWeight(int depth) {
-    if (depth > 6) {
-        depth = 6;
+// the product of the factors of the loops around the code; a level past the known ones (code
+// that runs at the steps of a loop already done) weighs 4
+std::uint64_t LoopWeight(const Gen& g) {
+    std::uint64_t w = 1;
+    for (int level = 0; level < g.loop_depth; level++) {
+        std::size_t at = static_cast<std::size_t>(level);
+        w *= at < g.loop_factors.size() ? g.loop_factors[at] : 4;
+        w = w > (std::uint64_t(1) << 32) ? std::uint64_t(1) << 32 : w;
     }
-    return std::uint64_t(1) << (2 * depth);
+    return w;
 }
 
 // the register to index this byte with; mn decides which ones are possible
@@ -172,12 +178,11 @@ void Unsupported(Gen& g, ExprId id, const char* what) {
 
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
     g.out->push_back(MakeIns(mn, mode, value));
-    g.cost +=
-        static_cast<std::uint64_t>(ItemCycles(g.be->as, g.out->back())) * LoopWeight(g.loop_depth);
+    g.cost += static_cast<std::uint64_t>(ItemCycles(g.be->as, g.out->back())) * LoopWeight(g);
     if (value.sym >= 0 && mode != Mode::Rel) {
         SymInfo& info = g.be->info[static_cast<std::size_t>(value.sym)];
         if (info.role != SymRole::Label) {
-            info.weight += LoopWeight(g.loop_depth);
+            info.weight += LoopWeight(g);
         }
     }
     if (mn == Mn::JSR) {
@@ -281,6 +286,32 @@ bool AHoldsByte(const Gen& g, const Opnd& o, int k) {
         return access && SameValue(item.value, b.value);
     }
     return false;
+}
+
+std::uint32_t LoopFactor(const Gen& g, ExprId loop) {
+    const Program& program = *g.program;
+    const Expr& e = ExprOf(program, loop);
+    if (e.kind == ExprKind::While) {
+        return 8;
+    }
+    std::uint16_t start = 0;
+    std::uint16_t end = 0;
+    if (e.kind != ExprKind::For || !ConstValue(program, e.a, start)) {
+        return 4;
+    }
+    TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(e.ref)].type);
+    std::int32_t from = SignedValue(kind, start);
+    std::int32_t to = 0;
+    if (e.b < 0) {
+        std::uint32_t bits = KindBits(kind);
+        to = IsSignedKind(kind) ? (1 << (bits - 1)) : (1 << bits);
+    } else if (ConstValue(program, e.b, end)) {
+        to = SignedValue(kind, end);
+    } else {
+        return 4;
+    }
+    std::int32_t trips = to - from;
+    return static_cast<std::uint32_t>(trips < 2 ? 2 : trips > 64 ? 64 : trips);
 }
 
 std::uint32_t MaxOf(const Gen& g, ExprId id) {
