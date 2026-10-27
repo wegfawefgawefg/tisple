@@ -140,6 +140,12 @@ struct Tracker {
     std::vector<std::pair<AsmValue, AsmValue>> mem_const; // memory byte, constant there
     std::vector<std::pair<AsmValue, AsmValue>> mem_copy;  // memory byte, the byte it equals
     bool nz_a = false;                                    // N and Z show A's value
+    // the flags as the last instruction left them, when it compared or loaded known values
+    bool nz_known = false;
+    bool c_known = false;
+    bool flag_n = false;
+    bool flag_z = false;
+    bool flag_c = false;
 
     void ForgetAll() {
         for (Content& c : reg) {
@@ -148,6 +154,8 @@ struct Tracker {
         mem_const.clear();
         mem_copy.clear();
         nz_a = false;
+        nz_known = false;
+        c_known = false;
     }
     void ForgetMemory() {
         for (Content& c : reg) {
@@ -275,6 +283,8 @@ Tracker Meet(const Tracker& a, const Tracker& b) {
     keep(out.mem_const, b.mem_const);
     keep(out.mem_copy, b.mem_copy);
     out.nz_a = a.nz_a && b.nz_a;
+    out.nz_known = false;
+    out.c_known = false;
     return out;
 }
 
@@ -417,6 +427,97 @@ int LoadReg(Mn mn) {
     return mn == Mn::LDA ? 0 : mn == Mn::LDX ? 1 : mn == Mn::LDY ? 2 : -1;
 }
 
+// an instruction that leaves every flag as it was
+bool KeepsFlags(Mn mn) {
+    switch (mn) {
+    case Mn::STA:
+    case Mn::STX:
+    case Mn::STY:
+    case Mn::NOP:
+    case Mn::PHA:
+    case Mn::PHP:
+    case Mn::TXS:
+        return true;
+    default:
+        return IsBranch(mn);
+    }
+}
+
+// the number a register holds, if the tracker knows it
+bool ConstReg(const Tracker& t, int r, int& value) {
+    const Content& c = t.reg[r];
+    if (!c.known || c.mem || c.v.sym >= 0) {
+        return false;
+    }
+    value = c.v.offset & 0xFF;
+    return true;
+}
+
+// the flags after the instruction, when they follow from known values (before it runs)
+void KnownFlags(const Tracker& before, const AsmItem& item, Tracker& after) {
+    after.nz_known = false;
+    after.c_known = false;
+    int operand = -1;
+    if (item.mode == Mode::Imm && item.value.sym < 0) {
+        operand = item.value.offset & 0xFF;
+    }
+    int reg = -1;
+    switch (item.mn) {
+    case Mn::LDA:
+    case Mn::LDX:
+    case Mn::LDY:
+        if (operand >= 0) {
+            after.nz_known = true;
+            after.flag_n = (operand & 0x80) != 0;
+            after.flag_z = operand == 0;
+            after.c_known = before.c_known;
+            after.flag_c = before.flag_c;
+        }
+        return;
+    case Mn::CMP:
+        reg = 0;
+        break;
+    case Mn::CPX:
+        reg = 1;
+        break;
+    case Mn::CPY:
+        reg = 2;
+        break;
+    default:
+        return;
+    }
+    int value = 0;
+    if (operand < 0 || !ConstReg(before, reg, value)) {
+        return;
+    }
+    int diff = (value - operand) & 0xFF;
+    after.nz_known = true;
+    after.c_known = true;
+    after.flag_n = (diff & 0x80) != 0;
+    after.flag_z = diff == 0;
+    after.flag_c = value >= operand;
+}
+
+// a branch whose way the known flags decide: 1 taken, 0 not, -1 not known
+int BranchOutcome(const Tracker& t, Mn mn) {
+    switch (mn) {
+    case Mn::BEQ:
+        return t.nz_known ? t.flag_z : -1;
+    case Mn::BNE:
+        return t.nz_known ? !t.flag_z : -1;
+    case Mn::BMI:
+        return t.nz_known ? t.flag_n : -1;
+    case Mn::BPL:
+        return t.nz_known ? !t.flag_n : -1;
+    case Mn::BCS:
+        return t.c_known ? t.flag_c : -1;
+    case Mn::BCC:
+        return t.c_known ? !t.flag_c : -1;
+    default:
+        return -1;
+    }
+}
+
 int StoreReg(Mn mn) {
     return mn == Mn::STA ? 0 : mn == Mn::STX ? 1 : mn == Mn::STY ? 2 : -1;
 }
@@ -459,6 +560,16 @@ void RegisterPass(Pass& p) {
             falls = item.kind == ItemKind::Label;
             continue;
         }
+        // a branch the flags decide: gone, or a JMP (the flags stay for the code it reaches)
+        int outcome = IsBranch(item.mn) ? BranchOutcome(t, item.mn) : -1;
+        if (outcome == 0) {
+            p.Kill(i);
+            continue;
+        }
+        if (outcome == 1) {
+            item = MakeIns(Mn::JMP, Mode::Abs, item.value);
+            p.changed = true;
+        }
         if (IsJumpTo(item) && is_mergeable(item.value.sym)) {
             auto found = arriving.find(item.value.sym);
             if (found == arriving.end()) {
@@ -466,6 +577,15 @@ void RegisterPass(Pass& p) {
             } else {
                 found->second = Meet(found->second, t);
             }
+        }
+        Tracker flags = t;
+        KnownFlags(t, item, flags);
+        if (!KeepsFlags(item.mn)) {
+            t.nz_known = flags.nz_known;
+            t.c_known = flags.c_known;
+            t.flag_n = flags.flag_n;
+            t.flag_z = flags.flag_z;
+            t.flag_c = flags.flag_c;
         }
         falls = !EndsFlow(item.mn);
         bool nz_before = t.nz_a;

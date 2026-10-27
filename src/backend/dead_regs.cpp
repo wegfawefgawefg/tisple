@@ -223,6 +223,39 @@ bool RegisterCompare(const AsmItem& transfer, const AsmItem& cmp) {
     return cmp.mode == Mode::Imm || cmp.mode == Mode::Zp || cmp.mode == Mode::Abs;
 }
 
+// 0 A, 1 X, 2 Y for LDA, LDX, LDY; -1 otherwise
+int LoadedReg(Mn mn) {
+    return mn == Mn::LDA ? 0 : mn == Mn::LDX ? 1 : mn == Mn::LDY ? 2 : -1;
+}
+
+std::uint8_t RegBit(int reg) {
+    return reg == 0 ? kA : reg == 1 ? kX : kY;
+}
+
+// a load of a number, then a transfer of that register to register `to`
+bool ImmediateTransfer(const AsmItem& load, const AsmItem& transfer, int& to) {
+    if (load.kind != ItemKind::Ins || transfer.kind != ItemKind::Ins || load.mode != Mode::Imm) {
+        return false;
+    }
+    int from = LoadedReg(load.mn);
+    switch (transfer.mn) {
+    case Mn::TAX:
+        to = 1;
+        return from == 0;
+    case Mn::TAY:
+        to = 2;
+        return from == 0;
+    case Mn::TXA:
+        to = 0;
+        return from == 1;
+    case Mn::TYA:
+        to = 0;
+        return from == 2;
+    default:
+        return false;
+    }
+}
+
 } // namespace
 
 bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
@@ -276,14 +309,34 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
             dropped = true;
             continue;
         }
+        // the next instruction, past source notes
+        std::size_t next = i + 1;
+        while (next < items.size() && items[next].kind == ItemKind::Note) {
+            next++;
+        }
+        bool pair = next < items.size();
         // TXA / CMP m with A unread after: CPX m (the compare sets every flag TXA did)
-        if (i + 1 < items.size() && RegisterCompare(items[i], items[i + 1]) &&
-            (live_out[i + 1] & kA) == 0) {
-            AsmItem cmp = items[i + 1];
+        if (pair && RegisterCompare(items[i], items[next]) && (live_out[next] & kA) == 0) {
+            AsmItem cmp = items[next];
             cmp.mn = items[i].mn == Mn::TXA ? Mn::CPX : Mn::CPY;
+            kept.insert(kept.end(), items.begin() + static_cast<std::ptrdiff_t>(i + 1),
+                        items.begin() + static_cast<std::ptrdiff_t>(next));
             kept.push_back(cmp);
             dropped = true;
-            i++;
+            i = next;
+            continue;
+        }
+        // LDA #k / TAY with A unread after: LDY #k (the same flags)
+        int to = -1;
+        if (pair && ImmediateTransfer(items[i], items[next], to) &&
+            (live_out[next] & RegBit(LoadedReg(items[i].mn))) == 0) {
+            AsmItem load = items[i];
+            load.mn = to == 0 ? Mn::LDA : to == 1 ? Mn::LDX : Mn::LDY;
+            kept.insert(kept.end(), items.begin() + static_cast<std::ptrdiff_t>(i + 1),
+                        items.begin() + static_cast<std::ptrdiff_t>(next));
+            kept.push_back(load);
+            dropped = true;
+            i = next;
             continue;
         }
         kept.push_back(items[i]);

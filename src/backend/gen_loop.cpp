@@ -18,6 +18,10 @@ struct ForParts {
     Opnd end; // raw bits the counter stops at: Imm or plain memory
     ExprId body = -1;
     std::int32_t end_label = -1;
+    // the body never reads the counter and the trip count is a constant: count it down to 0
+    // instead (DEX / BNE), from trips (0 for 256)
+    bool down = false;
+    std::uint8_t trips = 0;
 };
 
 bool IsPlainMem(const Opnd& o) {
@@ -86,7 +90,7 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     Gen saved = g;
     bool outer = g.violation;
     g.violation = false;
-    LoadCounter(g, r, f.start);
+    LoadCounter(g, r, f.down ? ImmOpnd(f.trips, 1) : f.start);
     g.pin[r] = f.var;
     g.pin_body[r] = f.body;
     std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
@@ -111,14 +115,18 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
         g = saved;
         return false;
     }
-    Emit(g, r == 0 ? Mn::INX : Mn::INY, Mode::Imp);
-    if (!IsImmZeroByte(f.end, 0)) {
+    if (f.down) {
+        Emit(g, r == 0 ? Mn::DEX : Mn::DEY, Mode::Imp);
+        Branch(g, Mn::BNE, top);
+    } else if (!IsImmZeroByte(f.end, 0)) {
+        Emit(g, r == 0 ? Mn::INX : Mn::INY, Mode::Imp);
         const ByteRef& b = f.end.b[0];
         Emit(g, r == 0 ? Mn::CPX : Mn::CPY, b.kind == ByteKind::Imm ? Mode::Imm : Mode::Abs,
              b.value);
         Branch(g, Mn::BNE, top);
         MarkBackEdge(g, f);
     } else {
+        Emit(g, r == 0 ? Mn::INX : Mn::INY, Mode::Imp);
         Branch(g, Mn::BNE, top);
     }
     if (r == 1) {
@@ -279,7 +287,7 @@ bool TryWide(Gen& g, const ForParts& f) {
 
 void MemoryLoop(Gen& g, const ForParts& f) {
     Opnd v = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)]), f.size, 1);
-    CopyOpnd(g, f.start, v);
+    CopyOpnd(g, f.down ? ImmOpnd(f.trips, 1) : f.start, v);
     std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
     InitReducedLets(g, reduced);
     std::vector<ReducedByte> bytes;
@@ -300,6 +308,11 @@ void MemoryLoop(Gen& g, const ForParts& f) {
     DropReducedLets(g, reduced);
     StepReducedBytes(g, bytes);
     DropReducedBytes(g, bytes);
+    if (f.down) {
+        RmwByte(g, Mn::DEC, v, 0);
+        Branch(g, Mn::BNE, top);
+        return;
+    }
     if (f.size == 1) {
         RmwByte(g, Mn::INC, v, 0);
         if (IsImmZeroByte(f.end, 0)) {
@@ -414,6 +427,11 @@ void GenFor(Gen& g, ExprId id) {
     bool fixed = e.b >= 0 && ConstValue(program, e.a, cs) && ConstValue(program, e.b, ce);
     if (fixed && SignedValue(kind, cs) >= SignedValue(kind, ce)) {
         return;
+    }
+    std::int32_t trips = fixed ? SignedValue(kind, ce) - SignedValue(kind, cs) : 0;
+    if (f.size == 1 && trips >= 1 && trips <= 256 && !ReadsVar(program, f.body, f.var)) {
+        f.down = true;
+        f.trips = static_cast<std::uint8_t>(trips & 0xFF);
     }
     if (e.b >= 0 && !fixed) {
         CompareJump(g, Op::Ge, is_signed, f.start, f.end, f.end_label);

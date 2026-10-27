@@ -733,6 +733,39 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | race line | 664333 | 664201 |
     | other race kernels, Life generations, plasma | (as after 27) | the same |
 
+29. Race item 8, loop control (2026-10-27). Loops paid for their control:
+    crc16's `(for k u8 0 8 ...)` counted up and compared (`INX / CPX #8 /
+    BNE`) although nothing read k, while loops jumped to their test at the
+    bottom, and search's inner loop, entered with j = 0, tested `j < 6` first
+    anyway. Now:
+    - A u8 for loop whose body never reads its counter and whose bounds are
+      constants counts down to 0 from its trip count (`DEX / BNE`, or `DEC /
+      BNE` in memory).
+    - A while loop whose test is small (24 expressions, no calls) tests once
+      before the loop instead of jumping to the test at the bottom; the
+      bottom test then follows the body straight on (its label only stays for
+      a continue), so `DEX / BEQ` needs no `CPX #0` (sort).
+    - The peephole knows the flags after a compare or immediate load of
+      known values and decides a branch on them: gone when never taken, a JMP
+      when always (search's first pass: `CPY #6 / BCS` with Y = 0).
+    - `LDA #k / TAY` with A unread after is `LDY #k` (and the like).
+    Tests: in tests/test_backend_while.cpp, counted-down loops of 1, 2, 255
+    and 256 trips, with break and continue, nested and in memory; rotated
+    whiles that never run, with continue, and/or tests and registers in the
+    test; loops entered with known counters on both sides of their bound.
+    One trip more fails 25 checks; a carry wrong for equal values fails one.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race crc16 | 244665 | 228281 |
+    | race sort | 460950 | 423514 (Oscar64 422725) |
+    | race search | 199654 | 169880 |
+    | race sieve | 1105991 | 1102807 |
+    | race mandel | 4201007 | 4177022 |
+    | race sprites | 65959 | 65957 |
+    | other race kernels, Life generations, plasma | (as after 28) | the same |
+    | 3000 fuzz programs before item 21's generator (against the base backend) | 10449220 | 9109808 cycles (-12.8%); 1712 faster, 139 slower |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

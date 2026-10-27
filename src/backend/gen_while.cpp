@@ -26,6 +26,8 @@ namespace {
 
 // a while loop tries registers only this deep among other loops that do
 constexpr int kMaxPinnedDepth = 3;
+// a test this small is copied before the loop (expressions in it)
+constexpr std::uint32_t kMaxRotatedTest = 24;
 constexpr int kMaxDepth = 64;
 
 const Expr& At(const Gen& g, ExprId id) {
@@ -74,6 +76,17 @@ void CountUses(const Program& program, ExprId id, int depth, std::vector<VarUse>
             CountUses(program, program.clauses[e.first + i].body, depth + 1, uses);
         }
     }
+}
+
+// some item from `from` on jumps or branches to the label
+bool Names(const Gen& g, std::size_t from, std::int32_t label) {
+    for (std::size_t i = from; i < g.out->size(); i++) {
+        const AsmItem& item = (*g.out)[i];
+        if (item.kind != ItemKind::Label && item.value.sym == label) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool IsBound(const Gen& g, std::int32_t var) {
@@ -463,6 +476,10 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     // through step pointers (gen_step.cpp)
     std::size_t stepped = BeginStepped(g, id, -1);
     bool top_test = !fixed && regs.wide && EndsWithUnitStep(g, e.b, regs.var[1]);
+    // the test also before the loop instead of a jump to the one at the bottom, when it is
+    // small: then the bottom test follows the body straight on, flags and all
+    bool rotate = !fixed && !top_test && CountExprs(*g.program, e.a) <= kMaxRotatedTest &&
+                  !HasCalls(*g.program, e.a);
     std::int32_t top = NewLabel(g);
     std::int32_t test = NewLabel(g);
     std::int32_t end = NewLabel(g);
@@ -476,19 +493,29 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     if (top_test) {
         PlaceLabel(g, top);
         GenBranch(g, e.a, false, end);
+    } else if (rotate) {
+        // runs once each time the loop starts
+        g.loop_depth--;
+        GenBranch(g, e.a, false, end);
+        g.loop_depth++;
+        PlaceLabel(g, top);
     } else if (!fixed) {
         Jump(g, test);
         PlaceLabel(g, top);
     } else {
         PlaceLabel(g, top);
     }
+    std::size_t body_at = g.out->size();
     std::size_t facts = PushFacts(g, e.a, true, -1);
     GenStmt(g, e.b);
     PopFacts(g, facts);
     if (fixed || top_test) {
         Jump(g, top);
     } else {
-        PlaceLabel(g, test);
+        // with the test rotated, the label is only for a continue
+        if (!rotate || Names(g, body_at, test)) {
+            PlaceLabel(g, test);
+        }
         GenBranch(g, e.a, true, top);
     }
     g.loops.pop_back();

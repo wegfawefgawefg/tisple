@@ -322,6 +322,52 @@ void TestLetPointers(TestResults& results) {
     }
 }
 
+// loop control: for loops whose counter the body never reads count down, while loops test
+// before the loop instead of jumping to their test (a continue keeps the label), and branches
+// on compares of known values are decided
+void TestLoopControl(TestResults& results) {
+    const char* bodies[] = {
+        // counted down: 1, 2, 255 and 256 trips, a break, a continue, nested, in memory
+        "(fn f ((x u8) (y u8)) u8 (let n u8 0)\n"
+        "    (for k u8 0 1 (set n (+ n 3))) (for k u8 3 5 (set n (+ n x)))\n"
+        "    (for k u8 0 255 (set n (+ n 1))) (for k u8 0 256 (set n (^ n y))) n)",
+        "(fn f ((x u8) (y u8)) u8 (let n u8 0)\n"
+        "    (for k u8 0 200 (set n (+ n 1)) (if (= n x) (break))\n"
+        "        (if (= (& n 3) 1) (continue)) (set n (+ n 1))) n)",
+        "(fn f ((x u8) (y u8)) u8 (let n u8 0)\n"
+        "    (for a u8 0 10 (for b u8 0 7 (for c u8 0 3 (set n (+ n (at bt (+ n x))))))) n)",
+        "(fn f ((x u8) (y u8)) u16 (let n u16 0)\n"
+        "    (for k u8 0 8 (set n (+ n (as u16 (at bt (& x 63))))) (for j u8 0 x (set n (+ n "
+        "1))))\n"
+        "    n)",
+        // rotated whiles: zero trips, a continue, an and/or test, registers in the test
+        "(fn f ((x u8) (y u8)) u8 (let a u8 x) (let n u8 0)\n"
+        "    (while (and (< a 200) (!= (at bt a) 0)) (set n (+ n 1)) (set a (+ a 1)))\n"
+        "    (+ a n))",
+        "(fn f ((x u8) (y u8)) u8 (let a u8 x) (let n u8 0)\n"
+        "    (while (or (< a 10) (= (& a 7) 3)) (set a (+ a 1)) (if (= (& a 1) 0) (continue))\n"
+        "        (set n (+ n a)) (if (> a 250) (break))) (+ a n))",
+        "(fn f ((x u8) (y u8)) u8 (let a u8 0) (let n u8 y)\n"
+        "    (while (< a (& x 15)) (while (> n a) (set n (- n 1))) (set a (+ a 1))) (+ a n))",
+        // compares of known values: the first pass of a loop entered with a known counter
+        "(fn f ((x u8) (y u8)) u8 (let j u8 0)\n"
+        "    (while (and (< j 6) (= (at bt (+ x j)) (at small j))) (set j (+ j 1)))\n"
+        "    (if (= j 6) 1 (+ j 10)))",
+        "(fn f ((x u8) (y u8)) u8 (let j u8 7) (let n u8 0)\n"
+        "    (while (< j 6) (set n (+ n 1)) (set j (+ j 1))) (if (> j 6) (+ n 1) n))",
+    };
+    for (const char* body : bodies) {
+        CheckCalls(results, body, Bytes());
+    }
+    // a counter the body never reads counts down to zero
+    Compiled c =
+        CompileText(std::string(kData) + "(fn f ((x u8)) u8 (let n u8 x) (for k u8 0 8 (set n (+ n "
+                                         "n))) n)");
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::DEX) + CountMn(c, "t.f", tisple::Mn::DEY) +
+                           CountMn(c, "t.f", tisple::Mn::DEC) ==
+                       1);
+}
+
 } // namespace
 
 void RunBackendWhileTests(TestResults& results) {
@@ -330,6 +376,7 @@ void RunBackendWhileTests(TestResults& results) {
     TestFacts(results);
     TestStepPointers(results);
     TestLetPointers(results);
+    TestLoopControl(results);
 }
 
 } // namespace tisple_tests
