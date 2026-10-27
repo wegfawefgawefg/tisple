@@ -17,8 +17,11 @@ the kernel ran, library routines included.
 
 ## Results
 
-Cycles / bytes, 2026-10-26, commit after `a6dc31e` (this branch's backend is that
-commit's). Ratio is Tisple's cycles over the fastest other compiler's; below 1 Tisple wins.
+Cycles / bytes, 2026-10-27, after the backend work on the ranked list below (dogfood.md
+Fixed 21 to 36). The first run (2026-10-26, on `a6dc31e`) is in the repository's
+history; its ratios head the "Before" sections below. Ratio is Tisple's cycles over the
+fastest other compiler's; below 1 Tisple wins. No kernel source changed, in either
+language.
 
 <!-- race results: begin (races/run.sh --update-doc writes this part) -->
 
@@ -26,19 +29,19 @@ Cycles / bytes, best setting of each compiler:
 
 | Kernel | cc65 | llvm-mos | oscar64 | tisple | Winner | Tisple / best other |
 | --- | ---: | ---: | ---: | ---: | --- | ---: |
-| mul8 | 80903 / 184 | 101512 / 114 | 63165 / 113 | 95624 / 105 | oscar64 | 1.51 |
-| mul16 | 101818 / 299 | 90156 / 130 | 65477 / 131 | 86293 / 111 | oscar64 | 1.32 |
-| fill | 63996 / 165 | 238896 / 58 | 90467 / 57 | 115266 / 39 | cc65 | 1.80 |
-| memcpy | 59878 / 143 | 153449 / 75 | 65824 / 69 | 65930 / 47 | cc65 | 1.10 |
-| sieve | 2285731 / 210 | 2510574 / 250 | 1258060 / 128 | 1515066 / 151 | oscar64 | 1.20 |
-| strlen | 36153 / 39 | 186081 / 75 | 39103 / 36 | 108102 / 45 | cc65 | 2.99 |
-| search | 536420 / 145 | 136618 / 142 | 150500 / 63 | 317417 / 94 | llvm-mos | 2.32 |
-| sort | 2020054 / 122 | 463713 / 56 | 422725 / 47 | 717510 / 50 | oscar64 | 1.70 |
-| crc16 | 650111 / 218 | 257916 / 253 | 221527 / 78 | 540509 / 124 | oscar64 | 2.44 |
-| mandel | 11216044 / 656 | 9969128 / 582 | 7601337 / 422 | 9149633 / 446 | oscar64 | 1.20 |
-| life | 1333565 / 689 | 232244 / 163 | 238566 / 163 | 160650 / 403 | tisple | 0.69 |
-| line | 2451456 / 805 | 767813 / 405 | 576133 / 335 | 705567 / 379 | oscar64 | 1.22 |
-| sprites | 819546 / 424 | 117496 / 119 | 76125 / 85 | 82295 / 92 | oscar64 | 1.08 |
+| mul8 | 80903 / 184 | 101512 / 114 | 63165 / 113 | 29331 / 111 | tisple | 0.46 |
+| mul16 | 101818 / 299 | 90156 / 130 | 65477 / 131 | 31296 / 222 | tisple | 0.48 |
+| fill | 63996 / 165 | 238896 / 58 | 90467 / 57 | 43022 / 109 | tisple | 0.67 |
+| memcpy | 59878 / 143 | 153449 / 75 | 65824 / 69 | 38151 / 102 | tisple | 0.64 |
+| sieve | 2285731 / 210 | 2510574 / 250 | 1258060 / 128 | 1102807 / 154 | tisple | 0.88 |
+| strlen | 36153 / 39 | 186081 / 75 | 39103 / 36 | 31642 / 54 | tisple | 0.88 |
+| search | 536420 / 145 | 136618 / 142 | 150500 / 63 | 128734 / 74 | tisple | 0.94 |
+| sort | 2020054 / 122 | 463713 / 56 | 422725 / 47 | 356260 / 51 | tisple | 0.84 |
+| crc16 | 650111 / 218 | 257916 / 253 | 221527 / 78 | 188348 / 202 | tisple | 0.85 |
+| mandel | 11216044 / 656 | 9969128 / 582 | 7601337 / 422 | 4177022 / 553 | tisple | 0.55 |
+| life | 1333565 / 689 | 232244 / 163 | 238566 / 163 | 160648 / 402 | tisple | 0.69 |
+| line | 2451456 / 805 | 767813 / 405 | 576133 / 335 | 507296 / 383 | tisple | 0.88 |
+| sprites | 819546 / 424 | 117496 / 119 | 76125 / 85 | 65957 / 78 | tisple | 0.87 |
 
 ### mul8: 8-bit multiply: 256 byte products summed in 16 bits
 
@@ -47,9 +50,9 @@ Cycles / bytes, best setting of each compiler:
 | cc65 | 80903 | 184 | -Oirs -Cl const |
 | llvm-mos | 101512 | 114 | -O2 const |
 | oscar64 | 63165 | 113 | -O2 const |
-| tisple | 95624 | 105 | - |
+| tisple | 29331 | 111 | - |
 
-Winner: oscar64. Tisple / best other: 1.51.
+Winner: tisple. Tisple / best other: 0.46.
 
 ### mul16: 16-bit multiply: 128 word products summed, wrapping
 
@@ -58,9 +61,9 @@ Winner: oscar64. Tisple / best other: 1.51.
 | cc65 | 101818 | 299 | -Oirs -Cl const |
 | llvm-mos | 90156 | 130 | -O2 const |
 | oscar64 | 65477 | 131 | -O2 striped |
-| tisple | 86293 | 111 | - |
+| tisple | 31296 | 222 | - |
 
-Winner: oscar64. Tisple / best other: 1.32.
+Winner: tisple. Tisple / best other: 0.48.
 
 ### fill: Fill 8 KB with a byte
 
@@ -69,9 +72,9 @@ Winner: oscar64. Tisple / best other: 1.32.
 | cc65 | 63996 | 165 | -Oirs -Cl const lib.c |
 | llvm-mos | 238896 | 58 | -O2 const |
 | oscar64 | 90467 | 57 | -O2 const lib.c |
-| tisple | 115266 | 39 | - |
+| tisple | 43022 | 109 | unroll.tsp |
 
-Winner: cc65. Tisple / best other: 1.80.
+Winner: tisple. Tisple / best other: 0.67.
 
 ### memcpy: Copy 4 KB
 
@@ -80,9 +83,9 @@ Winner: cc65. Tisple / best other: 1.80.
 | cc65 | 59878 | 143 | -Oirs -Cl const lib.c |
 | llvm-mos | 153449 | 75 | -O3 const |
 | oscar64 | 65824 | 69 | -O2 const lib.c |
-| tisple | 65930 | 47 | - |
+| tisple | 38151 | 102 | unroll.tsp |
 
-Winner: cc65. Tisple / best other: 1.10.
+Winner: tisple. Tisple / best other: 0.64.
 
 ### sieve: Sieve of Eratosthenes, 8192 flags, count the primes
 
@@ -91,9 +94,9 @@ Winner: cc65. Tisple / best other: 1.10.
 | cc65 | 2285731 | 210 | -Oirs -Cl const |
 | llvm-mos | 2510574 | 250 | -O2 extern |
 | oscar64 | 1258060 | 128 | -O2 const |
-| tisple | 1515066 | 151 | - |
+| tisple | 1102807 | 154 | - |
 
-Winner: oscar64. Tisple / best other: 1.20.
+Winner: tisple. Tisple / best other: 0.88.
 
 ### strlen: Length of a 3000-byte string
 
@@ -102,9 +105,9 @@ Winner: oscar64. Tisple / best other: 1.20.
 | cc65 | 36153 | 39 | -Oirs -Cl const lib.c |
 | llvm-mos | 186081 | 75 | -O2 const |
 | oscar64 | 39103 | 36 | -O2 const |
-| tisple | 108102 | 45 | - |
+| tisple | 31642 | 54 | - |
 
-Winner: cc65. Tisple / best other: 2.99.
+Winner: tisple. Tisple / best other: 0.88.
 
 ### search: Naive search for 6 bytes in 4 KB of text (found at 3500)
 
@@ -113,9 +116,9 @@ Winner: cc65. Tisple / best other: 2.99.
 | cc65 | 536420 | 145 | -Oirs -Cl const |
 | llvm-mos | 136618 | 142 | -O3 extern |
 | oscar64 | 150500 | 63 | -O2 const |
-| tisple | 317417 | 94 | - |
+| tisple | 128734 | 74 | - |
 
-Winner: llvm-mos. Tisple / best other: 2.32.
+Winner: tisple. Tisple / best other: 0.94.
 
 ### sort: Insertion sort of 256 bytes
 
@@ -124,9 +127,9 @@ Winner: llvm-mos. Tisple / best other: 2.32.
 | cc65 | 2020054 | 122 | -Oirs -Cl const |
 | llvm-mos | 463713 | 56 | -O2 const |
 | oscar64 | 422725 | 47 | -O2 const |
-| tisple | 717510 | 50 | - |
+| tisple | 356260 | 51 | - |
 
-Winner: oscar64. Tisple / best other: 1.70.
+Winner: tisple. Tisple / best other: 0.84.
 
 ### crc16: CRC-16-CCITT, bit by bit, over 1 KB
 
@@ -135,9 +138,9 @@ Winner: oscar64. Tisple / best other: 1.70.
 | cc65 | 650111 | 218 | -Oirs -Cl const |
 | llvm-mos | 257916 | 253 | -O3 const |
 | oscar64 | 221527 | 78 | -O2 const |
-| tisple | 540509 | 124 | - |
+| tisple | 188348 | 202 | - |
 
-Winner: oscar64. Tisple / best other: 2.44.
+Winner: tisple. Tisple / best other: 0.85.
 
 ### mandel: Mandelbrot, 32 x 24 pixels, 16-bit fixed point (6 fraction bits)
 
@@ -146,9 +149,9 @@ Winner: oscar64. Tisple / best other: 2.44.
 | cc65 | 11216044 | 656 | -Oirs -Cl const |
 | llvm-mos | 9969128 | 582 | -O2 extern |
 | oscar64 | 7601337 | 422 | -O2 const |
-| tisple | 9149633 | 446 | - |
+| tisple | 4177022 | 553 | - |
 
-Winner: oscar64. Tisple / best other: 1.20.
+Winner: tisple. Tisple / best other: 0.55.
 
 ### life: One Life step, 40 x 48 cells, as programs/life
 
@@ -157,7 +160,7 @@ Winner: oscar64. Tisple / best other: 1.20.
 | cc65 | 1333565 | 689 | -Oirs -Cl const |
 | llvm-mos | 232244 | 163 | -O2 extern |
 | oscar64 | 238566 | 163 | -O2 const |
-| tisple | 160650 | 403 | - |
+| tisple | 160648 | 402 | - |
 
 Winner: tisple. Tisple / best other: 0.69.
 
@@ -168,9 +171,9 @@ Winner: tisple. Tisple / best other: 0.69.
 | cc65 | 2451456 | 805 | -Oirs -Cl const |
 | llvm-mos | 767813 | 405 | -O2 const |
 | oscar64 | 576133 | 335 | -O2 striped |
-| tisple | 705567 | 379 | - |
+| tisple | 507296 | 383 | - |
 
-Winner: oscar64. Tisple / best other: 1.22.
+Winner: tisple. Tisple / best other: 0.88.
 
 ### sprites: Move and bounce 64 sprites (array of structs) for 16 frames
 
@@ -179,13 +182,55 @@ Winner: oscar64. Tisple / best other: 1.22.
 | cc65 | 819546 | 424 | -Oirs -Cl extern |
 | llvm-mos | 117496 | 119 | -O2 extern |
 | oscar64 | 76125 | 85 | -O2 striped index.c |
-| tisple | 82295 | 92 | - |
+| tisple | 65957 | 78 | - |
 
-Winner: oscar64. Tisple / best other: 1.08.
+Winner: tisple. Tisple / best other: 0.87.
 
 <!-- race results: end -->
 
-## Where Tisple wins and loses
+## 2026-10-27: Tisple wins all 13
+
+After the ranked list's items (each in docs/dogfood.md, Fixed 21 to 36, with its tests),
+Tisple is fastest on every kernel, by 6% (search) to 2.2x (mul8, mul16). Per kernel, what
+did it, and the slack left:
+
+- **mul8 0.46, mul16 0.48, mandel 0.55.** Multiplies by bytes (an 8x8 for zero-extended
+  bytes, `rt.mul16` a byte of the multiplier at a time, skipping zero high bytes), and
+  inside loops quarter-square tables (1 KB, about 40 cycles for 8x8). mandel's guard
+  compares are high byte first. Slack: mandel's |z| < 128 fits a signed 8x8 the backend
+  does not narrow to (item 9).
+- **fill 0.67, memcpy 0.64** (the `unroll.tsp` versions): constant offsets fold into
+  `STA buf+C,X`, so the page-split loops are what cc65's library is, unrolled further. The
+  plain `kernel.tsp` loops are as before (fill still reloads its value each byte).
+- **sieve 0.88.** The inner while keeps k's low byte in Y and indexes through a pointer on
+  its high byte; the outer `flags[i]` is a pointer stepped with i. Slack: the inner loop
+  still works the pointer's high byte out from k every pass (39 cycles a pass), and the
+  first loop reloads `LDA #1` every byte (16K) because its page step uses A.
+- **strlen 0.88.** n's low byte in Y, two tests and steps a time (Y even at the top).
+- **search 0.94.** The u16 counter is replaced by the text pointer itself (stepped by INC,
+  compared with a constant stop), j in Y, the rotated inner test, jump threading past the
+  repeated `j = 6` test. Slack: LLVM-MOS's unrolled 6-byte compare with the needle in
+  zero page; the first byte's `LDY #0 / LDA (p),Y / CMP needle` could be a zero-page
+  compare.
+- **sort 0.84.** j in Y, v + 1 worked out once so the compare leaves arr[j-1] in A for the
+  move, the peephole knowing what A holds at the loop top: 19 cycles a pass against
+  Oscar64's 21. Slack: v's spare `LDA v` per element.
+- **crc16 0.85.** The bit test is `BMI`, the shift is in place before the branch, the 8
+  bits are 8 unrolled copies.
+- **life 0.69.** As before (row pointers, eight pre-offset pointers). Slack: the 0/1 sums'
+  `CLC`s (gaps: 23K).
+- **line 0.88.** plot's arguments read x and y in place, step_x and step_y (only 1 or -1)
+  step by INC or DEC, the error compares are high byte first, and the COL_BYTE and COL_BIT
+  page pointers follow x (high bytes set once and moved when x crosses a page). Slack: y
+  stays an i16 (Oscar64 narrows it to X; item 9), and the loop is too long for short
+  branches back (`BPL *+5 / JMP`).
+- **sprites 0.87.** The stored field stays in A for the two compares.
+
+The ranked list below is kept as it was written. Items 1 to 8 and 10 are done as
+described; item 9 is done only in part (facts from conditions, compares against v + 1,
+locals that are only 1 or -1), not as narrowing.
+
+## Before: where Tisple won and lost (2026-10-26)
 
 Tisple wins **life** (0.69) and is within 10% on **memcpy** (1.10) and **sprites** (1.08).
 It loses the rest, by 1.2x to 3x. Oscar64 is the compiler to beat: it wins 8 of 13. cc65
