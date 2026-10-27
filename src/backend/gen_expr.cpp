@@ -338,6 +338,10 @@ void EvalA(Gen& g, ExprId id) {
 
 Opnd Eval(Gen& g, ExprId id, const Opnd* dst) {
     id = ForwardTarget(g, id);
+    Opnd replaced;
+    if (ReadReplacedCounter(g, id, dst, replaced)) {
+        return replaced;
+    }
     const Expr& e = At(g, id);
     if (e.type == kNeverType || e.type == kVoidType) {
         GenStmt(g, id);
@@ -442,7 +446,7 @@ bool CanBind(const Gen& g, const Function& fn, const Expr& call, std::uint32_t i
     }
     std::int32_t var = a.ref;
     // a loop counter in a register is better copied to memory once for the callee
-    if (var == g.pin[0] || var == g.pin[1]) {
+    if (var == g.pin[0] || var == g.pin[1] || IsReplacedCounter(g, var)) {
         return false;
     }
     if (g.be->aliases[static_cast<std::size_t>(var)].value >= 0 ||

@@ -261,6 +261,39 @@ void TestFacts(TestResults& results) {
 }
 
 // step pointers: u16 for counters in memory and u16 locals a loop steps
+// the race's search kernel, whose u16 counter is replaced by its text pointer, with the
+// needle at every place near the start and the end, and nowhere
+void TestReplacedCounter(TestResults& results) {
+    const char* text =
+        "(let text (array u8 4096) :address 0x2000)\n"
+        "(let needle (array u8 6) :address 0x5E00)\n"
+        "(let result u16 :address 0x5F00)\n"
+        "(fn setup ((where u16)) void\n"
+        "    (for i u16 0 4096 (set (at text i) (as u8 (& i 0x3F))))\n"
+        "    (for k u8 0 6 (set (at needle k) (+ k 0x40))\n"
+        "        (if (< where 4096) (set (at text (& (+ where (as u16 k)) 4095)) (+ k "
+        "0x40)))))\n"
+        "(fn main () void\n"
+        "    (for i u16 0 4091 (let p (ptr u8) (addr_of (at text i))) (let j u8 0)\n"
+        "        (while (and (< j 6) (= (load (+ p j)) (at needle j))) (set j (+ j "
+        "1)))\n"
+        "        (if (= j 6) (do (set result i) (return))))\n"
+        "    (set result 0xFFFF))\n";
+    Compiled c = CompileText(text);
+    Diff d;
+    bool ok = StartDiff(d, c);
+    for (int at : {0, 1, 2, 255, 256, 257, 1000, 3500, 4089, 4090, 4091, 5000}) {
+        ok = ok && DiffCall(d, "t.setup", {static_cast<std::uint16_t>(at)}) &&
+             DiffCall(d, "t.main", {});
+    }
+    if (!ok) {
+        std::fprintf(stderr, "replaced counter:\n%s\n  %s\n", text, d.message.c_str());
+    }
+    CHECK(results, ok);
+    // the counter is gone from the loop: no INC of it
+    CHECK(results, CountMn(c, "t.main", tisple::Mn::INC) == 2);
+}
+
 void TestStepPointers(TestResults& results) {
     const char* bodies[] = {
         // the sieve's outer loop: a while inside takes Y, the counter stays in memory
@@ -302,6 +335,27 @@ void TestStepPointers(TestResults& results) {
         "(fn f ((n u16)) u16 (let k u16 (& n 255)) (let q (ptr u8) (addr_of (at t 0)))\n"
         "    (for x u8 0 20 (set q (addr_of (at t k))) (set k (+ k 1)) (set g (+ g (load q))))\n"
         "    k)",
+        // the counter replaced by a let that moves with it: read as a value, as another
+        // array's index, in a loop inside, after a continue; a start past the end; a u16 let
+        "(fn f ((n u16)) u16 (let sum u16 0)\n"
+        "    (for i u16 (& n 511) 700 (let p (ptr u8) (addr_of (at t i)))\n"
+        "        (if (= (& (load p) 7) 3) (continue))\n"
+        "        (if (= (load p) 77) (set sum (+ sum (* i 3))))\n"
+        "        (set (at s (- i (& n 63))) (as u8 i))\n"
+        "        (for j u8 0 2 (set sum (+ sum (+ i (as u16 j))))))\n"
+        "    sum)",
+        "(fn f ((n u16)) u16 (let sum u16 0)\n"
+        "    (for i u16 n 400 (let q u16 (+ i 9)) (set sum (^ sum (+ q (>> i 1))))) sum)",
+        // the race's search, written for t: the counter read once, where it is found
+        "(fn f ((n u16)) u16 (set gw 0xFFFF)\n"
+        "    (for i u16 0 1000 (let p (ptr u8) (addr_of (at t i))) (let j u8 0)\n"
+        "        (while (and (< j 3) (= (load (+ p j)) (at t (+ (& n 511) (as u16 j)))))\n"
+        "            (set j (+ j 1)))\n"
+        "        (if (= j 3) (do (set gw i) (return i))))\n"
+        "    0xFFFF)",
+        "(fn f ((n u16)) u16 (let sum u16 0)\n"
+        "    (for i u16 (+ n 65000) 65535 (let p (ptr u8) (addr_of (at t (& i 1023))))\n"
+        "        (set sum (+ sum i))) sum)",
     };
     for (const char* body : bodies) {
         CheckCalls(results, body, Starts());
@@ -380,6 +434,7 @@ void RunBackendWhileTests(TestResults& results) {
     TestByteWhile(results);
     TestFacts(results);
     TestStepPointers(results);
+    TestReplacedCounter(results);
     TestLetPointers(results);
     TestLoopControl(results);
 }

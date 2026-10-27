@@ -35,5 +35,7 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& 
 bool CarryPass(std::vector<AsmItem>& items);
 // true if any load or ALU result nothing reads went (dead_regs.cpp)
 bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items);
+// by item: nothing reads N, Z or C before writing them, from there on (dead_regs.cpp)
+std::vector<bool> FlagsDeadIn(const Assembly& as, const std::vector<AsmItem>& items);
 
 } // namespace tisple

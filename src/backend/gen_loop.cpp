@@ -14,20 +14,6 @@ constexpr int kMaxPinnedDepth = 3;
 constexpr std::int32_t kMaxUnrollTrips = 16;
 constexpr std::uint32_t kMaxUnrollExprs = 160;
 
-struct ForParts {
-    ExprId id = -1;
-    std::int32_t var = -1;
-    std::uint32_t size = 1;
-    Opnd start;
-    Opnd end; // raw bits the counter stops at: Imm or plain memory
-    ExprId body = -1;
-    std::int32_t end_label = -1;
-    // the body never reads the counter and the trip count is a constant: count it down to 0
-    // instead (DEX / BNE), from trips (0 for 256)
-    bool down = false;
-    std::uint8_t trips = 0;
-};
-
 bool IsPlainMem(const Opnd& o) {
     for (int k = 0; k < o.size; k++) {
         if (o.b[k].kind != ByteKind::Mem) {
@@ -94,6 +80,8 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     Gen saved = g;
     bool outer = g.violation;
     g.violation = false;
+    // the setup runs once each time the loop starts
+    g.loop_depth--;
     LoadCounter(g, r, f.down ? ImmOpnd(f.trips, 1) : f.start);
     g.pin[r] = f.var;
     g.pin_body[r] = f.body;
@@ -101,6 +89,7 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
     InitReducedLets(g, reduced);
     std::vector<ReducedByte> bytes = FindReducedBytes(g, f.var, f.body, reduced);
     InitReducedBytes(g, bytes);
+    g.loop_depth++;
     std::size_t init_at = g.out->size();
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
@@ -229,9 +218,12 @@ bool TryWide(Gen& g, const ForParts& f) {
     bool outer = g.violation;
     g.violation = false;
     AsmValue high = SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)], 1);
+    // the setup runs once each time the loop starts
+    g.loop_depth--;
     LoadA(g, f.start, 1);
     Emit(g, Mn::STA, Mode::Abs, high);
     LoadCounter(g, 1, f.start);
+    g.loop_depth++;
     std::size_t init_at = g.out->size();
     WideLoop wide;
     wide.var = f.var;
@@ -241,7 +233,9 @@ bool TryWide(Gen& g, const ForParts& f) {
     g.pin[1] = f.var;
     g.pin_body[1] = f.body;
     std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
+    g.loop_depth--;
     InitReducedLets(g, reduced);
+    g.loop_depth++;
     std::int32_t top = NewLabel(g);
     std::int32_t next = NewLabel(g);
     g.loops.back().continue_label = next;
@@ -303,6 +297,8 @@ bool TryWide(Gen& g, const ForParts& f) {
 
 void MemoryLoop(Gen& g, const ForParts& f) {
     Opnd v = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(f.var)]), f.size, 1);
+    // the setup runs once each time the loop starts
+    g.loop_depth--;
     CopyOpnd(g, f.down ? ImmOpnd(f.trips, 1) : f.start, v);
     std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
     InitReducedLets(g, reduced);
@@ -311,6 +307,7 @@ void MemoryLoop(Gen& g, const ForParts& f) {
         bytes = FindReducedBytes(g, f.var, f.body, reduced);
     }
     InitReducedBytes(g, bytes);
+    g.loop_depth++;
     // a u16 counter indexes through step pointers that move with it (gen_step.cpp)
     std::size_t at = g.out->size();
     std::size_t stepped = f.size == 2 ? BeginStepped(g, f.id, f.var) : g.stepped.size();
@@ -374,36 +371,49 @@ void MemoryLoop(Gen& g, const ForParts& f) {
 
 } // namespace
 
-// the counter in Y (TryWide) or in memory, whichever costs the fewest cycles
+// the counter in Y (TryWide), in memory, or in memory replaced by a let that moves with it
+// (ReplacedLoop), whichever costs the fewest cycles
 void WordLoop(Gen& g, const ForParts& f, bool pin) {
     std::size_t mark = g.out->size();
     Gen start = g;
-    // the body's stepped u16 variables, with each choice's code (gen_step.cpp)
-    std::size_t stepped = BeginStepped(g, f.id, -1);
-    if (!pin || !TryWide(g, f)) {
-        MemoryLoop(g, f);
+    bool found = false;
+    std::uint64_t best_cost = 0;
+    std::vector<AsmItem> best_items;
+    Gen best = g;
+    for (int choice = 0; choice < 3; choice++) {
+        if (choice == 0 && !pin) {
+            continue;
+        }
+        g = start;
+        g.out->resize(mark);
+        // the body's stepped u16 variables, with each choice's code (gen_step.cpp)
+        std::size_t stepped = BeginStepped(g, f.id, -1);
+        bool made = true;
+        if (choice == 0) {
+            made = TryWide(g, f);
+        } else if (choice == 1) {
+            MemoryLoop(g, f);
+        } else {
+            made = ReplacedLoop(g, f);
+        }
+        if (!made) {
+            continue;
+        }
         EndStepped(g, f.id, stepped, mark);
-        return;
+        std::uint64_t cost = g.cost - start.cost;
+        if (!found || cost < best_cost) {
+            found = true;
+            best_cost = cost;
+            best_items.assign(g.out->begin() + static_cast<std::ptrdiff_t>(mark), g.out->end());
+            best = g;
+        }
+        if (g.failed) {
+            break;
+        }
     }
-    EndStepped(g, f.id, stepped, mark);
-    std::uint64_t wide_cost = g.cost - start.cost;
-    if (g.failed) {
-        return;
-    }
-    std::vector<AsmItem> wide_items(g.out->begin() + static_cast<std::ptrdiff_t>(mark),
-                                    g.out->end());
-    Gen wide = g;
-    g = start;
+    g = best;
     g.out->resize(mark);
-    stepped = BeginStepped(g, f.id, -1);
-    MemoryLoop(g, f);
-    EndStepped(g, f.id, stepped, mark);
-    if (g.failed || g.cost - start.cost < wide_cost) {
-        return;
-    }
-    g = wide;
-    g.out->resize(mark);
-    g.out->insert(g.out->end(), wide_items.begin(), wide_items.end());
+    g.out->insert(g.out->end(), best_items.begin(), best_items.end());
 }
 
 void GenFor(Gen& g, ExprId id) {

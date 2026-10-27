@@ -788,6 +788,35 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 29) | the same |
     | programs/ sizes | snake 1011 code bytes, multi 203 | snake 1024, multi 205 (unrolled loops) |
 
+31. Race item 8 and 10, search (2026-10-27). Three changes. Jump threading
+    in the peephole: a branch or JMP to a JMP, or to a branch whose outcome
+    the flags already decide, goes straight to where that one goes (only
+    where the flags are dead after the target, so a skipped compare is not
+    needed). Loop setup (the counter's start, the reduced lets' first values,
+    the high byte of a wide loop) now counts at the weight outside the loop,
+    not inside it, so a choice that does more work once to save work every
+    time can win. And a u16 for counter in memory can be replaced by a
+    reduced let of its body stepped by one (gen_counter.cpp): search's
+    `(let p (ptr u8) (addr_of (at text i)))` keeps p - i in a temporary
+    worked out once, the loop stops when p reaches that plus the end, and
+    the body's reads of i (search's `(set result i)` on a match) are p minus
+    the difference. The counter's INC and compare go from the loop; WordLoop
+    tries it as a third choice next to the wide loop and the memory loop and
+    keeps the cheapest. Tests: in tests/test_backend_while.cpp, the race's
+    search kernel with the needle at the start, at page edges, at the end and
+    nowhere (checking two INCs are left), and replaced counters read as a
+    value, as another array's index, inside a loop, after a continue and from
+    a start past the end; a fuzz shape for the search (a u16 for with a
+    pointer to wb that moves with it, a copy or a sum of the counter on a
+    match, now and then a break). Making the difference one too big fails 20
+    of 3000 fuzz programs.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race search | 169880 | 156790 (jump threading), 132297 (replaced counter; LLVM-MOS 136618) |
+    | other race kernels, Life generations, plasma | (as after 30) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

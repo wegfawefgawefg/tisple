@@ -297,6 +297,10 @@ struct Gen {
     std::vector<SteppedVar> stepped;
     std::vector<StepFixup> step_fixups;
     std::vector<PagePointer> page_ptrs;
+    // u16 for counters replaced by a let of their body (ReplacedLoop): counter, let, and the
+    // let minus the counter
+    std::vector<std::pair<std::int32_t, std::int32_t>> replaced;
+    std::vector<Opnd> replaced_diff;
     int while_pins = 0; // while loops being generated with variables pinned
     DivDone div;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
@@ -561,6 +565,30 @@ void CondToA(Gen& g, ExprId id);
 
 void GenStmt(Gen& g, ExprId id);
 void GenFor(Gen& g, ExprId id);
+
+// a for loop as GenFor works it out
+struct ForParts {
+    ExprId id = -1;
+    std::int32_t var = -1;
+    std::uint32_t size = 1;
+    Opnd start;
+    Opnd end; // raw bits the counter stops at: Imm or plain memory
+    ExprId body = -1;
+    std::int32_t end_label = -1;
+    // the body never reads the counter and the trip count is a constant: count it down to 0
+    // instead (DEX / BNE), from trips (0 for 256)
+    bool down = false;
+    std::uint8_t trips = 0;
+};
+
+// a u16 for loop whose body has a let that moves by one with the counter, the counter
+// replaced by it (gen_counter.cpp); false (nothing kept) if there is none
+bool ReplacedLoop(Gen& g, const ForParts& f);
+// a read of a counter ReplacedLoop stands in for: the let minus their difference, into dst
+// or a temporary; false if id is not one
+bool ReadReplacedCounter(Gen& g, ExprId id, const Opnd* dst, Opnd& out);
+// var is such a counter: its memory is stale
+bool IsReplacedCounter(const Gen& g, std::int32_t var);
 void GenWhile(Gen& g, ExprId id);
 // (set var value) when a while loop keeps var in a register; false if it does not
 bool SetPinnedVar(Gen& g, ExprId place, ExprId value);

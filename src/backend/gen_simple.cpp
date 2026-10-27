@@ -120,6 +120,9 @@ Opnd TrySimple(Gen& g, ExprId id) {
     }
     switch (e.kind) {
     case ExprKind::VarRef: {
+        if (IsReplacedCounter(g, e.ref)) {
+            return Opnd(); // worked out from the let that replaced it
+        }
         if (g.wide && g.wide->var == e.ref && g.pin[1] == e.ref) {
             Opnd o;
             o.size = 2;

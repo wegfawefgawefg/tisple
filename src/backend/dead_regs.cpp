@@ -256,9 +256,9 @@ bool ImmediateTransfer(const AsmItem& load, const AsmItem& transfer, int& to) {
     }
 }
 
-} // namespace
-
-bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
+// liveness of the registers and flags before and after every item
+void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
+              std::vector<std::uint8_t>& live_in, std::vector<std::uint8_t>& live_out) {
     Flow f;
     for (std::size_t i = 0; i < items.size(); i++) {
         if (items[i].kind == ItemKind::Label) {
@@ -276,8 +276,8 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
             effects[i] = EffectOf(as, items[i]);
         }
     }
-    std::vector<std::uint8_t> live_in(items.size(), 0);
-    std::vector<std::uint8_t> live_out(items.size(), 0);
+    live_in.assign(items.size(), 0);
+    live_out.assign(items.size(), 0);
     std::vector<std::size_t> succ;
     for (bool changed = true; changed;) {
         changed = false;
@@ -297,6 +297,31 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
                 live_in[i] = in;
                 changed = true;
             }
+        }
+    }
+}
+
+} // namespace
+
+std::vector<bool> FlagsDeadIn(const Assembly& as, const std::vector<AsmItem>& items) {
+    std::vector<std::uint8_t> live_in;
+    std::vector<std::uint8_t> live_out;
+    Liveness(as, items, live_in, live_out);
+    std::vector<bool> out(items.size(), false);
+    for (std::size_t i = 0; i < items.size(); i++) {
+        out[i] = (live_in[i] & (kN | kZ | kC)) == 0;
+    }
+    return out;
+}
+
+bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
+    std::vector<std::uint8_t> live_in;
+    std::vector<std::uint8_t> live_out;
+    Liveness(as, items, live_in, live_out);
+    std::vector<Effect> effects(items.size());
+    for (std::size_t i = 0; i < items.size(); i++) {
+        if (items[i].kind == ItemKind::Ins) {
+            effects[i] = EffectOf(as, items[i]);
         }
     }
     std::vector<AsmItem> kept;

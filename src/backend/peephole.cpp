@@ -90,6 +90,7 @@ struct Pass {
     const Assembly* as = nullptr;
     std::vector<AsmItem>* items = nullptr;
     std::vector<bool> dead;
+    std::vector<bool> flags_dead; // FlagsDeadIn, as the round began
     bool changed = false;
 
     AsmItem& At(std::size_t i) {
@@ -498,6 +499,40 @@ void KnownFlags(const Tracker& before, const AsmItem& item, Tracker& after) {
     after.flag_c = value >= operand;
 }
 
+int BranchOutcome(const Tracker& t, Mn mn);
+
+// where a jump to `label` really goes when the registers are as t says: past a compare of a
+// known register with a number and a branch it then takes, if nothing reads the flags the
+// compare would have set where that branch goes. -1 when it goes to label after all.
+std::int32_t ThreadTarget(Pass& p, const Tracker& t, std::int32_t label,
+                          const std::map<std::int32_t, std::size_t>& labels) {
+    auto found = labels.find(label);
+    if (found == labels.end()) {
+        return -1;
+    }
+    std::size_t at = p.NextReal(found->second);
+    if (at >= p.items->size() || p.At(at).kind != ItemKind::Ins) {
+        return -1;
+    }
+    const AsmItem& cmp = p.At(at);
+    if (cmp.mn != Mn::CMP && cmp.mn != Mn::CPX && cmp.mn != Mn::CPY) {
+        return -1;
+    }
+    Tracker flags = t;
+    KnownFlags(t, cmp, flags);
+    std::size_t next = p.NextReal(at + 1);
+    if (next >= p.items->size() || p.At(next).kind != ItemKind::Ins || !IsBranch(p.At(next).mn) ||
+        BranchOutcome(flags, p.At(next).mn) != 1) {
+        return -1;
+    }
+    std::int32_t to = p.At(next).value.sym;
+    auto target = labels.find(to);
+    if (target == labels.end() || !p.flags_dead[target->second]) {
+        return -1;
+    }
+    return to;
+}
+
 // a branch whose way the known flags decide: 1 taken, 0 not, -1 not known
 int BranchOutcome(const Tracker& t, Mn mn) {
     switch (mn) {
@@ -536,6 +571,12 @@ void RegisterPass(Pass& p) {
     };
     // what holds on the jumps seen so far into each mergeable label
     std::map<std::int32_t, Tracker> arriving;
+    std::map<std::int32_t, std::size_t> labels;
+    for (std::size_t i = 0; i < p.items->size(); i++) {
+        if (!p.dead[i] && p.At(i).kind == ItemKind::Label) {
+            labels[p.At(i).value.sym] = i;
+        }
+    }
     bool falls = true; // the item before may fall into this one
     for (std::size_t i = 0; i < p.items->size(); i++) {
         if (p.dead[i]) {
@@ -569,6 +610,15 @@ void RegisterPass(Pass& p) {
         if (outcome == 1) {
             item = MakeIns(Mn::JMP, Mode::Abs, item.value);
             p.changed = true;
+        }
+        // a jump to a test the registers decide goes where the test would send it
+        if (IsJumpTo(item)) {
+            std::int32_t to = ThreadTarget(p, t, item.value.sym, labels);
+            if (to >= 0) {
+                item.value = SymValue(to);
+                item.carry = Carry::Unknown;
+                p.changed = true;
+            }
         }
         if (IsJumpTo(item) && is_mergeable(item.value.sym)) {
             auto found = arriving.find(item.value.sym);
@@ -855,6 +905,7 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
         p.as = &as;
         p.items = &items;
         p.dead.assign(items.size(), false);
+        p.flags_dead = FlagsDeadIn(as, items);
         FlowPass(p);
         RegisterPass(p);
         std::vector<AsmItem> kept;

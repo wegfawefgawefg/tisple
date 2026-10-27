@@ -307,6 +307,32 @@ std::string Gen::WordFor(int depth) {
     scopes.emplace_back();
     scopes.back().push_back(VarInfo{i, T::U16, true});
     loops++;
+    std::vector<const VarInfo*> words = VarsOf(T::U16, true);
+    if (loops_rng.Chance(30) && !words.empty()) {
+        // the search: the counter read only where it matches, a pointer that moves with it
+        const std::string& sink =
+            words[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(words.size())))]->name;
+        std::string p = Fresh("p");
+        // wb is mostly zeros, so a 0 matches often
+        std::string byte = loops_rng.Chance(50) ? std::string("0") : Leaf(T::U8);
+        std::string body = " (let " + p + " (ptr u8) (addr_of (at wb " + i + "))) (let " + j +
+                           " u8 0) (while (and (< " + j + " 3) (= (load (+ " + p + " " + j + ")) " +
+                           byte + ")) (set " + j + " (+ " + j + " 1)))";
+        if (loops_rng.Chance(30)) {
+            body += " (if " + Expr(T::Bool, 1) + " (continue))";
+        }
+        // a plain copy of the counter is cheap enough that the counter goes
+        std::string found = loops_rng.Chance(50) ? "(set " + sink + " " + i + ")"
+                                                 : "(set " + sink + " (+ " + sink + " " + i + "))";
+        if (loops_rng.Chance(30)) {
+            found = "(do " + found + " (break))";
+        }
+        body += " (if (= " + j + " 3) " + found + ")";
+        loops--;
+        scopes.pop_back();
+        DropPointers();
+        return head + body + ")";
+    }
     // a while that wants Y, so the counter may stay in memory
     std::string body = " (let " + j + " u8 0) (while (< " + j + " " +
                        std::to_string(1 + loops_rng.Below(3)) + ") (set " + j + " (+ " + j +

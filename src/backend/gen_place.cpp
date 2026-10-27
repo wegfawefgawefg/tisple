@@ -301,7 +301,7 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         if (BoundTarget(g, id) != id) {
             return Resolve(g, BoundTarget(g, id), later, emit, out);
         }
-        if (e.ref == g.pin[0] || e.ref == g.pin[1]) {
+        if (e.ref == g.pin[0] || e.ref == g.pin[1] || IsReplacedCounter(g, e.ref)) {
             return false;
         }
         out = PlaceRef();

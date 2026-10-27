@@ -52,3 +52,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-27 | (race item 8: count-down, rotated whiles, decided branches) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-27 | (race item 7: small loops unrolled, strlen high byte rebuilt) | life | generations in 10 s | 56 |
 | 2026-10-27 | (race item 7: small loops unrolled, strlen high byte rebuilt) | plasma | frames in 10 s | 243 (24.3 fps) |
+| 2026-10-27 | (race items 8 and 10: jump threading, counters replaced by pointers) | life | generations in 10 s | 56 |
+| 2026-10-27 | (race items 8 and 10: jump threading, counters replaced by pointers) | plasma | frames in 10 s | 243 (24.3 fps) |
