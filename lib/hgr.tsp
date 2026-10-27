@@ -5,6 +5,9 @@
 (import apple2 a2)
 (import tables)
 
+; the screen this library draws on: the linker keeps code and data out of it
+(let page1 (array u8 8192) :address a2.HGR_PAGE1 :reserve)
+
 ; the address of row y: eighths of the page, then 8-row bands, then thirds. A plain
 ; function: the table below calls it while compiling
 (fn row_start ((y u8)) u16

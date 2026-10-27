@@ -55,6 +55,8 @@ bool SameGlobals(const Diff& d, std::string& message);
 // a program the backend refuses, with an error that has part in it (test_link_regions.cpp)
 void ExpectLinkError(TestResults& results, const std::string& text, const std::string& part);
 void RunLinkRegionTests(TestResults& results);
+// lib/text80, lib/text40 and lib/auxmem on the machine (test_text_libs.cpp)
+void RunTextLibTests(TestResults& results);
 
 void RunAsmTests(TestResults& results);
 void RunBackendTests(TestResults& results);
