@@ -675,6 +675,28 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | race crc16 | 540509 | 534365 |
     | other race kernels, Life generations, plasma | (as after 25) | the same |
 
+27. Race item 5, constant offsets in addresses (2026-10-27). races/kernels'
+    fill/unroll.tsp and memcpy/unroll.tsp write `(at buf (+ (* page 256) (as
+    u16 i)))` for 32 pages: the index was a 16-bit sum, so every store built
+    a pointer. Now (src/backend/gen_place.cpp, PeelConstant) the constants of
+    a u16 index, `(+ x c)`, `(+ c x)`, `(- x c)` and chains of them, move into
+    the element's address: an index stays inside its array, so x + c never
+    wraps. The rest of the index is a widened byte here, so each store is
+    `STA buf+page*256,X`: 5 cycles a byte for fill, 9 for a copy. (`(at arr (-
+    j 1))` with a u8 j, sort's, became `arr-1,X` in item 21 through facts.)
+    Tests: in tests/test_backend_index.cpp, byte, split u16 and struct arrays
+    at constants around a parameter, a byte, a u16 counter in Y and a stepped
+    variable; adding a subtracted constant fails them, and 3 of 3000 fuzz
+    programs with new loop shapes (constants around u16 counters and stepped
+    variables, inside wb and ww).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race fill (unroll.tsp; the loop kernel.tsp) | 115266 (kernel.tsp) | 43022 (cc65 63996); kernel.tsp the same |
+    | race memcpy (unroll.tsp) | 65930 (kernel.tsp) | 38151 (cc65 59878); kernel.tsp the same |
+    | other race kernels, Life generations, plasma | (as after 26) | the same |
+    | life step / draw (cycle report) | 137389 / 41912 | 139086 / 42832: the code is 34 bytes shorter (main drops stores of held values since item 26), so the worlds start 34 bytes lower and more rows cross pages; step itself is the same code |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

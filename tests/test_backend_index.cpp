@@ -353,6 +353,48 @@ void TestPagePointers(TestResults& results) {
     CHECK(results, ok);
 }
 
+// a u16 index plus or minus constants: the constants move into the address (an index stays
+// inside its array), for byte, split u16 and struct arrays, with the rest of the index a
+// parameter, a byte, a u16 loop counter in Y and a stepped variable
+void TestFoldedIndices(TestResults& results) {
+    const char* text =
+        "(struct R ((a u8) (b u16)))\n"
+        "(let tb (array u8 700))\n"
+        "(let tw (array u16 300))\n"
+        "(let tr (array R 280))\n"
+        "(let sum u16 0)\n"
+        "(fn setup () void\n"
+        "    (for i u16 0 700 (set (at tb i) (as u8 (+ (* i 7) (>> i 8)))))\n"
+        "    (for i u16 0 300 (set (at tw i) (* i 301)))\n"
+        "    (for i u16 0 280 (set (at tr i a) (as u8 i)) (set (at tr i b) (* i 3))))\n"
+        "(fn f ((x u16) (y u8)) u16\n"
+        "    (let k u16 (& x 255))\n"
+        "    (set sum (+ (as u16 (at tb (+ k 5))) (as u16 (at tb (+ 300 (as u16 y))))))\n"
+        "    (set sum (+ sum (as u16 (at tb (- (+ k 300) 7)))))\n"
+        "    (set sum (+ sum (at tw (+ (+ k 3) 4))))\n"
+        "    (set (at tw (+ 40 k)) (+ (at tw (+ 40 k)) 1))\n"
+        "    (set sum (+ sum (+ (at tr (+ k 20) b) (as u16 (at tr (- (+ k 24) 1) a)))))\n"
+        "    (set (at tr (+ k 2) b) (+ sum 9))\n"
+        "    (for i u16 0 200 (set sum (+ sum (as u16 (^ (at tb (+ i 499)) (at tb (+ 1 i)))))))\n"
+        "    (for i u16 0 40 (set (at tw (+ i 250)) (+ (at tw (+ i 7)) i)))\n"
+        "    (let m u16 k)\n"
+        "    (for z u8 0 30 (set (at tb (+ m 300)) (+ (at tb (+ m 301)) z)) (set m (+ m 9)))\n"
+        "    sum)\n";
+    Compiled c = CompileText(text);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.setup", {});
+    for (int x : {0, 1, 2, 50, 250, 251, 252, 255}) {
+        for (int y : {0, 1, 127, 128, 255}) {
+            ok = ok &&
+                 DiffCall(d, "t.f", {static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)});
+        }
+    }
+    if (!ok) {
+        std::fprintf(stderr, "folded indices:\n%s\n  %s\n", text, d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
 } // namespace
 
 void RunBackendIndexTests(TestResults& results) {
@@ -365,6 +407,7 @@ void RunBackendIndexTests(TestResults& results) {
     TestChains(results);
     TestShortCount(results);
     TestPagePointers(results);
+    TestFoldedIndices(results);
 }
 
 } // namespace tisple_tests

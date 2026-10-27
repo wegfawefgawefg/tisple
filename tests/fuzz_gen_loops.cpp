@@ -172,7 +172,9 @@ std::string Gen::WordWhile(int depth) {
             body += " (store (+ " + q + " " + n + ") (+ (load (+ " + q + " " + n + ")) 1))";
             break;
         case 2:
-            body += " (set " + guard + " (+ " + guard + " (at wb " + n + ")))";
+            // n stays below 700 here: n + 300 inside wb
+            body += " (set " + guard + " (+ " + guard + " (at wb " + n + "))) (set (at wb (+ " + n +
+                    " 300)) (at wb (- (+ " + n + " 5) 5)))";
             break;
         case 3:
             if (!stepped) {
@@ -240,6 +242,9 @@ std::string Gen::SteppedFor(int depth) {
         switch (loops_rng.Below(6)) {
         case 0:
             body += " (set (at wb " + k + ") " + Expr(T::U8, 1) + ")";
+            // k stays at 32 or more going down and below 896 going up: these are inside wb
+            body += down ? " (set (at wb (- " + k + " 30)) (at wb (- " + k + " 1)))"
+                         : " (set (at wb (+ " + k + " 100)) (at wb (+ 7 " + k + ")))";
             break;
         case 1:
             body += stepped ? "" : " (set " + k + " " + step + ")";
@@ -302,9 +307,15 @@ std::string Gen::WordFor(int depth) {
                        " 1)))";
     int parts = 1 + loops_rng.Below(3);
     for (int n = 0; n < parts && budget > 0; n++) {
-        switch (loops_rng.Below(5)) {
+        switch (loops_rng.Below(6)) {
         case 0:
             body += " (set (at wb " + i + ") (+ (at wb " + i + ") " + j + "))";
+            break;
+        case 4:
+            // constants around the counter (it is below 511), which move into the address
+            body += " (set (at wb (+ " + i + " 500)) (+ (at wb (- (+ " + i + " 3) 1)) (at wb (+ " +
+                    std::to_string(loops_rng.Below(12)) + " " + i + ")))) (set (at ww (- (+ " + i +
+                    " 1) 1)) (+ (at ww (+ 0 " + i + ")) 1))";
             break;
         case 1: {
             std::string p = Fresh("p");

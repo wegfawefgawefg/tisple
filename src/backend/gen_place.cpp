@@ -115,6 +115,32 @@ void AddDelta(Gen& g, PlaceRef& place) {
     place.counter = -1;
 }
 
+// a u16 index as x plus a constant: (+ x c), (+ c x), (- x c), nested; the constant comes back
+// in `add` (mod 2^16) and the rest is returned. An index stays inside its array, so x + c never
+// wraps and the constant can move into the address.
+ExprId PeelConstant(const Gen& g, ExprId id, std::uint16_t& add) {
+    add = 0;
+    for (int depth = 0; depth < 8; depth++) {
+        id = ForwardTarget(g, id);
+        const Expr& e = At(g, id);
+        if (ExprSize(*g.program, id) != 2 || e.kind != ExprKind::Binary ||
+            (e.op != Op::Add && e.op != Op::Sub)) {
+            return id;
+        }
+        std::uint16_t c = 0;
+        if (ConstValue(*g.program, e.b, c)) {
+            add = static_cast<std::uint16_t>(e.op == Op::Add ? add + c : add - c);
+            id = e.a;
+        } else if (e.op == Op::Add && ConstValue(*g.program, e.a, c)) {
+            add = static_cast<std::uint16_t>(add + c);
+            id = e.b;
+        } else {
+            return id;
+        }
+    }
+    return id;
+}
+
 // the place's address so far (base, offset, index) into a fresh zero-page pointer, or into
 // `into` (2 bytes of plain memory) when given and it holds none of what is read; a step
 // pointer when the index is a stepped variable (gen_step.cpp)
@@ -312,12 +338,16 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         }
         Cursor c0 = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, 0);
         Cursor c1 = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, 1);
-        if (!IndexOperand(g, e.b, later, emit, out)) {
+        // (at a (+ c x)) with a u16 index is a + c indexed by x
+        std::uint16_t add = 0;
+        ExprId index = PeelConstant(g, e.b, add);
+        if (!IndexOperand(g, index, later, emit, out)) {
             return false;
         }
         out.cursor = c0;
         out.has_index = true;
         out.mult = (c1.address - c0.address) & 0xFFFFu;
+        out.cursor.address = static_cast<std::uint16_t>((c0.address + add * out.mult) & 0xFFFF);
         out.type = e.type;
         out.site = id;
         if (out.delta != 0 && DeltaFits(g, out.counter, out.delta)) {
