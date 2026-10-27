@@ -506,10 +506,12 @@ void KnownFlags(const Tracker& before, const AsmItem& item, Tracker& after) {
 
 int BranchOutcome(const Tracker& t, Mn mn);
 
-// where a jump to `label` really goes when the registers are as t says: past a compare of a
-// known register with a number and a branch it then takes, if nothing reads the flags the
-// compare would have set where that branch goes. -1 when it goes to label after all.
-std::int32_t ThreadTarget(Pass& p, const Tracker& t, std::int32_t label,
+// where the jump at `from` to `label` really goes when the registers are as t says: past a
+// compare of a known register with a number and a branch it then takes, if nothing reads the
+// flags the compare would have set where that branch goes. -1 when it goes to label after all.
+// Only forward: the scan has already passed a label before the jump, with what holds there
+// worked out without this way in.
+std::int32_t ThreadTarget(Pass& p, const Tracker& t, std::size_t from, std::int32_t label,
                           const std::map<std::int32_t, std::size_t>& labels) {
     auto found = labels.find(label);
     if (found == labels.end()) {
@@ -532,7 +534,7 @@ std::int32_t ThreadTarget(Pass& p, const Tracker& t, std::int32_t label,
     }
     std::int32_t to = p.At(next).value.sym;
     auto target = labels.find(to);
-    if (target == labels.end() || !p.flags_dead[target->second]) {
+    if (target == labels.end() || target->second < from || !p.flags_dead[target->second]) {
         return -1;
     }
     return to;
@@ -699,14 +701,16 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
         }
         // a jump to a test the registers decide goes where the test would send it
         if (IsJumpTo(item)) {
-            std::int32_t to = ThreadTarget(p, t, item.value.sym, labels);
+            std::int32_t to = ThreadTarget(p, t, i, item.value.sym, labels);
             if (to >= 0) {
                 item.value = SymValue(to);
                 item.carry = Carry::Unknown;
                 p.changed = true;
             }
         }
-        if (IsJumpTo(item) && is_mergeable(item.value.sym)) {
+        // what the jumps bring to labels ahead (a loop label meets it with the jumps back)
+        bool loop_ahead = IsJumpTo(item) && is_loop(item.value.sym) && labels[item.value.sym] > i;
+        if (IsJumpTo(item) && (is_mergeable(item.value.sym) || loop_ahead)) {
             auto found = arriving.find(item.value.sym);
             if (found == arriving.end()) {
                 arriving.emplace(item.value.sym, t);

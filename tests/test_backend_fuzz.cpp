@@ -99,6 +99,8 @@ bool DiffFile(TestResults& results) {
     }
     Compiled c = CompileMainText(file.text);
     Diff d;
+    d.in.max_steps = 300000;
+    d.max_cycles = 40000000;
     bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
     std::printf("%s: %s\n", path, ok ? "same" : d.message.c_str());
     if (c.ok) {
