@@ -80,6 +80,9 @@ std::string ListProgram(const Program& program, const Compiled& compiled);
 // the file or a main or language card segment; 0 outside them
 std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address);
 
+// every piece of the program: the file at its origin first, then the other segments
+std::vector<MemorySegment> ProgramSegments(const Compiled& compiled);
+
 // "4120 bytes at $6000 (code ..." for the file and a line for each other segment
 std::string DescribeSegments(const Compiled& compiled);
 

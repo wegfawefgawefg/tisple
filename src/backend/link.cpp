@@ -503,6 +503,16 @@ std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address) {
     return 0;
 }
 
+std::vector<MemorySegment> ProgramSegments(const Compiled& compiled) {
+    MemorySegment main;
+    main.bank = MemoryBank::kMain;
+    main.address = compiled.origin;
+    main.bytes = compiled.image;
+    std::vector<MemorySegment> out = {main};
+    out.insert(out.end(), compiled.segments.begin(), compiled.segments.end());
+    return out;
+}
+
 std::string DescribeSegments(const Compiled& c) {
     char text[200];
     std::snprintf(text, sizeof(text),

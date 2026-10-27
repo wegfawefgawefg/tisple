@@ -240,7 +240,10 @@ int DiskBoot(int argc, char** argv) {
     }
     std::string error;
     BootDiskInfo info;
-    if (!WriteBootDisk(argv[0], program, static_cast<uint16_t>(origin), info, error)) {
+    MemorySegment main;
+    main.address = static_cast<uint16_t>(origin);
+    main.bytes = program;
+    if (!WriteBootDisk(argv[0], {main}, main.address, info, error)) {
         return Fail(error);
     }
     return 0;
@@ -248,15 +251,21 @@ int DiskBoot(int argc, char** argv) {
 
 } // namespace
 
-bool WriteBootDisk(const std::string& path, const std::vector<uint8_t>& program, uint16_t origin,
-                   BootDiskInfo& info, std::string& error) {
+bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& segments,
+                   uint16_t entry, BootDiskInfo& info, std::string& error) {
     std::unique_ptr<DiskSectors> disk = std::make_unique<DiskSectors>();
-    if (!MakeBootDisk(program, origin, *disk, info, error) ||
+    if (!MakeBootDisk(segments, entry, *disk, info, error) ||
         !WriteDiskSectorsFile(path, *disk, error)) {
         return false;
     }
-    std::printf("%s: boots %zu bytes at $%04X (%s); %u sectors free for DOS 3.3 files\n",
-                path.c_str(), program.size(), origin, BootTracksText(info).c_str(),
+    size_t bytes = 0;
+    for (const MemorySegment& segment : segments) {
+        bytes += segment.bytes.size();
+    }
+    std::string pieces =
+        segments.size() == 1 ? "" : " in " + std::to_string(segments.size()) + " segments";
+    std::printf("%s: boots %zu bytes%s from $%04X (%s); %u sectors free for DOS 3.3 files\n",
+                path.c_str(), bytes, pieces.c_str(), entry, BootTracksText(info).c_str(),
                 DosFreeSectors(*disk));
     return true;
 }

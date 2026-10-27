@@ -17,8 +17,9 @@ int RunBuildDiskCommand(int argc, char** argv);
 int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window);
 bool HasDiskFlag(int argc, char** argv);
 
-// a self-booting disk image file for a program, with a line saying what is on it
-bool WriteBootDisk(const std::string& path, const std::vector<uint8_t>& program, uint16_t origin,
-                   BootDiskInfo& info, std::string& error);
+// a self-booting disk image file for a program's segments (the first holds entry), with a
+// line saying what is on it
+bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& segments,
+                   uint16_t entry, BootDiskInfo& info, std::string& error);
 
 } // namespace tisple
