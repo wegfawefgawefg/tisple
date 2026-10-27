@@ -200,6 +200,8 @@ struct Gen {
     std::string SteppedFor(int depth);
     // a u16 for whose body has a while of its own, reading arrays and addresses by the counter
     std::string WordFor(int depth);
+    // a CRC's bit steps on a u8 or u16 local, and masks of its bits tested
+    std::string BitSteps(int depth);
     std::string LoopShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);

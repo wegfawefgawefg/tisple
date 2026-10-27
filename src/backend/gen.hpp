@@ -539,6 +539,10 @@ void EvalShift8(Gen& g, const Expr& e);
 Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst);
 Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t count,
                   const Opnd* dst);
+// (if (!= (& v top) 0) (set v (^ (<< v 1) k)) (set v (<< v 1))) and the like, a CRC's step:
+// v shifts in place once, the carry picks the arm, and both read v for (<< v 1). False (and
+// nothing emitted) if the if is not one
+bool GenShiftedIf(Gen& g, const Expr& e);
 // io_read or io_write as a statement
 void GenIo(Gen& g, ExprId id);
 // (jsr ...): the registers set, the call, A after it (gen_jsr.cpp)

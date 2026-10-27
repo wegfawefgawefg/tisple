@@ -1,5 +1,7 @@
 #include "backend/gen.hpp"
 
+#include <vector>
+
 namespace tisple {
 
 namespace {
@@ -135,6 +137,38 @@ bool RegCompare(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& b, std
     return true;
 }
 
+// a signed 16-bit a < (high, low) (or >= when !lt) by bytes, the high byte first: the high
+// bytes decide unless they are equal, and only then the low bytes do, unsigned. The high
+// bytes compare signed as unsigned with their top bits flipped; against 0, the high byte's
+// sign decides at once
+void SignedConstCompare(Gen& g, bool lt, const Opnd& a, int low, int high, std::int32_t label) {
+    std::int32_t skip = NewLabel(g);
+    std::int32_t less = lt ? label : skip;
+    std::int32_t more = lt ? skip : label;
+    LoadA(g, a, 1);
+    if (high == 0) {
+        Branch(g, Mn::BMI, less);
+        Branch(g, Mn::BNE, more);
+    } else {
+        Emit(g, Mn::EOR, Mode::Imm, Num(0x80));
+        Emit(g, Mn::CMP, Mode::Imm, Num(high ^ 0x80));
+        Branch(g, Mn::BCC, less);
+        Branch(g, Mn::BNE, more);
+    }
+    if (low == 0) {
+        // equal high bytes: a >= high * 256
+        if (!lt) {
+            Jump(g, label);
+        }
+        PlaceLabel(g, skip);
+        return;
+    }
+    LoadA(g, a, 0);
+    Emit(g, Mn::CMP, Mode::Imm, Num(low));
+    Branch(g, lt ? Mn::BCC : Mn::BCS, label);
+    PlaceLabel(g, skip);
+}
+
 } // namespace
 
 void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t label) {
@@ -212,6 +246,10 @@ void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t lab
         Branch(g, lt ? Mn::BMI : Mn::BPL, label);
         return;
     }
+    if (is_signed && IsImm(b) && b.b[0].value.sym < 0 && b.b[1].value.sym < 0) {
+        SignedConstCompare(g, lt, a, b.b[0].value.offset & 0xFF, b.b[1].value.offset & 0xFF, label);
+        return;
+    }
     bool low_zero =
         b.b[0].kind == ByteKind::Imm && b.b[0].value.sym < 0 && (b.b[0].value.offset & 0xFF) == 0;
     if (!is_signed && low_zero) {
@@ -235,8 +273,74 @@ void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t lab
 
 namespace {
 
+// (& x c) against 0: only the bytes c has bits in, each a load and AND (or, for the top bit
+// alone, a load whose N flag is the bit); the and is never worked out as a value. False (and
+// nothing emitted) if id is not such an and
+bool MaskTest(Gen& g, ExprId id, bool nonzero, std::int32_t label) {
+    const Expr& e = At(g, ForwardTarget(g, id));
+    std::uint16_t c = 0;
+    if (e.kind != ExprKind::Binary || e.op != Op::And) {
+        return false;
+    }
+    ExprId x = e.a;
+    if (!ConstValue(*g.program, e.b, c)) {
+        if (!ConstValue(*g.program, e.a, c)) {
+            return false;
+        }
+        x = e.b;
+    }
+    Opnd o = TrySimple(g, x);
+    std::uint32_t size = ExprSize(*g.program, id);
+    if (o.size != size || o.in_a) {
+        return false;
+    }
+    int masks[2] = {c & 0xFF, (c >> 8) & 0xFF};
+    std::vector<int> bytes;
+    for (int k = 0; k < static_cast<int>(size); k++) {
+        if (masks[k] != 0) {
+            bytes.push_back(k);
+        }
+    }
+    if (bytes.empty()) {
+        if (!nonzero) {
+            Jump(g, label); // x & 0 is always 0
+        }
+        return true;
+    }
+    std::int32_t skip = NewLabel(g);
+    for (std::size_t i = 0; i < bytes.size(); i++) {
+        int k = bytes[i];
+        bool last = i + 1 == bytes.size();
+        LoadA(g, o, k);
+        // the load set N and Z for A
+        bool sign = masks[k] == 0x80;
+        if (!sign && masks[k] != 0xFF) {
+            Emit(g, Mn::AND, Mode::Imm, Num(masks[k]));
+        }
+        if (nonzero) {
+            Branch(g, sign ? Mn::BMI : Mn::BNE, label);
+        } else if (last) {
+            Branch(g, sign ? Mn::BPL : Mn::BEQ, label);
+        } else {
+            Branch(g, sign ? Mn::BMI : Mn::BNE, skip);
+        }
+    }
+    PlaceLabel(g, skip);
+    return true;
+}
+
 void GenCompare(Gen& g, const Expr& e, bool when, std::int32_t label) {
     Op op = when ? e.op : Negate(e.op);
+    std::uint16_t zero = 0;
+    bool equality = op == Op::Eq || op == Op::Ne;
+    if (equality && ConstValue(*g.program, e.b, zero) && zero == 0 &&
+        MaskTest(g, e.a, op == Op::Ne, label)) {
+        return;
+    }
+    if (equality && ConstValue(*g.program, e.a, zero) && zero == 0 &&
+        MaskTest(g, e.b, op == Op::Ne, label)) {
+        return;
+    }
     TypeKind kind = ExprKindOf(*g.program, e.a);
     bool is_signed = IsSignedKind(kind);
     std::uint32_t size = ExprSize(*g.program, e.a);

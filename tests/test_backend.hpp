@@ -70,5 +70,6 @@ void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
 void RunBackendWhileTests(TestResults& results);
 void RunBackendMulTests(TestResults& results);
+void RunBackendBytewiseTests(TestResults& results);
 
 } // namespace tisple_tests

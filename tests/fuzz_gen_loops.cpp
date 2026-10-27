@@ -343,14 +343,64 @@ std::string Gen::WordFor(int depth) {
     return head + body + ")";
 }
 
+std::string Gen::BitSteps(int depth) {
+    bool wide16 = loops_rng.Chance(60);
+    const char* type = wide16 ? "u16" : "u8";
+    std::string top = wide16 ? "0x8000" : "0x80";
+    std::string v = Fresh("cr");
+    std::string text =
+        std::string("(do (let ") + v + " " + type + " " + NonLit(wide16 ? T::U16 : T::U8, 1) + ")";
+    scopes.emplace_back();
+    scopes.back().push_back(VarInfo{v, wide16 ? T::U16 : T::U8, true});
+    std::string k = std::to_string(loops_rng.Below(wide16 ? 65536 : 256));
+    std::string shift = "(<< " + v + " 1)";
+    // the CRC step: the bit set or clear, either way round, sometimes more in an arm
+    std::string with = "(^ " + shift + " " + k + ")";
+    if (loops_rng.Chance(30)) {
+        with = "(+ " + with + " " + Leaf(wide16 ? T::U16 : T::U8) + ")";
+    }
+    std::string test = loops_rng.Chance(50) ? "(!= (& " + v + " " + top + ") 0)"
+                                            : "(= 0 (& " + top + " " + v + "))";
+    bool set_first = test[1] == '!';
+    std::string arms = set_first ? " (set " + v + " " + with + ") (set " + v + " " + shift + ")"
+                                 : " (set " + v + " " + shift + ") (set " + v + " " + with + ")";
+    std::string bit = Fresh("b");
+    text += " (for " + bit + " u8 0 " + std::to_string(1 + loops_rng.Below(9)) + " (if " + test +
+            arms + ")";
+    // masks of other bits tested, both ways
+    if (loops_rng.Chance(60)) {
+        std::string mask = std::to_string(loops_rng.Below(wide16 ? 65536 : 256));
+        std::vector<const VarInfo*> sinks = VarsOf(T::U8, true);
+        if (!sinks.empty()) {
+            const std::string& sink =
+                sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]
+                    ->name;
+            text += " (if (" + std::string(loops_rng.Chance(50) ? "=" : "!=") + " (& " + v + " " +
+                    mask + ") 0) (set " + sink + " (+ " + sink + " 1)))";
+        }
+    }
+    text += Body(depth - 1, 1) + ")";
+    std::vector<const VarInfo*> sinks = VarsOf(wide16 ? T::U16 : T::U8, true);
+    if (!sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        text += " (set " + sink + " (^ " + sink + " " + v + "))";
+    }
+    scopes.pop_back();
+    DropPointers();
+    return text + ")";
+}
+
 std::string Gen::LoopShape(int depth) {
-    switch (loops_rng.Below(4)) {
+    switch (loops_rng.Below(5)) {
     case 0:
         return ByteWhile(depth);
     case 1:
         return WordWhile(depth);
     case 2:
         return SteppedFor(depth);
+    case 3:
+        return BitSteps(depth);
     default:
         return WordFor(depth);
     }

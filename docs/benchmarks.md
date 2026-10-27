@@ -46,3 +46,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-27 | (race item 4: indexed bytes kept in registers) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-27 | (race item 5: constants of u16 indices in addresses) | life | generations in 10 s | 56 |
 | 2026-10-27 | (race item 5: constants of u16 indices in addresses) | plasma | frames in 10 s | 243 (24.3 fps) |
+| 2026-10-27 | (race item 6: logic and compares by byte, CRC steps) | life | generations in 10 s | 56 |
+| 2026-10-27 | (race item 6: logic and compares by byte, CRC steps) | plasma | frames in 10 s | 243 (24.3 fps) |

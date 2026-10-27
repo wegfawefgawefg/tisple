@@ -110,6 +110,9 @@ void GenIf(Gen& g, const Expr& e) {
         }
         return;
     }
+    if (GenShiftedIf(g, e)) {
+        return;
+    }
     std::int32_t other = NewLabel(g);
     GenBranch(g, e.a, false, other);
     // each arm knows how the condition came out (gen_facts.cpp)

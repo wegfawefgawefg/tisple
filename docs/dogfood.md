@@ -697,6 +697,42 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 26) | the same |
     | life step / draw (cycle report) | 137389 / 41912 | 139086 / 42832: the code is 34 bytes shorter (main drops stores of held values since item 26), so the worlds start 34 bytes lower and more rows cross pages; step itself is the same code |
 
+28. Race item 6, 16-bit logic and compares by byte (2026-10-27). crc16's
+    bit loop worked `(& crc 0x8000)` out into two temporaries and ORed them
+    to test it, then each arm shifted crc into temporaries and copied them
+    back. Now:
+    - `(& x c)` against 0 tests only the bytes c has bits in, a load and an
+      AND each, and for the top bit alone the load's N flag (`LDA x+1 /
+      BMI`); the and is never a value (src/backend/gen_cond.cpp, MaskTest).
+    - A signed 16-bit compare with a constant goes high byte first: the high
+      bytes decide unless equal (compared unsigned with their top bits
+      flipped, or by the sign alone against 0), and only then the low bytes
+      do. mandel's guard is four of them.
+    - A variable shifted into itself by a constant shifts in place (`ASL x /
+      ROL x+1` for one or two steps) instead of through a temporary.
+    - The CRC step, `(if (!= (& v top) 0) (set v (^ (<< v 1) k)) (set v (<< v
+      1)))` and the like (either test, either arm order, more in an arm, u8
+      or u16), shifts v once in place before the branch: the bit tested falls
+      into the carry, and both arms read v for their (<< v 1). Only when the
+      arms read v nowhere else and call nothing (src/backend/gen_shift.cpp,
+      GenShiftedIf).
+    Tests: tests/test_backend_bytewise.cpp (masks of single bits, bytes and
+    both, both ways round and from memory, u8 and u16; signed compares with
+    18 constants around 0, the byte edges and the ends, all four operators;
+    shifts in place by 1 to 15, unsigned and signed; CRC steps for u16 and u8,
+    either test, an arm reading the variable outside the shift). Comparing
+    high bytes unflipped, jumping out of a two-byte mask test after its first
+    byte, or branching the wrong way on the carry each fail them, and the
+    last two fail 106 and 19 of 3000 fuzz programs with a new loop shape (CRC
+    steps on a local and masks of its bits).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race crc16 | 534365 | 244665 (Oscar64 221527) |
+    | race mandel | 4323385 | 4201007 |
+    | race line | 664333 | 664201 |
+    | other race kernels, Life generations, plasma | (as after 27) | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
