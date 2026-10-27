@@ -20,8 +20,9 @@ enum class LinkResult : std::uint8_t {
     kError,
 };
 
-// whether the language card's ram may hold part of the program: no constant jsr goes into
-// $D000-$FFFF and no main-memory :address let reaches $D000, so the rom is not needed there
+// whether the language card's ram may hold part of the program: no jsr, io_read, io_write
+// or (as (ptr t) n) has a constant address in $D000-$FFFF and no main-memory :address let
+// reaches $D000, so the rom is not needed there
 bool CardAllowed(const Program& program, const Layout& shapes);
 
 // fills out from the generated code in be; card puts the language card's ram in the memory

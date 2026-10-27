@@ -227,10 +227,14 @@ void Cover(std::uint32_t& low, std::uint32_t& high, std::uint32_t start, std::ui
 } // namespace
 
 bool CardAllowed(const Program& program, const Layout& shapes) {
+    // a constant address from $D000 on in a jsr, an io_read or io_write, or a pointer made
+    // with as: the program calls or reads the rom there
     for (const Expr& e : program.exprs) {
+        bool addresses = e.kind == ExprKind::Jsr || e.kind == ExprKind::IoRead ||
+                         e.kind == ExprKind::IoWrite || e.kind == ExprKind::Reinterpret;
         std::uint16_t address = 0;
-        if (e.kind == ExprKind::Jsr && ConstValue(program, e.a, address) && address >= kCardStart) {
-            return false; // calls the rom there
+        if (addresses && ConstValue(program, e.a, address) && address >= kCardStart) {
+            return false;
         }
     }
     for (std::size_t v = 0; v < program.vars.size(); v++) {

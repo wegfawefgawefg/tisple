@@ -585,8 +585,8 @@ byte. Past that, in this order:
    there when the code does not fit above the origin, so a branch never leaves
    its function; data fills what is left.
 3. The language card's bank 2, `$D000`-`$FFFF` (12 KB), when nothing needs the
-   ROM there: no `jsr` to a constant address from `$D000` and no `:address` let
-   reaching `$D000`. The startup switches its RAM in (`BIT $C083` twice) and
+   ROM there: no `jsr`, `io_read`, `io_write` or `(as (ptr t) n)` with a
+   constant address from `$D000`, and no `:address` let reaching `$D000`. The startup switches its RAM in (`BIT $C083` twice) and
    the ROM back before it returns (`BIT $C082`). A computed `jsr` is taken to
    call card firmware, as the mouse library does. Bank 1's 4 KB is not used.
 4. Lets `:in aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the

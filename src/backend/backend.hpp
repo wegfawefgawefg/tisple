@@ -12,7 +12,7 @@
 // A program that does not fit goes on (link.cpp): functions that do not fit move, whole, to
 // the memory below the origin (from low_start, around text page 1 and every :address and
 // :reserve let), and data follows them; then the language card's 12 KB at $D000-$FFFF, when
-// no constant jsr or :address let needs the rom there (the startup switches its ram in).
+// no constant address there needs the rom (link.hpp; the startup switches its ram in).
 // Lets :in aux go in auxiliary memory. Each piece outside the main file is a segment.
 //
 // Zero page: the startup saves $00-$FF, the program owns all of it, and the exit restores
