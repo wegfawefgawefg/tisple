@@ -38,4 +38,7 @@ void FoldConstants(Program& program);
 // pointer variables some load or store goes through directly: these live in zero page
 std::vector<bool> FindDerefPointers(const Program& program);
 
+// by var: locals every let and set gives 1 or -1 (unit_steps.cpp)
+std::vector<bool> FindUnitSteps(const Program& program);
+
 } // namespace tisple

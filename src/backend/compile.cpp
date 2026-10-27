@@ -291,6 +291,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     }
     be.deref = FindDerefPointers(program);
     be.aliases = FindIndexAliases(program);
+    be.unit_steps = FindUnitSteps(program);
     be.effects = ComputeEffects(program);
     be.div_pairs = FindDivPairs(program);
     be.ranges = FindValueRanges(program);

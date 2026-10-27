@@ -92,6 +92,7 @@ struct Backend {
     std::vector<std::uint32_t> fn_exprs;  // by function: expressions in its body
     std::vector<bool> deref;              // by var: some load or store goes straight through it
     std::vector<IndexAlias> aliases;      // by var: locals that only name a byte index
+    std::vector<bool> unit_steps;         // by var: FindUnitSteps
     std::vector<bool> div_pairs;          // by expr: FindDivPairs
     std::vector<DivRoutine> div_routines; // the ones the code calls
     ValueRanges ranges;

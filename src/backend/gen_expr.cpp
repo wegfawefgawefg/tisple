@@ -434,11 +434,25 @@ void EvalInto(Gen& g, ExprId id, const Opnd& dst) {
 }
 
 // an inlined callee's parameter can read its argument where it is: a plain variable (not
-// a let read in its place), the parameter never set nor its address taken, and nothing in
-// the callee nor in the later arguments changes the variable
+// a let read in its place), or a conversion of one that is only its bytes (as u16 of an i16,
+// as u8 of a u16, as u16 of a u8), the parameter never set nor its address taken, and nothing
+// in the callee nor in the later arguments changes the variable
 bool CanBind(const Gen& g, const Function& fn, const Expr& call, std::uint32_t i) {
     const Program& program = *g.program;
     ExprId arg = ListItem(program, call, i);
+    for (int depth = 0; depth < 4; depth++) {
+        const Expr& c = ExprOf(program, arg);
+        if (c.kind != ExprKind::Convert && c.kind != ExprKind::Reinterpret) {
+            break;
+        }
+        std::uint32_t from_size = ExprSize(program, c.a);
+        bool bytes =
+            from_size == 2 || !IsSignedKind(ExprKindOf(program, c.a)) || SizeOf(g, c.type) == 1;
+        if (!bytes) {
+            return false;
+        }
+        arg = c.a;
+    }
     const Expr& a = ExprOf(program, arg);
     std::int32_t param = fn.params[i];
     if (a.kind != ExprKind::VarRef || program.vars[static_cast<std::size_t>(param)].address_taken) {

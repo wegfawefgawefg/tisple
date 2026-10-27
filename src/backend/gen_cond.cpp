@@ -171,6 +171,44 @@ void SignedConstCompare(Gen& g, bool lt, const Opnd& a, int low, int high, std::
 
 } // namespace
 
+// a < b (or a >= b when !lt) of 16-bit values, the high bytes first, for when A holds a's
+// high byte already: they decide unless they are equal, and then the low bytes do, unsigned.
+// Unsigned, the carry of either compare decides. Signed, high bytes of the same sign compare
+// as unsigned ones do, and of different signs the other way round.
+void HighFirstCompare(Gen& g, bool lt, bool is_signed, const Opnd& a, const Opnd& b,
+                      std::int32_t label) {
+    Mn yes = lt ? Mn::BCC : Mn::BCS;
+    Mn no = lt ? Mn::BCS : Mn::BCC;
+    std::int32_t low = NewLabel(g);
+    std::int32_t done = NewLabel(g);
+    LoadA(g, a, 1);
+    OpA(g, Mn::CMP, b, 1);
+    if (!is_signed) {
+        std::int32_t decide = NewLabel(g);
+        Branch(g, Mn::BNE, decide);
+        LoadA(g, a, 0);
+        OpA(g, Mn::CMP, b, 0);
+        PlaceLabel(g, decide);
+        Branch(g, yes, label);
+        return;
+    }
+    std::int32_t differ = NewLabel(g);
+    Branch(g, Mn::BEQ, low);
+    // N: the signs differ (EOR keeps the carry)
+    OpA(g, Mn::EOR, b, 1);
+    Branch(g, Mn::BMI, differ);
+    Branch(g, yes, label);
+    Branch(g, no, done);
+    PlaceLabel(g, differ);
+    Branch(g, no, label);
+    Branch(g, yes, done);
+    PlaceLabel(g, low);
+    LoadA(g, a, 0);
+    OpA(g, Mn::CMP, b, 0);
+    Branch(g, yes, label);
+    PlaceLabel(g, done);
+}
+
 void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t label) {
     if (op == Op::Gt || op == Op::Le) {
         std::swap(a, b);
@@ -257,6 +295,12 @@ void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t lab
         LoadA(g, a, 1);
         OpA(g, Mn::CMP, b, 1);
         Branch(g, lt ? Mn::BCC : Mn::BCS, label);
+        return;
+    }
+    bool plain_b = (b.b[0].kind == ByteKind::Mem || b.b[0].kind == ByteKind::Imm) &&
+                   (b.b[1].kind == ByteKind::Mem || b.b[1].kind == ByteKind::Imm);
+    if (plain_b && AHoldsByte(g, a, 1)) {
+        HighFirstCompare(g, lt, is_signed, a, b, label);
         return;
     }
     LoadA(g, a, 0);

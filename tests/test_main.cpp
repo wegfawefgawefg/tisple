@@ -62,6 +62,7 @@ int main() {
     tisple_tests::RunBackendWhileTests(results);
     tisple_tests::RunBackendMulTests(results);
     tisple_tests::RunBackendBytewiseTests(results);
+    tisple_tests::RunBackendStepsTests(results);
     tisple_tests::RunBackendProgramTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);

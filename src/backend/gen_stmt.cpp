@@ -37,6 +37,24 @@ bool IsStep(const Gen& g, ExprId place, ExprId value, bool& up) {
     return up && SameExpr(*g.program, v.b, place) && ConstValue(*g.program, v.a, c) && c == 1;
 }
 
+// (set place (+ place s)) or (+ s place) for a local s that is only ever 1 or -1: s, else -1
+ExprId UnitStepOf(const Gen& g, ExprId place, ExprId value) {
+    const Expr& v = At(g, value);
+    if (v.kind != ExprKind::Binary || v.op != Op::Add || HasEffects(*g.program, place)) {
+        return -1;
+    }
+    for (int side = 0; side < 2; side++) {
+        ExprId self = side == 0 ? v.a : v.b;
+        ExprId step = side == 0 ? v.b : v.a;
+        const Expr& s = At(g, step);
+        if (s.kind == ExprKind::VarRef && g.be->unit_steps[static_cast<std::size_t>(s.ref)] &&
+            SameExpr(*g.program, self, place)) {
+            return step;
+        }
+    }
+    return -1;
+}
+
 bool GenStep(Gen& g, const Opnd& d, bool up) {
     if (!CanRmw(g, d, 0) || (d.size == 2 && !CanRmw(g, d, 1))) {
         return false;
@@ -174,13 +192,27 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
     }
     bool up = false;
     bool step = IsStep(g, place, value, up);
-    if (!ResolvePlace(g, place, step ? -1 : value, p)) {
+    ExprId unit = step ? -1 : UnitStepOf(g, place, value);
+    if (!ResolvePlace(g, place, step || unit >= 0 ? -1 : value, p)) {
         return;
     }
     NormalizePlace(g, p, type);
     PinPlace(g, p, type);
     Opnd d = PlaceOpnd(g, p, type);
-    if (!step || !GenStep(g, d, up)) {
+    Opnd s = unit >= 0 ? TrySimple(g, unit) : Opnd();
+    bool rmw = CanRmw(g, d, 0) && (d.size == 1 || CanRmw(g, d, 1));
+    if (unit >= 0 && rmw && s.size == d.size) {
+        // a step of 1 or -1: its sign picks INC or DEC
+        std::int32_t down = NewLabel(g);
+        std::int32_t done = NewLabel(g);
+        LoadA(g, s, static_cast<int>(s.size) - 1);
+        Branch(g, Mn::BMI, down);
+        GenStep(g, d, true);
+        Jump(g, done);
+        PlaceLabel(g, down);
+        GenStep(g, d, false);
+        PlaceLabel(g, done);
+    } else if (!step || !GenStep(g, d, up)) {
         EvalInto(g, value, d);
     }
     NoteSet(g, place, value);

@@ -178,6 +178,21 @@ void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool f
         }
         return;
     }
+    // (the high byte is read after the low one is stored)
+    const AsmValue& high = a.b[1].value;
+    const AsmValue& low = d.b[0].value;
+    bool high_at_low = a.b[1].kind == ByteKind::Mem && d.b[0].kind == ByteKind::Mem &&
+                       high.sym == low.sym && high.offset == low.offset && high.part == low.part;
+    if (!in_place && !a.in_a && fixed && left && c == 1 && !high_at_low) {
+        // both bytes through A, the carry between them
+        LoadA(g, a, 0);
+        Emit(g, Mn::ASL, Mode::Acc);
+        StoreA(g, d, 0);
+        LoadA(g, a, 1);
+        Emit(g, Mn::ROL, Mode::Acc);
+        StoreA(g, d, 1);
+        return;
+    }
     // the low byte shifts in memory, the high byte in A
     if (!in_place) {
         LoadA(g, a, 0);

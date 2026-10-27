@@ -195,6 +195,7 @@ struct Gen {
     // a while over u8 locals: stepped, set in arms, compared, read as indices
     std::string ByteWhile(int depth);
     std::string BoundWhile(int depth);
+    std::string StepWhile(int depth);
     // a while over a u16 local stepped by constants or a variable, read as an index
     std::string WordWhile(int depth);
     // a u16 local stepped once a pass of a u8 for, read as an index

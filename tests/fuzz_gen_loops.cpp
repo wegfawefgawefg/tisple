@@ -174,6 +174,63 @@ std::string Gen::BoundWhile(int depth) {
     return text + ")";
 }
 
+// a Bresenham step: a local only ever 1 or -1 moving a variable, and a 16-bit let compared
+// right after it is worked out (its high byte still in A)
+std::string Gen::StepWhile(int depth) {
+    T t = kInts[loops_rng.Below(4)];
+    T wide_t = loops_rng.Chance(50) ? T::I16 : T::U16;
+    bool is_signed = t == T::I8 || t == T::I16;
+    std::string minus_one = is_signed ? "-1" : (t == T::U8 ? "255" : "65535");
+    std::string s = Fresh("s");
+    std::string v = Fresh("v");
+    std::string tw = Fresh("tw");
+    std::string guard = Fresh("gd");
+    std::string text = "(do (let " + s + " " + Name(t) + " " +
+                       (loops_rng.Chance(50) ? std::string("1") : minus_one) + ") (if " +
+                       Expr(T::Bool, 1) + " (set " + s + " " +
+                       (loops_rng.Chance(50) ? minus_one : std::string("1")) + ")) (let " + v +
+                       " " + Name(t) + " " + Leaf(t) + ") (let " + guard + " u8 0)";
+    scopes.emplace_back();
+    scopes.back().push_back(VarInfo{v, t, true});
+    std::string limit = std::to_string(1 + loops_rng.Below(250));
+    std::string step = loops_rng.Chance(50) ? "(+ " + v + " " + s + ")" : "(+ " + s + " " + v + ")";
+    std::string widened = t == wide_t ? v : "(as " + std::string(Name(wide_t)) + " " + v + ")";
+    std::string twice = loops_rng.Chance(60) ? "(<< " + widened + " 1)"
+                                             : "(- " + widened + " " + Leaf(wide_t) + ")";
+    const char* forms[] = {">=", "<", ">", "<="};
+    const char* op = forms[loops_rng.Below(4)];
+    std::string other = Leaf(wide_t);
+    std::string cmp = loops_rng.Chance(70) ? "(" + std::string(op) + " " + tw + " " + other + ")"
+                                           : "(" + std::string(op) + " " + other + " " + tw + ")";
+    std::vector<const VarInfo*> sinks = VarsOf(T::U8, true);
+    std::string body = " (set " + v + " " + step + ") (let " + tw + " " + Name(wide_t) + " " +
+                       twice + ") (set " + guard + " (+ " + guard + " 1))";
+    if (!sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        body = " (set " + v + " " + step + ") (let " + tw + " " + Name(wide_t) + " " + twice +
+               ") (if " + cmp + " (set " + sink + " (+ " + sink + " 1))) (set " + guard + " (+ " +
+               guard + " 1))";
+    }
+    bool was_while = in_while;
+    in_while = false;
+    loops++;
+    if (loops_rng.Chance(30) && budget > 0) {
+        body += Body(depth - 1, 1);
+    }
+    loops--;
+    in_while = was_while;
+    text += " (while (< " + guard + " " + limit + ")" + body + ")";
+    if (!sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        text += " (set " + sink + " (^ " + sink + " (as u8 " + v + ")))";
+    }
+    scopes.pop_back();
+    DropPointers();
+    return text + ")";
+}
+
 std::string Gen::WordWhile(int depth) {
     std::string n = Fresh("n");
     std::string d = Fresh("d");
@@ -478,11 +535,13 @@ std::string Gen::BitSteps(int depth) {
 }
 
 std::string Gen::LoopShape(int depth) {
-    switch (loops_rng.Below(6)) {
+    switch (loops_rng.Below(7)) {
     case 0:
         return ByteWhile(depth);
     case 5:
         return BoundWhile(depth);
+    case 6:
+        return StepWhile(depth);
     case 1:
         return WordWhile(depth);
     case 2:

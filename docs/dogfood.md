@@ -852,6 +852,38 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 31) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
 
+33. Race items 10, 6 and 9, line (2026-10-27). The race draws 3149 pixels
+    (2777 x steps, 1679 y steps); Oscar64 took 183 cycles a pixel, Tisple 211.
+    Four changes. An inlined call's parameter now reads a conversion of the
+    caller's variable in place when the conversion is only its bytes (as u16
+    of an i16, as u8 of a u16, as u16 of a u8): plot's (as u16 x) and (as u8
+    y) were copied into plot's frame for every pixel (18 cycles). A 16-bit
+    shift left by one into another variable goes through A (LDA / ASL A /
+    STA / LDA / ROL A / STA) instead of copying and shifting in memory. A
+    local that every let and set gives 1 or -1 (unit_steps.cpp: Bresenham's
+    step_x and step_y) steps a variable by INC or DEC, its sign picking which
+    (LDA step+1 / BMI / INC x / BNE), instead of a 16-bit add: 13 to 17
+    cycles instead of 20. And a 16-bit compare whose left side's high byte A
+    still holds (the let just worked out) compares the high bytes first:
+    they decide unless equal (signed: of the same sign as unsigned, of
+    different signs the other way round, EOR showing which), then the low
+    bytes, unsigned. Tests: tests/test_backend_steps.cpp, the compares
+    signed and unsigned, every operator and both ways round, over pairs of
+    edge values; unit steps of every size crossing pages and wrapping, either
+    way round, in a while register, and a local that is also 2; plot-like
+    callees bound to converted variables, a sign extension (still copied).
+    A fuzz shape (StepWhile: a unit step moving a variable, a 16-bit let of
+    it compared at once). Mutations: the signed differ branch flipped fails
+    7 of 2000 fuzz programs and 6 tests, the unsigned one 46 and 8, BMI for
+    BPL on the step's sign 33 and 5, any set counting as a unit 68 and 37,
+    ASL for the ROL 5 and 8, the conversions not bound 1 test (a count).
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race line | 664201 | 607519 (bound conversions), 598144 (shift), 574401 (unit steps), 569746 (high bytes first; Oscar64 576133); 373 to 375 bytes |
+    | other race kernels, Life generations, plasma | (as after 32) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
