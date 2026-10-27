@@ -37,15 +37,70 @@ bool ReadReplacedCounter(Gen& g, ExprId id, const Opnd* dst, Opnd& out) {
     return false;
 }
 
+namespace {
+
+// the 16-bit constant o is: a number, or a symbol's address plus an offset
+bool ConstWord(const Opnd& o, AsmValue& out) {
+    if (o.size != 2 || o.in_a || o.b[0].kind != ByteKind::Imm || o.b[1].kind != ByteKind::Imm) {
+        return false;
+    }
+    const AsmValue& lo = o.b[0].value;
+    const AsmValue& hi = o.b[1].value;
+    if (lo.sym < 0 && hi.sym < 0) {
+        out = Num(static_cast<std::uint16_t>((lo.offset & 0xFF) | ((hi.offset & 0xFF) << 8)));
+        return true;
+    }
+    if (lo.sym >= 0 && lo.sym == hi.sym && lo.offset == hi.offset && lo.part == Part::Low &&
+        hi.part == Part::High) {
+        out = lo;
+        out.part = Part::Whole;
+        return true;
+    }
+    return false;
+}
+
+Opnd WordOpnd(AsmValue v) {
+    if (v.sym < 0) {
+        return ImmOpnd(static_cast<std::uint16_t>(v.offset & 0xFFFF), 2);
+    }
+    return SymImmOpnd(v, 2);
+}
+
+// with a constant start and end, the let's value at the start is a constant too (an array's
+// address plus the start): then the difference and the stop are constants, worked out here
+bool ConstDiff(Gen& g, const ForParts& f, ExprId value, Opnd& diff, Opnd& stop) {
+    AsmValue start;
+    AsmValue end;
+    if (!ConstWord(f.start, start) || start.sym >= 0 || !ConstWord(f.end, end) || end.sym >= 0) {
+        return false;
+    }
+    g.bound.push_back({f.var, ExprOf(*g.program, f.id).a});
+    Opnd first = TrySimple(g, value);
+    g.bound.pop_back();
+    AsmValue at;
+    if (first.size != 2 || !ConstWord(first, at)) {
+        return false;
+    }
+    at.offset = (at.offset - start.offset) & 0xFFFF;
+    diff = WordOpnd(at);
+    at.offset = (at.offset + end.offset) & 0xFFFF;
+    stop = WordOpnd(at);
+    return true;
+}
+
+} // namespace
+
 bool ReplacedLoop(Gen& g, const ForParts& f) {
     if (f.size != 2 || f.down) {
         return false;
     }
     std::vector<ReducedLet> reduced = FindReducedLets(g, f.var, f.body);
     std::int32_t by_one = -1;
+    ExprId value = -1;
     for (const ReducedLet& r : reduced) {
         if (r.step == 1 && by_one < 0) {
             by_one = r.var;
+            value = r.value;
         }
     }
     if (by_one < 0) {
@@ -55,13 +110,22 @@ bool ReplacedLoop(Gen& g, const ForParts& f) {
     Opnd let = MemOpnd(SymValue(g.be->var_sym[static_cast<std::size_t>(by_one)]), 2, 1);
     // the setup runs once each time the loop starts
     g.loop_depth--;
-    CopyOpnd(g, f.start, counter);
-    InitReducedLets(g, reduced);
-    // the let minus the counter, and the let's value where the counter would end
-    Opnd diff = NewTemp(g, 2);
-    Combine16(g, Op::Sub, let, counter, diff);
-    Opnd stop = NewTemp(g, 2);
-    Combine16(g, Op::Add, diff, f.end, stop);
+    Opnd diff;
+    Opnd stop;
+    if (ConstDiff(g, f, value, diff, stop)) {
+        // the lets' first values with the counter at its start (its memory is never set)
+        g.bound.push_back({f.var, ExprOf(*g.program, f.id).a});
+        InitReducedLets(g, reduced);
+        g.bound.pop_back();
+    } else {
+        CopyOpnd(g, f.start, counter);
+        InitReducedLets(g, reduced);
+        // the let minus the counter, and the let's value where the counter would end
+        diff = NewTemp(g, 2);
+        Combine16(g, Op::Sub, let, counter, diff);
+        stop = NewTemp(g, 2);
+        Combine16(g, Op::Add, diff, f.end, stop);
+    }
     g.loop_depth++;
     g.replaced.push_back({f.var, by_one});
     g.replaced_diff.push_back(diff);

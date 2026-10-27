@@ -359,6 +359,14 @@ void TestStepPointers(TestResults& results) {
         "(fn f ((n u16)) u16 (let sum u16 0)\n"
         "    (for i u16 (+ n 65000) 65535 (let p (ptr u8) (addr_of (at t (& i 1023))))\n"
         "        (set sum (+ sum i))) sum)",
+        // constant bounds: the difference and the stop are constants; a start past 0 and an
+        // offset into the array, read as a value and on a match
+        "(fn f ((n u16)) u16 (let sum u16 0)\n"
+        "    (for i u16 37 700 (let p (ptr u8) (addr_of (at t (+ i 5))))\n"
+        "        (if (= (load p) (as u8 n)) (set sum (+ sum i))) (set gw i)) (+ sum gw))",
+        "(fn f ((n u16)) u16 (let r u16 0xFFFF)\n"
+        "    (for i u16 300 1000 (let p (ptr u8) (addr_of (at t i)))\n"
+        "        (if (= (load p) (as u8 n)) (do (set r i) (break)))) r)",
     };
     for (const char* body : bodies) {
         CheckCalls(results, body, Starts());

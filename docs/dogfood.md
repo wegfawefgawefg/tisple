@@ -905,6 +905,27 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 33) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
 
+35. Race item 10, search's constants (2026-10-27). A replaced counter (31)
+    whose loop has a constant start and end and whose let is then a
+    constant at the start (an array's address plus the start) has its
+    difference and stop worked out while compiling: the let starts as LDA
+    #<text / STA, the loop's end test compares with numbers (CMP #, 2 cycles
+    instead of 3), the counter's memory is never set, and a read of the
+    counter subtracts a number. For that an index that is a variable bound
+    to a constant reads as the constant (gen_place.cpp). Tests: in
+    tests/test_backend_while.cpp, replaced counters with constant bounds, a
+    start past 0, an offset into the array, read as a value, on a match and
+    after a break. The first version left the let reading the counter's
+    memory, never set any more; the search kernel test caught it. With the
+    difference off by the start, 7 of 2000 fuzz programs and 2 tests fail;
+    the stop one too far, 10 and 1; the lets read the stale counter, 7 and 3.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race search | 132297 | 128734 (LLVM-MOS 136618); 107 to 74 bytes |
+    | other race kernels, Life generations, plasma | (as after 34) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

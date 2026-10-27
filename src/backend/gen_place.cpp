@@ -325,7 +325,8 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         }
         TypeId array = At(g, e.a).type;
         std::uint16_t c = 0;
-        if (ConstValue(*g.program, e.b, c)) {
+        // (a counter bound to a constant reads as that constant)
+        if (ConstValue(*g.program, BoundTarget(g, e.b), c)) {
             out.cursor = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, c);
             out.type = e.type;
             return true;

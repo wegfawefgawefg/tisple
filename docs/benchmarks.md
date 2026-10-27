@@ -60,3 +60,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-27 | (race items 10, 6, 9: bound conversions, unit steps, high bytes first) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-27 | (race item 7: scans two at a time) | life | generations in 10 s | 56 |
 | 2026-10-27 | (race item 7: scans two at a time) | plasma | frames in 10 s | 243 (24.3 fps) |
+| 2026-10-27 | (race item 10: constant differences for replaced counters) | life | generations in 10 s | 56 |
+| 2026-10-27 | (race item 10: constant differences for replaced counters) | plasma | frames in 10 s | 243 (24.3 fps) |
