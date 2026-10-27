@@ -15,6 +15,8 @@ namespace tisple {
 
 // the routines the program uses (DivS needs DivU), each a run of items with its label
 void EmitRuntime(Backend& be, std::vector<AsmItem>& out);
+// the tables the routines read (the quarter squares), as data bytes; none if none is used
+void EmitRuntimeTables(Backend& be, std::vector<AsmItem>& out);
 
 struct StartupPlan {
     std::int32_t main_sym = -1;  // -1: no main, just set up and return

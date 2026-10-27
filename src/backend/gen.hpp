@@ -60,6 +60,10 @@ enum class Runtime : std::uint8_t {
     DivS8,  // signed, same places
     DivS16,
     Mul8x8, // A * rt_b -> A/X: bytes, the whole product
+    // the same three by quarter squares, for multiplies in loops (sq_tables)
+    Mul8Q,
+    Mul16Q,
+    Mul8x8Q,
     Count,
 };
 constexpr int kRuntimeCount = static_cast<int>(Runtime::Count);
@@ -97,6 +101,9 @@ struct Backend {
     std::int32_t rt_b = -1;
     std::int32_t rt_r = -1;
     std::int32_t rt_s = -1; // 1 byte
+    // n * n / 4 for n = 0 to 511, rounded down: the low bytes of 0 to 255, their high bytes,
+    // then the same for 256 to 511 (1 KB, only with a quarter-square routine)
+    std::int32_t sq_tables = -1;
     std::int32_t rt_sym[kRuntimeCount] = {};
     bool rt_used[kRuntimeCount] = {};
     std::vector<Diagnostic>* errors = nullptr;

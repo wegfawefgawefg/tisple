@@ -100,11 +100,13 @@ void MakeSymbols(Backend& be) {
     for (std::int32_t s : {be.scratch, be.rt_a, be.rt_b, be.rt_r, be.rt_s}) {
         be.as.symbols[static_cast<std::size_t>(s)].zp = true;
     }
-    const char* names[kRuntimeCount] = {"rt.mul8",  "rt.mul16",  "rt.divu8", "rt.divu16",
-                                        "rt.divs8", "rt.divs16", "rt.mul8x8"};
+    const char* names[kRuntimeCount] = {"rt.mul8",   "rt.mul16",  "rt.divu8",  "rt.divu16",
+                                        "rt.divs8",  "rt.divs16", "rt.mul8x8", "rt.mul8q",
+                                        "rt.mul16q", "rt.mul8x8q"};
     for (int r = 0; r < kRuntimeCount; r++) {
         be.rt_sym[r] = NewSym(be, names[r], SymRole::Label, -1);
     }
+    be.sq_tables = NewSym(be, "sq_tables", SymRole::Data, -1);
 }
 
 // explicit-address globals with initial values outside [start, end): the startup writes them
@@ -350,6 +352,11 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
         }
     }
     Append(items, runtime, out, -1, "runtime");
+    std::vector<AsmItem> tables;
+    EmitRuntimeTables(be, tables);
+    if (!tables.empty()) {
+        Append(items, tables, out, -1, "runtime tables");
+    }
     Append(items, zp_image, out, -1, "zero-page image");
     std::uint32_t code_end = LayoutCode(be.as, options.origin);
     if (!CheckCodeRange(options.origin, code_end, data_end, errors)) {

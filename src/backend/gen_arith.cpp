@@ -308,7 +308,7 @@ void EvalArith8(Gen& g, const Expr& e) {
         LoadA(g, b, 0);
         Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
         LoadA(g, a, 0);
-        CallRuntime(g, Runtime::Mul8);
+        CallRuntime(g, g.loop_depth > 0 ? Runtime::Mul8Q : Runtime::Mul8);
         return;
     }
     default:
@@ -486,13 +486,13 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
             LoadA(g, b, 0);
             Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
             LoadA(g, a, 0);
-            CallRuntime(g, Runtime::Mul8x8);
+            CallRuntime(g, g.loop_depth > 0 ? Runtime::Mul8x8Q : Runtime::Mul8x8);
             StoreAX(g, d);
             return d;
         }
         CopyOpnd(g, a, MemOpnd(SymValue(g.be->rt_a), 2, 1));
         CopyOpnd(g, b, MemOpnd(SymValue(g.be->rt_b), 2, 1));
-        CallRuntime(g, Runtime::Mul16);
+        CallRuntime(g, g.loop_depth > 0 ? Runtime::Mul16Q : Runtime::Mul16);
         StoreAX(g, d);
         return d;
     }

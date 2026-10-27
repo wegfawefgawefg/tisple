@@ -151,6 +151,132 @@ void Mul16(Writer& w) {
     w.Op(Mn::RTS);
 }
 
+// x * y for bytes by quarter squares: x * y = sq(x + y) - sq(|x - y|) with sq(n) the
+// table's n * n / 4, rounded down, which is exact since x + y and x - y are both odd or both
+// even. Y = |x - y|, X = (x + y) & $FF, and the carry its ninth bit, which picks the half of
+// the table x + y reads. a_holds_x: A already holds x
+void QsIndices(Writer& w, AsmValue x, AsmValue y, bool a_holds_x, const std::string& name) {
+    std::int32_t pos = w.Label(name + ".pos");
+    if (!a_holds_x) {
+        w.Op(Mn::LDA, Mode::Abs, x);
+    }
+    w.Op(Mn::SEC);
+    w.Op(Mn::SBC, Mode::Abs, y);
+    w.Br(Mn::BCS, pos);
+    w.Imm(Mn::EOR, 0xFF);
+    w.Imm(Mn::ADC, 1); // the carry is clear: this negates
+    w.Place(pos);
+    w.Op(Mn::TAY);
+    w.Op(Mn::LDA, Mode::Abs, x);
+    w.Op(Mn::CLC);
+    w.Op(Mn::ADC, Mode::Abs, y);
+    w.Op(Mn::TAX);
+}
+
+// a table byte: part 0 low bytes, 1 high bytes; half 1 is n of 256 and up
+AsmValue SqTable(const Backend& be, int part, int half) {
+    return SymValue(be.sq_tables, 256 * part + 512 * half);
+}
+
+// A = sq(x + y) - sq(|x - y|) low byte, for either half: the indices from QsIndices
+void QsLowByte(Writer& w, int half) {
+    Backend& be = *w.be;
+    w.Op(Mn::LDA, Mode::AbsX, SqTable(be, 0, half));
+    w.Op(Mn::SEC);
+    w.Op(Mn::SBC, Mode::AbsY, SqTable(be, 0, 0));
+}
+
+// A = (x * y) & $FF
+void QsLow(Writer& w, AsmValue x, AsmValue y, bool a_holds_x, const std::string& name) {
+    std::int32_t big = w.Label(name + ".big");
+    std::int32_t done = w.Label(name + ".done");
+    QsIndices(w, x, y, a_holds_x, name);
+    w.Br(Mn::BCS, big);
+    QsLowByte(w, 0);
+    w.Op(Mn::JMP, Mode::Abs, SymValue(done));
+    w.Place(big);
+    QsLowByte(w, 1);
+    w.Place(done);
+}
+
+// the whole product, the indices from QsIndices: low byte to `low`, high byte in A
+void QsWord(Writer& w, int half, AsmValue low) {
+    Backend& be = *w.be;
+    QsLowByte(w, half);
+    w.Op(Mn::STA, Mode::Abs, low);
+    w.Op(Mn::LDA, Mode::AbsX, SqTable(be, 1, half));
+    w.Op(Mn::SBC, Mode::AbsY, SqTable(be, 1, 0));
+}
+
+// A * rt_b -> A, 8 bits
+void Mul8Q(Writer& w) {
+    Backend& be = *w.be;
+    std::int32_t big = w.Label("mul8q.big");
+    w.Mem(Mn::STA, be.rt_a);
+    QsIndices(w, SymValue(be.rt_a), SymValue(be.rt_b), true, "mul8q");
+    w.Br(Mn::BCS, big);
+    QsLowByte(w, 0);
+    w.Op(Mn::RTS);
+    w.Place(big);
+    QsLowByte(w, 1);
+    w.Op(Mn::RTS);
+}
+
+// A * rt_b -> A (low), X (high)
+void Mul8x8Q(Writer& w) {
+    Backend& be = *w.be;
+    std::int32_t big = w.Label("mul8x8q.big");
+    w.Mem(Mn::STA, be.rt_a);
+    QsIndices(w, SymValue(be.rt_a), SymValue(be.rt_b), true, "mul8x8q");
+    w.Br(Mn::BCS, big);
+    for (int half = 0; half < 2; half++) {
+        if (half == 1) {
+            w.Place(big);
+        }
+        QsWord(w, half, SymValue(be.rt_s));
+        w.Op(Mn::TAX);
+        w.Mem(Mn::LDA, be.rt_s);
+        w.Op(Mn::RTS);
+    }
+}
+
+// rt_a * rt_b -> A/X, the low 16 bits, as Mul16 splits it
+void Mul16Q(Writer& w) {
+    Backend& be = *w.be;
+    std::int32_t second = w.Label("mul16q.second");
+    std::int32_t low = w.Label("mul16q.low");
+    std::int32_t big = w.Label("mul16q.big");
+    // rt_s = a1 * b0 + a0 * b1, mod 256
+    w.Imm(Mn::LDA, 0);
+    w.Mem(Mn::STA, be.rt_s);
+    w.Mem(Mn::LDA, be.rt_a, 1);
+    w.Br(Mn::BEQ, second);
+    QsLow(w, SymValue(be.rt_a, 1), SymValue(be.rt_b), true, "mul16q.hi1");
+    w.Mem(Mn::STA, be.rt_s);
+    w.Place(second);
+    w.Mem(Mn::LDA, be.rt_b, 1);
+    w.Br(Mn::BEQ, low);
+    QsLow(w, SymValue(be.rt_b, 1), SymValue(be.rt_a), true, "mul16q.hi2");
+    w.Op(Mn::CLC);
+    w.Mem(Mn::ADC, be.rt_s);
+    w.Mem(Mn::STA, be.rt_s);
+    // a0 * b0, its high byte plus rt_s
+    w.Place(low);
+    QsIndices(w, SymValue(be.rt_a), SymValue(be.rt_b), false, "mul16q.lo");
+    w.Br(Mn::BCS, big);
+    for (int half = 0; half < 2; half++) {
+        if (half == 1) {
+            w.Place(big);
+        }
+        QsWord(w, half, SymValue(be.rt_r));
+        w.Op(Mn::CLC);
+        w.Mem(Mn::ADC, be.rt_s);
+        w.Op(Mn::TAX);
+        w.Mem(Mn::LDA, be.rt_r);
+        w.Op(Mn::RTS);
+    }
+}
+
 // rt_a / rt_b -> A (and rt_a), remainder in rt_r; restoring division, one bit a step
 void DivU8(Writer& w) {
     Backend& be = *w.be;
@@ -292,13 +418,34 @@ void EmitRuntime(Backend& be, std::vector<AsmItem>& out) {
     Writer w;
     w.be = &be;
     w.out = &out;
-    void (*bodies[kRuntimeCount])(Writer&) = {Mul8, Mul16, DivU8, DivU16, DivS8, DivS16, Mul8x8};
+    void (*bodies[kRuntimeCount])(Writer&) = {Mul8,   Mul16,  DivU8, DivU16, DivS8,
+                                              DivS16, Mul8x8, Mul8Q, Mul16Q, Mul8x8Q};
     for (int r = 0; r < kRuntimeCount; r++) {
         if (!be.rt_used[r]) {
             continue;
         }
         w.Place(be.rt_sym[r]);
         bodies[r](w);
+    }
+}
+
+void EmitRuntimeTables(Backend& be, std::vector<AsmItem>& out) {
+    bool quarter = be.rt_used[static_cast<int>(Runtime::Mul8Q)] ||
+                   be.rt_used[static_cast<int>(Runtime::Mul16Q)] ||
+                   be.rt_used[static_cast<int>(Runtime::Mul8x8Q)];
+    if (!quarter) {
+        return;
+    }
+    out.push_back(MakeLabel(be.sq_tables));
+    for (int half = 0; half < 2; half++) {
+        for (int part = 0; part < 2; part++) {
+            for (std::uint32_t i = 0; i < 256; i++) {
+                std::uint32_t n = 256 * static_cast<std::uint32_t>(half) + i;
+                std::uint32_t sq = n * n / 4;
+                std::uint32_t byte = part == 0 ? sq & 0xFF : (sq >> 8) & 0xFF;
+                out.push_back(MakeByte(Num(static_cast<std::int32_t>(byte))));
+            }
+        }
     }
 }
 

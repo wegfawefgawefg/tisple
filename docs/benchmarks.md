@@ -38,3 +38,5 @@ variable's name); zero-page allocation moves them.
 | 2026-10-27 | (race item 1 rest: page pointers) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-27 | (race item 2: multiply by bytes) | life | generations in 10 s | 56 |
 | 2026-10-27 | (race item 2: multiply by bytes) | plasma | frames in 10 s | 243 (24.3 fps); code 1200 bytes |
+| 2026-10-27 | (race item 2: quarter-square multiplies in loops) | life | generations in 10 s | 56 |
+| 2026-10-27 | (race item 2: quarter-square multiplies in loops) | plasma | frames in 10 s | 243 (24.3 fps) |

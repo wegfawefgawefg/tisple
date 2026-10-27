@@ -1,6 +1,7 @@
 // multiplies on the 6502 against the interpreter: two bytes widened (the whole product of
 // rt.mul8x8), a byte and a word (rt.mul16 with a zero high byte), words whose high bytes are
-// zero only at run time, signed values, and the products of every pair of bytes
+// zero only at run time, signed values, and the products of every pair of bytes; each by
+// shift and add (outside loops) and by quarter squares (inside them)
 
 #include "test_backend.hpp"
 
@@ -38,7 +39,28 @@ const char* const kMul =
     "    (let u u16 (* w (at tw (& a 63))))\n"
     "    (^ (+ x (* y 3)) (+ (+ z v) u)))\n"
     "(fn signed ((a i16) (b i16)) i16\n"
-    "    (+ (* a b) (* (as i16 (as i8 a)) (as i16 (as i8 b)))))\n";
+    "    (+ (* a b) (* (as i16 (as i8 a)) (as i16 (as i8 b)))))\n"
+    // the same in loops, which take the quarter-square routines
+    "(fn mixed_loop ((a u8) (w u16)) u16 (let r u16 0) (for k u8 0 1 (set r (mixed a w))) r)\n"
+    "(fn signed_loop ((a i16) (b i16)) i16 (let r i16 0) (for k u8 0 1 (set r (signed a b))) r)\n"
+    // one product: of bytes widened, of bytes kept to 8 bits, of words; and in loops
+    "(fn wide ((a u8) (b u8)) u16 (* (as u16 a) (as u16 b)))\n"
+    "(fn narrow ((a u8) (b u8)) u8 (* a b))\n"
+    "(fn word ((a u16) (b u16)) u16 (* a b))\n"
+    "(fn wide_loop ((a u8) (b u8)) u16 (let r u16 0) (for k u8 0 1 (set r (* (as u16 a) (as u16 "
+    "b)))) r)\n"
+    "(fn narrow_loop ((a u8) (b u8)) u8 (let r u8 0) (for k u8 0 1 (set r (* a b))) r)\n"
+    "(fn word_loop ((a u16) (b u16)) u16 (let r u16 0) (for k u8 0 1 (set r (* a b))) r)\n";
+
+bool HasRoutine(const Compiled& c, const std::string& name) {
+    for (const tisple::AsmItem& item : c.code.as.items) {
+        if (item.kind == tisple::ItemKind::Label &&
+            c.code.as.symbols[static_cast<std::size_t>(item.value.sym)].name == name) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void TestProducts(TestResults& results) {
     Compiled c = CompileText(kMul);
@@ -53,22 +75,46 @@ void TestProducts(TestResults& results) {
     for (int i : {0, 1, 2, 3, 127, 128, 200, 254, 255}) {
         std::uint16_t a = static_cast<std::uint16_t>(i);
         for (std::uint16_t w : words) {
-            ok = ok && DiffCall(d, "t.mixed", {a, w});
-            ok = ok && DiffCall(d, "t.signed", {w, static_cast<std::uint16_t>(i * 257)});
-            ok = ok && DiffCall(d, "t.signed", {static_cast<std::uint16_t>(-i), w});
+            for (const char* suffix : {"", "_loop"}) {
+                std::string s = suffix;
+                ok = ok && DiffCall(d, "t.mixed" + s, {a, w});
+                ok = ok && DiffCall(d, "t.signed" + s, {w, static_cast<std::uint16_t>(i * 257)});
+                ok = ok && DiffCall(d, "t.signed" + s, {static_cast<std::uint16_t>(-i), w});
+            }
+        }
+    }
+    // every pair of bytes, both ways and both widths
+    for (std::uint32_t a = 0; a < 256 && ok; a++) {
+        for (std::uint32_t b = 0; b < 256 && ok; b++) {
+            std::uint16_t x = static_cast<std::uint16_t>(a);
+            std::uint16_t y = static_cast<std::uint16_t>(b);
+            ok = DiffCall(d, "t.wide", {x, y}) && DiffCall(d, "t.wide_loop", {x, y}) &&
+                 DiffCall(d, "t.narrow", {x, y}) && DiffCall(d, "t.narrow_loop", {x, y});
+        }
+    }
+    // words: pairs of edges and a spread, and every byte against each
+    std::uint32_t seed = 777;
+    for (int k = 0; k < 40; k++) {
+        seed = seed * 1103515245u + 12345u;
+        words.push_back(static_cast<std::uint16_t>(seed >> 10));
+    }
+    for (std::uint16_t a : words) {
+        for (std::uint16_t b : words) {
+            ok = ok && DiffCall(d, "t.word", {a, b}) && DiffCall(d, "t.word_loop", {a, b});
+        }
+        for (std::uint16_t b = 0; b < 256 && ok; b += 5) {
+            ok = DiffCall(d, "t.word_loop", {a, b}) && DiffCall(d, "t.word_loop", {b, a});
         }
     }
     if (!ok) {
         std::fprintf(stderr, "products:\n%s\n  %s\n", kMul, d.message.c_str());
     }
     CHECK(results, ok);
-    // two widened bytes call the byte routine
-    CHECK(results, CountMn(c, "t.bytes", tisple::Mn::JSR) >= 1);
-    bool byte_routine = false;
-    for (const tisple::AsmSymbol& s : c.code.as.symbols) {
-        byte_routine = byte_routine || s.name == "rt.mul8x8";
+    // every routine ran: two widened bytes call the byte routines
+    for (const char* name :
+         {"rt.mul8", "rt.mul8q", "rt.mul16", "rt.mul16q", "rt.mul8x8", "rt.mul8x8q"}) {
+        CHECK(results, HasRoutine(c, name));
     }
-    CHECK(results, byte_routine);
 }
 
 } // namespace

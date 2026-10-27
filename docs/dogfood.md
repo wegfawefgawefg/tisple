@@ -599,6 +599,34 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | 16-bit multiply 1234*5678, $FFFF*$FFFF | 572, 773 | 419, 537; 66 to 159 bytes with the routine |
     | other race kernels, Life generations, plasma | (as after 22) | the same |
 
+24. Race item 2, quarter squares (2026-10-27). A multiply inside a loop
+    (the code generator's loop depth, inlined calls included) now calls a
+    quarter-square routine: x * y = sq(x + y) - sq(|x - y|) for bytes, with
+    sq(n) = n * n / 4 rounded down from a 1 KB table (low and high bytes for
+    n = 0 to 255, then 256 to 511), which is exact since x + y and x - y are
+    both odd or both even. rt.mul8x8q is about 60 cycles for the whole 16-bit
+    product of two bytes (shift and add: about 120), rt.mul8q the low byte
+    only, and rt.mul16q splits words as rt.mul16 does, its byte multiplies by
+    the table (about 150 cycles against 420). Multiplies outside loops keep
+    the shift-and-add routines, and a program has the table only when one of
+    its loops multiplies: none of programs/ and examples/ does (their sizes
+    are unchanged or smaller). The tables are a span of their own, "runtime
+    tables", data rather than code. Decision on the cost: 1 KB of data for a
+    loop that multiplies is worth it on the race (mul8 -33%, mul16 -51%,
+    mandel -40%); a program that cannot spare it can multiply outside its
+    loop or by shifts. Tests: in tests/test_backend_mul.cpp, every pair of
+    bytes widened and kept to 8 bits, in and outside loops, word pairs and
+    every byte against each word, both ways round, in and outside loops; every
+    one of the six routines is in the test program.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race mul8 | 43774 | 29331 |
+    | race mul16 | 63443 | 31296 |
+    | race mandel | 7185582 | 4323385 |
+    | programs/ and examples/ sizes | (as after 23) | the same, no tables |
+    | other race kernels, Life generations, plasma | (as after 23) | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
