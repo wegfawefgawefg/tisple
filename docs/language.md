@@ -89,12 +89,31 @@ Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
 `KEY_RETURN`, `KEY_ESC`, `KEY_SPACE`, `KEY_DELETE`). Write `(import apple2 a2)`
 and `a2.SPKR`; never type an I/O address or key code by hand.
 
+### lib/text80, lib/text40 and lib/auxmem
+
+- `lib/text80`: 80-column text on the extended 80-column card. `(text80.on)`,
+  `(text80.print "Hello")` (a macro: strings exist only while compiling),
+  `(text80.put c)` for one ASCII character, `(text80.put_code c)` for a screen
+  code as it is (MouseText is `$40`-`$5F`), `(text80.move col row)`,
+  `(text80.inverse true)`, `(text80.clear)`, `(text80.put_row r p)` for 80 codes
+  at once, `(text80.off)`. Even columns are in aux memory: it writes them with
+  80STORE and PAGE2 on, through `io_write` so nothing moves across the switch.
+- `lib/text40`: the same on text page 1, 40 columns, without the aux half.
+- `lib/auxmem`: `(auxmem.read dst src count)` and `(auxmem.write dst src
+  count)` copy between main memory and aux memory, with pointers from
+  `addr_of`. It is the only way code reaches a let `:in aux` (see Memory map).
+  Its mover is 99 bytes of our own 6502 code run from page 3, with a copy at the
+  same address in aux memory, since RAMRD sends the instruction fetches there
+  too; it saves the zero page it borrows. (Not `aux.tsp`: Windows keeps that
+  name.)
+
 ## Keywords
 
 `:name` does two things only:
 
 1. Placement options on a top-level `let` or a `const` table, after the value:
-   `:address`, `:align`, `:boundary` (later `:in`).
+   `:address`, `:align`, `:boundary`, and on a `let` `:in aux` and `:reserve`
+   (see Placement). `:reserve` is the one option without a value.
 2. Field names in struct values: `(make Sprite :x 10 :y 20 :active true)`.
    Every field, in declared order, none left out. The names exist so a swapped
    `x`/`y` is an error instead of a silent bug; there is no reordering and no
@@ -530,19 +549,21 @@ source line; `tisple expand` prints the program after macro expansion.
 
 ## Placement
 
-In the first subset; the linker checks them and fails the build if one can't
-hold. Named regions (`:in`) come later.
+The linker checks them and fails the build if one can't hold.
 
 | Option | Meaning |
 | --- | --- |
 | `:address 0x6000` | start at exactly this address |
 | `:align 256` | start on a multiple of 256 |
 | `:boundary 256` | whole object inside one 256-byte block; for a split table, each byte table |
+| `:in aux` | a `let` in aux memory, reached only through `lib/auxmem` (2026-10-27) |
+| `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
 
-Placement goes on top-level `let`s and `const` tables, after the value. An
-explicit `:address` may point anywhere, a hi-res page included
-(`(let screen (array u8 8192) :address 0x2000)`); automatic placement never
-uses zero page, the stack, text page 1, hi-res page 1 or `$C000` and up.
+Placement goes on top-level `let`s and `const` tables, after the value; `:in`
+and `:reserve` on `let`s only. An explicit `:address` may point anywhere, a
+hi-res page included (`(let screen (array u8 8192) :address 0x2000)`);
+automatic placement never uses zero page, the stack, text page 1 or `$C000`
+and up, and fills the rest by the memory map below.
 
 A global with `:address` and no value is left untouched at startup, like
 screen memory: it is not part of the binary and the startup never writes it,
@@ -550,6 +571,64 @@ in the backend and the interpreter alike (owner reading, 2026-10-26). It holds
 whatever memory held (zero in a fresh interpreter or simulator), unless it lies
 inside the binary's own bytes, which loading the binary writes. Every other
 top-level `let` without a value starts at zero.
+
+### Memory map
+
+Implemented 2026-10-27, for programs bigger than one stretch of memory. A
+program that fits from its origin is laid out exactly as before, byte for
+byte. Past that, in this order:
+
+1. From the origin (`$6000`) up to the limit: `$95FF` under DOS (the zero-page
+   save buffer is its last page), `$BEFF` for a self-booting disk.
+2. Below the origin, from `$0800` (`$0B00` on a disk, past the loader), around
+   text page 1 and every `:address` and `:reserve` let. Whole functions move
+   there when the code does not fit above the origin, so a branch never leaves
+   its function; data fills what is left.
+3. The language card's bank 2, `$D000`-`$FFFF` (12 KB), when nothing needs the
+   ROM there: no `jsr` to a constant address from `$D000` and no `:address` let
+   reaching `$D000`. The startup switches its RAM in (`BIT $C083` twice) and
+   the ROM back before it returns (`BIT $C082`). A computed `jsr` is taken to
+   call card firmware, as the mouse library does. Bank 1's 4 KB is not used.
+4. Lets `:in aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
+   above; an `:address` there must lie in `$0200`-`$BFFF`.
+
+Each piece outside the first is a segment. `tisple run` loads them all and a
+disk built with `--disk` boots them all (docs/disks.md), but one DOS 3.3 BRUN
+file holds one stretch of main memory, so `tisple build -o` refuses a program
+with segments and says to build a disk.
+
+The screens. The hi-res pages and text page 2 are ordinary memory unless the
+program keeps them, which takes one `let`:
+
+```scheme
+(let page1 (array u8 8192) :address 0x2000 :reserve)   ; lib/hgr has this one
+(let dhgr_aux (array u8 8192) :address 0x2000 :in aux :reserve)
+```
+
+A `:reserve` let is not a variable: naming it in code is an error that says to
+use a pointer, and a constant `(as (ptr u8) 0x2000)` into it is fine, since for
+pointer provenance it is memory the program does not declare. It needs
+`:address` and has no value. Why a `let` option and not a top-level form
+listing screens: it is the one fact the linker needs (these bytes are taken),
+it fits the declare shape and the placement slot that already exist, and it
+works for any memory, a screen, a DOS buffer or a ROM routine's scratch,
+without a vocabulary of screen names in the compiler. A plain `:address` let
+with no value already kept its bytes; `:reserve` adds only that code reaches
+them by address. A program that fits from its origin never reaches the screens,
+so the rule matters once a program spills below `$6000`.
+
+Aux data. `(let doc (array u8 30000) (make ...) :in aux)` is the whole language
+change: code names `doc` only as the root of an `addr_of`, and an `at`, `set`
+or plain use is an error that says to copy it with `lib/auxmem`:
+
+```scheme
+(auxmem.read (addr_of (at line 0)) (addr_of (at doc offset)) 80)  ; aux to main
+(auxmem.write (addr_of (at doc offset)) (addr_of (at line 0)) 80) ; main to aux
+```
+
+The pointer `addr_of` gives holds an aux address; `load` through it would read
+main memory, so pass it only to `lib/auxmem`. Aux lets never go in zero page,
+and the interpreter does not model aux memory (its `jsr` needs the machine).
 
 ## Planned after the first backend (owner, 2026-10-26)
 
@@ -578,6 +657,6 @@ computing macro can generate the stack if it gets repetitive (owner,
 
 ## Out of the first subset
 
-Named regions, strings (they exist only in macro code), general recursion,
-inline assembly. All planned; none needed to prove the backend. `jsr` (Machine code)
-calls code that already exists; it is not an inline assembler.
+Strings (they exist only in macro code), general recursion, inline assembly.
+All planned; none needed to prove the backend. `jsr` (Machine code) calls code
+that already exists; it is not an inline assembler.

@@ -29,4 +29,11 @@ bool CardAllowed(const Program& program, const Layout& shapes);
 LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& out,
                        std::vector<Diagnostic>& errors);
 
+// segments.cpp: the bytes [low, high) of a 64 KB memory image as a segment
+MemorySegment SegmentOf(const std::vector<std::uint8_t>& memory, MemoryBank bank, std::uint32_t low,
+                        std::uint32_t high);
+// every :in aux let's bytes as segments: runs of them, a new one after a gap of a page or more
+void AuxSegments(const Program& program, const Layout& layout, const std::vector<std::uint8_t>& aux,
+                 std::vector<MemorySegment>& out);
+
 } // namespace tisple
