@@ -396,6 +396,30 @@ void GenCompare(Gen& g, const Expr& e, bool when, std::int32_t label) {
     CompareJump(g, op, is_signed, a, b, label);
 }
 
+// a compare of the while loop being generated against its variable plus one (gen_while.cpp):
+// (> e v) and (< v e) are e >= t, with t = v + 1
+bool BumpedCompare(Gen& g, ExprId id, bool when, std::int32_t label) {
+    const Opnd* t = nullptr;
+    for (const auto& b : g.bumped) {
+        if (b.first == id) {
+            t = &b.second;
+        }
+    }
+    if (!t) {
+        return false;
+    }
+    const Expr& e = At(g, id);
+    ExprId other = e.op == Op::Gt ? e.a : e.b;
+    Op op = when ? Op::Ge : Op::Lt;
+    Opnd a = TrySimple(g, other);
+    if (a.size == 0) {
+        EvalA(g, other);
+        a = InA();
+    }
+    CompareJump(g, op, false, a, *t, label);
+    return true;
+}
+
 bool IsComparison(Op op) {
     return op == Op::Eq || op == Op::Ne || op == Op::Lt || op == Op::Le || op == Op::Gt ||
            op == Op::Ge;
@@ -442,6 +466,9 @@ void GenBranch(Gen& g, ExprId id, bool when, std::int32_t label) {
         return;
     }
     case ExprKind::Binary:
+        if (IsComparison(e.op) && BumpedCompare(g, id, when, label)) {
+            return;
+        }
         if (IsComparison(e.op)) {
             GenCompare(g, e, when, label);
             return;

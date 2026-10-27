@@ -427,6 +427,71 @@ void TestLoopControl(TestResults& results) {
                        1);
 }
 
+// compares of a while test against a byte variable the loop never sets, done against it plus
+// one: > and < (and <= and >=, which are not), v = 255 (> never holds: no trips; <= always
+// does), v = 0, first and last in an and, alone, in
+// a test too big to copy before the loop, v an outer loop's counter, break and continue; and
+// the race's insertion sort, over data with 255s and 0s in it
+void TestBumpedCompares(TestResults& results) {
+    const char* bodies[] = {
+        "(fn f ((x u8) (y u8)) u8 (let j u8 (& y 63)) (let n u8 0)\n"
+        "    (while (and (!= j 0) (> (at bt j) x)) (set n (+ n 1)) (set j (- j 1))) (+ n j))",
+        "(fn f ((x u8) (y u8)) u8 (let j u8 y) (let n u8 0)\n"
+        "    (while (and (< n 40) (<= (at bt j) x)) (set g (at bt j)) (set n (+ n 1)) (set j (+ j "
+        "1)))\n"
+        "    (+ n j))",
+        "(fn f ((x u8) (y u8)) u8 (let j u8 y) (let n u8 0)\n"
+        "    (while (< x (at bt j)) (set g (^ (at bt j) g)) (set n (+ n 1)) (set j (+ j 7))) (+ n "
+        "j))",
+        "(fn f ((x u8) (y u8)) u8 (let j u8 y) (let n u8 0)\n"
+        "    (while (and (< n 50) (>= x (at bt j))) (set g (at bt j)) (set n (+ n 1)) (set j (+ j "
+        "3))\n"
+        "        (if (= (& j 7) 2) (continue)) (if (= n x) (break))) (+ n j))",
+        // too big to copy before the loop: a jump to the test at the bottom
+        "(fn f ((x u8) (y u8)) u8 (let j u8 y) (let n u8 0)\n"
+        "    (while (and (and (> (at bt j) x)\n"
+        "        (!= (+ (at small (& j 15)) (^ (at bt (+ j 1)) (+ j n)))\n"
+        "            (+ (at small (& n 15)) (^ (at bt (+ j 2)) (- n j)))))\n"
+        "        (and (< n 30) (!= (at small (& (+ j n) 15)) 255)))\n"
+        "        (set n (+ n 1)) (set j (+ j 1))) (+ n j))",
+        // v an outer loop's counter, or a let, with the compared byte moved first
+        "(fn f ((x u8) (y u8)) u8 (let n u8 0)\n"
+        "    (for k u8 (& x 7) (& y 15) (let j u8 (+ k 100))\n"
+        "        (while (and (!= j 0) (> (at bt j) k)) (set n (+ n (at bt j))) (set j (- j 9))))\n"
+        "    n)",
+        "(fn f ((x u8) (y u8)) u8 (let v u8 (at bt x)) (let j u8 y) (let n u8 0)\n"
+        "    (while (and (!= j 0) (> (at small (& j 15)) v))\n"
+        "        (set (at small (& (+ j 1) 15)) (at small (& j 15))) (set j (- j 1)) (set n (+ n "
+        "1)))\n"
+        "    (+ n (at small 3)))",
+    };
+    for (const char* body : bodies) {
+        CheckCalls(results, body, Bytes());
+    }
+    // insertion sort of a slice of bt copied into s
+    const char* sort =
+        "(let ws (array u8 256))\n"
+        "(fn f ((x u8) (y u8)) u16\n"
+        "    (for i u8 0 255 (set (at ws i) (at bt (+ i x))))\n"
+        "    (for i u8 1 (| y 1)\n"
+        "        (let v u8 (at ws i))\n"
+        "        (let j u8 i)\n"
+        "        (while (and (!= j 0) (> (at ws (- j 1)) v))\n"
+        "            (set (at ws j) (at ws (- j 1)))\n"
+        "            (set j (- j 1)))\n"
+        "        (set (at ws j) v))\n"
+        "    (let sum u16 0) (for i u8 0 255 (set sum (+ (* sum 3) (as u16 (at ws i))))) sum)";
+    CheckCalls(results, sort, Bytes());
+    // the race kernel: the compared byte stays in A for the move
+    Compiled c = CompileText("(let arr (array u8 256) :address 0x4000)\n"
+                             "(fn main () void\n"
+                             "    (for i u8 1 256 (let v u8 (at arr i)) (let j u8 i)\n"
+                             "        (while (and (!= j 0) (> (at arr (- j 1)) v))\n"
+                             "            (set (at arr j) (at arr (- j 1))) (set j (- j 1)))\n"
+                             "        (set (at arr j) v)))\n");
+    CHECK(results, CountMn(c, "t.main", tisple::Mn::LDA) <= 5);
+}
+
 } // namespace
 
 void RunBackendWhileTests(TestResults& results) {
@@ -437,6 +502,7 @@ void RunBackendWhileTests(TestResults& results) {
     TestReplacedCounter(results);
     TestLetPointers(results);
     TestLoopControl(results);
+    TestBumpedCompares(results);
 }
 
 } // namespace tisple_tests

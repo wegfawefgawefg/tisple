@@ -294,10 +294,25 @@ bool IsJumpTo(const AsmItem& item) {
            (IsBranch(item.mn) || (item.mn == Mn::JMP && item.mode == Mode::Abs));
 }
 
-// labels every way into which the scan has seen when it reaches them: only branches and
-// JMPs before them name them (no jump table, patched operand or JMP (ind)), and they are not
-// the function's entry, which calls reach
-std::vector<std::int32_t> MergeableLabels(const Pass& p) {
+// the labels whose every way in the scan can know: only branches and JMPs name them (no jump
+// table, patched operand or JMP (ind)), and they are not the function's entry, which calls
+// reach. Mergeable: the jumps are all before the label, so the scan has seen them when it gets
+// there. Loop: some jump comes after it, so a scan before must find out what they bring.
+struct KnownLabels {
+    std::vector<std::int32_t> mergeable;
+    std::vector<std::int32_t> loop;
+};
+
+bool Contains(const std::vector<std::int32_t>& list, std::int32_t sym) {
+    for (std::int32_t s : list) {
+        if (s == sym) {
+            return true;
+        }
+    }
+    return false;
+}
+
+KnownLabels FindKnownLabels(const Pass& p) {
     const std::vector<AsmItem>& items = *p.items;
     std::map<std::int32_t, std::size_t> label_at;
     bool entry = true;
@@ -318,43 +333,32 @@ std::vector<std::int32_t> MergeableLabels(const Pass& p) {
             return {};
         }
     }
-    std::vector<std::int32_t> out;
+    // (labels nothing names are mergeable: only the fall reaches them)
+    std::vector<std::int32_t> back;
     for (std::size_t i = 0; i < items.size(); i++) {
         const AsmItem& item = items[i];
         auto found = label_at.find(item.value.sym);
         if (p.dead[i] || item.kind == ItemKind::Label || found == label_at.end()) {
             continue;
         }
-        if (IsJumpTo(item) && i < found->second) {
-            out.push_back(item.value.sym);
-        } else {
+        if (!IsJumpTo(item)) {
             bad.push_back(item.value.sym);
+        } else if (i > found->second) {
+            back.push_back(item.value.sym);
         }
     }
-    // labels nothing names: only the fall reaches them
-    std::vector<bool> named(p.as->symbols.size(), false);
-    for (std::size_t i = 0; i < items.size(); i++) {
-        const AsmItem& item = items[i];
-        if (!p.dead[i] && item.kind != ItemKind::Label && item.value.sym >= 0) {
-            named[static_cast<std::size_t>(item.value.sym)] = true;
-        }
-    }
+    KnownLabels out;
     for (const auto& label : label_at) {
-        if (!named[static_cast<std::size_t>(label.first)]) {
-            out.push_back(label.first);
+        if (Contains(bad, label.first)) {
+            continue;
+        }
+        if (Contains(back, label.first)) {
+            out.loop.push_back(label.first);
+        } else {
+            out.mergeable.push_back(label.first);
         }
     }
-    std::vector<std::int32_t> kept;
-    for (std::int32_t sym : out) {
-        bool ok = true;
-        for (std::int32_t b : bad) {
-            ok = ok && b != sym;
-        }
-        if (ok) {
-            kept.push_back(sym);
-        }
-    }
-    return kept;
+    return out;
 }
 
 // symbols are RAM the program owns; numbers may be I/O
@@ -373,7 +377,8 @@ std::uint8_t TrackableIndex(const Assembly& as, Mode mode, const AsmValue& v) {
         return kPlain;
     }
     const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
-    if (sym.defined && sym.value + v.offset + 0x100 > 0xC000) {
+    // the offset wraps: arr-1 is arr+65535
+    if (sym.defined && ((sym.value + v.offset) & 0xFFFF) + 0x100 > 0xC000) {
         return kPlain;
     }
     switch (mode) {
@@ -557,18 +562,20 @@ int StoreReg(Mn mn) {
     return mn == Mn::STA ? 0 : mn == Mn::STX ? 1 : mn == Mn::STY ? 2 : -1;
 }
 
-void RegisterPass(Pass& p) {
+// what holds where jumps go back to a loop label, from a scan that knew nothing at the labels
+using BackStates = std::map<std::int32_t, Tracker>;
+
+// One scan, tracking what the registers hold and changing what that makes needless. With
+// `back` (what a scan of the same code without it found at the jumps back to each loop label),
+// a loop label holds what holds on every way in; that scan's facts at those jumps held without
+// assuming anything at the labels, and every change keeps what the registers and memory hold,
+// so they hold here too. With `record`, the scan notes those jumps' states instead.
+void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
     Tracker t;
     t.as = p.as;
-    std::vector<std::int32_t> mergeable = MergeableLabels(p);
-    auto is_mergeable = [&](std::int32_t sym) {
-        for (std::int32_t m : mergeable) {
-            if (m == sym) {
-                return true;
-            }
-        }
-        return false;
-    };
+    KnownLabels known = FindKnownLabels(p);
+    auto is_mergeable = [&](std::int32_t sym) { return Contains(known.mergeable, sym); };
+    auto is_loop = [&](std::int32_t sym) { return Contains(known.loop, sym); };
     // what holds on the jumps seen so far into each mergeable label
     std::map<std::int32_t, Tracker> arriving;
     std::map<std::int32_t, std::size_t> labels;
@@ -586,11 +593,26 @@ void RegisterPass(Pass& p) {
         if (item.kind == ItemKind::Note) {
             continue;
         }
-        if (item.kind == ItemKind::Label && is_mergeable(item.value.sym)) {
+        bool loop_label = item.kind == ItemKind::Label && is_loop(item.value.sym);
+        if (item.kind == ItemKind::Label && (is_mergeable(item.value.sym) || loop_label)) {
             auto found = arriving.find(item.value.sym);
+            bool any = falls;
             if (found != arriving.end()) {
-                t = falls ? Meet(t, found->second) : found->second;
-            } else if (!falls) {
+                t = any ? Meet(t, found->second) : found->second;
+                any = true;
+            }
+            if (loop_label) {
+                auto from_back = back ? back->find(item.value.sym) : BackStates::const_iterator();
+                if (!back || from_back == back->end()) {
+                    t.ForgetAll();
+                } else {
+                    t = any ? Meet(t, from_back->second) : from_back->second;
+                    any = true;
+                }
+                // a jump back may come from where the flags no longer show A
+                t.nz_a = false;
+            }
+            if (!any) {
                 t.ForgetAll();
             }
             falls = true;
@@ -600,6 +622,14 @@ void RegisterPass(Pass& p) {
             t.ForgetAll();
             falls = item.kind == ItemKind::Label;
             continue;
+        }
+        if (record && IsJumpTo(item) && is_loop(item.value.sym) && labels[item.value.sym] < i) {
+            auto found = record->find(item.value.sym);
+            if (found == record->end()) {
+                record->emplace(item.value.sym, t);
+            } else {
+                found->second = Meet(found->second, t);
+            }
         }
         // a branch the flags decide: gone, or a JMP (the flags stay for the code it reaches)
         int outcome = IsBranch(item.mn) ? BranchOutcome(t, item.mn) : -1;
@@ -907,7 +937,13 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
         p.dead.assign(items.size(), false);
         p.flags_dead = FlagsDeadIn(as, items);
         FlowPass(p);
-        RegisterPass(p);
+        // a scan of a copy finds what the jumps back to loops bring, then the real one
+        std::vector<AsmItem> copy = items;
+        Pass first = p;
+        first.items = &copy;
+        BackStates back;
+        RegisterPass(first, nullptr, &back);
+        RegisterPass(p, &back, nullptr);
         std::vector<AsmItem> kept;
         for (std::size_t i = 0; i < items.size(); i++) {
             if (!p.dead[i]) {

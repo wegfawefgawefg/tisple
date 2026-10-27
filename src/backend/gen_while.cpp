@@ -5,11 +5,8 @@
 // While loops, with variables in registers when the loop allows. A byte variable (u8 or i8)
 // the loop reads may live in X or Y for the whole loop: loaded before it, its sets write the
 // register (INX, DEY, or TAX after the value), and when the loop sets it the register is
-// stored back where the loop ends. A u16 variable may live in Y and memory like a u16 for
-// counter (gen_loop.cpp): low byte in Y, high byte in its own memory, and every array or
-// pointer it indexes read through a derived pointer, base + (high << 8), set before the loop.
-// Each of its sets moves the pointers' high bytes with its own; the code for that is put in
-// once the body is done and the pointers are known (WideFixup).
+// stored back where the loop ends. A u16 variable may live in Y and memory
+// (gen_while_wide.cpp).
 //
 // As for u8 for loops, the body is generated once per choice, a choice whose code touches
 // its registers (or calls anything) is dropped, and the cheapest is kept, cycles inside loops
@@ -129,7 +126,95 @@ struct WhileRegs {
     bool wide = false;
     bool written[2] = {false, false};
     bool spill[2] = {false, false};
+    ExprId bump = -1; // the compare done against its variable plus one
 };
+
+// A compare of the test, e > v or v < e for a u8 variable v the loop never sets, is
+// e >= v + 1, with v + 1 worked out once before the loop: then the compare loads e into A,
+// where it often is what the body wants first (insertion sort moves the byte it compared),
+// and v needs no register. When v is 255 the compare never holds, and since it is one of the
+// test's and-ed parts, the loop does not run. Returns the compare and v, or -1.
+ExprId FindBump(const Gen& g, ExprId id, const std::vector<VarUse>& uses, std::int32_t& var) {
+    const Program& program = *g.program;
+    id = ForwardTarget(g, id);
+    const Expr& e = At(g, id);
+    if (e.kind == ExprKind::And) {
+        ExprId found = FindBump(g, e.a, uses, var);
+        return found >= 0 ? found : FindBump(g, e.b, uses, var);
+    }
+    // (only the strict ones: e <= 255 always holds, and the loop would not run)
+    if (e.kind != ExprKind::Binary || (e.op != Op::Gt && e.op != Op::Lt) ||
+        ExprKindOf(program, e.a) != TypeKind::U8) {
+        return -1;
+    }
+    bool left = e.op == Op::Gt;
+    const Expr& side = At(g, left ? e.b : e.a);
+    std::uint16_t c = 0;
+    if (side.kind != ExprKind::VarRef || ConstValue(program, left ? e.a : e.b, c)) {
+        return -1;
+    }
+    const Var& v = program.vars[static_cast<std::size_t>(side.ref)];
+    const VarUse& use = uses[static_cast<std::size_t>(side.ref)];
+    if ((v.kind != VarKind::Local && v.kind != VarKind::Param) || v.address_taken ||
+        v.placement.has_address || use.written || use.declared ||
+        KindOf(program, v.type) != TypeKind::U8) {
+        return -1;
+    }
+    var = side.ref;
+    return id;
+}
+
+// the first instruction at or after i, past notes and labels
+std::size_t NextIns(const Gen& g, std::size_t i) {
+    while (i < g.out->size() && (*g.out)[i].kind != ItemKind::Ins) {
+        i++;
+    }
+    return i;
+}
+
+bool SameIns(const AsmItem& a, const AsmItem& b) {
+    return a.kind == ItemKind::Ins && b.kind == ItemKind::Ins && a.mn == b.mn && a.mode == b.mode &&
+           a.value.sym == b.value.sym && a.value.offset == b.value.offset &&
+           a.value.part == b.value.part;
+}
+
+// a rotated loop whose tests both end LDA x / CMP y / branch, and whose body starts LDA x: the
+// peephole drops that load, since both ways in hold x (its cycles, at the loop's weight)
+std::uint64_t TopLoadSaved(const Gen& g, std::size_t top_at, std::size_t bottom_at) {
+    std::size_t first = NextIns(g, top_at);
+    if (first >= g.out->size() || (*g.out)[first].mn != Mn::LDA) {
+        return 0;
+    }
+    auto ends_with_load = [&](std::size_t branch) {
+        std::size_t cmp = branch;
+        std::size_t load = branch;
+        int seen = 0;
+        for (std::size_t i = branch; i-- > 0 && seen < 2;) {
+            if ((*g.out)[i].kind == ItemKind::Ins) {
+                (seen == 0 ? cmp : load) = i;
+                seen++;
+            } else if ((*g.out)[i].kind != ItemKind::Note) {
+                return false;
+            }
+        }
+        return seen == 2 && (*g.out)[cmp].mn == Mn::CMP && SameIns((*g.out)[load], (*g.out)[first]);
+    };
+    // the entry test's branch is the last instruction before top, the bottom one the last
+    std::size_t entry = top_at;
+    while (entry > 0 && (*g.out)[entry - 1].kind != ItemKind::Ins) {
+        entry--;
+    }
+    std::size_t bottom = g.out->size();
+    while (bottom > bottom_at && (*g.out)[bottom - 1].kind != ItemKind::Ins) {
+        bottom--;
+    }
+    if (entry == 0 || bottom <= bottom_at || !IsBranch((*g.out)[entry - 1].mn) ||
+        !IsBranch((*g.out)[bottom - 1].mn) || !ends_with_load(entry - 1) ||
+        !ends_with_load(bottom - 1)) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(ItemCycles(g.be->as, (*g.out)[first])) * LoopWeight(g);
+}
 
 bool HasReturn(const Program& program, ExprId id, int depth) {
     if (id < 0 || depth > kMaxDepth) {
@@ -219,6 +304,34 @@ std::vector<WhileRegs> Choices(const Gen& g, ExprId id) {
         }
         out.push_back(r);
     };
+    std::int32_t bump_var = -1;
+    const Expr& e = At(g, id);
+    ExprId bump =
+        HasEffects(program, e.a) || HasCalls(program, id) ? -1 : FindBump(g, e.a, uses, bump_var);
+    if (bump >= 0) {
+        // the same choices, the variable compared out of the registers
+        std::vector<std::int32_t> others;
+        for (std::int32_t b : bytes) {
+            if (b != bump_var) {
+                others.push_back(b);
+            }
+        }
+        WhileRegs plain;
+        plain.bump = bump;
+        out.push_back(plain);
+        std::size_t before = out.size();
+        if (!others.empty()) {
+            add(others[0], -1, false);
+            add(-1, others[0], false);
+        }
+        if (others.size() >= 2) {
+            add(others[0], others[1], false);
+            add(others[1], others[0], false);
+        }
+        for (std::size_t i = before; i < out.size(); i++) {
+            out[i].bump = bump;
+        }
+    }
     if (!bytes.empty()) {
         add(bytes[0], -1, false);
         add(-1, bytes[0], false);
@@ -234,223 +347,6 @@ std::vector<WhileRegs> Choices(const Gen& g, ExprId id) {
         }
     }
     return out;
-}
-
-// value is var + c (mod 2^16) for a constant c
-bool StepOf(const Gen& g, std::int32_t var, ExprId value, std::uint16_t& c) {
-    const Expr& v = At(g, value);
-    if (v.kind != ExprKind::Binary || (v.op != Op::Add && v.op != Op::Sub)) {
-        return false;
-    }
-    auto is_var = [&](ExprId id) {
-        const Expr& x = At(g, id);
-        return x.kind == ExprKind::VarRef && x.ref == var;
-    };
-    if (is_var(v.a) && ConstValue(*g.program, v.b, c)) {
-        c = v.op == Op::Sub ? static_cast<std::uint16_t>(-c) : c;
-        return true;
-    }
-    return v.op == Op::Add && is_var(v.b) && ConstValue(*g.program, v.a, c);
-}
-
-// the other operand of var + e, e + var or var - e; -1 if value is not one
-ExprId AddendOf(const Gen& g, std::int32_t var, ExprId value, bool& sub) {
-    const Expr& v = At(g, value);
-    if (v.kind != ExprKind::Binary || (v.op != Op::Add && v.op != Op::Sub)) {
-        return -1;
-    }
-    auto is_var = [&](ExprId id) {
-        const Expr& x = At(g, id);
-        return x.kind == ExprKind::VarRef && x.ref == var;
-    };
-    sub = v.op == Op::Sub;
-    if (is_var(v.a)) {
-        return v.b;
-    }
-    return !sub && is_var(v.b) ? v.a : -1;
-}
-
-bool IsPlain(const Opnd& o) {
-    if (o.in_a || o.size == 0) {
-        return false;
-    }
-    for (int k = 0; k < o.size; k++) {
-        if (o.b[k].kind != ByteKind::Imm && o.b[k].kind != ByteKind::Mem) {
-            return false;
-        }
-    }
-    return true;
-}
-
-void AddFixup(Gen& g, std::int32_t label, WideFix fix) {
-    WideFixup f;
-    f.label = label;
-    f.fix = fix;
-    g.wide_fixups.push_back(f);
-}
-
-// (set var value) with var's low byte in Y and its high byte at `high`
-void SetWide(Gen& g, ExprId value) {
-    std::int32_t var = g.wide->var;
-    AsmValue high = g.wide->high;
-    std::int32_t skip = NewLabel(g);
-    std::uint16_t c = 0;
-    if (StepOf(g, var, value, c)) {
-        if (c == 0) {
-            return;
-        }
-        if (c == 0xFFFF) {
-            // the high byte moves when the low byte goes from 0 to $FF
-            Emit(g, Mn::CPY, Mode::Imm, Num(0));
-            Branch(g, Mn::BNE, skip);
-            Emit(g, Mn::DEC, Mode::Abs, high);
-            AddFixup(g, skip, WideFix::Dec);
-            PlaceLabel(g, skip);
-            EmitPinned(g, Mn::DEY);
-            return;
-        }
-        if (c == 1) {
-            EmitPinned(g, Mn::INY);
-            Branch(g, Mn::BNE, skip);
-            Emit(g, Mn::INC, Mode::Abs, high);
-            AddFixup(g, skip, WideFix::Inc);
-        } else if (c < 0x100) {
-            Emit(g, Mn::TYA, Mode::Imp);
-            Emit(g, Mn::CLC, Mode::Imp);
-            Emit(g, Mn::ADC, Mode::Imm, Num(c));
-            EmitPinned(g, Mn::TAY);
-            Branch(g, Mn::BCC, skip);
-            Emit(g, Mn::INC, Mode::Abs, high);
-            AddFixup(g, skip, WideFix::Inc);
-        } else if (c > 0xFF00) {
-            Emit(g, Mn::TYA, Mode::Imp);
-            Emit(g, Mn::SEC, Mode::Imp);
-            Emit(g, Mn::SBC, Mode::Imm, Num((0x10000 - c) & 0xFF));
-            EmitPinned(g, Mn::TAY);
-            Branch(g, Mn::BCS, skip);
-            Emit(g, Mn::DEC, Mode::Abs, high);
-            AddFixup(g, skip, WideFix::Dec);
-        } else {
-            Emit(g, Mn::TYA, Mode::Imp);
-            Emit(g, Mn::CLC, Mode::Imp);
-            Emit(g, Mn::ADC, Mode::Imm, Num(c & 0xFF));
-            EmitPinned(g, Mn::TAY);
-            Emit(g, Mn::LDA, Mode::Abs, high);
-            Emit(g, Mn::ADC, Mode::Imm, Num(c >> 8));
-            Emit(g, Mn::STA, Mode::Abs, high);
-            AddFixup(g, skip, WideFix::Compute);
-        }
-        PlaceLabel(g, skip);
-        return;
-    }
-    bool sub = false;
-    ExprId addend = AddendOf(g, var, value, sub);
-    if (addend >= 0 && !HasEffects(*g.program, addend)) {
-        // both bytes of the addend are read around the TAY: keep them where Y cannot move them
-        Opnd o = Eval(g, addend, nullptr);
-        if (!IsPlain(o)) {
-            o = Snapshot(g, o);
-            if (!IsPlain(o)) {
-                Opnd t = NewTemp(g, 2);
-                CopyOpnd(g, o, t);
-                o = t;
-            }
-        }
-        Emit(g, Mn::TYA, Mode::Imp);
-        Emit(g, sub ? Mn::SEC : Mn::CLC, Mode::Imp);
-        OpA(g, sub ? Mn::SBC : Mn::ADC, o, 0);
-        EmitPinned(g, Mn::TAY);
-        Emit(g, Mn::LDA, Mode::Abs, high);
-        OpA(g, sub ? Mn::SBC : Mn::ADC, o, 1);
-        Emit(g, Mn::STA, Mode::Abs, high);
-        AddFixup(g, skip, WideFix::Compute);
-        PlaceLabel(g, skip);
-        return;
-    }
-    Opnd t = NewTemp(g, 2);
-    EvalInto(g, value, t);
-    LoadA(g, t, 0);
-    EmitPinned(g, Mn::TAY);
-    LoadA(g, t, 1);
-    Emit(g, Mn::STA, Mode::Abs, high);
-    AddFixup(g, skip, WideFix::Compute);
-    PlaceLabel(g, skip);
-}
-
-// each fixup's code, moved to just before its label (items from `first` on)
-void ApplyFixups(Gen& g, const std::vector<Derived>& used, const AsmValue& high,
-                 std::size_t first) {
-    std::vector<WideFixup> fixups = g.wide_fixups;
-    g.wide_fixups.clear();
-    if (used.empty()) {
-        return;
-    }
-    for (const WideFixup& f : fixups) {
-        std::size_t at = g.out->size();
-        for (std::size_t i = first; i < g.out->size(); i++) {
-            const AsmItem& item = (*g.out)[i];
-            if (item.kind == ItemKind::Label && item.value.sym == f.label) {
-                at = i;
-                break;
-            }
-        }
-        if (at == g.out->size()) {
-            continue;
-        }
-        std::size_t before = g.out->size();
-        FollowHigh(g, used, f.fix, high);
-        std::rotate(g.out->begin() + static_cast<std::ptrdiff_t>(at),
-                    g.out->begin() + static_cast<std::ptrdiff_t>(before), g.out->end());
-    }
-}
-
-// when the loop only steps the high byte (INC or DEC, for steps of 1) and reads it nowhere,
-// and a derived pointer with a constant base moves with it: those steps go, and the high byte
-// is worked out from that pointer after the loop (the returned pointer); else nullptr
-const Derived* DropHighSteps(Gen& g, const std::vector<Derived>& used, const AsmValue& high,
-                             std::size_t first) {
-    const Derived* rebuild = nullptr;
-    for (const Derived& d : used) {
-        if (d.var < 0 && !rebuild) {
-            rebuild = &d;
-        }
-    }
-    if (!rebuild) {
-        return nullptr;
-    }
-    std::vector<std::size_t> steps;
-    for (std::size_t i = first; i < g.out->size(); i++) {
-        const AsmItem& item = (*g.out)[i];
-        if (item.kind != ItemKind::Ins || item.value.sym != high.sym ||
-            item.value.offset != high.offset || item.mode == Mode::Rel) {
-            continue;
-        }
-        if ((item.mn != Mn::INC && item.mn != Mn::DEC) || item.mode != Mode::Abs) {
-            return nullptr;
-        }
-        steps.push_back(i);
-    }
-    for (std::size_t k = steps.size(); k-- > 0;) {
-        g.out->erase(g.out->begin() + static_cast<std::ptrdiff_t>(steps[k]));
-    }
-    return rebuild;
-}
-
-// the body ends with (set var (+ var 1)): with the test at the top, its BNE over the page
-// step goes straight back to the test
-bool EndsWithUnitStep(const Gen& g, ExprId body, std::int32_t var) {
-    const Expr& b = At(g, body);
-    if (b.kind != ExprKind::Do || b.count == 0) {
-        return false;
-    }
-    const Expr& last = At(g, ListItem(*g.program, b, b.count - 1));
-    if (last.kind != ExprKind::Set) {
-        return false;
-    }
-    const Expr& place = At(g, last.a);
-    std::uint16_t c = 0;
-    return place.kind == ExprKind::VarRef && place.ref == var && StepOf(g, var, last.b, c) &&
-           c == 1;
 }
 
 // the loop with the registers of `regs`; false (with nothing kept) if its code needed them
@@ -522,6 +418,21 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     g.loop_factors.resize(static_cast<std::size_t>(g.loop_depth));
     g.loop_factors.push_back(LoopFactor(g, id));
     g.loop_depth++;
+    if (regs.bump >= 0) {
+        // v + 1, once each time the loop starts; v = 255 never compares true
+        const Expr& cmp = At(g, regs.bump);
+        bool left = cmp.op == Op::Gt;
+        g.loop_depth--;
+        EvalA(g, left ? cmp.b : cmp.a);
+        Opnd t = NewTemp(g, 1);
+        Emit(g, Mn::CLC, Mode::Imp);
+        Emit(g, Mn::ADC, Mode::Imm, Num(1));
+        Emit(g, Mn::STA, Mode::Abs, t.b[0].value);
+        Branch(g, Mn::BCS, end);
+        g.loop_depth++;
+        g.bumped.push_back({regs.bump, t});
+    }
+    std::size_t top_at = 0;
     if (top_test) {
         PlaceLabel(g, top);
         GenBranch(g, e.a, false, end);
@@ -530,6 +441,7 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         g.loop_depth--;
         GenBranch(g, e.a, false, end);
         g.loop_depth++;
+        top_at = g.out->size();
         PlaceLabel(g, top);
     } else if (!fixed) {
         Jump(g, test);
@@ -548,7 +460,14 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         if (!rotate || Names(g, body_at, test)) {
             PlaceLabel(g, test);
         }
+        std::size_t bottom_at = g.out->size();
         GenBranch(g, e.a, true, top);
+        if (rotate) {
+            g.cost -= std::min(g.cost, TopLoadSaved(g, top_at, bottom_at));
+        }
+    }
+    if (regs.bump >= 0) {
+        g.bumped.pop_back();
     }
     g.loops.pop_back();
     PlaceLabel(g, end);

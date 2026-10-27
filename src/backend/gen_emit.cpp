@@ -74,8 +74,8 @@ void TrackIndexWrite(Gen& g, int r, Mn mn, Mode mode, const AsmValue& value) {
     c.known = false;
 }
 
-// the product of the factors of the loops around the code; a level past the known ones (code
-// that runs at the steps of a loop already done) weighs 4
+} // namespace
+
 std::uint64_t LoopWeight(const Gen& g) {
     std::uint64_t w = 1;
     for (int level = 0; level < g.loop_depth; level++) {
@@ -85,6 +85,8 @@ std::uint64_t LoopWeight(const Gen& g) {
     }
     return w;
 }
+
+namespace {
 
 // the register to index this byte with; mn decides which ones are possible
 int PickIndexReg(const Gen& g, const Index& index, Mn mn) {

@@ -120,6 +120,60 @@ std::string Gen::ByteWhile(int depth) {
     return text + ")";
 }
 
+// a while whose test compares a byte it reads against a variable the loop never sets, often
+// 255 or 0, the compare last in the test and the byte the body's first value (insertion sort)
+std::string Gen::BoundWhile(int depth) {
+    std::string c = Fresh("c");
+    std::string v = Fresh("v");
+    std::string guard = Fresh("gd");
+    std::string table = ByteTable();
+    std::string bound = loops_rng.Chance(25)   ? std::string("255")
+                        : loops_rng.Chance(20) ? std::string("0")
+                                               : NonLit(T::U8, 1);
+    std::string text = "(do (let " + c + " u8 " + NonLit(T::U8, 1) + ") (let " + v + " u8 " +
+                       bound + ") (let " + guard + " u8 0)";
+    scopes.emplace_back();
+    scopes.back().push_back(VarInfo{c, T::U8, true});
+    scopes.back().push_back(VarInfo{guard, T::U8, true});
+    std::string read =
+        table.empty() ? "(at wb (as u16 " + c + "))" : "(at " + table + " " + c + ")";
+    std::string forms[] = {"(> " + read + " " + v + ")", "(<= " + read + " " + v + ")",
+                           "(< " + v + " " + read + ")", "(>= " + v + " " + read + ")"};
+    std::string cmp = forms[loops_rng.Below(4)];
+    std::string limit = std::to_string(2 + loops_rng.Below(40));
+    std::string cond = loops_rng.Chance(20) ? "(and " + cmp + " (< " + guard + " " + limit + "))"
+                                            : "(and (< " + guard + " " + limit + ") " + cmp + ")";
+    std::vector<const VarInfo*> sinks = VarsOf(T::U8, true);
+    std::string body;
+    if (!sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        body += " (set " + sink + " " + read + ")";
+    }
+    body += " (set " + guard + " (+ " + guard + " 1))";
+    bool was_while = in_while;
+    in_while = false;
+    loops++;
+    if (loops_rng.Chance(30)) {
+        body += " (if " + Expr(T::Bool, 1) + (loops_rng.Chance(50) ? " (break))" : " (continue))");
+    }
+    if (loops_rng.Chance(40) && budget > 0) {
+        body += Body(depth - 1, 1);
+    }
+    body += " (set " + c + " " + Replace(kByteSteps[loops_rng.Below(6)], c) + ")";
+    loops--;
+    in_while = was_while;
+    text += " (while " + cond + body + ")";
+    if (!sinks.empty()) {
+        const std::string& sink =
+            sinks[static_cast<std::size_t>(loops_rng.Below(static_cast<int>(sinks.size())))]->name;
+        text += " (set " + sink + " (+ " + c + " " + guard + "))";
+    }
+    scopes.pop_back();
+    DropPointers();
+    return text + ")";
+}
+
 std::string Gen::WordWhile(int depth) {
     std::string n = Fresh("n");
     std::string d = Fresh("d");
@@ -424,9 +478,11 @@ std::string Gen::BitSteps(int depth) {
 }
 
 std::string Gen::LoopShape(int depth) {
-    switch (loops_rng.Below(5)) {
+    switch (loops_rng.Below(6)) {
     case 0:
         return ByteWhile(depth);
+    case 5:
+        return BoundWhile(depth);
     case 1:
         return WordWhile(depth);
     case 2:

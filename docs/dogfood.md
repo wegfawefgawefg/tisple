@@ -817,6 +817,41 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 30) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
 
+32. Race items 4 and 9, sort (2026-10-27). Two changes. The peephole's
+    register pass now knows what registers hold at the top of a loop: a scan
+    of a copy of the function, knowing nothing at loop labels, notes what
+    holds at each jump back to one; the real scan then meets that with what
+    falls in. The facts at those jumps held without assuming anything at
+    the label, and every change the scan makes keeps what registers and
+    memory hold, so they hold in the changed code too (N and Z showing A is
+    not carried over). The offsets of indexed bytes wrap now, so arr-1,Y
+    (arr+65535) is tracked. And a while test's compare e > v (or v < e) of
+    a u8 variable the loop never sets can be done as e >= t, with t = v + 1
+    worked out before the loop; v = 255 never compares greater, and the
+    compare is one of the test's and-ed parts, so then the loop does not
+    run (the carry of the add goes to the loop's end). It is one more set of
+    while choices (gen_while.cpp), with v out of the registers; it wins when
+    the body starts by loading the byte it compared, which the peephole then
+    drops at the loop top (the choice counts that, TopLoadSaved). Insertion
+    sort's inner loop was TXA / CMP arr-1,Y / BCC / LDA arr-1,Y / STA arr,Y /
+    DEY / BEQ; it is now LDA arr-1,Y / CMP t / BCS / STA arr,Y / DEY / BEQ, and
+    X keeps the outer counter. Tests: in tests/test_backend_while.cpp, the
+    four compare forms (<= and >= are not bumped: e <= 255 always holds, and
+    the first fuzz run with the new shape caught that the loop then skipped)
+    with v = 255 and 0, the compare first and last, a test too big to copy,
+    v an outer counter or a let, break and continue, an insertion sort; a fuzz
+    shape (BoundWhile: such a while, the bound often 255 or 0, the body's
+    first value the compared byte). Without the skip for 255, 16 of 3000 fuzz
+    programs and 5 tests fail; with t worked out from e instead of v, 1 and 5;
+    a loop label taking the jumps' state without meeting the fall-in, 176 and
+    32.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race sort | 423514 | 356260 (Oscar64 422725); 47 to 51 bytes |
+    | other race kernels, Life generations, plasma | (as after 31) | the same |
+    | programs/ sizes | snake 1024 code bytes, multi 205 | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

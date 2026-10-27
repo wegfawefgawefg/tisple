@@ -301,6 +301,9 @@ struct Gen {
     // let minus the counter
     std::vector<std::pair<std::int32_t, std::int32_t>> replaced;
     std::vector<Opnd> replaced_diff;
+    // compares of a while test against a byte variable the loop never sets, done against the
+    // variable plus one (a temporary set before the loop) instead: the compare and that temporary
+    std::vector<std::pair<ExprId, Opnd>> bumped;
     int while_pins = 0; // while loops being generated with variables pinned
     DivDone div;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
@@ -584,12 +587,28 @@ struct ForParts {
 // a u16 for loop whose body has a let that moves by one with the counter, the counter
 // replaced by it (gen_counter.cpp); false (nothing kept) if there is none
 bool ReplacedLoop(Gen& g, const ForParts& f);
+// the product of the factors of the loops around the code; a level past the known ones (code
+// that runs at the steps of a loop already done) weighs 4
+std::uint64_t LoopWeight(const Gen& g);
 // a read of a counter ReplacedLoop stands in for: the let minus their difference, into dst
 // or a temporary; false if id is not one
 bool ReadReplacedCounter(Gen& g, ExprId id, const Opnd* dst, Opnd& out);
 // var is such a counter: its memory is stale
 bool IsReplacedCounter(const Gen& g, std::int32_t var);
 void GenWhile(Gen& g, ExprId id);
+// gen_while_wide.cpp, a while loop's u16 variable in Y and memory: value is var + c (mod
+// 2^16) for a constant c
+bool StepOf(const Gen& g, std::int32_t var, ExprId value, std::uint16_t& c);
+// (set var value) with var's low byte in Y and its high byte at g.wide->high
+void SetWide(Gen& g, ExprId value);
+// each fixup's code, moved to just before its label (items from `first` on)
+void ApplyFixups(Gen& g, const std::vector<Derived>& used, const AsmValue& high, std::size_t first);
+// the high byte's steps dropped where a pointer with a constant base moves with it; that
+// pointer, to work the high byte out from after the loop, or nullptr
+const Derived* DropHighSteps(Gen& g, const std::vector<Derived>& used, const AsmValue& high,
+                             std::size_t first);
+// the body ends with (set var (+ var 1))
+bool EndsWithUnitStep(const Gen& g, ExprId body, std::int32_t var);
 // (set var value) when a while loop keeps var in a register; false if it does not
 bool SetPinnedVar(Gen& g, ExprId place, ExprId value);
 // an instruction that writes the register a loop keeps its variable in, on purpose
