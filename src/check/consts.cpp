@@ -143,22 +143,23 @@ bool FoldOption(Checker& ck, const Node& node, const std::string& label, std::ui
     return true;
 }
 
-void ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
+// :in names the one region there is besides main memory
+void ReadIn(Checker& ck, Var& var, const Node& key, const Node* value) {
+    if (!value || value->kind != NodeKind::Symbol || value->text != "aux") {
+        Err(ck, value ? *value : key, ":in takes aux, the one named region; write :in aux");
+        return;
+    }
+    if (var.placement.in_aux) {
+        Err(ck, key, ":in is given twice; keep one");
+        return;
+    }
+    var.placement.in_aux = true;
+}
+
+void ReadNumberOption(Checker& ck, Var& var, const Node& key, const Node& value) {
     const std::string& name = key.text;
-    if (name == ":in") {
-        Err(ck, key, ":in (named regions) is not in this subset yet; remove it");
-        return;
-    }
-    if (name != ":address" && name != ":align" && name != ":boundary") {
-        Err(ck, key, name + " is not a let option; use :address, :align or :boundary");
-        return;
-    }
-    if (!value) {
-        Err(ck, key, name + " needs a value; write " + name + " 256");
-        return;
-    }
     std::uint32_t number = 0;
-    if (!FoldOption(ck, *value, name, number)) {
+    if (!FoldOption(ck, value, name, number)) {
         return;
     }
     Placement& place = var.placement;
@@ -175,13 +176,65 @@ void ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
         return;
     }
     if (number == 0) {
-        Err(ck, *value, name + " 0 means nothing; use 1 or more, like " + name + " 256");
+        Err(ck, value, name + " 0 means nothing; use 1 or more, like " + name + " 256");
         return;
     }
     if (name == ":align") {
         place.align = number;
     } else {
         place.boundary = number;
+    }
+}
+
+// one option at key; gives how many items it took: :reserve stands alone, the rest take a value
+int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
+    const std::string& name = key.text;
+    if (name == ":reserve") {
+        if (var.placement.reserve) {
+            Err(ck, key, ":reserve is given twice; keep one");
+        }
+        var.placement.reserve = true;
+        return 1;
+    }
+    if (name == ":in") {
+        ReadIn(ck, var, key, value);
+        return 2;
+    }
+    if (name != ":address" && name != ":align" && name != ":boundary") {
+        Err(ck, key,
+            name + " is not a let option; use :address, :align, :boundary, :in aux or :reserve");
+        return 2;
+    }
+    if (!value) {
+        Err(ck, key, name + " needs a value; write " + name + " 256");
+        return 2;
+    }
+    ReadNumberOption(ck, var, key, *value);
+    return 2;
+}
+
+// :reserve is room at a fixed address with nothing in it; :in aux lives where lib/aux reaches
+void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_value) {
+    const Placement& place = var.placement;
+    const std::string& name = form.items[1].text;
+    if (place.reserve && !place.has_address) {
+        Err(ck, form,
+            ":reserve keeps memory at a fixed address; give it one: (let " + name +
+                " (array u8 8192) :address 0x2000 :reserve)");
+    }
+    if (place.reserve && has_value) {
+        Err(ck, form,
+            name + " is :reserve, memory the program reaches by address, so it has no value; "
+                   "drop the value or :reserve");
+    }
+    if (!place.in_aux || !place.has_address || var.type <= kErrorType) {
+        return;
+    }
+    std::uint32_t end = place.address + TypeOf(*ck.out, var.type).size;
+    if (place.address < 0x0200 || end > 0xC000) {
+        Err(ck, form,
+            name + " is in aux memory at an :address outside $0200-$BFFF, which lib/aux "
+                   "cannot reach; move it");
     }
 }
 
@@ -196,14 +249,15 @@ const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& hold
     }
     trimmed = form;
     trimmed.items.resize(first);
-    for (std::size_t i = first; i < form.items.size(); i += 2) {
+    for (std::size_t i = first; i < form.items.size();) {
         const Node& key = form.items[i];
         if (key.kind != NodeKind::Keyword) {
             Err(ck, key, "placement options come last, after the value");
+            i++;
             continue;
         }
         const Node* value = i + 1 < form.items.size() ? &form.items[i + 1] : nullptr;
-        ReadOption(ck, holder, key, value);
+        i += static_cast<std::size_t>(ReadOption(ck, holder, key, value));
     }
     return first < form.items.size() ? &form.items[first] : nullptr;
 }
@@ -231,7 +285,12 @@ void EvalConst(Checker& ck, std::int32_t index) {
     const Node* option = SplitOptions(ck, *cd.form, trimmed, holder);
     bool ok = FoldConstForm(ck, cd, trimmed);
     ConstDecl& done = ck.consts[static_cast<std::size_t>(index)];
-    if (ok && done.var >= 0) {
+    if (ok && done.var >= 0 && (holder.placement.in_aux || holder.placement.reserve)) {
+        Err(ck, *option,
+            std::string(holder.placement.in_aux ? ":in aux" : ":reserve") +
+                " is for top-level lets; make " + done.name + " a let");
+        ok = false;
+    } else if (ok && done.var >= 0) {
         ck.out->vars[static_cast<std::size_t>(done.var)].placement = holder.placement;
     } else if (ok && option) {
         Err(ck, *option,
@@ -387,8 +446,7 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
             continue;
         }
         const Node* value = i + 1 < form.items.size() ? &form.items[i + 1] : nullptr;
-        ReadOption(ck, var, item, value);
-        i++;
+        i += static_cast<std::size_t>(ReadOption(ck, var, item, value)) - 1;
     }
 
     TypeId type = -1;
@@ -442,6 +500,7 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
         }
     }
     var.type = type < 0 ? kErrorType : type;
+    CheckRegionOptions(ck, form, var, value_node != nullptr);
     ck.out->vars[static_cast<std::size_t>(index)] = var;
     RestoreContext(ck, std::move(saved));
 }

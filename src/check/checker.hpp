@@ -231,5 +231,8 @@ ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);
 ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string& field);
 // the Var a place is rooted at, or -1; through_load is set when it goes through a Load
 std::int32_t PlaceRoot(Checker& ck, ExprId place, bool& through_load);
+// after every body: a :reserve let is never named in code, and a let :in aux only as the
+// root of an addr_of
+void CheckRegionUses(Checker& ck);
 
 } // namespace tisple

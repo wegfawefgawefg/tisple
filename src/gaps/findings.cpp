@@ -178,7 +178,7 @@ std::uint64_t NoteCycles(const SiteMap& map, const Profiler& p, std::uint16_t ad
 bool IsStrided(const Compiled& compiled, const SiteMap& map, const Profiler& p,
                const FindOptions& options, std::uint32_t a) {
     const SiteStats& s = p.sites[a];
-    Mn mn = OpcodeInfoFor(compiled.image[a - compiled.origin]).mn;
+    Mn mn = OpcodeInfoFor(CompiledByte(compiled, static_cast<std::uint16_t>(a))).mn;
     if (!IsStoreMn(mn) || map.at[a].item < 0 || map.at[a].note < 0 || s.count < options.min_count ||
         s.count < 3 || s.last_step == 0 || s.volatile_count > 0) {
         return false;

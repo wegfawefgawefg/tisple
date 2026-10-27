@@ -397,6 +397,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
     for (std::size_t i = 0; i < out.functions.size(); i++) {
         CheckFunctionBody(ck, static_cast<std::int32_t>(i));
     }
+    CheckRegionUses(ck);
 
     std::vector<Progress> state(out.functions.size(), Progress::Pending);
     std::vector<std::int32_t> stack;

@@ -337,8 +337,8 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
 }
 
 // rom, snapshot or program into a fresh machine; then keys, then run
-int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
-                MachineWindowFn window) {
+int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySegment>& segments,
+                const MachineArgs& args, MachineWindowFn window) {
     std::unique_ptr<Apple2> a = NewApple2();
     std::string error;
     if (args.rom != nullptr) {
@@ -370,6 +370,12 @@ int RunWithArgs(const std::vector<uint8_t>* program, const MachineArgs& args,
             return 1;
         }
     } else if (program != nullptr) {
+        for (const MemorySegment& segment : segments) {
+            if (!LoadSegment(*a, segment, error)) {
+                std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+                return 1;
+            }
+        }
         if (!LoadProgram(*a, program->data(), program->size(), static_cast<uint16_t>(args.origin),
                          error)) {
             std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
@@ -429,14 +435,14 @@ int RunMachineCommand(int argc, char** argv, MachineWindowFn window) {
         return 1;
     }
     if (args.program == nullptr) {
-        return RunWithArgs(nullptr, args, window);
+        return RunWithArgs(nullptr, {}, args, window);
     }
     std::vector<uint8_t> program;
     if (!ReadFile(args.program, program)) {
         std::fprintf(stderr, "tisple machine: cannot read '%s'\n", args.program);
         return 1;
     }
-    return RunWithArgs(&program, args, window);
+    return RunWithArgs(&program, {}, args, window);
 }
 
 int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int argc, char** argv,
@@ -448,10 +454,11 @@ int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int a
     }
     args.disks.images[0] = image;
     args.disks.formats[0] = format;
-    return RunWithArgs(nullptr, args, window);
+    return RunWithArgs(nullptr, {}, args, window);
 }
 
-int RunMachineOnBinary(const std::vector<uint8_t>& binary, uint16_t origin, int argc, char** argv,
+int RunMachineOnBinary(const std::vector<uint8_t>& binary, uint16_t origin,
+                       const std::vector<MemorySegment>& segments, int argc, char** argv,
                        MachineWindowFn window) {
     MachineArgs args;
     if (!ParseArgs(argc, argv, false, args)) {
@@ -459,7 +466,7 @@ int RunMachineOnBinary(const std::vector<uint8_t>& binary, uint16_t origin, int 
         return 1;
     }
     args.origin = origin;
-    return RunWithArgs(&binary, args, window);
+    return RunWithArgs(&binary, segments, args, window);
 }
 
 } // namespace tisple

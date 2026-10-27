@@ -21,6 +21,11 @@ std::uint64_t NextRandom(std::uint64_t& s) {
 bool RunOnApple2(const Compiled& compiled, const ProfileRunOptions& options, Profiler& p,
                  ProfileRunResult& out, std::string& error) {
     std::unique_ptr<Apple2> a = NewApple2();
+    for (const MemorySegment& segment : compiled.segments) {
+        if (!LoadSegment(*a, segment, error)) {
+            return false;
+        }
+    }
     if (!LoadProgram(*a, compiled.image.data(), compiled.image.size(), compiled.origin, error)) {
         return false;
     }

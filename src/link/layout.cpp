@@ -5,12 +5,12 @@
 
 namespace tisple {
 
-const AddressRange kReservedRanges[5] = {
-    {0x0000, 0x0100},  // zero page
-    {0x0100, 0x0200},  // stack
-    {0x0400, 0x0800},  // text page 1
-    {0x2000, 0x4000},  // hi-res page 1
-    {0xC000, 0x10000}, // I/O, ROM
+const AddressRange kReservedRanges[4] = {
+    {0x0000, 0x0100}, // zero page
+    {0x0100, 0x0200}, // stack
+    {0x0400, 0x0800}, // text page 1
+    {0xC000, 0xD000}, // I/O and slot rom; the rom or the language card above is never
+                      // reached by default (data_end), only when the link adds the card
 };
 
 namespace {
@@ -27,7 +27,19 @@ struct Placer {
     Layout* out = nullptr;
     std::vector<Diagnostic>* errors = nullptr;
     std::vector<Used> used;
+    std::vector<Used> aux_used; // :in aux: a memory of its own
 };
+
+// one stretch automatic placement may fill
+struct Region {
+    std::uint32_t start = 0;
+    std::uint32_t end = 0;
+    bool aux = false;
+};
+
+bool InAux(const Placer& pl, std::int32_t id) {
+    return pl.program->vars[static_cast<std::size_t>(id)].placement.in_aux;
+}
 
 std::string Hex(std::uint32_t value) {
     char text[16];
@@ -92,8 +104,8 @@ bool BoundaryHolds(std::uint32_t start, std::uint32_t inside, std::uint32_t boun
     return boundary == 0 || start % boundary + inside <= boundary;
 }
 
-const Used* Overlap(const Placer& pl, std::uint32_t start, std::uint32_t end) {
-    for (const Used& used : pl.used) {
+const Used* Overlap(const Placer& pl, bool aux, std::uint32_t start, std::uint32_t end) {
+    for (const Used& used : aux ? pl.aux_used : pl.used) {
         if (start < used.end && used.start < end) {
             return &used;
         }
@@ -134,8 +146,9 @@ void PlaceFixed(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
                      Hex(AlignUp(start, var.placement.boundary)));
         return;
     }
+    bool aux = var.placement.in_aux;
     for (const AddressRange& range : pl.options->reserved) {
-        if (start < range.end && range.start < end) {
+        if (!aux && start < range.end && range.start < end) {
             AddError(*pl.errors, var.loc,
                      name + " (" + Hex(start) + "-" + Hex(end - 1) +
                          ") overlaps the program's code or frames (" + Hex(range.start) + "-" +
@@ -143,7 +156,7 @@ void PlaceFixed(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
             return;
         }
     }
-    if (const Used* other = Overlap(pl, start, end)) {
+    if (const Used* other = Overlap(pl, aux, start, end)) {
         const Var& other_var = pl.program->vars[static_cast<std::size_t>(other->var)];
         AddError(*pl.errors, var.loc,
                  name + " (" + Hex(start) + "-" + Hex(end - 1) + ") overlaps " +
@@ -152,27 +165,27 @@ void PlaceFixed(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
         return;
     }
     place.address = static_cast<std::uint16_t>(start);
-    pl.used.push_back(Used{start, end, id});
+    (aux ? pl.aux_used : pl.used).push_back(Used{start, end, id});
 }
 
 // start if the object fits there, else a later address worth trying
-std::uint32_t NextCandidate(const Placer& pl, std::uint32_t start, const VarPlace& place,
+std::uint32_t NextCandidate(const Placer& pl, bool aux, std::uint32_t start, const VarPlace& place,
                             std::uint32_t inside, std::uint32_t align, std::uint32_t boundary) {
     if (!BoundaryHolds(start, inside, boundary)) {
         return AlignUp(AlignUp(start + 1, boundary), align);
     }
     std::uint32_t end = start + place.size;
     for (const AddressRange& range : kReservedRanges) {
-        if (start < range.end && range.start < end) {
+        if (!aux && start < range.end && range.start < end) {
             return AlignUp(range.end, align);
         }
     }
     for (const AddressRange& range : pl.options->reserved) {
-        if (start < range.end && range.start < end) {
+        if (!aux && start < range.end && range.start < end) {
             return AlignUp(range.end, align);
         }
     }
-    if (const Used* taken = Overlap(pl, start, end)) {
+    if (const Used* taken = Overlap(pl, aux, start, end)) {
         return AlignUp(taken->end, align);
     }
     return start;
@@ -224,11 +237,12 @@ bool TablesInPages(const Tables& t, std::uint32_t& start) {
     return false;
 }
 
-// the first free start from `start` on, its tables in pages when `paged`; false if none
-bool FindStart(const Placer& pl, const VarPlace& place, const Tables& tables, bool paged,
-               std::uint32_t inside, std::uint32_t align, std::uint32_t boundary,
+// the first free start in the region from `start` on, its tables in pages when `paged`;
+// false if none
+bool FindStart(const Placer& pl, const Region& region, const VarPlace& place, const Tables& tables,
+               bool paged, std::uint32_t inside, std::uint32_t align, std::uint32_t boundary,
                std::uint32_t& start) {
-    while (start + place.size <= pl.options->data_end) {
+    while (start + place.size <= region.end) {
         if (paged) {
             std::uint32_t moved = start;
             if (!TablesInPages(tables, moved)) {
@@ -239,13 +253,25 @@ bool FindStart(const Placer& pl, const VarPlace& place, const Tables& tables, bo
                 continue;
             }
         }
-        std::uint32_t next = NextCandidate(pl, start, place, inside, align, boundary);
+        std::uint32_t next = NextCandidate(pl, region.aux, start, place, inside, align, boundary);
         if (next == start) {
             return true;
         }
         start = next;
     }
     return false;
+}
+
+// the regions automatic placement fills, in order
+std::vector<Region> DataRegions(const Placer& pl, bool aux) {
+    if (aux) {
+        return {Region{kAuxDataStart, kAuxDataEnd, true}};
+    }
+    std::vector<Region> regions = {Region{pl.options->data_start, pl.options->data_end, false}};
+    for (const AddressRange& range : pl.options->more_data) {
+        regions.push_back(Region{range.start, range.end, false});
+    }
+    return regions;
 }
 
 void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
@@ -262,22 +288,32 @@ void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
     // per plane, only one table has to stay inside a block
     std::uint32_t inside = per_plane ? TypeOf(*pl.program, var.type).count : place.size;
     Tables tables = PageTables(pl, id, place, per_plane);
-    std::uint32_t first = AlignUp(pl.options->data_start, align);
-    for (bool paged : {true, false}) {
-        if (paged && tables.tables == 0) {
-            continue;
-        }
-        std::uint32_t start = first;
-        if (FindStart(pl, place, tables, paged, inside, align, boundary, start)) {
-            place.address = static_cast<std::uint16_t>(start);
-            pl.used.push_back(Used{start, start + place.size, id});
-            return;
+    std::vector<Region> regions = DataRegions(pl, InAux(pl, id));
+    for (const Region& region : regions) {
+        std::uint32_t first = AlignUp(region.start, align);
+        for (bool paged : {true, false}) {
+            if (paged && tables.tables == 0) {
+                continue;
+            }
+            std::uint32_t start = first;
+            if (FindStart(pl, region, place, tables, paged, inside, align, boundary, start)) {
+                place.address = static_cast<std::uint16_t>(start);
+                (region.aux ? pl.aux_used : pl.used).push_back(Used{start, start + place.size, id});
+                return;
+            }
         }
     }
+    std::string where = regions.size() == 1 ? " in the data region " : " in the data regions ";
+    if (regions[0].aux) {
+        where = " in aux memory ";
+    }
+    for (std::size_t i = 0; i < regions.size(); i++) {
+        where += (i == 0 ? "" : ", ") + Hex(regions[i].start) + "-" + Hex(regions[i].end - 1);
+    }
+    pl.out->no_room = true;
     AddError(*pl.errors, var.loc,
-             "no room for " + ShortName(var) + " (" + std::to_string(place.size) +
-                 " bytes) in the data region " + Hex(pl.options->data_start) + "-" +
-                 Hex(pl.options->data_end - 1));
+             "no room for " + ShortName(var) + " (" + std::to_string(place.size) + " bytes)" +
+                 where);
 }
 
 } // namespace

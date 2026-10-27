@@ -21,6 +21,11 @@ std::string ShortName(const Var& var) {
 std::int32_t VarAt(const Program& program, const Layout& layout, std::uint32_t address) {
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const VarPlace& place = layout.vars[v];
+        // aux memory is another address space; :reserve memory is reached only by address
+        const Placement& kept = program.vars[v].placement;
+        if (kept.in_aux || kept.reserve) {
+            continue;
+        }
         if (place.size > 0 && address >= place.address && address < place.address + place.size) {
             return static_cast<std::int32_t>(v);
         }

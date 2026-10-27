@@ -88,8 +88,8 @@ void PlacementTests(TestResults& results) {
     // a split u16 table with :boundary keeps each byte table inside one page
     const tisple::VarPlace& rows = PlaceOf(placed, "t.rows");
     CHECK(results, rows.split && rows.plane_stride == 256 && rows.address % 256 + 192 <= 256);
-    // 0x1500 bytes do not fit below hi-res page 1, so they go above it
-    CHECK(results, PlaceOf(placed, "t.big").address >= 0x4000);
+    // the hi-res pages are ordinary memory until the program keeps one with :reserve
+    CHECK(results, PlaceOf(placed, "t.big").address < 0x2000 + 0x1500);
     for (std::size_t i = 0; i < placed.layout.vars.size(); i++) {
         const tisple::VarPlace& place = placed.layout.vars[i];
         bool fixed = placed.program.vars[i].placement.has_address;
@@ -132,8 +132,8 @@ void PlacementTests(TestResults& results) {
     CHECK(results, BuildText("(let buf (array u8 16))\n"
                              "(fn f () u8 (load (as (ptr u8) 0x2005)))")
                        .ok);
-    ExpectError(results, "(let a (array u8 40000))",
-                "t.tsp:1:6: no room for a (40000 bytes) in the data region $0C00-$BFFF");
+    ExpectError(results, "(let a (array u8 50000))",
+                "t.tsp:1:6: no room for a (50000 bytes) in the data region $0C00-$BFFF");
 }
 
 // every byte table of this array inside one page

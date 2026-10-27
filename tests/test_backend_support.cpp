@@ -72,7 +72,8 @@ bool SameGlobals(const Diff& d, std::string& message) {
     const tisple::Program& program = d.c->built.program;
     const tisple::Layout& layout = d.c->code.layout;
     for (std::size_t v = 0; v < program.vars.size(); v++) {
-        if (program.vars[v].function >= 0) {
+        // aux memory is out of both the interpreter's and the simulator's reach
+        if (program.vars[v].function >= 0 || program.vars[v].placement.in_aux) {
             continue;
         }
         const tisple::VarPlace& place = layout.vars[v];

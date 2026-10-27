@@ -16,7 +16,8 @@ std::string BytesText(const Compiled& c, const AsmItem& item) {
     std::string text;
     for (std::uint32_t i = 0; i < item.size && i < 3; i++) {
         char byte[4];
-        std::snprintf(byte, sizeof(byte), "%02X ", c.image[item.address - c.origin + i]);
+        std::snprintf(byte, sizeof(byte), "%02X ",
+                      CompiledByte(c, static_cast<std::uint16_t>(item.address + i)));
         text += byte;
     }
     if (item.size > 3) {
