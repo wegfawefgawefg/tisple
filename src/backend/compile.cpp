@@ -100,8 +100,8 @@ void MakeSymbols(Backend& be) {
     for (std::int32_t s : {be.scratch, be.rt_a, be.rt_b, be.rt_r, be.rt_s}) {
         be.as.symbols[static_cast<std::size_t>(s)].zp = true;
     }
-    const char* names[kRuntimeCount] = {"rt.mul8",   "rt.mul16", "rt.divu8",
-                                        "rt.divu16", "rt.divs8", "rt.divs16"};
+    const char* names[kRuntimeCount] = {"rt.mul8",  "rt.mul16",  "rt.divu8", "rt.divu16",
+                                        "rt.divs8", "rt.divs16", "rt.mul8x8"};
     for (int r = 0; r < kRuntimeCount; r++) {
         be.rt_sym[r] = NewSym(be, names[r], SymRole::Label, -1);
     }

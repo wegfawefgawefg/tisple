@@ -473,9 +473,25 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
     }
     Opnd b = Eval(g, e.b, nullptr);
     if (op == Op::Mul) {
+        // a byte times a byte is the whole product of two bytes; with one byte, it goes
+        // second, where the routine skips its zero high byte
+        bool a_byte = KnownImm(g, a, 1) == 0 || MaxOf(g, e.a) <= 0xFF;
+        bool b_byte = KnownImm(g, b, 1) == 0 || MaxOf(g, e.b) <= 0xFF;
+        if (a_byte && !b_byte) {
+            std::swap(a, b);
+            std::swap(a_byte, b_byte);
+        }
+        Opnd d = dst ? *dst : NewTemp(g, 2);
+        if (a_byte && b_byte) {
+            LoadA(g, b, 0);
+            Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
+            LoadA(g, a, 0);
+            CallRuntime(g, Runtime::Mul8x8);
+            StoreAX(g, d);
+            return d;
+        }
         CopyOpnd(g, a, MemOpnd(SymValue(g.be->rt_a), 2, 1));
         CopyOpnd(g, b, MemOpnd(SymValue(g.be->rt_b), 2, 1));
-        Opnd d = dst ? *dst : NewTemp(g, 2);
         CallRuntime(g, Runtime::Mul16);
         StoreAX(g, d);
         return d;

@@ -60,6 +60,7 @@ int main() {
     tisple_tests::RunBackendTableTests(results);
     tisple_tests::RunBackendJsrTests(results);
     tisple_tests::RunBackendWhileTests(results);
+    tisple_tests::RunBackendMulTests(results);
     tisple_tests::RunBackendProgramTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);

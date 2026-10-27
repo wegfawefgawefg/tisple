@@ -574,6 +574,31 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | life step / draw (cycle report) | 137300 / 41888 | 137389 / 41912 (2 TXA for LDA, but the code is 2 bytes shorter, so Life's worlds start 2 bytes lower and more rows cross pages) |
     | Life generations, plasma | 56, 243 | the same |
 
+23. Race item 2, multiply (2026-10-27). rt.mul16 shifted the whole 16-bit
+    multiplier right and the multiplicand left, both in memory, and tested
+    the multiplier with LDA/ORA every bit; two zero-extended bytes went to it
+    too. Now (src/backend/runtime.cpp) the product's low 16 bits are split by
+    bytes: a0 * b0 is the whole product of the low bytes, the textbook
+    shift-and-add unrolled (the multiplier's bits leave the bottom of one byte
+    as the product's low byte comes in at the top, the high byte builds up in
+    A: 12 cycles a bit), and a1 * b0 + a0 * b1 only reaches the high byte, so
+    each is a byte multiply kept to 8 bits that ends when its multiplier runs
+    out and is skipped for a zero high byte. Two operands whose high bytes are
+    known zero, or whose values stay below 256, call the new rt.mul8x8 (the
+    whole 16-bit product of two bytes); with one byte, it goes second, where
+    rt.mul16 skips its zero high byte. Tests: tests/test_backend_mul.cpp (two
+    widened bytes for every pair, byte times word both ways round, words
+    with zero high bytes only at run time, signed operands); calling the byte
+    routine for a value up to $FFF fails it.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race mul8 | 95624 | 43774 (Oscar64 63165) |
+    | race mul16 | 86293 | 63443 (Oscar64 65477) |
+    | race mandel | 9141874 | 7185582 (Oscar64 7601337) |
+    | 16-bit multiply 1234*5678, $FFFF*$FFFF | 572, 773 | 419, 537; 66 to 159 bytes with the routine |
+    | other race kernels, Life generations, plasma | (as after 22) | the same |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

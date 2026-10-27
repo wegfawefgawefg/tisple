@@ -59,6 +59,7 @@ enum class Runtime : std::uint8_t {
     DivU16, // rt_a / rt_b -> rt_a, remainder in rt_r
     DivS8,  // signed, same places
     DivS16,
+    Mul8x8, // A * rt_b -> A/X: bytes, the whole product
     Count,
 };
 constexpr int kRuntimeCount = static_cast<int>(Runtime::Count);

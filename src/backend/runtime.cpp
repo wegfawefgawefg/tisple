@@ -64,36 +64,90 @@ void Mul8(Writer& w) {
     w.Op(Mn::RTS);
 }
 
-// rt_a * rt_b -> A/X (low 16 bits), sum kept in rt_r
-void Mul16(Writer& w) {
-    Backend& be = *w.be;
-    std::int32_t add = w.Label("mul16.add");
-    std::int32_t shift = w.Label("mul16.shift");
-    std::int32_t test = w.Label("mul16.test");
+// the classic shift-and-add for a byte times a byte, unrolled: the multiplier's bits leave
+// at the bottom of mult as the product's low byte comes in at the top, and the high byte
+// builds up in A; mcand is added for each set bit. A ends with the high byte, mult with the
+// low byte
+void Mul8x8Steps(Writer& w, AsmValue mcand, AsmValue mult, const std::string& name) {
     w.Imm(Mn::LDA, 0);
-    w.Mem(Mn::STA, be.rt_r);
-    w.Mem(Mn::STA, be.rt_r, 1);
-    w.Br(Mn::BEQ, test);
+    w.Op(Mn::LSR, Mode::Abs, mult);
+    for (int bit = 0; bit < 8; bit++) {
+        std::int32_t skip = w.Label(name + ".skip" + std::to_string(bit));
+        w.Br(Mn::BCC, skip);
+        w.Op(Mn::CLC);
+        w.Op(Mn::ADC, Mode::Abs, mcand);
+        w.Place(skip);
+        w.Op(Mn::ROR, Mode::Acc);
+        w.Op(Mn::ROR, Mode::Abs, mult);
+    }
+}
+
+// A * rt_b -> A (low), X (high): both bytes, the whole 16-bit product
+void Mul8x8(Writer& w) {
+    Backend& be = *w.be;
+    w.Mem(Mn::STA, be.rt_a);
+    Mul8x8Steps(w, SymValue(be.rt_a), SymValue(be.rt_b), "mul8x8");
+    w.Op(Mn::TAX);
+    w.Mem(Mn::LDA, be.rt_b);
+    w.Op(Mn::RTS);
+}
+
+// A += m * n (8 bits), the carry clear: m shifts left, n right, until n has no bits left; m
+// and n are lost
+void MulLowSteps(Writer& w, AsmValue m, AsmValue n, const std::string& name) {
+    std::int32_t add = w.Label(name + ".add");
+    std::int32_t shift = w.Label(name + ".shift");
+    std::int32_t test = w.Label(name + ".test");
+    w.Br(Mn::BCC, test);
     w.Place(add);
     w.Op(Mn::CLC);
-    w.Mem(Mn::LDA, be.rt_r);
-    w.Mem(Mn::ADC, be.rt_a);
-    w.Mem(Mn::STA, be.rt_r);
-    w.Mem(Mn::LDA, be.rt_r, 1);
-    w.Mem(Mn::ADC, be.rt_a, 1);
-    w.Mem(Mn::STA, be.rt_r, 1);
+    w.Op(Mn::ADC, Mode::Abs, m);
     w.Place(shift);
-    w.Mem(Mn::ASL, be.rt_a);
-    w.Mem(Mn::ROL, be.rt_a, 1);
+    w.Op(Mn::ASL, Mode::Abs, m);
     w.Place(test);
-    w.Mem(Mn::LSR, be.rt_b, 1);
-    w.Mem(Mn::ROR, be.rt_b);
+    w.Op(Mn::LSR, Mode::Abs, n);
     w.Br(Mn::BCS, add);
-    w.Mem(Mn::LDA, be.rt_b);
-    w.Mem(Mn::ORA, be.rt_b, 1);
     w.Br(Mn::BNE, shift);
-    w.Mem(Mn::LDA, be.rt_r);
-    w.Mem(Mn::LDX, be.rt_r, 1);
+}
+
+// rt_a * rt_b -> A/X, the low 16 bits: a0 * b0 is the whole product of the low bytes, and
+// a1 * b0 + a0 * b1 only reaches the high byte, so it is two byte multiplies kept to 8 bits,
+// each skipped when a high byte is zero and ending when its multiplier runs out
+void Mul16(Writer& w) {
+    Backend& be = *w.be;
+    AsmValue m = SymValue(be.rt_r);
+    AsmValue n = SymValue(be.rt_r, 1);
+    std::int32_t second = w.Label("mul16.second");
+    std::int32_t low = w.Label("mul16.low");
+    // rt_s = a1 * b0 + a0 * b1, mod 256
+    w.Imm(Mn::LDA, 0);
+    w.Mem(Mn::STA, be.rt_s);
+    w.Mem(Mn::LDA, be.rt_a, 1);
+    w.Br(Mn::BEQ, second);
+    w.Op(Mn::STA, Mode::Abs, m);
+    w.Mem(Mn::LDA, be.rt_b);
+    w.Op(Mn::STA, Mode::Abs, n);
+    w.Imm(Mn::LDA, 0);
+    w.Op(Mn::CLC);
+    MulLowSteps(w, m, n, "mul16.hi1");
+    w.Mem(Mn::STA, be.rt_s);
+    w.Place(second);
+    w.Mem(Mn::LDA, be.rt_b, 1);
+    w.Br(Mn::BEQ, low);
+    w.Op(Mn::STA, Mode::Abs, n);
+    w.Mem(Mn::LDA, be.rt_a);
+    w.Op(Mn::STA, Mode::Abs, m);
+    w.Mem(Mn::LDA, be.rt_s);
+    w.Op(Mn::CLC);
+    MulLowSteps(w, m, n, "mul16.hi2");
+    w.Mem(Mn::STA, be.rt_s);
+    // a0 * b0, its high byte plus rt_s
+    w.Place(low);
+    Mul8x8Steps(w, SymValue(be.rt_a), SymValue(be.rt_b), "mul16.lo");
+    w.Op(Mn::CLC);
+    w.Mem(Mn::ADC, be.rt_s);
+    w.Op(Mn::TAX);
+    w.Mem(Mn::LDA, be.rt_b);
     w.Op(Mn::RTS);
 }
 
@@ -238,7 +292,7 @@ void EmitRuntime(Backend& be, std::vector<AsmItem>& out) {
     Writer w;
     w.be = &be;
     w.out = &out;
-    void (*bodies[kRuntimeCount])(Writer&) = {Mul8, Mul16, DivU8, DivU16, DivS8, DivS16};
+    void (*bodies[kRuntimeCount])(Writer&) = {Mul8, Mul16, DivU8, DivU16, DivS8, DivS16, Mul8x8};
     for (int r = 0; r < kRuntimeCount; r++) {
         if (!be.rt_used[r]) {
             continue;
