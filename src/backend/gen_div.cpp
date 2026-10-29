@@ -78,21 +78,33 @@ bool CanReuse(const Gen& g, const Expr& e) {
     return !ResultsTouched(g, d.at);
 }
 
+// The operands that need code are worked out straight into rt_a and rt_b, not into
+// temporaries copied there: the divisor always (nothing runs between it and the call but the
+// dividend's load), the dividend when the divisor cannot call a routine that sets rt_a.
 void RuntimeDiv8(Gen& g, const Expr& e, bool is_signed) {
+    AsmValue rt_a = SymValue(g.be->rt_a);
     Opnd a = TrySimple(g, e.a);
+    bool a_placed = false;
     if (a.size == 0 || MayWriteOpnd(g, e.b, a)) {
         EvalA(g, e.a);
-        a = SpillA(g);
+        if (UsesRuntime(*g.program, e.b)) {
+            a = SpillA(g);
+        } else {
+            Emit(g, Mn::STA, Mode::Abs, rt_a);
+            a_placed = true;
+        }
     }
     Opnd b = TrySimple(g, e.b);
     if (b.size == 0) {
         EvalA(g, e.b);
-        b = SpillA(g);
+    } else {
+        LoadA(g, b, 0);
     }
-    LoadA(g, b, 0);
     Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
-    LoadA(g, a, 0);
-    Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_a));
+    if (!a_placed) {
+        LoadA(g, a, 0);
+        Emit(g, Mn::STA, Mode::Abs, rt_a);
+    }
     CallRuntime(g, is_signed ? Runtime::DivS8 : Runtime::DivU8);
     Remember(g, e, true, false);
     if (e.op == Op::Mod) {
@@ -113,15 +125,23 @@ Opnd ReuseDiv16(Gen& g, const Expr& e, const Opnd* dst) {
     return d;
 }
 
+// the dividend is a (EvalDiv16 worked it out into rt_a when neither side can call a
+// routine); the divisor goes straight into rt_b when it cannot either
 Opnd RuntimeDiv16(Gen& g, const Expr& e, bool is_signed, Opnd a, const Opnd* dst) {
     if (MayWriteOpnd(g, e.b, a)) {
         a = Snapshot(g, a);
     }
-    Opnd b = Eval(g, e.b, nullptr);
     Opnd rt_a = MemOpnd(SymValue(g.be->rt_a), 2, 1);
+    Opnd rt_b = MemOpnd(SymValue(g.be->rt_b), 2, 1);
     Opnd rt_r = MemOpnd(SymValue(g.be->rt_r), 2, 1);
-    CopyOpnd(g, a, rt_a);
-    CopyOpnd(g, b, MemOpnd(SymValue(g.be->rt_b), 2, 1));
+    if (UsesRuntime(*g.program, e.b)) {
+        Opnd b = Eval(g, e.b, nullptr);
+        CopyOpnd(g, a, rt_a);
+        CopyOpnd(g, b, rt_b);
+    } else {
+        EvalInto(g, e.b, rt_b);
+        CopyOpnd(g, a, rt_a);
+    }
     CallRuntime(g, is_signed ? Runtime::DivS16 : Runtime::DivU16);
     Remember(g, e, true, false);
     Opnd d = dst ? *dst : NewTemp(g, 2);
@@ -236,10 +256,14 @@ Opnd EvalDiv16(Gen& g, ExprId id, const Expr& e, const Opnd* dst) {
     if (fixed && is_signed && DivSignedConst16(g, id, e, SignedValue(kind, c), dst, out)) {
         return out;
     }
-    Opnd a = Eval(g, e.a, nullptr);
     if (!fixed || is_signed || !IsSmallDivisor(c)) {
+        Opnd rt_a = MemOpnd(SymValue(g.be->rt_a), 2, 1);
+        // a dividend that calls a routine itself may set rt_a before it is done
+        bool direct = !UsesRuntime(*g.program, e.a) && !UsesRuntime(*g.program, e.b);
+        Opnd a = Eval(g, e.a, direct ? &rt_a : nullptr);
         return RuntimeDiv16(g, e, is_signed, a, dst);
     }
+    Opnd a = Eval(g, e.a, nullptr);
     return DivSmallConst16(g, id, e, a, c, dst);
 }
 
