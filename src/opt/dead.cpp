@@ -30,7 +30,8 @@ Action DeadValue(const Pass& p, ExprId value, const char* what, std::int32_t var
     if (IsPure(p, value)) {
         return Make(Action::Drop, what, var);
     }
-    if (IsScalar(p, value)) {
+    // a scalar value as a statement, as code may write it; a do with a value never is one
+    if (IsScalar(p, value) && At(p, value).kind != ExprKind::Do) {
         return Make(Action::Replace, what, var, value);
     }
     return Action();

@@ -19,6 +19,12 @@ std::string GenerateProgram(std::uint64_t seed);
 constexpr int kEntryPercent = 25;
 std::string GenerateEntryProgram(std::uint64_t seed);
 
+// for one seed in kDeadPercent hundred, the seed's program with dead work and work that only
+// looks dead (fuzz_gen_dead.cpp) among its statements, for the mid-level passes; "" for the
+// others. A program of its own too
+constexpr int kDeadPercent = 25;
+std::string GenerateDeadProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

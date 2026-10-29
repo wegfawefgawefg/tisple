@@ -1,7 +1,8 @@
 // generative differential fuzzing: random programs on the 6502 against the interpreter.
 // TISPLE_FUZZ=N runs N programs (default 300), TISPLE_FUZZ_SEED picks the first seed,
 // TISPLE_FUZZ_CYCLES=1 prints each program's cycles (to compare two backends seed by seed).
-// A seed in four also runs a second program, with loops entered by a jump ("(entries)").
+// A seed in four also runs a second program, with loops entered by a jump ("(entries)"), and
+// one in four a third, with dead work for the mid-level passes ("(dead)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -38,7 +39,7 @@ struct FuzzStats {
 };
 
 // every failing seed gets a line; the first three get their program too. `variant` is "" for
-// the seed's program, " (entries)" for its second one
+// the seed's program, " (entries)" or " (dead)" for the others
 void Report(const char* what, std::uint64_t seed, const char* variant, const std::string& text,
             const std::string& why, std::uint64_t count) {
     std::fprintf(stderr, "fuzz %s, seed %llu%s: %s\n", what, static_cast<unsigned long long>(seed),
@@ -156,6 +157,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string entries = GenerateEntryProgram(seed);
         if (!entries.empty()) {
             FuzzOne(seed, " (entries)", entries, stats);
+        }
+        std::string dead = GenerateDeadProgram(seed);
+        if (!dead.empty()) {
+            FuzzOne(seed, " (dead)", dead, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "
