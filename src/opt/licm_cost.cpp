@@ -286,6 +286,33 @@ std::int64_t KnownTrips(const Pass& p, ExprId loop, ExprId before) {
     return from >= to ? 0 : (to - from + step - 1) / step;
 }
 
+ExprId CounterBefore(const Pass& p, ExprId list, std::uint32_t index) {
+    if (index == 0) {
+        return -1;
+    }
+    const Expr& d = At(p, list);
+    const Expr& loop = At(p, Item(p, d, index));
+    ExprId before = Item(p, d, index - 1);
+    if (loop.kind != ExprKind::While) {
+        return before;
+    }
+    const Expr& cond = At(p, loop.a);
+    if (cond.kind != ExprKind::Binary || At(p, cond.a).kind != ExprKind::VarRef) {
+        return before;
+    }
+    // lets of other variables cannot write the counter
+    for (std::uint32_t i = index; i > 0; i--) {
+        const Expr& item = At(p, Item(p, d, i - 1));
+        if (item.kind != ExprKind::Let) {
+            break;
+        }
+        if (item.ref == At(p, cond.a).ref) {
+            return Item(p, d, i - 1);
+        }
+    }
+    return before;
+}
+
 bool BodyRuns(const Pass& p, ExprId loop) {
     const Expr& e = At(p, loop);
     std::uint16_t cond = 0;

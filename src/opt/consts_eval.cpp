@@ -1,7 +1,7 @@
 // Values from the values of their operands, for constant propagation (consts_walk.cpp):
 // the target's arithmetic (check/arith.hpp, as the interpreter does it), const array reads,
 // and what holds whatever the operands are: x * 0, x & 0, x | all ones, a shift by the
-// width or more, (- x x), (^ x x), (% x x), (= x x) and the like.
+// width or more, (- x x), (^ x x), (% x x), (= x x) and the like, (+ x (~ x)).
 
 #include "backend/analysis.hpp"
 #include "check/arith.hpp"
@@ -33,6 +33,25 @@ bool SameOperands(const Pass& p, const Expr& e, Val& v) {
     default:
         return false;
     }
+}
+
+// x with (~ x): (+ x (~ x)), (| x (~ x)) and (^ x (~ x)) are all ones, (& x (~ x)) is 0 (no
+// bit is set in both, so the sum never carries)
+bool WithComplement(const Pass& p, const Expr& e, Val& v) {
+    bool add = e.op == Op::Add || e.op == Op::Or || e.op == Op::Xor;
+    if ((!add && e.op != Op::And) || !Steady(p, e.a) || !Steady(p, e.b)) {
+        return false;
+    }
+    for (int side = 0; side < 2; side++) {
+        const Expr& flip = At(p, side == 0 ? e.b : e.a);
+        ExprId other = side == 0 ? e.a : e.b;
+        if (flip.kind == ExprKind::Unary && flip.op == Op::BitNot && flip.type == e.type &&
+            SameExpr(*p.program, flip.a, other)) {
+            v = ConstOf(p, e.type, add ? 0xFFFF : 0);
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -150,7 +169,7 @@ Val BinaryValue(const Pass& p, const Expr& e, Val a, Val b) {
         return ConstOf(p, e.type, ones);
     }
     Val same;
-    if (SameOperands(p, e, same)) {
+    if (SameOperands(p, e, same) || WithComplement(p, e, same)) {
         return same;
     }
     // shifted out entirely (a signed >> keeps the sign)

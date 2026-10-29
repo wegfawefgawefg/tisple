@@ -1,0 +1,11 @@
+(let g0 u8)
+(let wb (array u8 1024))
+(fn main () u8
+    (let t u16 (+ (as u16 g0) 300))
+    (let n u8 0)
+    (while (< n 2)
+        (let v u16 t)
+        (set v (+ v 1))
+        (set (at wb v) 1)
+        (set n (+ n 1)))
+    0)

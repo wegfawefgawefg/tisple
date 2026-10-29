@@ -20,6 +20,8 @@ struct Compiled {
 };
 
 Compiled CompileText(const std::string& text, const std::vector<tisple::VirtualFile>& extra = {});
+// the same with these mid-level pass options
+Compiled CompileText(const std::string& text, const tisple::OptOptions& opt);
 Compiled CompileFile(const std::string& path);
 // as `tisple build` compiles it: functions main never calls are left out, so only main can
 // be called (the others above keep every function, for calls by address)

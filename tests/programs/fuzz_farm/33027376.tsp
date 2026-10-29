@@ -1,0 +1,5 @@
+(struct S ((a u8) (b i16)))
+(let g0 u8)
+(let wb (array u8 1024))
+(let gs S)
+(fn main () i16 (do (let c22 u8 0) (while (< c22 5) (set c22 (+ c22 1)) (do (let s23 u16 1) (let v24 u16 (+ (as u16 g0) 300)) (let gd26 u8 0) (while (< gd26 2) (set v24 (+ s23 v24)) (set gd26 (+ gd26 1)) (set (at wb v24) gd26)) (set g0 1)))) gs.b)

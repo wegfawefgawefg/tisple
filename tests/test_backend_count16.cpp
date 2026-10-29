@@ -81,10 +81,13 @@ void TestByteEnds(TestResults& results) {
         for (std::uint16_t x = 0; x < 256; x += x < 240 ? 3 : 1) {
             CheckRun(results, text, x);
         }
-        // the byte ends compare as bytes
+        // the byte ends compare as bytes (collapse off: it would add the steps up at once)
+        tisple::OptOptions loops;
+        loops.disabled = {"collapse"};
         Compiled c = CompileText("(let g u16 0)\n(fn f ((x u8)) void\n"
                                  "    (for n " +
-                                 t + " 3 (as " + t + " (& x 0x3F)) (set g (+ g 2))))");
+                                     t + " 3 (as " + t + " (& x 0x3F)) (set g (+ g 2))))",
+                                 loops);
         CHECK(results, CountMn(c, "t.f", tisple::Mn::SBC) == 0);
     }
 }

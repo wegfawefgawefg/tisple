@@ -24,7 +24,7 @@ std::string With(const std::string& text) {
 
 // t.f keeps want ifs and matches (decided branches are cut by constant propagation)
 void ExpectBranches(TestResults& results, const char* text, int want) {
-    Opted o = Optimize(With(text));
+    Opted o = Optimize(With(text), NoUnroll());
     int got = CountKind(o, "t.f", ExprKind::If) + CountKind(o, "t.f", ExprKind::Match);
     if (got != want) {
         std::fprintf(stderr, "%d branches, not %d:\n%s\n", got, want, text);
@@ -81,7 +81,7 @@ void Undecided(TestResults& results) {
          "(fn f ((x u8)) u8 (if (and (> (bump) 4) (< (& x 7) 0)) (set g 1)) g)"),
     };
     for (const char* text : kept) {
-        Opted o = Optimize(With(text));
+        Opted o = Optimize(With(text), NoUnroll());
         int got = CountKind(o, "t.f", ExprKind::If) + CountKind(o, "t.f", ExprKind::Match);
         if (got == 0) {
             std::fprintf(stderr, "a branch went:\n%s\n", text);

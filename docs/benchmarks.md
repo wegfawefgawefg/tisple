@@ -74,3 +74,4 @@ variable's name); zero-page allocation moves them.
 | 2026-10-29 | (backend: division early outs, signed constant divisors, multiplies by run counts) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |
 | 2026-10-29 | (mid-level slice 4: loop collapse, value ranges, unread arguments) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |
 | 2026-10-29 | (backend: called-once inlining, counted copies, byte counters, match tables, shifts, 16-bit runs) | life, plasma | generations, frames in 10 s | 56, 243 (230, 975 in 40.92 M cycles, as before) |
+| 2026-10-29 | (mid-level slice 5: variable ranges, unstored elements, unrolling, unswitching, unused returns) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |

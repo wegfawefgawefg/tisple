@@ -5,15 +5,18 @@
 //     (for i T a b body)  ->  (if (< a b) body)
 //   with no test when the shapes of a and b say the body runs (-4 below (& x 7)), and nothing
 //   when they say it never does. a and b are still worked out once, in order.
-// - A counting while, (let c v) just before and (while (< c k) ... (set c (+ c s)) ...),
+// - A counting while, (let c v) just before (lets of other variables may stand between) and
+//   (while (< c k) ... (set c (+ c s)) ...),
 //   whose other statements do not read c: the body once and c set to where it ends.
 // - Accumulators, (set x (+ x k)) with x read nowhere else, add k once per pass:
 //   (set x (+ x (* k n))) for n passes, (^ x k) when n is odd, (| x k) and (& x k) once.
-//   Only when n is known, but for | and &.
+//   Only when n is known, but for | and &; or, for + and - in a for, from b - a worked out
+//   before it (collapse_count.cpp).
 // - A body that reads its counter and whose last pass decides: a for with a literal range
 //   runs that pass with the counter's last value put in, a counting while sets the counter
 //   to where its last pass starts and runs that pass.
-// A loop that may end its pass early (break, continue, return) is left alone.
+// A loop that may end its pass early (break, continue, return) is left alone, but for
+// (if x (continue)) items, which first become elses of the rest (collapse_continue.cpp).
 
 #include "opt/collapse.hpp"
 
@@ -26,6 +29,7 @@ namespace {
 
 struct Collapser {
     Pass* p = nullptr;
+    std::int32_t function = -1; // the one being walked
     MemoryFacts memory;
     std::uint64_t changes = 0;
 };
@@ -70,8 +74,9 @@ ExprId NewSet(Pass& p, std::int32_t var, ExprId value, const Loc& loc) {
 }
 
 // what an accumulator does over n passes (n of at least one; -1 when not known, which only
-// | and & take): its new statement, or -1 when it ends where it started
-ExprId Accumulate(Pass& p, const Accumulator& acc, std::int64_t n) {
+// | and & take, and + and - when count, a u16 local, holds it): its new statement, or -1 when
+// it ends where it started
+ExprId Accumulate(Pass& p, const Accumulator& acc, std::int64_t n, std::int32_t count_var) {
     Loc loc = At(p, acc.stmt).loc;
     TypeId type = VarOf(p, acc.var).type;
     switch (acc.op) {
@@ -82,6 +87,14 @@ ExprId Accumulate(Pass& p, const Accumulator& acc, std::int64_t n) {
         return n % 2 == 1 ? acc.stmt : -1;
     default: {
         ExprId count = NewLiteral(p, type, static_cast<std::uint32_t>(n), loc);
+        if (count_var >= 0) {
+            Expr convert;
+            convert.kind = ExprKind::Convert;
+            convert.type = type;
+            convert.a = NewRead(p, count_var, loc);
+            convert.loc = loc;
+            count = type == kU16Type ? convert.a : NewExpr(p, convert);
+        }
         ExprId times = NewBinary(p, Op::Mul, type, acc.step, count, loc);
         return NewSet(p, acc.var, NewBinary(p, acc.op, type, NewRead(p, acc.var, loc), times, loc),
                       loc);
@@ -92,15 +105,15 @@ ExprId Accumulate(Pass& p, const Accumulator& acc, std::int64_t n) {
 // the statements of one pass of body (a do's items, or body itself), each accumulator's
 // total where it stood (its step may read the body's own variables, set afresh on every
 // pass), dos among them rebuilt the same way; skip is the while counter's step
-std::vector<ExprId> OnePass(Pass& p, ExprId body, const BodyPlan& plan, std::int64_t n,
-                            ExprId skip) {
+std::vector<ExprId> OnePass(Pass& p, ExprId body, const BodyPlan& plan, std::int64_t n, ExprId skip,
+                            std::int32_t count_var = -1) {
     std::vector<ExprId> out;
     Expr e = At(p, body);
     if (e.kind != ExprKind::Do || e.type != kVoidType || Shared(p, body)) {
         ExprId stmt = body == skip ? -1 : body;
         for (const Accumulator& acc : plan.accumulators) {
             if (acc.stmt == body) {
-                stmt = Accumulate(p, acc, n);
+                stmt = Accumulate(p, acc, n, count_var);
             }
         }
         if (stmt >= 0) {
@@ -110,7 +123,7 @@ std::vector<ExprId> OnePass(Pass& p, ExprId body, const BodyPlan& plan, std::int
     }
     for (std::uint32_t i = 0; i < e.count; i++) {
         ExprId item = Item(p, e, i);
-        std::vector<ExprId> stmts = OnePass(p, item, plan, n, skip);
+        std::vector<ExprId> stmts = OnePass(p, item, plan, n, skip, count_var);
         Expr inner = At(p, item);
         if (inner.kind != ExprKind::Do || (stmts.size() == 1 && stmts[0] == item)) {
             out.insert(out.end(), stmts.begin(), stmts.end());
@@ -128,15 +141,6 @@ std::vector<ExprId> OnePass(Pass& p, ExprId body, const BodyPlan& plan, std::int
         out.push_back(NewList(p, ExprKind::Do, kVoidType, stmts, inner.loc));
     }
     return out;
-}
-
-bool NeedsCount(const BodyPlan& plan) {
-    for (const Accumulator& acc : plan.accumulators) {
-        if (acc.op != Op::Or && acc.op != Op::And) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // (set c (+ c s)) among the while body's items, for counter c
@@ -178,14 +182,7 @@ ExprId Guard(Pass& p, ExprId test, const std::vector<ExprId>& stmts, const Loc& 
 bool CollapseFor(Collapser& c, ExprId loop, std::vector<ExprId>& out) {
     Pass& p = *c.p;
     Expr e = At(p, loop);
-    BodyPlan plan = PlanBody(p, c.memory, e.c, e.ref, -1);
-    if (!plan.same) {
-        return false;
-    }
     std::int64_t trips = KnownTrips(p, loop, -1);
-    if (plan.last && trips < 1) {
-        return false;
-    }
     std::int32_t a_lo = 0;
     std::int32_t a_hi = 0;
     std::int32_t b_lo = 0;
@@ -196,24 +193,35 @@ bool CollapseFor(Collapser& c, ExprId loop, std::vector<ExprId>& out) {
     }
     bool runs = trips > 0 || e.b < 0 || b_lo > a_hi;
     bool never = trips == 0 || (e.b >= 0 && b_hi <= a_lo);
+    // no pass: whatever the body would do
     if (never) {
-        if (!IsPure(p, e.a) || !IsPure(p, e.b) || !Allow(p, "empty for", loop, e.ref)) {
-            return false;
-        }
-        return true;
+        return IsPure(p, e.a) && IsPure(p, e.b) && Allow(p, "empty for", loop, e.ref);
     }
-    if (NeedsCount(plan) && trips < 0) {
+    BodyPlan plan = PlanBody(p, c.memory, e.c, e.ref, -1);
+    if (!plan.same || (plan.last && trips < 1)) {
+        return false;
+    }
+    // passes not known: b - a of them, worked out before the loop (collapse_count.cpp)
+    bool counted = NeedsCount(plan) && trips < 0;
+    if (counted && (!CountWillDo(plan) || !CountableBounds(p, loop))) {
         return false;
     }
     if (!Allow(p, plan.last ? "for collapsed to its last pass" : "for collapsed", loop, e.ref)) {
         return false;
     }
+    // the count goes first in what runs in place of the passes (behind the guard: nothing
+    // to work out when there are none)
+    std::int32_t count_var = -1;
+    ExprId count_let = counted ? CountLet(p, c.function, loop, count_var) : -1;
     if (plan.last) {
         std::uint16_t start = 0;
         ConstValue(*p.program, e.a, start);
         PutValue(p, e.c, e.ref, static_cast<std::uint32_t>(start + trips - 1));
     }
-    std::vector<ExprId> stmts = OnePass(p, e.c, plan, trips, -1);
+    std::vector<ExprId> stmts = OnePass(p, e.c, plan, trips, -1, count_var);
+    if (count_let >= 0) {
+        stmts.insert(stmts.begin(), count_let);
+    }
     if (runs) {
         // the range is still worked out, for what it does
         for (ExprId bound : {e.a, e.b}) {
@@ -273,7 +281,7 @@ bool CollapseWhile(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>
     count.var = counter;
     count.op = Op::Add;
     count.step = s;
-    out.push_back(Accumulate(p, count, trips));
+    out.push_back(Accumulate(p, count, trips, -1));
     return true;
 }
 
@@ -287,10 +295,16 @@ bool Collapsible(const Pass& p, ExprId id) {
 }
 
 bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& out) {
-    if (At(*c.p, loop).kind == ExprKind::For) {
-        return CollapseFor(c, loop, out);
+    // the round after the passes settled only unrolls and unswitches (unroll.cpp,
+    // unswitch.cpp): collapse found nothing in the round before, and nothing changed since
+    if (c.p->unroll || c.p->unswitch) {
+        return (c.p->unroll && UnrollLoop(*c.p, c.function, loop, before, out)) ||
+               (c.p->unswitch && UnswitchLoop(*c.p, c.memory, c.function, loop, out));
     }
-    return CollapseWhile(c, loop, before, out);
+    // (if x (continue)) items first become elses (collapse_continue.cpp)
+    c.changes += ContinuesToElse(*c.p, loop);
+    return At(*c.p, loop).kind == ExprKind::For ? CollapseFor(c, loop, out)
+                                                : CollapseWhile(c, loop, before, out);
 }
 
 void Visit(Collapser& c, ExprId id, bool shared);
@@ -302,7 +316,7 @@ void VisitDo(Collapser& c, ExprId id, bool shared) {
     while (i < At(p, id).count) {
         ExprId item = Item(p, At(p, id), i);
         Visit(c, item, shared);
-        ExprId before = i > 0 ? Item(p, At(p, id), i - 1) : -1;
+        ExprId before = CounterBefore(p, id, i);
         std::vector<ExprId> stmts;
         if (shared || !Collapsible(p, item) || !TryCollapse(c, item, before, stmts)) {
             i++;
@@ -417,6 +431,7 @@ std::uint64_t CollapseLoops(Pass& p) {
     Collapser c;
     c.p = &p;
     for (std::size_t f = 0; f < p.program->functions.size(); f++) {
+        c.function = static_cast<std::int32_t>(f);
         Visit(c, p.program->functions[f].body, false);
     }
     return c.changes;

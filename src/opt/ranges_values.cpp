@@ -1,9 +1,14 @@
 // The values an expression may hold (ranges.cpp decides compares with them): from literals,
-// masks, remainders and quotients by constants, shifts right, sums and products that cannot
-// wrap, widenings, const tables, and the loop counters around it.
+// masks, remainders and quotients, shifts, sums and products (one that wraps as a whole, as
+// v - 23469 does for v in 11902..12071, lands in 53969..54138), widenings, const tables,
+// elements no store reaches, the loop counters and sets around it, and the ranges of
+// variables (ranges_vars.cpp).
 
 #include "check/arith.hpp"
+#include "opt/licm.hpp"
 #include "opt/ranges.hpp"
+
+#include <algorithm>
 
 namespace tisple::opt {
 
@@ -23,6 +28,35 @@ namespace {
 
 bool Within(const Range& r, const Range& of) {
     return r.lo >= of.lo && r.hi <= of.hi;
+}
+
+Range Meet(Range a, Range b) {
+    return Range{std::max(a.lo, b.lo), std::min(a.hi, b.hi)};
+}
+
+// a sum, difference, product or shift left: in the type, or wrapped as a whole (all of it in
+// one span of the type's size, the same number of spans below or above)
+Range Wrapped(Range r, Range type) {
+    std::int64_t span = type.hi - type.lo + 1;
+    // how many spans below lo lies the type's range (rounding down)
+    std::int64_t over = r.lo - type.lo;
+    std::int64_t m = over >= 0 ? over / span : -((-over + span - 1) / span);
+    Range moved{r.lo - m * span, r.hi - m * span};
+    return moved.hi <= type.hi ? moved : type;
+}
+
+// a signed quotient or remainder by a divisor that is never zero or negative: the
+// quotient's extremes lie at the corners, the remainder keeps the dividend's sign
+Range SignedDivide(Op op, Range a, Range b, Range type) {
+    if (b.lo <= 0) {
+        return type;
+    }
+    if (op == Op::Mod) {
+        std::int64_t most = b.hi - 1;
+        return Range{a.lo >= 0 ? 0 : std::max(a.lo, -most), a.hi <= 0 ? 0 : std::min(a.hi, most)};
+    }
+    std::int64_t q[4] = {a.lo / b.lo, a.lo / b.hi, a.hi / b.lo, a.hi / b.hi};
+    return Range{*std::min_element(q, q + 4), *std::max_element(q, q + 4)};
 }
 
 // the smallest all-ones value at or above v (v not negative)
@@ -73,41 +107,54 @@ Range BinaryRange(const Pass& p, const Counters& counters, const Expr& e, Range 
         }
         return r;
     case Op::Or:
+        // x | y and x ^ y are at most x + y: (| x 1) for x in 0..8 is at most 9
         if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{std::max(a.lo, b.lo), OnesAbove(std::max(a.hi, b.hi))};
+            r = Range{std::max(a.lo, b.lo), std::min(OnesAbove(std::max(a.hi, b.hi)), a.hi + b.hi)};
         }
         break;
     case Op::Xor:
         if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{0, OnesAbove(std::max(a.hi, b.hi))};
+            r = Range{0, std::min(OnesAbove(std::max(a.hi, b.hi)), a.hi + b.hi)};
         }
         break;
     case Op::Add:
-        r = Range{a.lo + b.lo, a.hi + b.hi};
-        break;
+        return Wrapped(Range{a.lo + b.lo, a.hi + b.hi}, type);
     case Op::Sub:
-        r = Range{a.lo - b.hi, a.hi - b.lo};
-        break;
-    case Op::Mul:
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{a.lo * b.lo, a.hi * b.hi};
-        }
-        break;
+        return Wrapped(Range{a.lo - b.hi, a.hi - b.lo}, type);
+    case Op::Mul: {
+        std::int64_t c[4] = {a.lo * b.lo, a.lo * b.hi, a.hi * b.lo, a.hi * b.hi};
+        return Wrapped(Range{*std::min_element(c, c + 4), *std::max_element(c, c + 4)}, type);
+    }
     case Op::Div:
         // by zero: all ones, outside these ranges
         if (a.lo >= 0 && b.lo > 0) {
             r = Range{a.lo / b.hi, a.hi / b.lo};
+        } else {
+            r = SignedDivide(e.op, a, b, type);
         }
         break;
     case Op::Mod:
         // by zero: the dividend
         if (a.lo >= 0 && b.lo >= 0) {
             r = Range{0, b.lo > 0 ? std::min(a.hi, b.hi - 1) : a.hi};
+        } else {
+            r = SignedDivide(e.op, a, b, type);
         }
         break;
     case Op::Shr:
         if (a.lo >= 0 && b.lo >= 0 && b.hi < 16) {
             r = Range{a.lo >> b.hi, a.hi >> b.lo};
+        }
+        break;
+    case Op::Shl:
+        // by the width or more: 0, as the target shifts
+        // a product by 2^b, wrapped like one
+        if (b.lo >= 0 && b.lo == b.hi) {
+            bool out = b.lo >= static_cast<std::int64_t>(KindBits(KindOf(*p.program, e.type)));
+            return out ? Range{0, 0}
+                       : Wrapped(Range{a.lo * (std::int64_t(1) << b.lo),
+                                       a.hi * (std::int64_t(1) << b.lo)},
+                                 type);
         }
         break;
     default:
@@ -116,13 +163,60 @@ Range BinaryRange(const Pass& p, const Counters& counters, const Expr& e, Range 
     return Within(r, type) ? r : type;
 }
 
+// a variable's read: what the counters and sets around it say, and the round's ranges
+Range VarRange(const Pass& p, const Counters& counters, std::int32_t var, Range type) {
+    Range r = type;
+    for (const Counter& counter : counters) {
+        if (counter.var == var) {
+            r = Meet(r, counter.range);
+        }
+    }
+    const VarRanges& known = p.ranges;
+    if (known.vars && static_cast<std::size_t>(var) < known.natural.size()) {
+        r = Meet(r, known.natural[static_cast<std::size_t>(var)]);
+    }
+    // none: code no run reaches, where anything holds; the type says no less
+    return r.lo <= r.hi ? r : type;
+}
+
+// a read of an element or a field: a const table's, or what no store reaches still holds
+Range ElementRange(const Pass& p, const Counters& counters, const Expr& e, Range type) {
+    if (e.kind == ExprKind::Index) {
+        Range table = TableRange(p, e, type);
+        if (table.lo != type.lo || table.hi != type.hi) {
+            return table;
+        }
+    }
+    ExprId index = ReadIndex(p, e);
+    Range at = index >= 0 ? ValueRange(p, counters, index) : Range{0, 0};
+    Range out;
+    return UnstoredRead(p, e, at, out) && Within(out, type) ? out : type;
+}
+
+Range WorkOut(const Pass& p, const Counters& counters, ExprId id);
+
 } // namespace
 
 Range ValueRange(const Pass& p, const Counters& counters, ExprId id) {
+    Pass::RangeMemo& memo = p.memo;
+    std::size_t at = static_cast<std::size_t>(id);
+    if (!memo.on || at >= memo.stamp.size()) {
+        return WorkOut(p, counters, id);
+    }
+    if (memo.stamp[at] != memo.now) {
+        memo.range[at] = WorkOut(p, counters, id);
+        memo.stamp[at] = memo.now;
+    }
+    return memo.range[at];
+}
+
+namespace {
+
+Range WorkOut(const Pass& p, const Counters& counters, ExprId id) {
     const Expr& e = At(p, id);
     Range type = TypeRange(p, e.type);
     TypeKind kind = KindOf(*p.program, e.type);
-    if (!IsIntegerKind(kind) && kind != TypeKind::Bool) {
+    if (!IsIntegerKind(kind) && kind != TypeKind::Bool && kind != TypeKind::Enum) {
         return type;
     }
     std::uint16_t c = 0;
@@ -132,24 +226,31 @@ Range ValueRange(const Pass& p, const Counters& counters, ExprId id) {
     }
     switch (e.kind) {
     case ExprKind::VarRef:
-        for (const Counter& counter : counters) {
-            if (counter.var == e.ref) {
-                return counter.range;
-            }
-        }
-        return type;
+        return VarRange(p, counters, e.ref, type);
     case ExprKind::Convert: {
         Range inner = ValueRange(p, counters, e.a);
         return Within(inner, type) ? inner : type;
     }
     case ExprKind::Index:
-        return TableRange(p, e, type);
+    case ExprKind::Field:
+        return ElementRange(p, counters, e, type);
     case ExprKind::Binary:
         return IsIntegerKind(kind) ? BinaryRange(p, counters, e, type) : type;
+    case ExprKind::If: {
+        // either arm's: (if (= opaque 0) E.e0 E.e1) is e0 or e1
+        if (e.c < 0) {
+            return type;
+        }
+        Range a = ValueRange(p, counters, e.b);
+        Range b = ValueRange(p, counters, e.c);
+        return Range{std::min(a.lo, b.lo), std::max(a.hi, b.hi)};
+    }
     default:
         return type;
     }
 }
+
+} // namespace
 
 bool Quiet(const Pass& p, ExprId id) {
     if (id < 0) {
@@ -180,6 +281,83 @@ bool Quiet(const Pass& p, ExprId id) {
     default:
         return false;
     }
+}
+
+namespace {
+
+bool IsRead(const Pass& p, ExprId id, std::int32_t var) {
+    const Expr& e = At(p, id);
+    return e.kind == ExprKind::VarRef && e.ref == var;
+}
+
+// the range of a counting while's counter in its body, when it is one: c lies in
+// [v, k - 1 + s] for (let c v) just before and (while (< c k) ... (set c (+ c s)) ...)
+bool WhileCounter(const Pass& p, ExprId loop, ExprId before, Counter& out) {
+    if (before < 0 || KnownTrips(p, loop, before) < 0) {
+        return false;
+    }
+    const Expr& cond = At(p, At(p, loop).a);
+    std::int32_t c = At(p, cond.a).ref;
+    const Expr& body = At(p, At(p, loop).b);
+    if (VarOf(p, c).address_taken || body.kind != ExprKind::Do) {
+        return false;
+    }
+    TypeKind kind = KindOf(*p.program, VarOf(p, c).type);
+    std::uint16_t start = 0;
+    std::uint16_t end = 0;
+    ConstValue(*p.program, At(p, before).a, start);
+    ConstValue(*p.program, cond.b, end);
+    for (std::uint32_t i = 0; i < body.count; i++) {
+        const Expr& set = At(p, Item(p, body, i));
+        if (set.kind != ExprKind::Set || !IsRead(p, set.a, c)) {
+            continue;
+        }
+        std::uint16_t step = 0;
+        ConstValue(*p.program, At(p, set.b).b, step);
+        std::int64_t from = SignedValue(kind, start);
+        std::int64_t to = SignedValue(kind, end);
+        out.var = c;
+        out.range = Range{std::min(from, to - 1), to - 1 + SignedValue(kind, step)};
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool LoopCounter(const Pass& p, const Counters& counters, ExprId loop, ExprId before,
+                 Counter& out) {
+    const Expr& e = At(p, loop);
+    if (e.kind == ExprKind::While) {
+        return WhileCounter(p, loop, before, out);
+    }
+    Range start = ValueRange(p, counters, e.a);
+    Range end = e.b >= 0 ? ValueRange(p, counters, e.b) : TypeRange(p, VarOf(p, e.ref).type);
+    out.var = e.ref;
+    out.range = Range{start.lo, e.b >= 0 ? end.hi - 1 : end.hi};
+    return out.range.lo <= out.range.hi && !VarOf(p, e.ref).address_taken;
+}
+
+Range OtherView(TypeKind kind, Range r) {
+    std::int64_t span = KindBits(kind) == 8 ? 256 : 65536;
+    if (IsSignedKind(kind)) {
+        if (r.lo >= 0) {
+            return r;
+        }
+        return r.hi < 0 ? Range{r.lo + span, r.hi + span} : Range{0, span - 1};
+    }
+    if (r.hi < span / 2) {
+        return r;
+    }
+    return r.lo >= span / 2 ? Range{r.lo - span, r.hi - span} : Range{-span / 2, span / 2 - 1};
+}
+
+bool RangedVar(const Pass& p, std::int32_t var) {
+    const Var& v = VarOf(p, var);
+    TypeKind kind = KindOf(*p.program, v.type);
+    bool scalar = IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum;
+    return scalar && v.kind != VarKind::ConstArray && !v.address_taken &&
+           !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve;
 }
 
 void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi) {

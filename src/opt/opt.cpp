@@ -63,10 +63,18 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool collapse = !Disabled(options, "collapse");
     bool ranges = !Disabled(options, "ranges");
     bool args = !Disabled(options, "args");
+    bool returns = !Disabled(options, "returns");
+    bool vars = !Disabled(options, "vars");
+    bool elements = !Disabled(options, "elements");
+    // unrolling (in collapse's walk) waits for the other passes to settle: a body they shorten
+    // may collapse, and its copies would not
+    bool unroll = collapse && !Disabled(options, "unroll");
+    bool unswitch = collapse && !Disabled(options, "unswitch");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
         opt::CountRefs(p);
         opt::ComputeSummaries(p);
+        opt::ComputeVarRanges(p, vars, elements);
         std::uint64_t changes = 0;
         for (std::size_t f = 0; f < fn_count && dead; f++) {
             changes += opt::EditStatements(p, static_cast<std::int32_t>(f), opt::DecideDead);
@@ -76,6 +84,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         }
         if (args) {
             changes += opt::DropUnreadArgs(p);
+        }
+        if (returns) {
+            changes += opt::DropUnusedReturns(p);
         }
         if (collapse) {
             changes += opt::CollapseLoops(p);
@@ -99,6 +110,15 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && cse; f++) {
             changes += opt::CommonSubexpressions(p, static_cast<std::int32_t>(f));
         }
+        if (changes == 0 && (unroll || unswitch)) {
+            // settled: what this round worked out still holds, and only unrolling and
+            // unswitching are left to change anything; the rounds after them fold the copies
+            p.unroll = unroll;
+            p.unswitch = unswitch;
+            changes = opt::CollapseLoops(p);
+            p.unroll = false;
+            p.unswitch = false;
+        }
         if (changes == 0) {
             break;
         }
@@ -119,8 +139,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 } // namespace
 
 const std::vector<std::string>& OptPassNames() {
-    static const std::vector<std::string> names = {"dead",   "loops", "args", "collapse", "consts",
-                                                   "ranges", "licm",  "cse",  "eval"};
+    static const std::vector<std::string> names = {
+        "dead",   "loops",  "args", "returns",  "collapse", "unroll", "unswitch",
+        "consts", "ranges", "vars", "elements", "licm",     "cse",    "eval"};
     return names;
 }
 
