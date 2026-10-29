@@ -61,10 +61,48 @@ void TestNeverNegative(TestResults& results) {
     CHECK(results, CountMn(loop, "t.f", tisple::Mn::BVC) == 0);
 }
 
+// a constant at the end of its type's range decides an order compare; the other side's
+// effects still happen
+void TestDecided(TestResults& results) {
+    struct Type {
+        const char* name;
+        const char* min;
+        const char* max;
+    };
+    const Type types[] = {{"u8", "0", "255"},
+                          {"i8", "-128", "127"},
+                          {"u16", "0", "65535"},
+                          {"i16", "-32768", "32767"}};
+    for (const Type& t : types) {
+        std::string n = t.name;
+        for (const char* op : {"<", "<=", ">", ">="}) {
+            for (const char* c : {t.min, t.max}) {
+                std::string text = "(let g " + n +
+                                   " 0)\n(let k u8 0)\n"
+                                   "(fn h ((x u8)) " +
+                                   n + " (set k (+ k 1)) (set g (as " + n +
+                                   " (* x 7))) g)\n"
+                                   "(fn f ((x u8) (y u8)) u8 (set k 0)\n"
+                                   "    (if (" +
+                                   op + " (h x) " + c +
+                                   ") (set k (+ k 10)))\n"
+                                   "    (if (" +
+                                   op + " " + c +
+                                   " (h y)) (set k (+ k 20)))\n"
+                                   "    k)";
+                CheckPairs(results, text);
+            }
+        }
+    }
+    Compiled c = CompileText("(let g u16 0)\n(fn f ((x u16)) u8 (if (>= 65535 x) 1 2))");
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::CMP) == 0);
+}
+
 } // namespace
 
 void RunBackendSignedCmpTests(TestResults& results) {
     TestNeverNegative(results);
+    TestDecided(results);
 }
 
 } // namespace tisple_tests
