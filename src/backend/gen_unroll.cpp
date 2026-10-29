@@ -1,7 +1,8 @@
 #include "backend/gen.hpp"
 #include "check/arith.hpp"
 
-// for loops with constant bounds and a few trips whose body reads the counter: copies of the
+// Unrolled for loops. One whose counter nothing reads (f.down) runs as copies of its body. A
+// for loop with constant bounds and a few trips whose body reads the counter: copies of the
 // body, the counter in each a constant. Each copy binds the counter to a literal of its value
 // (Gen::bound, as an inlined call binds a parameter to its argument), so a read of it is that
 // number and (at a i) a fixed address; the counter's memory is never set. The literals are
@@ -62,6 +63,19 @@ std::vector<ExprId> AddCounterLiterals(Program& program) {
         }
     }
     return out;
+}
+
+void UnrolledLoop(Gen& g, const ForParts& f) {
+    std::uint32_t trips = f.trips == 0 ? 256 : f.trips;
+    std::uint32_t around = g.unrolled_copies;
+    g.unrolled_copies = around * trips;
+    for (std::uint32_t i = 0; i < trips; i++) {
+        std::int32_t next = NewLabel(g);
+        g.loops.back().continue_label = next;
+        GenStmt(g, f.body);
+        PlaceLabel(g, next);
+    }
+    g.unrolled_copies = around;
 }
 
 bool CountedCopies(Gen& g, const ForParts& f) {

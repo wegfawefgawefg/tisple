@@ -655,6 +655,9 @@ bool ReplacedLoop(Gen& g, const ForParts& f);
 // a literal for each value the counter of a short for with constant bounds takes, when its
 // body reads it, appended to the program (gen_unroll.cpp): by for expression, the first
 std::vector<ExprId> AddCounterLiterals(Program& program);
+// a loop whose counter nothing reads as its body once per trip, one after the other: no
+// counter and no test; a continue goes to the next copy (gen_unroll.cpp)
+void UnrolledLoop(Gen& g, const ForParts& f);
 // the body once per trip, the counter in each copy bound to its literal; false (nothing
 // made) when the loop has no literals or the copies would be too big
 bool CountedCopies(Gen& g, const ForParts& f);

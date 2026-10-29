@@ -132,21 +132,6 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
 
 void MemoryLoop(Gen& g, const ForParts& f);
 
-// the body once per trip, one after the other: no counter and no test; a continue goes to
-// the next copy
-void UnrolledLoop(Gen& g, const ForParts& f) {
-    std::uint32_t trips = f.trips == 0 ? 256 : f.trips;
-    std::uint32_t around = g.unrolled_copies;
-    g.unrolled_copies = around * trips;
-    for (std::uint32_t i = 0; i < trips; i++) {
-        std::int32_t next = NewLabel(g);
-        g.loops.back().continue_label = next;
-        GenStmt(g, f.body);
-        PlaceLabel(g, next);
-    }
-    g.unrolled_copies = around;
-}
-
 // a u8 counter runs from the start up to one below the end; i8 counters get no range
 CounterRange CounterRangeOf(const Program& program, const Expr& e, TypeKind kind) {
     CounterRange r;
