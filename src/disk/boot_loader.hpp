@@ -20,10 +20,10 @@
 // at run time the loader keeps to $0800-$0AFF, $0296-$0365 (its nibble table and scratch,
 // clear of the vectors at $03F0), $0400-$04FF for aux sectors and zero page $DB-$EF. it
 // switches 80store off first, and the language card's bank 2 in to write its segments. then
-// it sets the stack to
-// $FF, A = X = Y = 0, interrupts off, the language card to $C082 (rom reads, as a direct
-// load starts), turns the motor off and calls the origin. if the program returns, the loader
-// shows the text screen and enters the monitor ($FF69); the emulator stops there instead.
+// it sets the stack to $FF, A = X = Y = 0, interrupts off, the language card to $C082 (rom
+// reads, as a direct load starts), turns the motor off and calls the origin. if the program
+// returns, the loader shows the text screen and enters the monitor ($FF69); the emulator
+// stops there instead.
 
 #include "disk/nibble.hpp"
 #include "link/segment.hpp"

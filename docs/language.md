@@ -104,8 +104,9 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
   `addr_of`. It is the only way code reaches a let `:in aux` (see Memory map).
   Its mover is 99 bytes of our own 6502 code run from page 3, with a copy at the
   same address in aux memory, since RAMRD sends the instruction fetches there
-  too; it saves the zero page it borrows. (Not `aux.tsp`: Windows keeps that
-  name.)
+  too; two `:reserve` lets keep `$0300`-`$0362` in both memories, so an
+  `:address` let there is an overlap error. It saves the zero page it borrows.
+  (Not `aux.tsp`: Windows keeps that name.)
 
 ## Keywords
 
@@ -576,7 +577,10 @@ top-level `let` without a value starts at zero.
 
 Implemented 2026-10-27, for programs bigger than one stretch of memory. A
 program that fits from its origin is laid out exactly as before, byte for
-byte. Past that, in this order:
+byte (checked 2026-10-29 for every program and example), with one change for
+an origin below `$4000`: hi-res page 1 is no longer kept out by itself, so a
+program that draws there says so with `:reserve` (below). Past that, in this
+order:
 
 1. From the origin (`$6000`) up to the limit: `$95FF` under DOS (the zero-page
    save buffer is its last page), `$BEFF` for a self-booting disk.
@@ -586,11 +590,32 @@ byte. Past that, in this order:
    its function; data fills what is left.
 3. The language card's bank 2, `$D000`-`$FFFF` (12 KB), when nothing needs the
    ROM there: no `jsr`, `io_read`, `io_write` or `(as (ptr t) n)` with a
-   constant address from `$D000`, and no `:address` let reaching `$D000`. The startup switches its RAM in (`BIT $C083` twice) and
-   the ROM back before it returns (`BIT $C082`). A computed `jsr` is taken to
-   call card firmware, as the mouse library does. Bank 1's 4 KB is not used.
+   constant address from `$D000`, and no `:address` let reaching `$D000`. The
+   startup switches its RAM in (`BIT $C083` twice) and the ROM back before it
+   returns (`BIT $C082`). A computed `jsr` or pointer is not checked: it is
+   taken to reach slot firmware (as the mouse library's `jsr` does) or the
+   program's own memory, never the ROM. Bank 1's 4 KB is not used.
 4. Lets `:in aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
    above; an `:address` there must lie in `$0200`-`$BFFF`.
+
+Each let is placed whole, first fit in declaration order: one that does not fit
+what is left of a region goes on to the next, and a later, smaller one may
+still fill the gap. programs/text_demo leaves about 11 KB of `$6000`-`$BEFF`
+empty that way, since its next chapter is bigger.
+
+Size limits (2026-10-29), less any `:reserve` let (8 KB a hi-res page) and
+what the program's frames take:
+
+| Build | Main memory | Language card | Aux memory | In all |
+| --- | --- | --- | --- | --- |
+| `tisple build -o`, a DOS 3.3 BRUN file | `$6000`-`$94FF` from the default origin, 13.25 KB, one stretch | no | no | 13.25 KB |
+| `tisple run` | `$0800`-`$94FF` less text page 1, 35.25 KB | 12 KB | 46 KB | 93 KB |
+| `tisple build --disk`, self-booting | `$0B00`-`$BEFF`, 45 KB | 12 KB | 46 KB | 103 KB |
+
+The page after main memory's last byte (`$9500` or `$BF00`) holds the saved
+zero page. A disk holds at most 10 segments in 528 pages, each segment
+rounded up to whole tracks (docs/disks.md): a program within the table fits,
+unless `:address` lets cut its memory into more than 10 pieces.
 
 Each piece outside the first is a segment. `tisple run` loads them all and a
 disk built with `--disk` boots them all (docs/disks.md), but one DOS 3.3 BRUN

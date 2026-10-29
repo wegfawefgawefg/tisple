@@ -173,8 +173,13 @@ void TestDemoBoots(TestResults& results, const Compiled& c, const std::vector<ui
            Row80(*a, 0).find("Tisple ][ text viewer") == std::string::npos) {
         tisple::RunApple2(*a, tisple::kCyclesPerFrame);
     }
+    uint64_t took = tisple::Cycles(*a) - start;
     tisple::RunApple2(*a, kSettle);
     bool drawn = Row80(*a, 0).find("Tisple ][ text viewer") != std::string::npos;
+    if (drawn) {
+        std::printf("text demo: boots to its first page in %.1f s (%s roms)\n",
+                    static_cast<double>(took) / 1023000.0, main_rom.empty() ? "our" : "Apple's");
+    }
     if (!drawn) {
         std::fprintf(stderr, "text demo did not boot (%s roms): %s\n",
                      main_rom.empty() ? "our" : "Apple's", tisple::DescribeStop(*a).c_str());

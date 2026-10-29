@@ -32,9 +32,13 @@
 // - BRK and undocumented opcodes stop a direct-loaded program (the chip would vector or
 //   execute them); with a rom and no program loaded, they run as on the chip
 // - no interrupts
-// - auxiliary memory (memory_map.cpp): the card's ram as Sather describes it; with every
-//   switch off the cpu reaches main ram straight, otherwise every access below $C000 goes
-//   through the switches. the scanner's floating bus is always main ram
+// - the extended 80-column card is always in (a2audit reports 128K); there is no 64 KB iie
+//   and no plain 80-column card with 1 KB
+// - auxiliary memory (memory_map.cpp): the card's ram as Sather describes it, checked for
+//   every RAMRD, RAMWRT, ALTZP, 80STORE, PAGE2 and HIRES combination at each memory edge
+//   (tests/test_machine_aux.cpp) and by a2audit; with every switch off the cpu reaches main
+//   ram straight, otherwise every access below $C000 goes through the switches. the
+//   scanner's floating bus is always the main ram byte, in 80 columns too
 // - 80 columns and double-res: the aux byte shows first, then the main byte, 7 dots each,
 //   with no delay between them; 80-column text is our font at half width; double lo-res
 //   shows aux nibbles rotated right one bit, as the hardware does; the flat look colours a

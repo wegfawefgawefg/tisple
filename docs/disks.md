@@ -41,23 +41,26 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   over with RAMWRT on). The rest of the disk is an empty DOS 3.3 volume with
   the program's tracks marked in use, so `tisple disk put` can add files, and
   its catalog on track 17 survives a program of any size.
-- Size limits (2026-10-27). Main memory `$0B00-$BFFF`: the loader runs in
-  `$0800-$0AFF`, so the compile limit for `--disk` builds is `$C000` and the
-  memory below the origin starts at `$0B00`. With the zero-page save buffer at
-  `$BF00`, code and data get `$0B00-$BEFF`, 45 KB, less any screen the program
-  keeps with `:reserve` (8 KB a hi-res page). The language card adds 12 KB at
+- Size limits (2026-10-29; the table for every build is in docs/language.md,
+  Memory map). Main memory `$0B00-$BFFF`: the loader runs in `$0800-$0AFF`, so
+  the compile limit for `--disk` builds is `$C000` and the memory below the
+  origin starts at `$0B00`. With the zero-page save buffer at `$BF00`, code and
+  data get `$0B00-$BEFF`, 45 KB, less any screen the program keeps with
+  `:reserve` (8 KB a hi-res page). The language card adds 12 KB at
   `$D000-$FFFF`, aux memory 46 KB at `$0800-$BFFF`: about 103 KB in all. A disk
   holds 528 pages (tracks 1-34 but 17), at most 10 segments, each rounded up to
   whole tracks. A one-stretch program from `$6000` still has 24 KB, as before.
-  Plain builds for DOS (`tisple build -o`) are one file, `$6000-$95FF` from the
-  default origin; `tisple run` without `--disk` lays out like them but loads
-  every segment, so there it is `$0800-$94FF`, the language card and aux memory.
+  Plain builds for DOS (`tisple build -o`) are one file, code and data in
+  `$6000-$94FF` from the default origin (the save buffer at `$9500`);
+  `tisple run` without `--disk` lays out like them but loads every segment, so
+  there it is `$0800-$94FF`, the language card and aux memory.
 - The loader takes nothing from the boot ROM but the load of its three sectors
   and X = slot * 16. It turns the motor on, steps (2.5 ms per half-track each
   way, 25 ms settle) and reads with its own code, reading whichever wanted
   sector passes the head next: about two turns a track, 0.75 s for a one-track
   program in the emulator; an aux track can take three, since the copy can
-  miss the next sector. programs/text_demo, 20 tracks, boots in 10.5 s.
+  miss the next sector. programs/text_demo, 20 tracks, shows its first page
+  10.5 s after power on with our ROM, 12.2 s through Apple's (2026-10-29).
 - At the jump: stack `$FF` (then the JSR), A = X = Y = 0, interrupts off,
   decimal off, 80STORE off, RAMRD and RAMWRT off, language card `$C082` (as a
   direct load), motor off. It also used `$0296-$0365`, `$0400-$04FF` (text page
@@ -110,13 +113,17 @@ sees what it would on a drive. Approximations are listed in
   `~/.local/share/tisple/roms/` lacks the files.
 - a2audit (Zellyn Hunter, MIT): `scripts/fetch_a2audit.sh` puts
   `audit/audit.dsk` in `tests/data/a2audit/`; the tests then boot it with
-  Apple's ROMs. Results (2026-10-27, version 1.07, with the extended 80-column
-  card): "MEMORY:128K", and its language card tests (on main and on aux), aux
-  memory tests and soft switch tests all succeed. The video tests after its
+  Apple's ROMs. Results (2026-10-27, again 2026-10-29 from a fresh download,
+  version 1.07, with the extended 80-column card): "MEMORY:128K", and its
+  language card tests (on main and on aux), aux memory tests and soft switch
+  tests all succeed. The video tests after its
   prompt are visual: run it in a window and compare by eye.
 - `tests/test_disk_segments.cpp` boots segments in every memory past track 17,
   and a compiled program in four regions, which then runs as a direct load
-  does.
+  does, with our ROM and through `Apple2e.rom` + `DISK2.rom`.
+- `tests/test_text_demo.cpp` boots programs/text_demo (72 KB in four places)
+  the same two ways, pages through every chapter and checks each is shown from
+  the memory its status line names, then leaves with ESC.
 
 ```sh
 tisple machine --disk tests/data/a2audit/audit.dsk \
