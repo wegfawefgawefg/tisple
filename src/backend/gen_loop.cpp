@@ -467,9 +467,12 @@ void GenFor(Gen& g, ExprId id) {
         return;
     }
     std::int32_t trips = fixed ? SignedValue(kind, ce) - SignedValue(kind, cs) : 0;
-    if (f.size == 1 && trips >= 1 && trips <= 256 && !ReadsVar(program, f.body, f.var)) {
+    if (trips >= 1 && trips <= 256 && !ReadsVar(program, f.body, f.var)) {
+        // nothing reads the counter: it counts the trips down in a byte, a u16 one too (in
+        // its low byte, when in memory)
         f.down = true;
         f.trips = static_cast<std::uint8_t>(trips & 0xFF);
+        f.size = 1;
     }
     if (e.b >= 0 && !fixed) {
         bool both_up = NeverNegative(g, e.a) && NeverNegative(g, e.b);

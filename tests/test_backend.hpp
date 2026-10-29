@@ -92,6 +92,8 @@ void RunBackendShiftTests(TestResults& results);
 void RunBackendSub8Tests(TestResults& results);
 // signed compares of values never negative (test_backend_signed_cmp.cpp)
 void RunBackendSignedCmpTests(TestResults& results);
+// u16 for loops counted in a byte (test_backend_count16.cpp)
+void RunBackendCount16Tests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
