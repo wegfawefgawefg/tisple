@@ -132,21 +132,6 @@ bool TryPinned(Gen& g, const ForParts& f, int r) {
 
 void MemoryLoop(Gen& g, const ForParts& f);
 
-// the body once per trip, one after the other: no counter and no test; a continue goes to
-// the next copy
-void UnrolledLoop(Gen& g, const ForParts& f) {
-    std::uint32_t trips = f.trips == 0 ? 256 : f.trips;
-    std::uint32_t around = g.unrolled_copies;
-    g.unrolled_copies = around * trips;
-    for (std::uint32_t i = 0; i < trips; i++) {
-        std::int32_t next = NewLabel(g);
-        g.loops.back().continue_label = next;
-        GenStmt(g, f.body);
-        PlaceLabel(g, next);
-    }
-    g.unrolled_copies = around;
-}
-
 // a u8 counter runs from the start up to one below the end; i8 counters get no range
 CounterRange CounterRangeOf(const Program& program, const Expr& e, TypeKind kind) {
     CounterRange r;
@@ -462,17 +447,35 @@ void GenFor(Gen& g, ExprId id) {
     f.end_label = NewLabel(g);
     std::uint16_t cs = 0;
     std::uint16_t ce = 0;
-    bool fixed = e.b >= 0 && ConstValue(program, e.a, cs) && ConstValue(program, e.b, ce);
+    bool fixed = e.b >= 0 && ConstOf(g, e.a, cs) && ConstOf(g, e.b, ce);
     if (fixed && SignedValue(kind, cs) >= SignedValue(kind, ce)) {
         return;
     }
     std::int32_t trips = fixed ? SignedValue(kind, ce) - SignedValue(kind, cs) : 0;
-    if (f.size == 1 && trips >= 1 && trips <= 256 && !ReadsVar(program, f.body, f.var)) {
+    if (e.b < 0 && ConstOf(g, e.a, cs)) {
+        // through the type's largest value, from a constant start (no guard either way)
+        std::int32_t past = f.size == 1 ? 0x100 : 0x10000;
+        trips = (is_signed ? past / 2 : past) - SignedValue(kind, cs);
+    }
+    if (trips >= 1 && trips <= 256 && !ReadsVar(program, f.body, f.var)) {
+        // nothing reads the counter: it counts the trips down in a byte, a u16 one too (in
+        // its low byte, when in memory)
         f.down = true;
         f.trips = static_cast<std::uint8_t>(trips & 0xFF);
+        f.size = 1;
+    }
+    if (f.size == 2 && !f.down && e.b >= 0 && !ReadsVar(program, f.body, f.var) &&
+        MaxOf(g, e.a) <= 0xFF && MaxOf(g, e.b) <= 0xFF) {
+        // both ends fit a byte (so neither is negative) and nothing reads the counter: it
+        // counts in a byte, the ends' low bytes
+        f.size = 1;
+        f.start.size = 1;
+        f.end.size = 1;
+        is_signed = false;
     }
     if (e.b >= 0 && !fixed) {
-        CompareJump(g, Op::Ge, is_signed, f.start, f.end, f.end_label);
+        bool both_up = NeverNegative(g, e.a) && NeverNegative(g, e.b);
+        CompareJump(g, Op::Ge, is_signed && !both_up, f.start, f.end, f.end_label);
     }
 
     LoopCtx ctx;
@@ -490,6 +493,7 @@ void GenFor(Gen& g, ExprId id) {
         // each copy runs once
         g.loop_factors.back() = 1;
         UnrolledLoop(g, f);
+    } else if ((fixed || e.b < 0) && CountedCopies(g, f)) {
     } else if (f.size == 1) {
         g.ranges.push_back(CounterRangeOf(program, e, kind));
         ByteLoop(g, f, pin);

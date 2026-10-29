@@ -56,7 +56,7 @@ bool ByteIndexAt(Gen& g, ExprId id, int depth, ByteIndex& out) {
     std::uint32_t size = ExprSize(*g.program, id);
     TypeKind kind = ExprKindOf(*g.program, id);
     std::uint16_t c = 0;
-    if (IsScalarKind(kind) && ConstValue(*g.program, id, c)) {
+    if (IsScalarKind(kind) && ConstOf(g, id, c)) {
         if (size == 2 && c > 0xFF) {
             return false;
         }
@@ -88,9 +88,9 @@ bool ByteIndexAt(Gen& g, ExprId id, int depth, ByteIndex& out) {
     }
     if (e.kind == ExprKind::Binary && (e.op == Op::Add || e.op == Op::Sub)) {
         ExprId rest = -1;
-        if (e.op == Op::Add && ConstValue(*g.program, e.a, c)) {
+        if (e.op == Op::Add && ConstOf(g, e.a, c)) {
             rest = e.b;
-        } else if (ConstValue(*g.program, e.b, c)) {
+        } else if (ConstOf(g, e.b, c)) {
             rest = e.a;
             c = e.op == Op::Sub ? static_cast<std::uint16_t>(-c) : c;
         }

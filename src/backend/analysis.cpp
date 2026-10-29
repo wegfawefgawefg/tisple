@@ -2,6 +2,8 @@
 
 #include "check/arith.hpp"
 
+#include <algorithm>
+
 namespace tisple {
 
 namespace {
@@ -81,6 +83,12 @@ bool HasWrites(const Program& program, ExprId id) {
 
 bool HasCalls(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) { return e.kind == ExprKind::Call; });
+}
+
+bool HasLoops(const Program& program, ExprId id) {
+    return AnyExpr(program, id, [](const Expr& e) {
+        return e.kind == ExprKind::While || e.kind == ExprKind::For;
+    });
 }
 
 bool HasEffects(const Program& program, ExprId id) {
@@ -176,7 +184,54 @@ std::uint32_t CountExprs(const Program& program, ExprId id) {
     return count;
 }
 
-std::vector<bool> FindDerefPointers(const Program& program) {
+std::vector<InlineKind> FindInlines(const Program& program, const std::vector<std::string>& never) {
+    std::size_t count = program.functions.size();
+    std::vector<std::uint32_t> calls(count, 0);
+    std::vector<std::int32_t> caller(count, -1); // of the last call seen
+    for (std::size_t f = 0; f < count; f++) {
+        AnyExpr(program, program.functions[f].body, [&](const Expr& e) {
+            if (e.kind == ExprKind::Call) {
+                calls[static_cast<std::size_t>(e.ref)]++;
+                caller[static_cast<std::size_t>(e.ref)] = static_cast<std::int32_t>(f);
+            }
+            return false;
+        });
+    }
+    std::vector<InlineKind> out(count, InlineKind::None);
+    for (std::size_t f = 0; f < count; f++) {
+        const Function& fn = program.functions[f];
+        if (std::find(never.begin(), never.end(), fn.name) != never.end()) {
+            continue;
+        }
+        if (CountExprs(program, fn.body) <= kMaxInlineExprs) {
+            out[f] = InlineKind::Always;
+        }
+    }
+    for (std::size_t f = 0; f < count; f++) {
+        if (out[f] != InlineKind::None || calls[f] != 1 ||
+            std::find(never.begin(), never.end(), program.functions[f].name) != never.end()) {
+            continue;
+        }
+        // one call, but in a small function inlined at its several calls the call is made
+        // once in each copy: then it stays a function
+        std::size_t from = static_cast<std::size_t>(caller[f]);
+        if (out[from] == InlineKind::Always && calls[from] > 1) {
+            continue;
+        }
+        out[f] = InlineKind::Once;
+    }
+    return out;
+}
+
+bool HasBigCalls(const Program& program, ExprId id, const std::vector<InlineKind>& inlines) {
+    return AnyExpr(program, id, [&](const Expr& e) {
+        return e.kind == ExprKind::Call &&
+               inlines[static_cast<std::size_t>(e.ref)] != InlineKind::Always;
+    });
+}
+
+std::vector<bool> FindDerefPointers(const Program& program,
+                                    const std::vector<InlineKind>& inlines) {
     std::vector<bool> deref(program.vars.size(), false);
     for (const Expr& e : program.exprs) {
         if (e.kind != ExprKind::Load && e.kind != ExprKind::LoadField &&
@@ -197,16 +252,13 @@ std::vector<bool> FindDerefPointers(const Program& program) {
             break;
         }
     }
-    // a pointer handed to such a parameter of a function small enough to inline: the inlined
-    // body reads the argument where it is (gen_expr.cpp, CanBind), so it is the one used
-    std::vector<bool> small(program.functions.size(), false);
-    for (std::size_t f = 0; f < program.functions.size(); f++) {
-        small[f] = CountExprs(program, program.functions[f].body) <= kMaxInlineExprs;
-    }
+    // a pointer handed to such a parameter of a function that is inlined: the inlined body
+    // reads the argument where it is (gen_expr.cpp, CanBind), so it is the one used
     for (bool changed = true; changed;) {
         changed = false;
         for (const Expr& e : program.exprs) {
-            if (e.kind != ExprKind::Call || !small[static_cast<std::size_t>(e.ref)]) {
+            if (e.kind != ExprKind::Call ||
+                inlines[static_cast<std::size_t>(e.ref)] == InlineKind::None) {
                 continue;
             }
             const Function& fn = program.functions[static_cast<std::size_t>(e.ref)];

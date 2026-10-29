@@ -181,7 +181,7 @@ void EvalDiv8(Gen& g, ExprId id, const Expr& e) {
     TypeKind kind = ExprKindOf(*g.program, e.a);
     bool is_signed = IsSignedKind(kind);
     std::uint16_t c16 = 0;
-    bool fixed = ConstValue(*g.program, e.b, c16);
+    bool fixed = ConstOf(g, e.b, c16);
     std::uint32_t c = c16 & 0xFF;
     int k = fixed ? PowerOfTwo(c) : -1;
     if (k >= 0 && !is_signed) {
@@ -219,7 +219,7 @@ Opnd EvalDiv16(Gen& g, ExprId id, const Expr& e, const Opnd* dst) {
     TypeKind kind = ExprKindOf(*g.program, e.a);
     bool is_signed = IsSignedKind(kind);
     std::uint16_t c = 0;
-    bool fixed = ConstValue(*g.program, e.b, c);
+    bool fixed = ConstOf(g, e.b, c);
     if (fixed && PowerOfTwo(c) >= 0 && !is_signed) {
         Opnd a = Eval(g, e.a, nullptr);
         if (e.op == Op::Mod) {

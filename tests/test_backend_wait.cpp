@@ -101,6 +101,28 @@ void TestTiming(TestResults& results) {
     }
 }
 
+// an inlined call's parameter given a number waits as that number would in a variable wait
+// (kVarWaitMin at least), with no copy of it made first: a constant wait
+void TestBoundCount(TestResults& results) {
+    const std::uint16_t counts[] = {0, 1, 2, 68, 69, 70, 300, 1001, 65535};
+    for (std::uint16_t n : counts) {
+        std::string text = "(fn e () void)\n(fn wp ((n u16)) void (wait_cycles n))\n"
+                           "(fn a () void (wp " +
+                           std::to_string(n) + "))\n";
+        Compiled c = CompileAt(text, 0x6000);
+        tisple::SimRunner sim;
+        std::string error;
+        if (!c.ok || !tisple::StartCompiled(sim, c.code, error)) {
+            std::fprintf(stderr, "%s%s\n", c.errors.c_str(), error.c_str());
+            CHECK(results, false);
+            return;
+        }
+        std::int64_t want = n < tisple::kVarWaitMin ? tisple::kVarWaitMin : n;
+        CHECK(results, CallCycles(c, sim, "t.a", {}) - CallCycles(c, sim, "t.e", {}) == want);
+        CHECK(results, CountMn(c, "t.a", tisple::Mn::STA) == 0);
+    }
+}
+
 // from kVarWaitMin on, a constant n and the same n read from a variable take the same cycles,
 // so a value the optimiser folds into a constant waits as long as before
 void TestSameAsConstant(TestResults& results) {
@@ -210,6 +232,7 @@ void TestErrors(TestResults& results) {
 
 void RunBackendWaitTests(TestResults& results) {
     TestTiming(results);
+    TestBoundCount(results);
     TestSameAsConstant(results);
     TestKept(results);
     TestErrors(results);

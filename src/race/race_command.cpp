@@ -19,6 +19,7 @@ struct RaceArgs {
     bool has_entry = false;
     std::string dump;                 // memory after the kernel, all 64 KB
     std::string executed;             // ranges of the code that ran
+    std::string profile;              // runs and cycles of each instruction on the clock
     std::vector<std::uint16_t> words; // u16s to print from memory after the kernel
 };
 
@@ -27,14 +28,15 @@ void PrintRaceUsage() {
                  "usage: tisple race --load FILE@ADDR... --start ADDR --entry ADDR\n"
                  "                   [--patch FILE@ADDR]... [--dump mem.bin] [--executed out.txt]\n"
                  "                   [--max-cycles N] [--after ADDR] [--stop ADDR]\n"
-                 "                   [--word ADDR]...\n"
+                 "                   [--word ADDR]... [--profile out.txt]\n"
                  "runs a binary from --start; when the pc first reaches --entry, writes the\n"
                  "patches (the kernel's inputs) and counts cycles until it returns. prints the\n"
                  "kernel's cycles and registers; --dump writes memory after it, --executed the\n"
                  "address ranges of every instruction it ran. --after: the clock starts when the\n"
                  "kernel's call of the function at ADDR returns; --stop: it stops when the pc\n"
                  "first reaches ADDR, and the kernel runs on to its return. --word prints the\n"
-                 "u16 at ADDR after it. addresses take $hex, 0xhex or decimal\n");
+                 "u16 at ADDR after it; --profile writes \"pc runs cycles\" for each instruction\n"
+                 "that ran on the clock. addresses take $hex, 0xhex or decimal\n");
 }
 
 bool ParseNumber(const char* text, std::uint64_t& out) {
@@ -118,6 +120,10 @@ bool ParseOne(int argc, char** argv, int& i, RaceArgs& args) {
         args.executed = value;
         return true;
     }
+    if (std::strcmp(arg, "--profile") == 0) {
+        args.profile = value;
+        return true;
+    }
     return false;
 }
 
@@ -148,6 +154,13 @@ bool WriteOutputs(const RaceArgs& args, const Machine& m, const RaceResult& resu
         std::string ranges = ExecutedRanges(m, result.executed);
         if (!WriteFile(args.executed, ranges.data(), ranges.size())) {
             std::fprintf(stderr, "tisple race: cannot write %s\n", args.executed.c_str());
+            return false;
+        }
+    }
+    if (!args.profile.empty()) {
+        std::string lines = ProfileLines(result);
+        if (!WriteFile(args.profile, lines.data(), lines.size())) {
+            std::fprintf(stderr, "tisple race: cannot write %s\n", args.profile.c_str());
             return false;
         }
     }

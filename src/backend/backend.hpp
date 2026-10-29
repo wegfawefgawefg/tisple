@@ -40,6 +40,9 @@ struct BuildOptions {
     bool use_card = true;             // the language card's ram, when needed and allowed
     // keep the code of functions main never calls (tests call them by address)
     bool keep_all_functions = false;
+    // functions never inlined, by qualified name (the race times from t.init's return to
+    // t.checksum's entry)
+    std::vector<std::string> no_inline;
     OptOptions opt; // the mid-level passes (opt/opt.hpp)
 };
 

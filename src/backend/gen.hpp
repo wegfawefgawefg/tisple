@@ -93,8 +93,11 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
-    std::vector<std::uint32_t> fn_exprs; // by function: expressions in its body
-    std::vector<std::uint64_t> fn_runs;  // by function: FindRunCounts
+    std::vector<InlineKind> inlines; // by function: FindInlines
+    // by for expression: the first of the literals its counter takes in copies of its body
+    // (AddCounterLiterals), or -1
+    std::vector<ExprId> counter_literals;
+    std::vector<std::uint64_t> fn_runs; // by function: FindRunCounts
     // by function: its Gen::multiplies, for the choice of multiply routines
     std::vector<std::vector<std::pair<ExprId, std::uint64_t>>> multiplies;
     std::vector<bool> deref;              // by var: some load or store goes straight through it
@@ -343,6 +346,11 @@ struct Gen {
     std::uint32_t unrolled_copies = 1;
     std::vector<LoopCtx> loops;
     std::vector<InlineCtx> inlines;
+    // functions called in one place whose call was inlined here: that call made again (a
+    // while test made twice) is a JSR
+    std::vector<std::int32_t> inlined_once;
+    // data the code reads (a match's value tables), placed after the function's code
+    std::vector<AsmItem> tables;
     std::uint32_t temp_top = 0;
     std::uint32_t ptemp_top = 0;
     std::uint32_t last_file = 0xFFFFFFFF;
@@ -365,6 +373,12 @@ bool CarryClearNow(const Gen& g);
 bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
+// id's value as a constant (ConstValue), variables bound to constants included (an unrolled
+// counter, gen_unroll.cpp)
+bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value);
+// id's value is never negative as its signed type reads it (its top bit never set), so a
+// signed compare of it with another such value is the unsigned one
+bool NeverNegative(const Gen& g, ExprId id);
 // byte k of o as a number known now: a plain number, or a byte of a symbol already placed
 // (an :address variable); -1 if it is not one
 int KnownImm(const Gen& g, const Opnd& o, int k);
@@ -385,6 +399,9 @@ void StoreA(Gen& g, const Opnd& dst, int k);
 bool RmwByte(Gen& g, Mn mn, const Opnd& dst, int k);
 bool CanRmw(const Gen& g, const Opnd& dst, int k);
 void LoadIndexReg(Gen& g, int reg, const Index& index);
+// a store's place indexed by a byte just worked out in A, of a value read where it is with no
+// index of its own: the index into its register now (TAX), while A has it
+void PreloadIndex(Gen& g, const Opnd& dst, const Opnd& value);
 void LoadYConst(Gen& g, std::uint8_t value);
 void LoadXConst(Gen& g, std::uint8_t value);
 
@@ -454,6 +471,9 @@ struct PlaceRef {
 bool ResolvePlace(Gen& g, ExprId id, ExprId later, PlaceRef& out);
 // the place a store or store-field writes
 bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out);
+// (+ (addr_of (at a i)) k) for a byte array a and i + k below 256: a indexed by that sum,
+// worked out now (gen_place_sum.cpp); false (nothing emitted) when it is not one
+bool ArrayPlusByte(Gen& g, ExprId pointer, TypeId type, PlaceRef& out);
 // emits pointer arithmetic so every byte of a value of type `type` is directly reachable
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type);
 // a store of a value of this type to the place writes its bytes one by one: keep the index
@@ -553,6 +573,9 @@ void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
 // a + b, 16-bit, with bytes known before running needing no code (gen_wide.cpp); the
 // result is in dst (or a temporary) except for bytes that are numbers or one operand's byte
 Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst);
+// a 16-bit run of + - & | ^ with operands read where they are and one add at most, a byte at
+// a time through A (gen_spine.cpp); false (nothing emitted) when it is not one
+bool EvalSpine16(Gen& g, ExprId id, const Opnd* dst, Opnd& out);
 // multiply by a constant (gen_mulconst.cpp): A = A * c; a 16-bit operand into dst; whether a
 // 16-bit multiply by c is inline rather than the routine
 void MulConst8A(Gen& g, std::uint32_t c);
@@ -570,8 +593,19 @@ void ForgetDivision(Gen& g, ExprId stmt);
 std::vector<bool> FindDivPairs(const Program& program);
 // the division routines the code calls, each a label and its items
 void EmitDivRoutines(Backend& be, std::vector<AsmItem>& out);
-// shifts (gen_shift.cpp): 8-bit into A, 16-bit into dst or a temporary
+// shifts: 8-bit into A (gen_shift8.cpp), 16-bit into dst or a temporary (gen_shift.cpp); the
+// shifted if (gen_shift_if.cpp)
 void EvalShift8(Gen& g, const Expr& e);
+// a free index register for a shift's counter: X unless pinned
+int CounterReg(const Gen& g);
+// A shifted one bit; a signed right shift keeps the sign
+void ShiftA(Gen& g, Op op, bool is_signed);
+// a count LDX/LDY can load directly
+bool CountReady(const Opnd& count);
+// the count operand into register r (without touching A); flags show the count
+void LoadCount(Gen& g, int r, const Opnd& count);
+// A = $FF when A's top bit is set, else 0
+void SignByteA(Gen& g);
 Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst);
 Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t count,
                   const Opnd* dst);
@@ -618,6 +652,15 @@ struct ForParts {
 // a u16 for loop whose body has a let that moves by one with the counter, the counter
 // replaced by it (gen_counter.cpp); false (nothing kept) if there is none
 bool ReplacedLoop(Gen& g, const ForParts& f);
+// a literal for each value the counter of a short for with constant bounds takes, when its
+// body reads it, appended to the program (gen_unroll.cpp): by for expression, the first
+std::vector<ExprId> AddCounterLiterals(Program& program);
+// a loop whose counter nothing reads as its body once per trip, one after the other: no
+// counter and no test; a continue goes to the next copy (gen_unroll.cpp)
+void UnrolledLoop(Gen& g, const ForParts& f);
+// the body once per trip, the counter in each copy bound to its literal; false (nothing
+// made) when the loop has no literals or the copies would be too big
+bool CountedCopies(Gen& g, const ForParts& f);
 // (set place value) steps place by one: (+ place 1), (- place 1), (+ place s) for a unit step s
 bool IsStepByOne(const Gen& g, ExprId place, ExprId value);
 // gen_follow.cpp: start following the u16 variables the while loop `loop` only steps by one;

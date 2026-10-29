@@ -82,7 +82,7 @@ Opnd SelectBytes(Gen& g, const Expr& e) {
 // (>> x 8) and (<< x 8) of a 16-bit operand just move a byte
 Opnd ByteShift(Gen& g, const Expr& e) {
     std::uint16_t c = 0;
-    if ((e.op != Op::Shl && e.op != Op::Shr) || !ConstValue(*g.program, e.b, c) || c != 8 ||
+    if ((e.op != Op::Shl && e.op != Op::Shr) || !ConstOf(g, e.b, c) || c != 8 ||
         (e.op == Op::Shr && IsSignedKind(KindOf(*g.program, e.type)))) {
         return Opnd();
     }
@@ -115,7 +115,7 @@ Opnd TrySimple(Gen& g, ExprId id) {
     }
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
-    if (IsScalarKind(KindOf(*g.program, e.type)) && ConstValue(*g.program, id, c)) {
+    if (IsScalarKind(KindOf(*g.program, e.type)) && ConstOf(g, id, c)) {
         return ImmOpnd(c, SizeOf(g, e.type));
     }
     switch (e.kind) {
