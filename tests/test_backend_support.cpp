@@ -6,7 +6,7 @@ namespace tisple_tests {
 
 namespace {
 
-Compiled Finish(Built built, bool keep_all_functions) {
+Compiled Finish(Built built, bool keep_all_functions, const tisple::OptOptions& opt = {}) {
     Compiled c;
     c.built = std::move(built);
     if (!c.built.ok) {
@@ -16,6 +16,7 @@ Compiled Finish(Built built, bool keep_all_functions) {
     std::vector<tisple::Diagnostic> errors;
     tisple::BuildOptions options;
     options.keep_all_functions = keep_all_functions;
+    options.opt = opt;
     c.ok = tisple::CompileProgram(c.built.program, options, c.code, errors);
     if (!c.ok) {
         c.errors = tisple::FormatDiagnostics(c.built.program.sources, errors);
@@ -37,6 +38,10 @@ Compiled CompileText(const std::string& text, const std::vector<tisple::VirtualF
 
 Compiled CompileMainText(const std::string& text) {
     return Finish(BuildText(text, {}), false);
+}
+
+Compiled CompileMainText(const std::string& text, const tisple::OptOptions& opt) {
+    return Finish(BuildText(text, {}), false, opt);
 }
 
 Compiled CompileFile(const std::string& path) {

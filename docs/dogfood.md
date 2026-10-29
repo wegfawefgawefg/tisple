@@ -1100,6 +1100,21 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     47 KB. A loop now counts the copies the unrolled loops around it make.
     That program: 1576 bytes of code (1818 at -O0). Every program, example,
     kernel and race program is unchanged. Test in test_backend_while.cpp.
+44. Threaded jumps back into loops (2026-10-29, peephole.cpp RegisterPass):
+    a jump to a test the registers decide may go straight to where the test
+    sends it, and that can be back to a loop label. The first scan recorded
+    what its jumps back to each loop label bring before it threaded or removed
+    them: a branch it then removed counted, a jump it threaded there did not.
+    The second scan used those facts at the label and threaded the same jump,
+    so the loop body believed A held the 0 of the removed way while the
+    threaded way brought 1 (farm run 10, seed 6001453322 dead: a `let` of 0
+    done as TAY). Now the first scan records the jumps as they end up, the
+    second threads back to a loop label only when every fact there holds at
+    the jump (Implies), and never back to a label no jump goes back to. Every
+    binary, kernel and race program is unchanged (text_demo's print_number
+    keeps its threaded loop). Farm programs 6001453322.tsp and _reduced.tsp.
+    TISPLE_FUZZ_OPT adds pass options to TISPLE_FUZZ_FILE (-O0 showed this was
+    the backend).
 
 ## Gap finder (2026-10-26)
 

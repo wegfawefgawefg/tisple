@@ -289,6 +289,38 @@ Tracker Meet(const Tracker& a, const Tracker& b) {
     return out;
 }
 
+// every fact s has holds in t too: a way in with t adds nothing a label with s must forget
+bool Implies(const Tracker& t, const Tracker& s) {
+    for (int r = 0; r < 3; r++) {
+        if (s.reg[r].known && !SameContent(s.reg[r], t.reg[r])) {
+            return false;
+        }
+    }
+    auto all_in = [](const std::vector<std::pair<AsmValue, AsmValue>>& facts,
+                     const std::vector<std::pair<AsmValue, AsmValue>>& have) {
+        for (const auto& fact : facts) {
+            bool found = false;
+            for (const auto& entry : have) {
+                found = found || SamePair(fact, entry);
+            }
+            if (!found) {
+                return false;
+            }
+        }
+        return true;
+    };
+    if (!all_in(s.mem_const, t.mem_const) || !all_in(s.mem_copy, t.mem_copy)) {
+        return false;
+    }
+    if (s.nz_a && !t.nz_a) {
+        return false;
+    }
+    if (s.nz_known && (!t.nz_known || s.flag_n != t.flag_n || s.flag_z != t.flag_z)) {
+        return false;
+    }
+    return !s.c_known || (t.c_known && s.flag_c == t.flag_c);
+}
+
 bool IsJumpTo(const AsmItem& item) {
     return item.kind == ItemKind::Ins &&
            (IsBranch(item.mn) || (item.mn == Mn::JMP && item.mode == Mode::Abs));
@@ -691,14 +723,6 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
             falls = item.kind == ItemKind::Label;
             continue;
         }
-        if (record && IsJumpTo(item) && is_loop(item.value.sym) && labels[item.value.sym] < i) {
-            auto found = record->find(item.value.sym);
-            if (found == record->end()) {
-                record->emplace(item.value.sym, t);
-            } else {
-                found->second = Meet(found->second, t);
-            }
-        }
         // a branch the flags decide: gone, or a JMP (the flags stay for the code it reaches)
         int outcome = IsBranch(item.mn) ? BranchOutcome(t, item.mn) : -1;
         if (outcome == 0) {
@@ -709,13 +733,35 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
             item = MakeIns(Mn::JMP, Mode::Abs, item.value);
             p.changed = true;
         }
-        // a jump to a test the registers decide goes where the test would send it
+        // a jump to a test the registers decide goes where the test would send it. Back to a
+        // label the scan knows things at, it is a new way in to what it worked out there: never
+        // to a mergeable one (from the ways in seen before it), and to a loop label only when
+        // the facts there hold here too (the first scan knew none; this one, those of the jumps
+        // back that scan recorded)
         if (IsJumpTo(item)) {
             std::int32_t to = ThreadTarget(p, t, item.value.sym, labels);
-            if (to >= 0) {
+            bool fits = to >= 0;
+            if (fits && labels[to] < i && is_mergeable(to)) {
+                fits = false;
+            }
+            if (fits && labels[to] < i && is_loop(to) && back) {
+                auto from_back = back->find(to);
+                fits = from_back != back->end() && Implies(t, from_back->second);
+            }
+            if (fits) {
                 item.value = SymValue(to);
                 item.carry = Carry::Unknown;
                 p.changed = true;
+            }
+        }
+        // the first scan notes what its jumps back to each loop label bring, as they are now
+        // (a branch it removed brings nothing; a jump it threaded there brings its own)
+        if (record && IsJumpTo(item) && is_loop(item.value.sym) && labels[item.value.sym] < i) {
+            auto found = record->find(item.value.sym);
+            if (found == record->end()) {
+                record->emplace(item.value.sym, t);
+            } else {
+                found->second = Meet(found->second, t);
             }
         }
         // what a jump brings to a label ahead: a mergeable one, or a loop label, which meets

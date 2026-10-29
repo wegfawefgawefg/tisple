@@ -90,6 +90,7 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
 }
 
 // TISPLE_FUZZ_FILE=path: run that one program's main both ways and say how they differ
+// (TISPLE_FUZZ_OPT adds pass options)
 bool DiffFile(TestResults& results) {
     const char* path = std::getenv("TISPLE_FUZZ_FILE");
     if (!path || !*path) {
@@ -102,11 +103,44 @@ bool DiffFile(TestResults& results) {
         CHECK(results, false);
         return true;
     }
-    Compiled c = CompileMainText(file.text);
+    // TISPLE_FUZZ_OPT="--opt-bisect 12" (or -O0, --no-pass NAME): those pass options
+    tisple::OptOptions opt;
+    std::vector<std::string> words;
+    if (const char* flags = std::getenv("TISPLE_FUZZ_OPT")) {
+        std::string word;
+        for (const char* c = flags;; c++) {
+            if (*c == ' ' || *c == 0) {
+                if (!word.empty()) {
+                    words.push_back(word);
+                }
+                word.clear();
+                if (*c == 0) {
+                    break;
+                }
+            } else {
+                word += *c;
+            }
+        }
+    }
+    std::vector<char*> argv;
+    for (std::string& word : words) {
+        argv.push_back(word.data());
+    }
+    for (int i = 0; i < static_cast<int>(argv.size()); i++) {
+        if (!tisple::ParseOptFlag(static_cast<int>(argv.size()), argv.data(), i, opt, error)) {
+            std::fprintf(stderr, "TISPLE_FUZZ_OPT: %s\n", error.empty() ? argv[i] : error.c_str());
+            CHECK(results, false);
+            return true;
+        }
+    }
+    Compiled c = CompileMainText(file.text, opt);
     Diff d;
     d.in.max_steps = 300000;
     d.max_cycles = 40000000;
     bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+    if (opt.bisect >= 0) {
+        std::printf("%s\n", tisple::DescribeOptReport(c.code.opt).c_str());
+    }
     std::printf("%s: %s\n", path, ok ? "same" : d.message.c_str());
     if (c.ok) {
         std::printf("%s", tisple::ListProgram(c.built.program, c.code).c_str());

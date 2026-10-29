@@ -24,6 +24,8 @@ Compiled CompileFile(const std::string& path);
 // as `tisple build` compiles it: functions main never calls are left out, so only main can
 // be called (the others above keep every function, for calls by address)
 Compiled CompileMainText(const std::string& text);
+// the same with these mid-level pass options (-O0, --opt-bisect N, --no-pass NAME)
+Compiled CompileMainText(const std::string& text, const tisple::OptOptions& opt);
 
 // the interpreter and the simulator side by side, calls made on both
 struct Diff {
