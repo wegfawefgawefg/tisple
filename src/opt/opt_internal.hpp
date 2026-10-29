@@ -219,6 +219,9 @@ std::uint64_t PropagateConstants(Pass& p);
 // arguments for parameters their function never reads become 0 (args.cpp); returns the
 // changes made
 std::uint64_t DropUnreadArgs(Pass& p);
+// pure return values of functions whose call values nothing uses become 0 (args.cpp);
+// returns the changes made
+std::uint64_t DropUnusedReturns(Pass& p);
 // loops whose passes all do the same run their body once (collapse.cpp); returns the
 // changes made
 std::uint64_t CollapseLoops(Pass& p);

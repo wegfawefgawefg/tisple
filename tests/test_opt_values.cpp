@@ -2,7 +2,8 @@
 // collapse_continue.cpp, consts_eval.cpp): what each variable may ever hold (arguments every
 // call passes, steps that wrap), what a set gives the items after it, elements no store
 // reaches, (if c (continue)) items, (+ x (~ x)), a bool tested false, short loops unrolled
-// (src/opt/unroll.cpp) and unswitched (unswitch.cpp); what they must not
+// (src/opt/unroll.cpp) and unswitched (unswitch.cpp), return values nothing uses (args.cpp);
+// what they must not
 // decide. Every program has a main (with none, any function may be called from outside) and
 // also runs from it on the 6502 against the interpreter, which runs it as written
 
@@ -117,6 +118,10 @@ void Decided(TestResults& results) {
          "    (if (!= v 18) (set h 1)))\n"
          "(fn main () void (f))",
          0},
+        // no call uses f's value: it returns 0
+        {"(fn f () u8 (set g 1) (if (> h 3) (return (if (> gw 9) 4 5))) (if (> h 1) 1 2))\n"
+         "(fn main () void (set h scr) (f) (f))",
+         1},
         // passes not known: b - a of them, worked out before the loop (no guard: -4 is below
         // whatever (& h 7) is)
         {"(fn f () void (for i i8 -4 (as i8 (& h 7)) (set gw (+ gw 3)) (set g (- g 1))))\n"
@@ -183,6 +188,10 @@ void Kept(TestResults& results) {
         {"(fn f () void (set g (+ h (~ g))) (if (!= g 255) (set h 1)))\n(fn main () void (f))", 1},
         // a bool tested true is not known to be 1
         {"(fn f () u8 (if flag (if flag (set g 1))) 0)\n(fn main () void (set flag true) (f))", 2},
+        // a call uses f's value
+        {"(fn f () u8 (set g 1) (if (> h 3) (return (if (> gw 9) 4 5))) (if (> h 1) 1 2))\n"
+         "(fn main () void (set h scr) (f) (set g (f)))",
+         2},
         // passes not known, and the bound read after the loop writes it, or ^ that must know
         // whether they are odd
         {"(fn f () void (for i i8 -4 (as i8 (& h 7)) (set gw (+ gw 3)) (set h 1)))\n"
@@ -225,7 +234,8 @@ void Unswitched(TestResults& results) {
     };
     const char* kept[] = {
         // the loop writes what the branch reads
-        "(fn f () void (for i u8 0 20 (match e (E.e0 (set (at t (& i 7)) 1) (set e E.e1)) (E.e1 (do)) "
+        "(fn f () void (for i u8 0 20 (match e (E.e0 (set (at t (& i 7)) 1) (set e E.e1)) (E.e1 "
+        "(do)) "
         "(E.e2 (do)))))\n"
         "(fn main () void (set e (if (> scr 3) E.e1 E.e0)) (f))",
         // the branch reads the counter

@@ -88,9 +88,10 @@ void Flags(TestResults& results) {
     CHECK(results, o.bisect == 12 && error.empty());
     CHECK(results, Parses({"--no-pass", "loops"}, o, error) && error.empty());
     CHECK(results, o.disabled.size() == 1 && o.disabled[0] == "loops");
-    CHECK(results, Parses({"--no-pass", "fold"}, o, error) &&
-                       error.find("dead loops args collapse unroll unswitch consts ranges vars "
-                                  "elements licm cse eval") != std::string::npos);
+    CHECK(results,
+          Parses({"--no-pass", "fold"}, o, error) &&
+              error.find("dead loops args returns collapse unroll unswitch consts ranges vars "
+                         "elements licm cse eval") != std::string::npos);
     error.clear();
     CHECK(results, Parses({"--opt-bisect", "-3"}, o, error) && !error.empty());
     error.clear();
