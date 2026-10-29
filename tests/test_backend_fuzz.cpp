@@ -3,8 +3,9 @@
 // TISPLE_FUZZ_CYCLES=1 prints each program's cycles (to compare two backends seed by seed).
 // A seed in four also runs a second program, with loops entered by a jump ("(entries)"), one
 // in four a third, with dead work for the mid-level passes ("(dead)"), one in four a
-// fourth, with loop-invariant work and constants ("(motion)"), and one in four a fifth, with
-// work done twice, branches on equalities and calls with constant arguments ("(common)").
+// fourth, with loop-invariant work and constants ("(motion)"), one in four a fifth, with
+// work done twice, branches on equalities and calls with constant arguments ("(common)"), and
+// one in four a sixth, with loops that collapse and compares ranges decide ("(collapse)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -209,6 +210,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string common = GenerateCommonProgram(seed);
         if (!common.empty()) {
             FuzzOne(seed, " (common)", common, stats);
+        }
+        std::string collapse = GenerateCollapseProgram(seed);
+        if (!collapse.empty()) {
+            FuzzOne(seed, " (collapse)", collapse, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

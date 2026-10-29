@@ -1,6 +1,5 @@
 // What moving an expression out of a loop wins: a rough count of the cycles the 6502 spends
-// on it, how many times a loop runs when the tree says, and work the backend does faster
-// inside loops than outside them.
+// on it, and how many times a loop runs when the tree says.
 
 #include "check/arith.hpp"
 #include "opt/licm.hpp"
@@ -11,8 +10,9 @@ namespace {
 
 // cycles an expression must save over reading the local it moves to
 constexpr std::int32_t kMinSaving = 12;
-// a multiply by a constant with at most this many bits set is shifts and adds, inline
-constexpr int kInlineMulBits = 4;
+// a 16-bit multiply by a constant of at most this many nonzero digits is inline
+// (gen_mulconst.cpp); a byte multiply by a constant always is
+constexpr int kInlineMulDigits = 4;
 
 bool Wide(const Pass& p, const Expr& e) {
     return TypeOf(*p.program, e.type).size > 1;
@@ -23,22 +23,77 @@ bool ConstPowerOfTwo(const Pass& p, ExprId id) {
     return ConstValue(*p.program, id, c) && c != 0 && (c & (c - 1)) == 0;
 }
 
-int Popcount(std::uint16_t v) {
-    int n = 0;
-    for (; v != 0; v = static_cast<std::uint16_t>(v & (v - 1))) {
-        n++;
+// a constant's digits as gen_mulconst.cpp picks them: its binary ones, or its signed digits
+// (the non-adjacent form) when they do less
+struct Digits {
+    int top = -1; // the highest nonzero digit
+    int nonzero = 0;
+    bool negative_top = false;
+};
+
+Digits BinaryDigits(std::uint32_t c, int bits) {
+    Digits d;
+    for (int i = 0; i < bits; i++) {
+        if (((c >> i) & 1) != 0) {
+            d.top = i;
+            d.nonzero++;
+        }
     }
-    return n;
+    return d;
 }
 
-// a multiply the backend calls a routine for: by a variable, or a constant with many bits
-bool RoutineMultiply(const Pass& p, const Expr& e) {
-    if (e.kind != ExprKind::Binary || e.op != Op::Mul) {
-        return false;
+Digits SignedDigits(std::uint32_t c, int bits) {
+    Digits d;
+    std::int64_t v = c & ((1u << bits) - 1);
+    for (int i = 0; i < bits && v != 0; i++) {
+        if ((v & 1) != 0) {
+            int digit = (v & 3) == 1 ? 1 : -1;
+            v -= digit;
+            d.top = i;
+            d.nonzero++;
+            d.negative_top = digit < 0;
+        }
+        v >>= 1;
     }
+    return d;
+}
+
+// a byte multiply in A: a shift per digit below the top, an add or subtract per other digit
+std::int32_t ByteDigitCycles(const Digits& d) {
+    if (d.top < 0) {
+        return 0;
+    }
+    return 2 * d.top + 5 * (d.nonzero - 1) + (d.negative_top ? 6 : 0);
+}
+
+std::int32_t ByteMulCycles(std::uint32_t c) {
+    return std::min(ByteDigitCycles(BinaryDigits(c, 8)), ByteDigitCycles(SignedDigits(c, 8)));
+}
+
+// the digits a 16-bit multiply uses: the signed ones when fewer and the top one is 1
+Digits WordDigits(std::uint32_t c) {
+    Digits plain = BinaryDigits(c, 16);
+    Digits signed_digits = SignedDigits(c, 16);
+    bool fewer = signed_digits.nonzero < plain.nonzero;
+    return signed_digits.top >= 0 && !signed_digits.negative_top && fewer ? signed_digits : plain;
+}
+
+// a multiply's cycles past its operands: by a constant, its shifts and adds inline (a word
+// shifts in memory, 10 cycles a bit, and adds 20 a digit), else the routine
+std::int32_t MulCycles(const Pass& p, const Expr& e, bool wide) {
     std::uint16_t c = 0;
     bool constant = ConstValue(*p.program, e.b, c) || ConstValue(*p.program, e.a, c);
-    return !constant || Popcount(c) > kInlineMulBits;
+    if (!constant) {
+        return wide ? 250 : 80;
+    }
+    if (!wide) {
+        return ByteMulCycles(c) + 3;
+    }
+    Digits d = WordDigits(c);
+    if (d.nonzero > kInlineMulDigits) {
+        return 250;
+    }
+    return d.top < 0 ? 0 : 10 * d.top + 20 * (d.nonzero - 1) + 12;
 }
 
 std::int32_t Cost(const Pass& p, ExprId id);
@@ -51,10 +106,7 @@ std::int32_t BinaryCost(const Pass& p, const Expr& e) {
     bool is_signed = IsSignedKind(KindOf(*p.program, a.type));
     switch (e.op) {
     case Op::Mul:
-        if (ConstPowerOfTwo(p, e.a) || ConstPowerOfTwo(p, e.b)) {
-            return operands + (wide ? 12 : 4);
-        }
-        return operands + (!RoutineMultiply(p, e) ? 20 : wide ? 250 : 80);
+        return operands + MulCycles(p, e, wide);
     case Op::Div:
     case Op::Mod:
         if (ConstPowerOfTwo(p, e.b)) {
@@ -189,19 +241,6 @@ bool Worth(const Pass& p, ExprId id) {
         return false;
     }
     return Cost(p, id) - 3 * (Wide(p, e) ? 2 : 1) >= kMinSaving;
-}
-
-bool FasterInLoops(const Pass& p, ExprId id) {
-    if (id < 0) {
-        return false;
-    }
-    const Expr& e = At(p, id);
-    if (RoutineMultiply(p, e)) {
-        return true;
-    }
-    bool faster = false;
-    EachChild(p, e, [&](ExprId child) { faster = faster || FasterInLoops(p, child); });
-    return faster;
 }
 
 std::int64_t KnownTrips(const Pass& p, ExprId loop, ExprId before) {

@@ -41,6 +41,13 @@ std::string GenerateMotionProgram(std::uint64_t seed);
 constexpr int kCommonPercent = 25;
 std::string GenerateCommonProgram(std::uint64_t seed);
 
+// for one seed in kCollapsePercent hundred, the seed's program with loops whose passes all do
+// the same (or whose last pass decides), compares at the edges of ranges and matches on
+// counters (fuzz_gen_collapse.cpp) among its statements, for loop collapse, value ranges and
+// unread arguments; "" for the others
+constexpr int kCollapsePercent = 25;
+std::string GenerateCollapseProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

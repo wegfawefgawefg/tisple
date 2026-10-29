@@ -25,6 +25,10 @@ struct Invariants {
 
 void FindInvariants(const Pass& p, ExprId loop, const LoopWrites& w, Invariants& out);
 
+// may running id end the pass early: a return, a break or continue not inside a loop of its
+// own (depth counts the loops entered), or a node not known here
+bool MayLeave(const Pass& p, ExprId id, int depth);
+
 // ---- what moving wins (licm_cost.cpp)
 
 // its estimated cycles beat reading a local enough to move it
@@ -32,8 +36,6 @@ bool Worth(const Pass& p, ExprId id);
 // a rough count of the cycles the 6502 spends working id out (common subexpressions use it
 // too)
 std::int32_t EstimatedCycles(const Pass& p, ExprId id);
-// work the backend does faster inside a loop (a multiply by the quarter-square routines)
-bool FasterInLoops(const Pass& p, ExprId id);
 // how many passes a loop makes, when its literal range (or a let of its counter just before,
 // as before, and literal bounds and step) says; -1 when it does not
 std::int64_t KnownTrips(const Pass& p, ExprId loop, ExprId before);

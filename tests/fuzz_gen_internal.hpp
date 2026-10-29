@@ -119,6 +119,10 @@ struct Gen {
     // GenerateCommonProgram's programs
     Rng common_rng;
     bool common_shapes = false;
+    // what loop collapse, value ranges and unread arguments change or must keep, from a
+    // stream of its own (fuzz_gen_collapse.cpp); only in GenerateCollapseProgram's programs
+    Rng collapse_rng;
+    bool collapse_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -281,6 +285,14 @@ struct Gen {
     std::string CondFact(int depth);
     std::string ConstCall();
     std::string CommonShape(int depth);
+    // ---- loops that collapse, compares ranges decide (fuzz_gen_collapse.cpp)
+    T CollapseInt();
+    std::string CollapseVar(T t);
+    std::string CollapseItem(const std::string& count, T count_type, bool is_for, int depth);
+    std::string CollapseLoop(int depth);
+    std::string RangeTest();
+    std::string CounterMatch();
+    std::string CollapseShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

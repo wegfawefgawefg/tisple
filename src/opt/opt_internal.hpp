@@ -179,6 +179,17 @@ Action DecideLoop(const Pass& p, const Liveness& live, ExprId stmt); // loops.cp
 // constant propagation and folding over each function's tracked scalars, branches on
 // constants cut (consts.cpp, consts_walk.cpp); returns the changes made
 std::uint64_t PropagateConstants(Pass& p);
+// arguments for parameters their function never reads become 0 (args.cpp); returns the
+// changes made
+std::uint64_t DropUnreadArgs(Pass& p);
+// loops whose passes all do the same run their body once (collapse.cpp); returns the
+// changes made
+std::uint64_t CollapseLoops(Pass& p);
+// compares and match clauses decided by value ranges (ranges.cpp); returns the changes made
+std::uint64_t FoldRanges(Pass& p);
+// the mathematical values id may hold from its shape alone (ranges.cpp): literals, masks,
+// remainders, shifts, sums that cannot wrap, widenings; the type's range when it says nothing
+void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi);
 // loop-invariant code motion (licm.cpp); returns the changes made
 std::uint64_t HoistInvariants(Pass& p, std::int32_t function);
 // common subexpressions (cse.cpp, cse_walk.cpp); returns the changes made
