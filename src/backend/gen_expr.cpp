@@ -496,7 +496,10 @@ Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
         // jump to the function
         bool again =
             std::find(g.inlined_once.begin(), g.inlined_once.end(), e.ref) != g.inlined_once.end();
-        inline_it = inline_it && !again && g.unrolled_copies == 1;
+        // in a loop, a body with loops of its own keeps its call: the JSR is little next to
+        // its work, and its code stays where it was
+        bool loops = g.loop_depth > 0 && HasLoops(*g.program, fn.body);
+        inline_it = inline_it && !again && g.unrolled_copies == 1 && !loops;
         if (inline_it) {
             g.inlined_once.push_back(e.ref);
         }

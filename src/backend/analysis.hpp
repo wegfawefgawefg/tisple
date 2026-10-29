@@ -17,6 +17,8 @@ std::uint32_t ExprSize(const Program& program, ExprId id); // bytes of its type
 // may write memory: calls, stores, sets, jsr (a let only writes a fresh local)
 bool HasWrites(const Program& program, ExprId id);
 bool HasCalls(const Program& program, ExprId id);
+// a while or for loop inside
+bool HasLoops(const Program& program, ExprId id);
 // anything that must run even when the value is unused: writes, I/O, control flow
 bool HasEffects(const Program& program, ExprId id);
 // may this code change var: a set rooted at it, or for globals and address-taken vars any

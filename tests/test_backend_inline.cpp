@@ -31,7 +31,7 @@ void CheckMain(TestResults& results, const Compiled& c, const std::string& text)
 }
 
 // work is far past the size inlined at every call; it returns early from inside its loop,
-// takes a byte, a word and a pointer, and main calls it once, inside a loop, over edge values
+// takes a byte, a word and a pointer, and main calls it once
 const char* kOnce = "(let out u16 0)\n"
                     "(let buf (array u8 8))\n"
                     "(let vals (array u8 6) (make (array u8 6) 0 1 127 128 254 255))\n"
@@ -46,9 +46,9 @@ const char* kOnce = "(let out u16 0)\n"
                     "    (set t (^ t (as u16 (- a 3))))\n"
                     "    (- t (as u16 (+ a 1))))\n"
                     "(fn main () u16\n"
-                    "    (for k u8 0 6\n"
-                    "        (let v u8 (at vals k))\n"
-                    "        (set out (+ out (work v (+ out (as u16 v)) (addr_of (at buf 0))))))\n"
+                    "    (let k u8 (& (as u8 out) 3))\n"
+                    "    (let v u8 (at vals (+ k 2)))\n"
+                    "    (set out (+ out (work v (+ out (as u16 v)) (addr_of (at buf 0)))))\n"
                     "    out)";
 
 void TestOnceInlined(TestResults& results) {
@@ -81,6 +81,26 @@ std::string Big(const std::string& name) {
            "    (let d u8 (- c (<< b 1))) (let e u8 (| d (& a 0x5A)))\n"
            "    (set g (+ g 1))\n"
            "    (+ e (^ d c)))\n";
+}
+
+// called once from a loop, a body with loops of its own stays a function; without loops it
+// is inlined there
+void TestOnceInLoop(TestResults& results) {
+    std::string looping =
+        "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
+        "(fn h ((x u8)) u8\n"
+        "    (let s u8 x) (let a u8 (+ x 3)) (let b u8 (^ a x)) (let c u8 (+ b (>> a 1)))\n"
+        "    (for i u8 0 (& x 7) (set s (+ s (f i))) (set c (^ c (<< s 1))))\n"
+        "    (+ (+ s a) (- c b)))\n"
+        "(fn main () u8 (for i u8 0 (& g 7) (set out (+ out (h out)))) out)";
+    Compiled c = CompileMainText(looping);
+    CheckMain(results, c, looping);
+    CHECK(results, HasSpan(c.code, "t.h"));
+    std::string plain = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
+                        "(fn main () u8 (for i u8 0 (& g 7) (set out (+ out (f out)))) out)";
+    Compiled d = CompileMainText(plain);
+    CheckMain(results, d, plain);
+    CHECK(results, !HasSpan(d.code, "t.f"));
 }
 
 void TestOnceInUnrolled(TestResults& results) {
@@ -128,6 +148,7 @@ void TestOnceChain(TestResults& results) {
 
 void RunBackendInlineTests(TestResults& results) {
     TestOnceInlined(results);
+    TestOnceInLoop(results);
     TestOnceInUnrolled(results);
     TestOnceInWhileTest(results);
     TestOnceChain(results);

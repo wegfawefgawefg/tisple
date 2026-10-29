@@ -85,6 +85,12 @@ bool HasCalls(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) { return e.kind == ExprKind::Call; });
 }
 
+bool HasLoops(const Program& program, ExprId id) {
+    return AnyExpr(program, id, [](const Expr& e) {
+        return e.kind == ExprKind::While || e.kind == ExprKind::For;
+    });
+}
+
 bool HasEffects(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         switch (e.kind) {
