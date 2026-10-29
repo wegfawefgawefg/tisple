@@ -111,7 +111,9 @@ void TestCountShifts(TestResults& results) {
     Compiled wide = CompileText("(fn f ((x u16) (n u8)) u16 (<< x (& n 15)))");
     CHECK(results, CountMn(wide, "t.f", tisple::Mn::PHA) == 1);
     // its count, worked out in A, straight into X
-    CHECK(results, CountMn(wide, "t.f", tisple::Mn::LDX) == 0);
+    Compiled set =
+        CompileText("(let o u16 0)\n(fn f ((x u16) (n u8)) void (set o (<< x (& n 15))))");
+    CHECK(results, CountMn(set, "t.f", tisple::Mn::LDX) == 0);
     // in a loop whose counter is in X: the count goes in Y
     CheckPairs(results,
                "(let acc u16 0)\n"
