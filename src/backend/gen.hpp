@@ -593,7 +593,8 @@ void ForgetDivision(Gen& g, ExprId stmt);
 std::vector<bool> FindDivPairs(const Program& program);
 // the division routines the code calls, each a label and its items
 void EmitDivRoutines(Backend& be, std::vector<AsmItem>& out);
-// shifts: 8-bit into A (gen_shift8.cpp), 16-bit into dst or a temporary (gen_shift.cpp)
+// shifts: 8-bit into A (gen_shift8.cpp), 16-bit into dst or a temporary (gen_shift.cpp); the
+// shifted if (gen_shift_if.cpp)
 void EvalShift8(Gen& g, const Expr& e);
 // a free index register for a shift's counter: X unless pinned
 int CounterReg(const Gen& g);
