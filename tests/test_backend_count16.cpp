@@ -60,10 +60,39 @@ void TestCountedWordLoops(TestResults& results) {
              0);
 }
 
+// ends that fit a byte, the counter unread: a byte counter
+void TestByteEnds(TestResults& results) {
+    for (const char* type : {"u16", "i16"}) {
+        std::string t = type;
+        std::string text = "(let g u16 0)\n"
+                           "(fn f ((x u8)) u16 (set g 0)\n"
+                           "    (for n " +
+                           t + " (as " + t + " (& x 7)) (as " + t +
+                           " (>> x 2))\n"
+                           "        (set g (+ (* g 3) 1)) (if (> g 5000) (break)))\n"
+                           "    (for n " +
+                           t + " 3 (as " + t +
+                           " (& x 0x3F)) (set g (+ g 2)))\n"
+                           "    (for n " +
+                           t + " 250 (+ (as " + t +
+                           " x) 3) (set g (+ g 5)))\n"
+                           "    g)";
+        for (std::uint16_t x = 0; x < 256; x += x < 240 ? 3 : 1) {
+            CheckRun(results, text, x);
+        }
+        // the byte ends compare as bytes
+        Compiled c = CompileText("(let g u16 0)\n(fn f ((x u8)) void\n"
+                                 "    (for n " +
+                                 t + " 3 (as " + t + " (& x 0x3F)) (set g (+ g 2))))");
+        CHECK(results, CountMn(c, "t.f", tisple::Mn::SBC) == 0);
+    }
+}
+
 } // namespace
 
 void RunBackendCount16Tests(TestResults& results) {
     TestCountedWordLoops(results);
+    TestByteEnds(results);
 }
 
 } // namespace tisple_tests

@@ -474,6 +474,15 @@ void GenFor(Gen& g, ExprId id) {
         f.trips = static_cast<std::uint8_t>(trips & 0xFF);
         f.size = 1;
     }
+    if (f.size == 2 && !f.down && e.b >= 0 && !ReadsVar(program, f.body, f.var) &&
+        MaxOf(g, e.a) <= 0xFF && MaxOf(g, e.b) <= 0xFF) {
+        // both ends fit a byte (so neither is negative) and nothing reads the counter: it
+        // counts in a byte, the ends' low bytes
+        f.size = 1;
+        f.start.size = 1;
+        f.end.size = 1;
+        is_signed = false;
+    }
     if (e.b >= 0 && !fixed) {
         bool both_up = NeverNegative(g, e.a) && NeverNegative(g, e.b);
         CompareJump(g, Op::Ge, is_signed && !both_up, f.start, f.end, f.end_label);
