@@ -47,7 +47,7 @@ void BecomeRead(Pass& p, ExprId id, std::int32_t var) {
 }
 
 // (let var value) for an expression moved out of its place, which now reads var
-ExprId MoveToLet(Hoister& h, ExprId id, const Loc& loc, std::int32_t& var) {
+ExprId MoveToLet(Hoister& h, ExprId id, Loc loc, std::int32_t& var) {
     Pass& p = *h.p;
     Expr value = At(p, id);
     var = NewLocal(p, h.function, value.type, value.loc);
