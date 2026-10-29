@@ -348,11 +348,12 @@ void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
         changed = false;
         for (std::size_t i = items.size(); i-- > 0;) {
             Successors(items, f, i, succ);
-            // a call of our own code (a function or a runtime routine, always a symbol; a
-            // jsr to an address may be a ROM routine that takes the carry) reads registers,
-            // never the flags
+            // a call or tail jump into our own code (a function or a runtime routine, always a
+            // symbol; a jsr to an address may be a ROM routine that takes the carry) reads
+            // registers, never the flags, and nothing reads the flags it returns with
             const AsmItem& item = items[i];
-            bool own = item.kind == ItemKind::Ins && item.mn == Mn::JSR && item.value.sym >= 0;
+            bool call = item.mn == Mn::JSR || (item.mn == Mn::JMP && item.mode == Mode::Abs);
+            bool own = item.kind == ItemKind::Ins && call && item.value.sym >= 0;
             std::uint8_t leave = own ? static_cast<std::uint8_t>(kA | kX | kY) : kAll;
             std::uint8_t out = 0;
             for (std::size_t s : succ) {

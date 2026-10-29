@@ -81,7 +81,9 @@ bool CanReuse(const Gen& g, const Expr& e) {
 // The operands that need code are worked out straight into rt_a and rt_b, not into
 // temporaries copied there: the divisor always (nothing runs between it and the call but the
 // dividend's load), the dividend when the divisor cannot call a routine that sets rt_a.
-void RuntimeDiv8(Gen& g, const Expr& e, bool is_signed) {
+// Unsigned, a dividend below the divisor needs no call (the quotient is 0, the remainder the
+// dividend): the compare is made here, and the routine entered past its own (rt.divu8.ge).
+void RuntimeDiv8(Gen& g, ExprId id, const Expr& e, bool is_signed) {
     AsmValue rt_a = SymValue(g.be->rt_a);
     Opnd a = TrySimple(g, e.a);
     bool a_placed = false;
@@ -105,10 +107,51 @@ void RuntimeDiv8(Gen& g, const Expr& e, bool is_signed) {
         LoadA(g, a, 0);
         Emit(g, Mn::STA, Mode::Abs, rt_a);
     }
-    CallRuntime(g, is_signed ? Runtime::DivS8 : Runtime::DivU8);
-    Remember(g, e, true, false);
+    if (is_signed) {
+        CallRuntime(g, Runtime::DivS8);
+        Remember(g, e, true, false);
+        if (e.op == Op::Mod) {
+            Emit(g, Mn::LDA, Mode::Abs, SymValue(g.be->rt_r));
+        }
+        return;
+    }
+    if (a_placed) {
+        Emit(g, Mn::LDA, Mode::Abs, rt_a);
+    }
+    Emit(g, Mn::CMP, Mode::Abs, SymValue(g.be->rt_b));
+    std::int32_t done = NewLabel(g);
+    // a later division of the same operands reads the results where the routine leaves them:
+    // then the way past the call leaves them there too
+    bool pair = g.be->div_pairs[static_cast<std::size_t>(id)];
+    if (!pair && e.op == Op::Mod) {
+        Branch(g, Mn::BCC, done);
+        Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->divu8_ge));
+        Emit(g, Mn::LDA, Mode::Abs, SymValue(g.be->rt_r));
+        PlaceLabel(g, done);
+        return;
+    }
+    std::int32_t divide = NewLabel(g);
+    Branch(g, Mn::BCS, divide);
+    if (pair) {
+        Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_r));
+        Emit(g, Mn::LDX, Mode::Imm, Num(0));
+        Emit(g, Mn::STX, Mode::Abs, rt_a);
+        if (e.op == Op::Div) {
+            Emit(g, Mn::TXA, Mode::Imp);
+        }
+    } else {
+        Emit(g, Mn::LDA, Mode::Imm, Num(0));
+    }
+    // the 0 just loaded set Z
+    Branch(g, Mn::BEQ, done);
+    PlaceLabel(g, divide);
+    Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->divu8_ge));
     if (e.op == Op::Mod) {
         Emit(g, Mn::LDA, Mode::Abs, SymValue(g.be->rt_r));
+    }
+    PlaceLabel(g, done);
+    if (pair) {
+        Remember(g, e, true, false);
     }
 }
 
@@ -228,7 +271,7 @@ void EvalDiv8(Gen& g, ExprId id, const Expr& e) {
         return;
     }
     if (!fixed || is_signed || !IsSmallDivisor(c)) {
-        RuntimeDiv8(g, e, is_signed);
+        RuntimeDiv8(g, id, e, is_signed);
         return;
     }
     EvalA(g, e.a);

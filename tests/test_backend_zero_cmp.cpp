@@ -1,6 +1,7 @@
 // a CMP, CPX or CPY #0 right after an instruction whose N and Z already show that register
-// goes when nothing reads the carry it sets; a call of our own code (a symbol) reads no flags,
-// a jsr to an address may (dead_regs.cpp)
+// goes when nothing reads the carry it sets; a call or tail jump into our own code (a symbol)
+// reads no flags, a jsr or jmp to an address may; a jump to a label reads what is read there
+// (dead_regs.cpp)
 
 #include "backend/peephole.hpp"
 #include "test_backend.hpp"
@@ -62,6 +63,9 @@ int Run(Mn load, Mn cmp, Mn branch, bool labelled, Mn after, bool own_call) {
     if (after == Mn::JSR) {
         Ins(t, Mn::JSR, Mode::Abs, own_call ? tisple::SymValue(t.routine) : tisple::Num(0xFD0C));
         Ins(t, Mn::BCC, Mode::Rel, tisple::SymValue(t.label));
+    } else if (after == Mn::BRK) {
+        // a tail jump into a routine (or, not our own, to an address)
+        Ins(t, Mn::JMP, Mode::Abs, own_call ? tisple::SymValue(t.routine) : tisple::Num(0xFD0C));
     } else if (after == Mn::JMP) {
         // a jump to l reads only what l does
         Ins(t, Mn::JMP, Mode::Abs, tisple::SymValue(t.label));
@@ -101,6 +105,9 @@ void TestPeephole(TestResults& results) {
     // address (a ROM routine) may read the carry it is called with
     CHECK(results, Run(Mn::LDA, Mn::CMP, Mn::BEQ, false, Mn::JSR, true) == 0);
     CHECK(results, Run(Mn::LDA, Mn::CMP, Mn::BEQ, false, Mn::JSR, false) == 1);
+    // a tail jump into a routine reads no flags; one to an address may
+    CHECK(results, Run(Mn::LDA, Mn::CMP, Mn::BEQ, false, Mn::BRK, true) == 0);
+    CHECK(results, Run(Mn::LDA, Mn::CMP, Mn::BEQ, false, Mn::BRK, false) == 1);
 }
 
 void CheckBytes(TestResults& results, const std::string& text) {

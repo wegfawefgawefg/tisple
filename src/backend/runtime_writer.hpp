@@ -13,7 +13,8 @@ struct Writer {
     Backend* be = nullptr;
     std::vector<AsmItem>* out = nullptr;
     // second entries of the unsigned divisions, for the signed ones and divu16 (A holds the
-    // dividend, at least the divisor, with the carry set)
+    // dividend, at least the divisor; divu16's may read the carry its callers' compare
+    // leaves, divu8's does not)
     std::int32_t divu8_ge = -1;
     std::int32_t divu16_ge = -1;
 

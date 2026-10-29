@@ -136,8 +136,10 @@ void DivU8(Writer& w) {
     w.Mem(Mn::STA, be.rt_r);
     w.Mem(Mn::LDA, be.rt_a);
     w.Op(Mn::RTS);
-    // 128 or more: the quotient is 1 (the carry is still set from the compare)
+    // 128 or more: the quotient is 1 (the code that calls rt.divu8.ge need not leave the
+    // carry set)
     w.Place(one);
+    w.Op(Mn::SEC);
     w.Mem(Mn::SBC, be.rt_b);
     w.Mem(Mn::STA, be.rt_r);
     w.Imm(Mn::LDA, 1);
