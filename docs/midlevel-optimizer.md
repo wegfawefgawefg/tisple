@@ -44,8 +44,9 @@ by the existing differential tests and the fuzz farm.
 3. **Loop deletion.** A loop whose body has no effect outside itself and whose
    results are dead is removed, if it provably terminates: every `for`
    terminates; a `while` terminates when a counter moves monotonically towards
-   its bound. Non-terminating loops are kept (a decision for the owner: C++
-   assumes forward progress; Tisple does not, unless he says so).
+   its bound. Non-terminating loops are kept. Settled 2026-10-29: timing goes
+   through the explicit `(wait_cycles n)` primitive (docs/language.md), never
+   through effect-free loops.
 4. **Loop-invariant code motion.** Pure expressions whose inputs the loop never
    writes move to before the loop (division first; always safe here). Loops
    that may run zero times still hoist safely because the expressions are pure

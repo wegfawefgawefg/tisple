@@ -551,6 +551,20 @@ whatever memory held (zero in a fresh interpreter or simulator), unless it lies
 inside the binary's own bytes, which loading the binary writes. Every other
 top-level `let` without a value starts at zero.
 
+## Planned: exact delays (owner, 2026-10-29)
+
+`(wait_cycles n)` burns exactly n cycles. With a constant n (2 or more; the
+6502 has no 1-cycle instruction) it compiles to an exact sequence of NOPs,
+`BIT zp` and a counted loop for long waits; with a variable `u16` n it waits n
+plus a fixed, documented overhead. It is an effect like `io_read`: never deleted,
+merged or moved. It keeps registers and memory, and may change flags.
+
+This is how a program asks for timing. The optimiser may delete an effect-free
+loop when the loop provably terminates (every `for`; a `while` whose counter moves
+monotonically to its bound); an effect-free loop that never terminates is kept,
+since removing it would change behaviour. Frame-level waits stay in the library
+(`timing.frame`, `timing.frames`).
+
 ## Planned after the first backend (owner, 2026-10-26)
 
 - Function pointers, no closures: dispatch tables, per-object update
