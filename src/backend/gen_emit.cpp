@@ -300,7 +300,51 @@ bool NeverNegative(const Gen& g, ExprId id) {
 }
 
 std::uint32_t MaxOf(const Gen& g, ExprId id) {
+    std::uint16_t c = 0;
+    if (!g.bound.empty() && ConstOf(g, id, c)) {
+        return c;
+    }
     return ExprMax(*g.program, g.be->ranges, id);
+}
+
+bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value) {
+    const Program& program = *g.program;
+    if (g.bound.empty()) {
+        return ConstValue(program, id, value);
+    }
+    const Expr& e = ExprOf(program, id);
+    std::uint16_t a = 0;
+    std::uint16_t b = 0;
+    switch (e.kind) {
+    case ExprKind::VarRef: {
+        ExprId target = BoundTarget(g, id);
+        return target != id && ConstOf(g, target, value);
+    }
+    case ExprKind::Unary:
+        if (!ConstOf(g, e.a, a)) {
+            return false;
+        }
+        value = EvalUnaryOp(e.op, KindOf(program, e.type), a);
+        return true;
+    case ExprKind::Binary: {
+        if (!ConstOf(g, e.a, a) || !ConstOf(g, e.b, b)) {
+            return false;
+        }
+        bool div_by_zero = false;
+        value = EvalBinaryOp(e.op, ExprKindOf(program, e.a), a, b, div_by_zero);
+        return !div_by_zero;
+    }
+    case ExprKind::Convert:
+        if (!ConstOf(g, e.a, a)) {
+            return false;
+        }
+        value = ConvertBits(ExprKindOf(program, e.a), KindOf(program, e.type), a);
+        return true;
+    case ExprKind::Reinterpret:
+        return ConstOf(g, e.a, value);
+    default:
+        return ConstValue(program, id, value);
+    }
 }
 
 int KnownImm(const Gen& g, const Opnd& o, int k) {

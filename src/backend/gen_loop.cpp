@@ -494,6 +494,7 @@ void GenFor(Gen& g, ExprId id) {
         // each copy runs once
         g.loop_factors.back() = 1;
         UnrolledLoop(g, f);
+    } else if (fixed && CountedCopies(g, f)) {
     } else if (f.size == 1) {
         g.ranges.push_back(CounterRangeOf(program, e, kind));
         ByteLoop(g, f, pin);

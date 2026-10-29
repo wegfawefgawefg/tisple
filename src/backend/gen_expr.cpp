@@ -67,7 +67,7 @@ Opnd PatchOpnd(std::int32_t label) {
 Opnd EvalIoRead(Gen& g, const Expr& e, const Opnd* dst) {
     std::uint32_t size = SizeOf(g, e.type);
     std::uint16_t address = 0;
-    bool fixed = ConstValue(*g.program, e.a, address);
+    bool fixed = ConstOf(g, e.a, address);
     std::int32_t patch[2] = {-1, -1};
     if (!fixed) {
         Opnd a = Eval(g, e.a, nullptr);
@@ -96,7 +96,7 @@ Opnd EvalIoRead(Gen& g, const Expr& e, const Opnd* dst) {
 void GenIoWrite(Gen& g, const Expr& e) {
     std::uint32_t size = e.value;
     std::uint16_t address = 0;
-    bool fixed = ConstValue(*g.program, e.a, address);
+    bool fixed = ConstOf(g, e.a, address);
     std::int32_t patch[2] = {-1, -1};
     if (!fixed) {
         Opnd a = Eval(g, e.a, nullptr);
@@ -242,7 +242,7 @@ void JumpOverElse(Gen& g, std::int32_t end) {
 Opnd EvalIf(Gen& g, const Expr& e, const Opnd* dst) {
     std::uint32_t size = SizeOf(g, e.type);
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, e.a, c)) {
+    if (ConstOf(g, e.a, c)) {
         return Eval(g, c != 0 ? e.b : e.c, dst);
     }
     std::int32_t other = NewLabel(g);
@@ -441,6 +441,14 @@ void EvalInto(Gen& g, ExprId id, const Opnd& dst) {
 bool CanBind(const Gen& g, const Function& fn, const Expr& call, std::uint32_t i) {
     const Program& program = *g.program;
     ExprId arg = ListItem(program, call, i);
+    std::int32_t param = fn.params[i];
+    std::uint16_t number = 0;
+    if (ConstOf(g, arg, number)) {
+        // a number under the bindings (an unrolled counter): the parameter reads as it
+        return !program.vars[static_cast<std::size_t>(param)].address_taken &&
+               g.be->aliases[static_cast<std::size_t>(param)].value < 0 &&
+               !MayWriteVarIn(g, fn.body, param);
+    }
     for (int depth = 0; depth < 4; depth++) {
         const Expr& c = ExprOf(program, arg);
         if (c.kind != ExprKind::Convert && c.kind != ExprKind::Reinterpret) {
@@ -455,7 +463,6 @@ bool CanBind(const Gen& g, const Function& fn, const Expr& call, std::uint32_t i
         arg = c.a;
     }
     const Expr& a = ExprOf(program, arg);
-    std::int32_t param = fn.params[i];
     if (a.kind != ExprKind::VarRef || program.vars[static_cast<std::size_t>(param)].address_taken) {
         return false;
     }

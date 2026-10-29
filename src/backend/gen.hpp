@@ -93,7 +93,10 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
-    std::vector<InlineKind> inlines;    // by function: FindInlines
+    std::vector<InlineKind> inlines; // by function: FindInlines
+    // by for expression: the first of the literals its counter takes in copies of its body
+    // (AddCounterLiterals), or -1
+    std::vector<ExprId> counter_literals;
     std::vector<std::uint64_t> fn_runs; // by function: FindRunCounts
     // by function: its Gen::multiplies, for the choice of multiply routines
     std::vector<std::vector<std::pair<ExprId, std::uint64_t>>> multiplies;
@@ -370,6 +373,9 @@ bool CarryClearNow(const Gen& g);
 bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
+// id's value as a constant (ConstValue), variables bound to constants included (an unrolled
+// counter, gen_unroll.cpp)
+bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value);
 // id's value is never negative as its signed type reads it (its top bit never set), so a
 // signed compare of it with another such value is the unsigned one
 bool NeverNegative(const Gen& g, ExprId id);
@@ -636,6 +642,12 @@ struct ForParts {
 // a u16 for loop whose body has a let that moves by one with the counter, the counter
 // replaced by it (gen_counter.cpp); false (nothing kept) if there is none
 bool ReplacedLoop(Gen& g, const ForParts& f);
+// a literal for each value the counter of a short for with constant bounds takes, when its
+// body reads it, appended to the program (gen_unroll.cpp): by for expression, the first
+std::vector<ExprId> AddCounterLiterals(Program& program);
+// the body once per trip, the counter in each copy bound to its literal; false (nothing
+// made) when the loop has no literals or the copies would be too big
+bool CountedCopies(Gen& g, const ForParts& f);
 // (set place value) steps place by one: (+ place 1), (- place 1), (+ place s) for a unit step s
 bool IsStepByOne(const Gen& g, ExprId place, ExprId value);
 // gen_follow.cpp: start following the u16 variables the while loop `loop` only steps by one;

@@ -198,7 +198,7 @@ void TestRunCounts(TestResults& results) {
                        "(fn once () void (set h (* (as u16 g) h)))\n"
                        "(fn main () void\n"
                        "    (once)\n"
-                       "    (for i u8 0 10 (set g (step i))))\n";
+                       "    (for i u8 0 17 (set g (step i))))\n";
     Compiled c = CompileMainText(text);
     CHECK(results, c.ok);
     if (!c.ok) {
@@ -208,8 +208,8 @@ void TestRunCounts(TestResults& results) {
     std::vector<std::uint64_t> runs = tisple::FindRunCounts(program);
     CHECK(results, runs[static_cast<std::size_t>(program.main)] == 1);
     CHECK(results, runs[static_cast<std::size_t>(tisple::FindFunction(program, "t.once"))] == 1);
-    CHECK(results, runs[static_cast<std::size_t>(tisple::FindFunction(program, "t.step"))] == 10);
-    CHECK(results, runs[static_cast<std::size_t>(tisple::FindFunction(program, "t.twice"))] == 20);
+    CHECK(results, runs[static_cast<std::size_t>(tisple::FindFunction(program, "t.step"))] == 17);
+    CHECK(results, runs[static_cast<std::size_t>(tisple::FindFunction(program, "t.twice"))] == 34);
     CHECK(results, HasRoutine(c, "rt.mul8q") && !HasRoutine(c, "rt.mul8"));
     // the 16-bit product that runs once takes them too, the tables being in
     CHECK(results, HasRoutine(c, "rt.mul16q") && !HasRoutine(c, "rt.mul16"));

@@ -245,6 +245,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     FoldConstants(program);
     OptReport report;
     OptimizeProgram(program, options.opt, report);
+    std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     out = Compiled();
     out.origin = options.origin;
     out.main = program.main;
@@ -255,6 +256,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     if (!ShapeProgram(program, be.shapes, errors)) {
         return false;
     }
+    be.counter_literals = counter_literals;
     be.inlines = FindInlines(program, options.no_inline);
     be.deref = FindDerefPointers(program, be.inlines);
     be.aliases = FindIndexAliases(program);

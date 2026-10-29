@@ -115,7 +115,8 @@ void TestJsrStays(TestResults& results) {
     CHECK(results, c.ok);
     CHECK(results, CountMn(c, "t.f", tisple::Mn::JSR) == 1);
     CHECK(results, CountMn(c, "t.h", tisple::Mn::JSR) == 1);
-    CHECK(results, CountMn(c, "t.k", tisple::Mn::JSR) == 1);
+    // the loop reads its counter and runs as four copies: one each
+    CHECK(results, CountMn(c, "t.k", tisple::Mn::JSR) == 4);
     CHECK(results, CountMn(c, "t.m", tisple::Mn::JSR) == 1);
 }
 

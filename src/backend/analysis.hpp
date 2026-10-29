@@ -55,6 +55,8 @@ enum class InlineKind : std::uint8_t {
 // by function: how its calls are inlined. never names functions that stay functions
 // (qualified names; the race's t.init and t.checksum, whose entries time the work)
 std::vector<InlineKind> FindInlines(const Program& program, const std::vector<std::string>& never);
+// calls a function that is not inlined at every call (a JSR, or the one inlined copy)
+bool HasBigCalls(const Program& program, ExprId id, const std::vector<InlineKind>& inlines);
 
 // pointer variables some load or store goes through directly, or that an inlined function's
 // parameter some load or store goes through reads in place once the call is inlined: these

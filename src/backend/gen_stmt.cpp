@@ -23,7 +23,7 @@ bool IsStep(const Gen& g, ExprId place, ExprId value, bool& up) {
     }
     std::uint16_t c = 0;
     up = v.op == Op::Add;
-    if (SameExpr(*g.program, v.a, place) && ConstValue(*g.program, v.b, c)) {
+    if (SameExpr(*g.program, v.a, place) && ConstOf(g, v.b, c)) {
         if (c == 1) {
             return true;
         }
@@ -34,7 +34,7 @@ bool IsStep(const Gen& g, ExprId place, ExprId value, bool& up) {
         }
         return false;
     }
-    return up && SameExpr(*g.program, v.b, place) && ConstValue(*g.program, v.a, c) && c == 1;
+    return up && SameExpr(*g.program, v.b, place) && ConstOf(g, v.a, c) && c == 1;
 }
 
 // (set place (+ place s)) or (+ s place) for a local s that is only ever 1 or -1: s, else -1
@@ -122,7 +122,7 @@ void GenLet(Gen& g, const Expr& e) {
 
 void GenIf(Gen& g, const Expr& e) {
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, e.a, c)) {
+    if (ConstOf(g, e.a, c)) {
         if (c != 0) {
             GenStmt(g, e.b);
         } else if (e.c >= 0) {

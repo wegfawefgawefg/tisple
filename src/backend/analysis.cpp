@@ -204,6 +204,13 @@ std::vector<InlineKind> FindInlines(const Program& program, const std::vector<st
     return out;
 }
 
+bool HasBigCalls(const Program& program, ExprId id, const std::vector<InlineKind>& inlines) {
+    return AnyExpr(program, id, [&](const Expr& e) {
+        return e.kind == ExprKind::Call &&
+               inlines[static_cast<std::size_t>(e.ref)] != InlineKind::Always;
+    });
+}
+
 std::vector<bool> FindDerefPointers(const Program& program,
                                     const std::vector<InlineKind>& inlines) {
     std::vector<bool> deref(program.vars.size(), false);

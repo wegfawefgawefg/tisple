@@ -338,7 +338,7 @@ Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst) {
     Op op = e.op;
     Opnd a = Eval(g, e.a, nullptr);
     std::uint16_t c = 0;
-    bool fixed = ConstValue(*g.program, e.b, c);
+    bool fixed = ConstOf(g, e.b, c);
     Opnd count;
     if (!fixed) {
         if (MayWriteOpnd(g, e.b, a)) {
@@ -396,8 +396,8 @@ std::int32_t PlainVar(const Gen& g, ExprId id) {
 bool IsShiftOne(const Gen& g, ExprId id, std::int32_t var) {
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
-    return e.kind == ExprKind::Binary && e.op == Op::Shl && ConstValue(*g.program, e.b, c) &&
-           c == 1 && At(g, e.a).kind == ExprKind::VarRef && At(g, e.a).ref == var;
+    return e.kind == ExprKind::Binary && e.op == Op::Shl && ConstOf(g, e.b, c) && c == 1 &&
+           At(g, e.a).kind == ExprKind::VarRef && At(g, e.a).ref == var;
 }
 
 // every (<< var 1) in id into shifts; false if var is read some other way, or a call may
@@ -440,9 +440,9 @@ bool TopBitTest(const Gen& g, ExprId cond, std::int32_t& var, bool& set) {
     }
     std::uint16_t c = 0;
     ExprId masked = -1;
-    if (ConstValue(*g.program, e.b, c) && c == 0) {
+    if (ConstOf(g, e.b, c) && c == 0) {
         masked = e.a;
-    } else if (ConstValue(*g.program, e.a, c) && c == 0) {
+    } else if (ConstOf(g, e.a, c) && c == 0) {
         masked = e.b;
     } else {
         return false;
@@ -452,9 +452,9 @@ bool TopBitTest(const Gen& g, ExprId cond, std::int32_t& var, bool& set) {
         return false;
     }
     ExprId other = -1;
-    if (ConstValue(*g.program, m.b, c)) {
+    if (ConstOf(g, m.b, c)) {
         other = m.a;
-    } else if (ConstValue(*g.program, m.a, c)) {
+    } else if (ConstOf(g, m.a, c)) {
         other = m.b;
     } else {
         return false;

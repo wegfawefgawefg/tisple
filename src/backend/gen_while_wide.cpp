@@ -64,11 +64,11 @@ bool StepOf(const Gen& g, std::int32_t var, ExprId value, std::uint16_t& c) {
         const Expr& x = At(g, id);
         return x.kind == ExprKind::VarRef && x.ref == var;
     };
-    if (is_var(v.a) && ConstValue(*g.program, v.b, c)) {
+    if (is_var(v.a) && ConstOf(g, v.b, c)) {
         c = v.op == Op::Sub ? static_cast<std::uint16_t>(-c) : c;
         return true;
     }
-    return v.op == Op::Add && is_var(v.b) && ConstValue(*g.program, v.a, c);
+    return v.op == Op::Add && is_var(v.b) && ConstOf(g, v.a, c);
 }
 
 // (set var value) with var's low byte in Y and its high byte at `high`

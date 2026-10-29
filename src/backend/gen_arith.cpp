@@ -246,12 +246,12 @@ void EvalArith8(Gen& g, const Expr& e) {
         return;
     case Op::Mul: {
         std::uint16_t c = 0;
-        if (ConstValue(*g.program, e.b, c)) {
+        if (ConstOf(g, e.b, c)) {
             EvalA(g, e.a);
             MulConst8A(g, c);
             return;
         }
-        if (ConstValue(*g.program, e.a, c)) {
+        if (ConstOf(g, e.a, c)) {
             EvalA(g, e.b);
             MulConst8A(g, c);
             return;
@@ -363,7 +363,7 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         return EvalShift16(g, e, dst);
     }
     std::uint16_t c = 0;
-    bool b_const = ConstValue(*g.program, e.b, c);
+    bool b_const = ConstOf(g, e.b, c);
     if (op == Op::Mul && b_const && MaxOf(g, e.a) * c <= 0xFF) {
         // the product fits a byte: work it out in A, the high byte is 0
         EvalA(g, e.a);
@@ -380,7 +380,7 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         MulConst16(g, a, c, d);
         return d;
     }
-    if (op == Op::Mul && ConstValue(*g.program, e.a, c) && InlineMulConst16(c)) {
+    if (op == Op::Mul && ConstOf(g, e.a, c) && InlineMulConst16(c)) {
         Opnd b = Eval(g, e.b, nullptr);
         Opnd d = dst ? *dst : NewTemp(g, 2);
         MulConst16(g, b, c, d);

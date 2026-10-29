@@ -94,6 +94,8 @@ void RunBackendSub8Tests(TestResults& results);
 void RunBackendSignedCmpTests(TestResults& results);
 // u16 for loops counted in a byte (test_backend_count16.cpp)
 void RunBackendCount16Tests(TestResults& results);
+// short loops copied with the counter a number (test_backend_unroll.cpp)
+void RunBackendUnrollTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

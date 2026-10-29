@@ -101,7 +101,7 @@ void ShiftLoop8(Gen& g, Op op, bool is_signed, const Opnd& count, std::uint32_t 
 void EvalShift8(Gen& g, const Expr& e) {
     bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, e.b, c)) {
+    if (ConstOf(g, e.b, c)) {
         EvalA(g, e.a);
         ShiftConst8(g, e.op, is_signed, c);
         return;
