@@ -50,6 +50,9 @@ MulDigits NonAdjacent(std::uint32_t c, int bits) {
 // cycles of a byte multiply in A: a shift per digit below the top, an add or subtract per
 // nonzero one, a negation when the top digit is -1
 int ByteCost(const MulDigits& d) {
+    if (d.top < 0) {
+        return 0;
+    }
     return 2 * d.top + 5 * (d.nonzero - 1) + (d.digit[d.top] < 0 ? 6 : 0);
 }
 
@@ -65,7 +68,8 @@ MulDigits ByteDigits(std::uint32_t c) {
 MulDigits WordDigits(std::uint32_t c) {
     MulDigits plain = Binary(c, 16);
     MulDigits signed_digits = NonAdjacent(c, 16);
-    if (signed_digits.digit[signed_digits.top] > 0 && signed_digits.nonzero < plain.nonzero) {
+    if (signed_digits.top >= 0 && signed_digits.digit[signed_digits.top] > 0 &&
+        signed_digits.nonzero < plain.nonzero) {
         return signed_digits;
     }
     return plain;
