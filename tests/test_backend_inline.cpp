@@ -103,6 +103,18 @@ void TestOnceInLoop(TestResults& results) {
     CHECK(results, !HasSpan(d.code, "t.f"));
 }
 
+// called once, but from a small function inlined in two places: one copy, as a function
+void TestOnceInSmall(TestResults& results) {
+    std::string text = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
+                       "(fn s ((x u8)) u8 (+ (f x) 1))\n"
+                       "(fn main () u8 (set out (s out)) (set out (+ out (s 7))) out)";
+    Compiled c = CompileMainText(text);
+    CheckMain(results, c, text);
+    CHECK(results, HasSpan(c.code, "t.f"));
+    CHECK(results, !HasSpan(c.code, "t.s"));
+    CHECK(results, CountMn(c, "t.main", tisple::Mn::JSR) == 2);
+}
+
 void TestOnceInUnrolled(TestResults& results) {
     // the loop's counter is never read: four copies of its body
     std::string text = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
@@ -149,6 +161,7 @@ void TestOnceChain(TestResults& results) {
 void RunBackendInlineTests(TestResults& results) {
     TestOnceInlined(results);
     TestOnceInLoop(results);
+    TestOnceInSmall(results);
     TestOnceInUnrolled(results);
     TestOnceInWhileTest(results);
     TestOnceChain(results);

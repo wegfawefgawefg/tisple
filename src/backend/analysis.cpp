@@ -187,10 +187,12 @@ std::uint32_t CountExprs(const Program& program, ExprId id) {
 std::vector<InlineKind> FindInlines(const Program& program, const std::vector<std::string>& never) {
     std::size_t count = program.functions.size();
     std::vector<std::uint32_t> calls(count, 0);
-    for (const Function& f : program.functions) {
-        AnyExpr(program, f.body, [&](const Expr& e) {
+    std::vector<std::int32_t> caller(count, -1); // of the last call seen
+    for (std::size_t f = 0; f < count; f++) {
+        AnyExpr(program, program.functions[f].body, [&](const Expr& e) {
             if (e.kind == ExprKind::Call) {
                 calls[static_cast<std::size_t>(e.ref)]++;
+                caller[static_cast<std::size_t>(e.ref)] = static_cast<std::int32_t>(f);
             }
             return false;
         });
@@ -203,9 +205,20 @@ std::vector<InlineKind> FindInlines(const Program& program, const std::vector<st
         }
         if (CountExprs(program, fn.body) <= kMaxInlineExprs) {
             out[f] = InlineKind::Always;
-        } else if (calls[f] == 1) {
-            out[f] = InlineKind::Once;
         }
+    }
+    for (std::size_t f = 0; f < count; f++) {
+        if (out[f] != InlineKind::None || calls[f] != 1 ||
+            std::find(never.begin(), never.end(), program.functions[f].name) != never.end()) {
+            continue;
+        }
+        // one call, but in a small function inlined at its several calls the call is made
+        // once in each copy: then it stays a function
+        std::size_t from = static_cast<std::size_t>(caller[f]);
+        if (out[from] == InlineKind::Always && calls[from] > 1) {
+            continue;
+        }
+        out[f] = InlineKind::Once;
     }
     return out;
 }
