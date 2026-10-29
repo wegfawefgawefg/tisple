@@ -6,8 +6,8 @@
 (fn click () void
     (io_read u8 a2.SPKR))
 
-; count clicks, half a period of delay loop apart: bigger half is lower
-(fn buzz ((half u8) (count u8)) void
+; count clicks, waiting half cycles after each (the loop adds a few more): bigger half is lower
+(fn buzz ((half u16) (count u8)) void
     (for i u8 0 count
         (click)
-        (for d u8 0 half)))
+        (wait_cycles half)))

@@ -5,11 +5,11 @@
 (fn click () void
     (io_read u8 a2.SPKR))
 
-; half_period sets the pitch: each pass of the empty loop costs the same cycles
-(fn tone ((cycles u16) (half_period u8)) void
+; half_period sets the pitch: the cycles waited after each click
+(fn tone ((cycles u16) (half_period u16)) void
     (for i u16 0 cycles
         (click)
-        (for j u8 0 half_period)))
+        (wait_cycles half_period)))
 
 (fn beep () void
-    (tone 200 100))
+    (tone 200 808))

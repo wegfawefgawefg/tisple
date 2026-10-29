@@ -1040,6 +1040,9 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     now deleted: they need `(wait_cycles n)` (docs/language.md). 20000 fuzz
     seeds: 208691712 cycles to 177542577. Tests: tests/test_opt*.cpp; fuzz
     shape tests/fuzz_gen_dead.cpp (`seed N (dead)`, one seed in four).
+    At merge, lib/speaker `buzz` and examples/speaker `tone` wait with
+    `wait_cycles` (half now in cycles), same pitch: 180 and 980 cycles per half
+    wave in snake, 822 in the example.
 
 ## Gap finder (2026-10-26)
 

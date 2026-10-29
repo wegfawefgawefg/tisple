@@ -88,7 +88,7 @@
         (do
             (set grow (+ grow 3))
             (set score (+ score 1))
-            (speaker.buzz 20 4)
+            (speaker.buzz 168 4)
             (place_food))
         (if (!= hit lores.BLACK)
             (return false)))
@@ -112,6 +112,6 @@
         (read_input)
         (if (not (step))
             (do
-                (speaker.buzz 120 40)
+                (speaker.buzz 968 40)
                 (timing.frames 60)
                 (new_game)))))
