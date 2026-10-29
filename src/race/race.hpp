@@ -45,6 +45,8 @@ struct RaceResult {
     std::uint64_t total_cycles = 0;     // from the entry to the return
     Regs regs;                          // at the return
     std::vector<std::uint8_t> executed; // 65536 flags: an opcode ran here while the clock ran
+    std::vector<std::uint32_t> runs;    // 65536: times the opcode here ran while the clock ran
+    std::vector<std::uint64_t> spent;   // 65536: cycles the instruction here took in all
 };
 
 // FILE@ADDR (split at the last @, ADDR as $hex, 0xhex or decimal): the file's bytes at
@@ -56,5 +58,8 @@ RaceResult RunRace(Machine& m, const RaceOptions& options);
 
 // address ranges of every byte of every instruction that ran, "first last" in hex a line
 std::string ExecutedRanges(const Machine& m, const std::vector<std::uint8_t>& executed);
+
+// "pc runs cycles" in hex and decimal a line, for every instruction that ran on the clock
+std::string ProfileLines(const RaceResult& result);
 
 } // namespace tisple

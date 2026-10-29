@@ -2,6 +2,8 @@
 
 #include "check/arith.hpp"
 
+#include <algorithm>
+
 namespace tisple {
 
 namespace {
@@ -176,7 +178,34 @@ std::uint32_t CountExprs(const Program& program, ExprId id) {
     return count;
 }
 
-std::vector<bool> FindDerefPointers(const Program& program) {
+std::vector<InlineKind> FindInlines(const Program& program, const std::vector<std::string>& never) {
+    std::size_t count = program.functions.size();
+    std::vector<std::uint32_t> calls(count, 0);
+    for (const Function& f : program.functions) {
+        AnyExpr(program, f.body, [&](const Expr& e) {
+            if (e.kind == ExprKind::Call) {
+                calls[static_cast<std::size_t>(e.ref)]++;
+            }
+            return false;
+        });
+    }
+    std::vector<InlineKind> out(count, InlineKind::None);
+    for (std::size_t f = 0; f < count; f++) {
+        const Function& fn = program.functions[f];
+        if (std::find(never.begin(), never.end(), fn.name) != never.end()) {
+            continue;
+        }
+        if (CountExprs(program, fn.body) <= kMaxInlineExprs) {
+            out[f] = InlineKind::Always;
+        } else if (calls[f] == 1) {
+            out[f] = InlineKind::Once;
+        }
+    }
+    return out;
+}
+
+std::vector<bool> FindDerefPointers(const Program& program,
+                                    const std::vector<InlineKind>& inlines) {
     std::vector<bool> deref(program.vars.size(), false);
     for (const Expr& e : program.exprs) {
         if (e.kind != ExprKind::Load && e.kind != ExprKind::LoadField &&
@@ -197,16 +226,13 @@ std::vector<bool> FindDerefPointers(const Program& program) {
             break;
         }
     }
-    // a pointer handed to such a parameter of a function small enough to inline: the inlined
-    // body reads the argument where it is (gen_expr.cpp, CanBind), so it is the one used
-    std::vector<bool> small(program.functions.size(), false);
-    for (std::size_t f = 0; f < program.functions.size(); f++) {
-        small[f] = CountExprs(program, program.functions[f].body) <= kMaxInlineExprs;
-    }
+    // a pointer handed to such a parameter of a function that is inlined: the inlined body
+    // reads the argument where it is (gen_expr.cpp, CanBind), so it is the one used
     for (bool changed = true; changed;) {
         changed = false;
         for (const Expr& e : program.exprs) {
-            if (e.kind != ExprKind::Call || !small[static_cast<std::size_t>(e.ref)]) {
+            if (e.kind != ExprKind::Call ||
+                inlines[static_cast<std::size_t>(e.ref)] == InlineKind::None) {
                 continue;
             }
             const Function& fn = program.functions[static_cast<std::size_t>(e.ref)];

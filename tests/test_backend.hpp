@@ -82,6 +82,8 @@ void RunBackendWideTests(TestResults& results);
 void RunBackendPeepTests(TestResults& results);
 void RunBackendBindTests(TestResults& results);
 void RunBackendBuildTests(TestResults& results);
+// functions called in one place (test_backend_inline.cpp)
+void RunBackendInlineTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

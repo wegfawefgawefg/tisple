@@ -93,8 +93,8 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
-    std::vector<std::uint32_t> fn_exprs; // by function: expressions in its body
-    std::vector<std::uint64_t> fn_runs;  // by function: FindRunCounts
+    std::vector<InlineKind> inlines;    // by function: FindInlines
+    std::vector<std::uint64_t> fn_runs; // by function: FindRunCounts
     // by function: its Gen::multiplies, for the choice of multiply routines
     std::vector<std::vector<std::pair<ExprId, std::uint64_t>>> multiplies;
     std::vector<bool> deref;              // by var: some load or store goes straight through it
@@ -343,6 +343,9 @@ struct Gen {
     std::uint32_t unrolled_copies = 1;
     std::vector<LoopCtx> loops;
     std::vector<InlineCtx> inlines;
+    // functions called in one place whose call was inlined here: that call made again (a
+    // while test made twice) is a JSR
+    std::vector<std::int32_t> inlined_once;
     std::uint32_t temp_top = 0;
     std::uint32_t ptemp_top = 0;
     std::uint32_t last_file = 0xFFFFFFFF;

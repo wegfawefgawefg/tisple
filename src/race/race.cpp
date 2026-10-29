@@ -150,6 +150,8 @@ bool ReadPatchArg(const char* text, RacePatch& out, std::string& error) {
 RaceResult RunRace(Machine& m, const RaceOptions& options) {
     RaceResult result;
     result.executed.assign(65536, 0);
+    result.runs.assign(65536, 0);
+    result.spent.assign(65536, 0);
     Regs regs = GetRegs(m);
     regs.pc = options.start;
     SetRegs(m, regs);
@@ -186,10 +188,13 @@ RaceResult RunRace(Machine& m, const RaceOptions& options) {
             result.error = "kernel cycle limit";
             break;
         }
+        std::uint64_t before = m.cycles;
+        StepInstruction(m);
         if (clock) {
             result.executed[pc] = 1;
+            result.runs[pc]++;
+            result.spent[pc] += m.cycles - before;
         }
-        StepInstruction(m);
     }
     result.total_cycles = m.cycles - entry_cycles;
     if (clock) {
@@ -228,6 +233,20 @@ std::string ExecutedRanges(const Machine& m, const std::vector<std::uint8_t>& ex
         }
         char line[16];
         std::snprintf(line, sizeof(line), "%04X %04X\n", first, pc - 1);
+        text += line;
+    }
+    return text;
+}
+
+std::string ProfileLines(const RaceResult& result) {
+    std::string text;
+    for (std::uint32_t pc = 0; pc < result.runs.size(); pc++) {
+        if (result.runs[pc] == 0) {
+            continue;
+        }
+        char line[48];
+        std::snprintf(line, sizeof(line), "%04X %u %llu\n", pc, result.runs[pc],
+                      static_cast<unsigned long long>(result.spent[pc]));
         text += line;
     }
     return text;

@@ -138,7 +138,10 @@ def build_oscar64(src, outdir):
 
 
 def build_tisple(src, outdir):
+    # the clock's ends are t.init's return and t.checksum's entry: neither may be inlined, as
+    # the C's RACE_NOINLINE
     listing = run([toolchains.tisple_binary(), "build", src, "--origin", "0x%04X" % TISPLE_ORIGIN,
+                   "--no-inline", "t.init", "--no-inline", "t.checksum",
                    "--asm", "-o", os.path.join(outdir, "k.bin")], outdir, "tisple build")
     b = Build()
     with open(os.path.join(outdir, "k.bin"), "rb") as f:

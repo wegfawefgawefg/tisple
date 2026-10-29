@@ -1,11 +1,12 @@
 #include "backend/gen.hpp"
 
+#include <algorithm>
+
 namespace tisple {
 
 namespace {
 
-// functions of at most kMaxInlineExprs expressions (analysis.hpp) are inlined at every
-// call, this many deep at most
+// calls are inlined (FindInlines, analysis.hpp) this many deep at most
 constexpr std::size_t kMaxInlineDepth = 4;
 
 const Expr& At(const Gen& g, ExprId id) {
@@ -481,8 +482,18 @@ bool CanBind(const Gen& g, const Function& fn, const Expr& call, std::uint32_t i
 Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
     const Expr& e = At(g, id);
     const Function& fn = g.program->functions[static_cast<std::size_t>(e.ref)];
-    bool inline_it = g.be->fn_exprs[static_cast<std::size_t>(e.ref)] <= kMaxInlineExprs &&
-                     g.inlines.size() < kMaxInlineDepth;
+    InlineKind kind = g.be->inlines[static_cast<std::size_t>(e.ref)];
+    bool inline_it = kind != InlineKind::None && g.inlines.size() < kMaxInlineDepth;
+    if (kind == InlineKind::Once) {
+        // one copy of the body at most: unrolled copies of the call and a call made again
+        // jump to the function
+        bool again =
+            std::find(g.inlined_once.begin(), g.inlined_once.end(), e.ref) != g.inlined_once.end();
+        inline_it = inline_it && !again && g.unrolled_copies == 1;
+        if (inline_it) {
+            g.inlined_once.push_back(e.ref);
+        }
+    }
     std::vector<bool> bind(e.count, false);
     for (std::uint32_t i = 0; i < e.count && inline_it; i++) {
         bind[i] = CanBind(g, fn, e, i);
