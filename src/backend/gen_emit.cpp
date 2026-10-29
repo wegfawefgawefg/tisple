@@ -421,9 +421,36 @@ void LoadIndexReg(Gen& g, int reg, const Index& index) {
         StepIndexReg(g, reg, c.delta, index.delta)) {
         return;
     }
-    Emit(g, reg == 0 ? Mn::LDX : Mn::LDY, Mode::Abs, index.value);
+    Opnd stored = MemOpnd(index.value, 1, 1);
+    if (AHoldsByte(g, stored, 0)) {
+        // A was just stored there (or loaded from there): TAX instead of LDX, the register
+        // known to hold that byte as after the load
+        Emit(g, reg == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
+        g.reg[reg].known = index.value.sym >= 0;
+        g.reg[reg].mem = true;
+        g.reg[reg].v = index.value;
+        g.reg[reg].delta = 0;
+    } else {
+        Emit(g, reg == 0 ? Mn::LDX : Mn::LDY, Mode::Abs, index.value);
+    }
     if (!StepIndexReg(g, reg, 0, index.delta)) {
         Fail(g, Loc(), "internal: an index delta too big for INX/INY");
+    }
+}
+
+void PreloadIndex(Gen& g, const Opnd& dst, const Opnd& value) {
+    if (dst.size == 0 || dst.b[0].kind != ByteKind::MemIdx || dst.index.is_reg ||
+        !AHoldsByte(g, MemOpnd(dst.index.value, 1, 1), 0) || value.size == 0 || value.in_a) {
+        return;
+    }
+    for (int k = 0; k < value.size; k++) {
+        if (value.b[k].kind != ByteKind::Imm && value.b[k].kind != ByteKind::Mem) {
+            return;
+        }
+    }
+    int r = PickIndexReg(g, dst.index, Mn::STA);
+    if (g.pin[r] < 0) {
+        LoadIndexReg(g, r, dst.index);
     }
 }
 

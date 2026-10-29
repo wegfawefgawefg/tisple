@@ -399,6 +399,9 @@ void StoreA(Gen& g, const Opnd& dst, int k);
 bool RmwByte(Gen& g, Mn mn, const Opnd& dst, int k);
 bool CanRmw(const Gen& g, const Opnd& dst, int k);
 void LoadIndexReg(Gen& g, int reg, const Index& index);
+// a store's place indexed by a byte just worked out in A, of a value read where it is with no
+// index of its own: the index into its register now (TAX), while A has it
+void PreloadIndex(Gen& g, const Opnd& dst, const Opnd& value);
 void LoadYConst(Gen& g, std::uint8_t value);
 void LoadXConst(Gen& g, std::uint8_t value);
 

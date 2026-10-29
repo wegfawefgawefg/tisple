@@ -220,6 +220,7 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
         GenStep(g, d, false);
         PlaceLabel(g, done);
     } else if (!step || !GenStep(g, d, up)) {
+        PreloadIndex(g, d, TrySimple(g, value));
         EvalInto(g, value, d);
         if (!g.follows.empty()) {
             std::int32_t after = NewLabel(g);
@@ -241,7 +242,9 @@ void GenStore(Gen& g, const Expr& e) {
         CopyStruct(g, e.b, p, p.type);
         return;
     }
-    EvalInto(g, e.b, PlaceOpnd(g, p, p.type));
+    Opnd d = PlaceOpnd(g, p, p.type);
+    PreloadIndex(g, d, TrySimple(g, e.b));
+    EvalInto(g, e.b, d);
 }
 
 void GenStmt(Gen& g, ExprId id) {
