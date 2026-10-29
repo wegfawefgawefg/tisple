@@ -110,7 +110,7 @@ ExprId Clone(Pass& p, ExprId id, std::int32_t var, std::uint32_t bits, std::int3
 ExprId Copy(Pass& p, std::int32_t function, ExprId body, std::int32_t var, std::uint32_t bits) {
     std::unordered_map<std::int32_t, std::int32_t> names;
     ExprId copy = Clone(p, body, var, bits, function, names);
-    const Expr& e = At(p, copy);
+    Expr e = At(p, copy); // a copy: NewList moves every expression
     if (e.kind == ExprKind::Do && e.type == kVoidType) {
         return copy;
     }

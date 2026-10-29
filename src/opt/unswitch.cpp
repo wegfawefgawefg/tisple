@@ -88,7 +88,7 @@ std::int32_t NewCopy(Pass& p, std::int32_t function, ExprId loop, std::uint32_t 
     e.b = e.b >= 0 ? CloneExpr(p, e.b) : -1;
     // the counter first: the bounds cannot read it, the body does
     names[e.ref] = CopyLocal(p, function, e.ref);
-    const Expr& d = At(p, e.c);
+    Expr d = At(p, e.c); // a copy: the clones move every expression
     std::vector<ExprId> items;
     for (std::uint32_t i = 0; i < d.count; i++) {
         ExprId item = Item(p, d, i);
@@ -107,7 +107,7 @@ std::int32_t NewCopy(Pass& p, std::int32_t function, ExprId loop, std::uint32_t 
 
 bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
                   std::vector<ExprId>& out) {
-    const Expr& e = At(p, loop);
+    Expr e = At(p, loop); // a copy: the copies move every expression
     if (e.kind != ExprKind::For || Size(p, loop, kMaxNodes + 1) > kMaxNodes) {
         return false;
     }

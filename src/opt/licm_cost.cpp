@@ -292,11 +292,16 @@ ExprId CounterBefore(const Pass& p, ExprId list, std::uint32_t index) {
     }
     const Expr& d = At(p, list);
     const Expr& loop = At(p, Item(p, d, index));
+    ExprId before = Item(p, d, index - 1);
+    if (loop.kind != ExprKind::While) {
+        return before;
+    }
     const Expr& cond = At(p, loop.a);
-    bool counted = loop.kind == ExprKind::While && cond.kind == ExprKind::Binary &&
-                   At(p, cond.a).kind == ExprKind::VarRef;
+    if (cond.kind != ExprKind::Binary || At(p, cond.a).kind != ExprKind::VarRef) {
+        return before;
+    }
     // lets of other variables cannot write the counter
-    for (std::uint32_t i = index; counted && i > 0; i--) {
+    for (std::uint32_t i = index; i > 0; i--) {
         const Expr& item = At(p, Item(p, d, i - 1));
         if (item.kind != ExprKind::Let) {
             break;
@@ -305,7 +310,7 @@ ExprId CounterBefore(const Pass& p, ExprId list, std::uint32_t index) {
             return Item(p, d, i - 1);
         }
     }
-    return Item(p, d, index - 1);
+    return before;
 }
 
 bool BodyRuns(const Pass& p, ExprId loop) {
