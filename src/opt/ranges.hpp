@@ -31,6 +31,32 @@ bool LoopCounter(const Pass& p, const Counters& counters, ExprId loop, ExprId be
 // r in the other signedness of kind's width: a u16 range of 65535..65535 is -1..-1, one
 // that crosses the sign bit is the whole other range
 Range OtherView(TypeKind kind, Range r);
+// the ranges pass's walk (ranges.cpp)
+struct Ranger {
+    Pass* p = nullptr;
+    Counters counters; // the loops' counters and the sets' facts around the node
+    std::uint64_t changes = 0;
+    // the set or let visited last, and what its variable holds after it, for the do it is an
+    // item of to keep
+    ExprId last_write = -1;
+    Counter written;
+};
+
+// ---- what sets give the items after them (ranges_facts.cpp)
+
+// the counters or facts change: ranges worked out before may no longer hold
+void Changed(Ranger& g);
+// var may be written here: what the sets before said of it no longer holds
+void Forget(Ranger& g, std::int32_t var);
+// every global (all: every variable) may be written here
+void ForgetGlobals(Ranger& g, bool all);
+// a loop: what it writes anywhere in it may differ on its later passes
+void ForgetLoopWrites(Ranger& g, ExprId loop);
+// a call writes what its summary says
+void ForgetCallWrites(Ranger& g, std::int32_t function);
+// (set x v) or (let x v): x holds v's range after it, for the do around it to keep
+void Wrote(Ranger& g, ExprId id, std::int32_t var, ExprId value);
+
 // the sets of arrays and structs one walk of the program saw (ranges_elements.cpp)
 struct ElementStores {
     std::vector<std::vector<Range>> stored; // by var: packed byte ranges a set may write
