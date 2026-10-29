@@ -10,53 +10,6 @@ namespace tisple::opt {
 
 namespace {
 
-template <typename Fn> void EachChild(const Pass& p, const Expr& e, Fn fn) {
-    for (ExprId child : {e.a, e.b, e.c}) {
-        if (child >= 0) {
-            fn(child);
-        }
-    }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            fn(Item(p, e, i));
-        }
-    }
-    if (e.kind == ExprKind::Match) {
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            fn(p.program->clauses[e.first + i].body);
-        }
-    }
-}
-
-void Retain(Pass& p, ExprId id) {
-    p.refs[static_cast<std::size_t>(id)]++;
-}
-
-void Release(Pass& p, ExprId id) {
-    std::uint32_t& refs = p.refs[static_cast<std::size_t>(id)];
-    if (refs == 0 || --refs > 0) {
-        return;
-    }
-    Expr old = At(p, id);
-    EachChild(p, old, [&](ExprId child) { Release(p, child); });
-    Expr dead;
-    dead.kind = ExprKind::Literal;
-    dead.type = old.type;
-    dead.loc = old.loc;
-    p.program->exprs[static_cast<std::size_t>(id)] = dead;
-}
-
-ExprId NewEmptyDo(Pass& p, const Loc& loc) {
-    Expr e;
-    e.kind = ExprKind::Do;
-    e.type = kVoidType;
-    e.loc = loc;
-    ExprId id = static_cast<ExprId>(p.program->exprs.size());
-    p.program->exprs.push_back(e);
-    p.refs.push_back(1);
-    return id;
-}
-
 struct Editor {
     Pass* p = nullptr;
     const Liveness* live = nullptr;
@@ -78,6 +31,7 @@ void EditSlot(Editor& ed, ExprId& slot) {
     }
     if (a.kind == Action::Drop) {
         ExprId empty = NewEmptyDo(p, e.loc);
+        Retain(p, empty);
         slot = empty;
     } else {
         Retain(p, a.with);
@@ -119,10 +73,6 @@ void EditDo(Editor& ed, ExprId id) {
     out.first = static_cast<std::uint32_t>(p.program->lists.size());
     out.count = static_cast<std::uint32_t>(items.size());
     p.program->lists.insert(p.program->lists.end(), items.begin(), items.end());
-}
-
-bool Shared(const Pass& p, ExprId id) {
-    return p.refs[static_cast<std::size_t>(id)] != 1;
 }
 
 // finds the statements under id, outermost first; used: id's value is needed
@@ -233,6 +183,92 @@ void Visit(Editor& ed, ExprId id, bool used) {
 }
 
 } // namespace
+
+void Retain(Pass& p, ExprId id) {
+    p.refs[static_cast<std::size_t>(id)]++;
+}
+
+void Release(Pass& p, ExprId id) {
+    std::uint32_t& refs = p.refs[static_cast<std::size_t>(id)];
+    if (refs == 0 || --refs > 0) {
+        return;
+    }
+    Expr old = At(p, id);
+    EachChild(p, old, [&](ExprId child) { Release(p, child); });
+    Expr dead;
+    dead.kind = ExprKind::Literal;
+    dead.type = old.type;
+    dead.loc = old.loc;
+    p.program->exprs[static_cast<std::size_t>(id)] = dead;
+}
+
+bool Shared(const Pass& p, ExprId id) {
+    return p.refs[static_cast<std::size_t>(id)] != 1;
+}
+
+ExprId NewExpr(Pass& p, const Expr& e) {
+    ExprId id = static_cast<ExprId>(p.program->exprs.size());
+    p.program->exprs.push_back(e);
+    p.refs.push_back(0);
+    EachChild(p, e, [&](ExprId child) { Retain(p, child); });
+    return id;
+}
+
+ExprId NewEmptyDo(Pass& p, const Loc& loc) {
+    Expr e;
+    e.kind = ExprKind::Do;
+    e.type = kVoidType;
+    e.loc = loc;
+    return NewExpr(p, e);
+}
+
+ExprId NewList(Pass& p, ExprKind kind, TypeId type, const std::vector<ExprId>& items,
+               const Loc& loc) {
+    Expr e;
+    e.kind = kind;
+    e.type = type;
+    e.loc = loc;
+    e.first = static_cast<std::uint32_t>(p.program->lists.size());
+    e.count = static_cast<std::uint32_t>(items.size());
+    p.program->lists.insert(p.program->lists.end(), items.begin(), items.end());
+    return NewExpr(p, e);
+}
+
+void ReplaceWith(Pass& p, ExprId id, ExprId from) {
+    Expr old = At(p, id);
+    Expr with = At(p, from);
+    EachChild(p, with, [&](ExprId child) { Retain(p, child); });
+    with.loc = old.loc;
+    p.program->exprs[static_cast<std::size_t>(id)] = with;
+    EachChild(p, old, [&](ExprId child) { Release(p, child); });
+}
+
+void ReplaceWithLiteral(Pass& p, ExprId id, std::uint16_t bits) {
+    Expr old = At(p, id);
+    Expr lit;
+    lit.kind = ExprKind::Literal;
+    lit.type = old.type;
+    lit.value = bits;
+    lit.loc = old.loc;
+    p.program->exprs[static_cast<std::size_t>(id)] = lit;
+    EachChild(p, old, [&](ExprId child) { Release(p, child); });
+}
+
+std::int32_t NewLocal(Pass& p, std::int32_t function, TypeId type, const Loc& loc) {
+    Function& fn = p.program->functions[static_cast<std::size_t>(function)];
+    Var var;
+    // a name no source can spell, so it never meets one
+    var.name = "opt." + std::to_string(p.program->vars.size());
+    var.kind = VarKind::Local;
+    var.type = type;
+    var.module = fn.module;
+    var.function = function;
+    var.loc = loc;
+    std::int32_t id = static_cast<std::int32_t>(p.program->vars.size());
+    p.program->vars.push_back(var);
+    fn.locals.push_back(id);
+    return id;
+}
 
 void CountRefs(Pass& p) {
     p.refs.assign(p.program->exprs.size(), 0);

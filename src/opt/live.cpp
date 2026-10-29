@@ -274,7 +274,9 @@ void Walk(Walker& w, ExprId id, Bits& live) {
     Walk(w, e.a, live);
 }
 
-bool Tracked(const Var& var, std::int32_t function) {
+} // namespace
+
+bool TrackedVar(const Var& var, std::int32_t function) {
     if (var.address_taken || var.placement.has_address || var.placement.in_aux) {
         return false;
     }
@@ -284,14 +286,12 @@ bool Tracked(const Var& var, std::int32_t function) {
     return (var.kind == VarKind::Local || var.kind == VarKind::Param) && var.function == function;
 }
 
-} // namespace
-
 Liveness ComputeLiveness(const Pass& p, std::int32_t function) {
     const Program& program = *p.program;
     Liveness out;
     out.bit.assign(program.vars.size(), -1);
     for (std::size_t v = 0; v < program.vars.size(); v++) {
-        if (Tracked(program.vars[v], function)) {
+        if (TrackedVar(program.vars[v], function)) {
             out.bit[v] = out.count++;
         }
     }

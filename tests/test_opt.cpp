@@ -48,7 +48,44 @@ int CountIn(const tisple::Program& program, tisple::ExprId id, tisple::ExprKind 
     return count;
 }
 
+// the deepest loop nesting a node of this kind sits at, -1 when there is none
+int DepthIn(const tisple::Program& program, tisple::ExprId id, tisple::ExprKind kind, int op,
+            int depth) {
+    if (id < 0) {
+        return -1;
+    }
+    const tisple::Expr& e = program.exprs[static_cast<std::size_t>(id)];
+    bool match = e.kind == kind && (op < 0 || static_cast<int>(e.op) == op);
+    int deepest = match ? depth : -1;
+    bool loop = e.kind == tisple::ExprKind::While || e.kind == tisple::ExprKind::For;
+    auto visit = [&](tisple::ExprId child, bool inside) {
+        int d = DepthIn(program, child, kind, op, depth + (inside ? 1 : 0));
+        deepest = d > deepest ? d : deepest;
+    };
+    // a while's condition runs on every pass, a for's range once
+    visit(e.a, e.kind == tisple::ExprKind::While);
+    visit(e.b, loop);
+    visit(e.c, loop);
+    bool list = e.kind == tisple::ExprKind::Call || e.kind == tisple::ExprKind::StructLit ||
+                e.kind == tisple::ExprKind::Do;
+    for (std::uint32_t i = 0; list && i < e.count; i++) {
+        visit(program.lists[e.first + i], false);
+    }
+    for (std::uint32_t i = 0; e.kind == tisple::ExprKind::Match && i < e.count; i++) {
+        visit(program.clauses[e.first + i].body, false);
+    }
+    return deepest;
+}
+
 } // namespace
+
+int LoopDepth(const Opted& o, const std::string& function, tisple::ExprKind kind, int op) {
+    std::int32_t f = tisple::FindFunction(o.program, function);
+    if (f < 0) {
+        return -2;
+    }
+    return DepthIn(o.program, o.program.functions[static_cast<std::size_t>(f)].body, kind, op, 0);
+}
 
 int CountKind(const Opted& o, const std::string& function, tisple::ExprKind kind) {
     std::int32_t f = tisple::FindFunction(o.program, function);
@@ -302,6 +339,8 @@ void RunOptTests(TestResults& results) {
     Loops(results);
     EndlessLoops(results);
     UnknownNodes(results);
+    RunOptConstsTests(results);
+    RunOptLicmTests(results);
     RunOptFlagTests(results);
 }
 

@@ -1,3 +1,4 @@
+#include "backend/analysis.hpp"
 #include "opt/opt_internal.hpp"
 
 #include <cstdlib>
@@ -55,6 +56,8 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     p.report = &report;
     bool dead = !Disabled(options, "dead");
     bool loops = !Disabled(options, "loops");
+    bool consts = !Disabled(options, "consts");
+    bool licm = !Disabled(options, "licm");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
         opt::CountRefs(p);
@@ -66,9 +69,19 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && loops; f++) {
             changes += opt::EditStatements(p, static_cast<std::int32_t>(f), opt::DecideLoop);
         }
+        if (consts) {
+            changes += opt::PropagateConstants(p);
+        }
+        // last: it adds variables the summaries of this round do not know
+        for (std::size_t f = 0; f < fn_count && licm; f++) {
+            changes += opt::HoistInvariants(p, static_cast<std::int32_t>(f));
+        }
         if (changes == 0) {
             break;
         }
+        // literals put in for variables join the constant chains around them: (+ 65535 v) is
+        // (- v 1) again, the shape the backend knows
+        FoldConstants(program);
     }
     if (p.last_at < 0) {
         return;
@@ -83,7 +96,7 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 } // namespace
 
 const std::vector<std::string>& OptPassNames() {
-    static const std::vector<std::string> names = {"dead", "loops"};
+    static const std::vector<std::string> names = {"dead", "loops", "consts", "licm"};
     return names;
 }
 

@@ -9,7 +9,9 @@
 // Passes, in the order each round runs them:
 // - dead: lets and stores nobody reads, (set x x), statements with no effect
 // - loops: loops with no effect outside themselves that provably end
-// Effect summaries (what each function may read and write) feed both.
+// - consts: constant propagation and folding across statements, branches on constants cut
+// - licm: pure expressions a loop never changes the inputs of, worked out before it
+// Effect summaries (what each function may read and write) feed them all.
 //
 // Nodes the passes do not know count as having every effect, so a new effect (an I/O-like
 // primitive) is never deleted or moved until a pass is taught about it.

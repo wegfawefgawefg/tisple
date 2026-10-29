@@ -87,6 +87,8 @@ std::int32_t PlaceRoot(const Pass& p, ExprId place);
 bool CodeTerminates(const Pass& p, ExprId id);
 // this while's condition alone ends it (loops and calls inside are not looked at)
 bool WhileEnds(const Pass& p, ExprId loop);
+// a continue inside id that goes to the loop id sits in (depth 0), not to a loop inside it
+bool ContinuesHere(const Pass& p, ExprId id, int depth);
 
 // ---- liveness (live.cpp)
 
@@ -99,13 +101,50 @@ struct Liveness {
     std::unordered_map<ExprId, Bits> after;
 };
 
+// every read and write of var in function shows in the tree (see Liveness)
+bool TrackedVar(const Var& var, std::int32_t function);
 Liveness ComputeLiveness(const Pass& p, std::int32_t function);
 // may var be read after id runs? True for untracked vars and nodes liveness never reached
 bool LiveAfter(const Liveness& live, ExprId id, std::int32_t var);
 
 // ---- tree edits (edit.cpp)
 
+template <typename Fn> void EachChild(const Pass& p, const Expr& e, Fn fn) {
+    for (ExprId child : {e.a, e.b, e.c}) {
+        if (child >= 0) {
+            fn(child);
+        }
+    }
+    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            fn(Item(p, e, i));
+        }
+    }
+    if (e.kind == ExprKind::Match) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            fn(p.program->clauses[e.first + i].body);
+        }
+    }
+}
+
 void CountRefs(Pass& p);
+void Retain(Pass& p, ExprId id);
+// one name fewer; a node nobody names gives up its children and becomes a plain literal
+void Release(Pass& p, ExprId id);
+// named by more than one parent (or by none): never rewritten
+bool Shared(const Pass& p, ExprId id);
+// a new node, named by nobody yet; its children are retained
+ExprId NewExpr(Pass& p, const Expr& e);
+ExprId NewEmptyDo(Pass& p, const Loc& loc);
+// a new do (or other list node) of these items, named by nobody yet
+ExprId NewList(Pass& p, ExprKind kind, TypeId type, const std::vector<ExprId>& items,
+               const Loc& loc);
+// id takes from's content (from is often one of id's children); id keeps its loc
+void ReplaceWith(Pass& p, ExprId id, ExprId from);
+// id becomes a literal of its own type; its children are released
+void ReplaceWithLiteral(Pass& p, ExprId id, std::uint16_t bits);
+// a fresh local of function, for a value a pass computes once
+std::int32_t NewLocal(Pass& p, std::int32_t function, TypeId type, const Loc& loc);
 
 // what a pass does with one statement (a form whose value is unused)
 struct Action {
@@ -125,5 +164,10 @@ std::uint64_t EditStatements(Pass& p, std::int32_t function, Decide decide);
 
 Action DecideDead(const Pass& p, const Liveness& live, ExprId stmt); // dead.cpp
 Action DecideLoop(const Pass& p, const Liveness& live, ExprId stmt); // loops.cpp
+// constant propagation and folding over each function's tracked scalars, branches on
+// constants cut (consts.cpp, consts_walk.cpp); returns the changes made
+std::uint64_t PropagateConstants(Pass& p);
+// loop-invariant code motion (licm.cpp); returns the changes made
+std::uint64_t HoistInvariants(Pass& p, std::int32_t function);
 
 } // namespace tisple::opt
