@@ -1125,6 +1125,37 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     race seeds 1-2000: geomean 2.124 to 1.659, median 1.74 to 1.42, wins 11.7%
     to 23.4%; divide family 2.53 to 1.51, multiply 2.01 to 1.79. Kernels, Life,
     plasma the same; snake, hires_plot, text_demo change (bigger divu8/divu16).
+46. Mid-level slice 4 (2026-10-29, docs/midlevel-optimizer.md): loop collapse
+    (src/opt/collapse*.cpp), value ranges (ranges*.cpp), unread arguments
+    (args.cpp); licm without its quarter-square rule, its constant multiply
+    costs as gen_mulconst.cpp emits them. The worst 40 race losses (base
+    c6cffa8, geomean 1.649) were llvm-mos deleting loops whose passes all do
+    the same or whose last pass decides (seed 1658: a 240-pass loop storing
+    one constant at one place), adding up counters in closed form (g2 += 1 six
+    times a pass), and deciding compares and matches from ranges (a match on
+    a counter in 1..5 with clauses 15, 28, 66; 65535 >= anything); loops kept
+    alive by an argument nobody reads. Random race, seeds 1-2000, against the
+    fastest C compiler: geomean 1.649 to 1.433, median 1.41 to 1.28, wins
+    23.6% to 28.8%, worst 110.34x to 99.99x (seed 76); against llvm-mos
+    1.477 to 1.283, Oscar64 1.041 to 0.903. One at a time off: collapse 1.605,
+    ranges 1.461, args 1.453; the licm change alone 1.649 (3 programs faster,
+    1 slower). 863 programs faster, 63 slower (the worst 17%, most under 5%):
+    data or zero page moved, and inlined calls storing the literal 0 of an
+    unread argument where they bound a variable before (seed 1695, 64 to 75).
+    Also seen: once a collapsed loop leaves one multiply that runs once, the
+    backend's run counts pick the shift-and-add routine (seed 1997: 1528 to
+    1462, 1260 when quarter squares were kept). Seed 1559 12800
+    to 795 cycles, 1658 9324 to 206, 50 22344 to 732, 920 4399 to 93. Kernels,
+    Life 56, plasma 243 and the tisple_tests cycle lines the same; every
+    program and example byte for byte (text_demo's disk too) but
+    examples/macros (61 to 63 bytes: `(times 3 ((inc x) (inc y)))` adds 3
+    once, 32 to 20 cycles). Fuzz: 6 bases x TISPLE_FUZZ=30000 (450,000
+    programs) 0 mismatches, 6 x 700 under ASan 0. One mismatch on the way
+    (seed 5016237, collapse): a pass set a global from the counter and called
+    a function that indexes by it; calls and loads now count what they read
+    as varying (test in test_opt_collapse.cpp). Pass time on text_demo 0.74
+    to 0.79 ms. Tests: tests/test_opt_collapse.cpp, test_opt_ranges.cpp; fuzz
+    shape tests/fuzz_gen_collapse.cpp (`seed N (collapse)`, one seed in four).
 
 ## Gap finder (2026-10-26)
 

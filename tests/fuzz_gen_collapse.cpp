@@ -84,11 +84,19 @@ std::string Gen::CollapseItem(const std::string& count, T count_type, bool is_fo
         DropPointers();
         return stmt;
     }
-    case 10:
-        if (current > 0) {
-            return CallText(fns[static_cast<std::size_t>(rng.Below(static_cast<int>(current)))], 1);
+    case 10: {
+        if (current == 0) {
+            return "(set " + g + " " + Expr(t, 1) + ")";
         }
-        return "(set " + g + " " + Expr(t, 1) + ")";
+        std::string call =
+            CallText(fns[static_cast<std::size_t>(rng.Below(static_cast<int>(current)))], 1);
+        // now and then a global the call may read, set from the counter first
+        if (collapse_rng.Chance(40)) {
+            return "(do (set " + g + " (^ " + As(t, count_type, count) + " " + Literal(t) + ")) " +
+                   call + ")";
+        }
+        return call;
+    }
     case 11:
         // a pass that may end early (a for only: a while's continue could skip its step)
         return is_for && collapse_rng.Chance(50)
