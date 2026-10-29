@@ -35,6 +35,7 @@ Range OtherView(TypeKind kind, Range r);
 struct ElementStores {
     std::vector<std::vector<Range>> stored; // by var: packed byte ranges a set may write
     bool in_bounds = true;                  // no set's index may fall outside its array
+    std::vector<bool> runs;                 // by function: may it run (the rest write nothing)
 };
 
 // a set's place: the bytes of its root it may write, into stores (nothing when it is behind a

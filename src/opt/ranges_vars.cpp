@@ -15,6 +15,7 @@
 // - Three walks, from the types' ranges: what a walk finds holds when the ranges it started
 //   from do, so it may stop after any.
 // - The same walk notes every set of an array or struct (ranges_elements.cpp).
+// - Only functions that may run are looked at: with a main, what it calls, and theirs.
 // - Off for a program with jsr or nodes not known here (machine code may write anything).
 //   With no main every function may be called from outside, with any arguments, and memory
 //   may be written between calls: only locals are followed then.
@@ -376,14 +377,38 @@ void Settle(Walker& w) {
     }
 }
 
+// by function: may it run? With a main, what main calls and what they call; with none,
+// every function (any may be called from outside)
+std::vector<bool> Runs(const Program& program) {
+    std::vector<bool> runs(program.functions.size(), program.main < 0);
+    if (program.main < 0) {
+        return runs;
+    }
+    std::vector<std::int32_t> work = {program.main};
+    runs[static_cast<std::size_t>(program.main)] = true;
+    while (!work.empty()) {
+        std::int32_t f = work.back();
+        work.pop_back();
+        for (std::int32_t callee : program.functions[static_cast<std::size_t>(f)].callees) {
+            if (!runs[static_cast<std::size_t>(callee)]) {
+                runs[static_cast<std::size_t>(callee)] = true;
+                work.push_back(callee);
+            }
+        }
+    }
+    return runs;
+}
+
 } // namespace
 
 void ComputeVarRanges(Pass& p, bool vars, bool elements) {
     VarRanges& r = p.ranges;
     r = VarRanges();
+    std::vector<bool> runs = Runs(*p.program);
     bool machine = false;
-    for (const Summary& s : p.summaries) {
-        machine = machine || s.jsr || s.unknown;
+    for (std::size_t f = 0; f < p.summaries.size(); f++) {
+        const Summary& s = p.summaries[f];
+        machine = machine || (runs[f] && (s.jsr || s.unknown));
     }
     if (machine || (!vars && !elements)) {
         return;
@@ -402,8 +427,12 @@ void ComputeVarRanges(Pass& p, bool vars, bool elements) {
         w.p = &p;
         w.info.assign(count, VarInfo());
         w.stores.stored.assign(count, {});
-        for (const Function& fn : p.program->functions) {
-            Visit(w, fn.body, -1, 0);
+        w.stores.runs = runs;
+        // code that never runs writes nothing
+        for (std::size_t f = 0; f < runs.size(); f++) {
+            if (runs[f]) {
+                Visit(w, p.program->functions[f].body, -1, 0);
+            }
         }
         if (vars) {
             Settle(w);

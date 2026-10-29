@@ -39,6 +39,10 @@ bool MemoryClash(const Pass& p, MemoryFacts& m, const MemoryUse& use);
 // may a store through a pointer in function (its callees included) reach var
 bool StoresMayReach(const Pass& p, MemoryFacts& m, std::int32_t function, std::int32_t var);
 
+// a loop body's (if c (continue)) items: the rest of the pass becomes their else
+// (collapse_continue.cpp); returns the changes made
+std::uint64_t ContinuesToElse(Pass& p, ExprId loop);
+
 // ---- what a loop body reads and writes (collapse_scan.cpp)
 
 // bytes [lo, hi) of a variable, in its packed layout

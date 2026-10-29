@@ -13,7 +13,8 @@
 // - A body that reads its counter and whose last pass decides: a for with a literal range
 //   runs that pass with the counter's last value put in, a counting while sets the counter
 //   to where its last pass starts and runs that pass.
-// A loop that may end its pass early (break, continue, return) is left alone.
+// A loop that may end its pass early (break, continue, return) is left alone, but for
+// (if x (continue)) items, which first become elses of the rest (collapse_continue.cpp).
 
 #include "opt/collapse.hpp"
 
@@ -287,6 +288,8 @@ bool Collapsible(const Pass& p, ExprId id) {
 }
 
 bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& out) {
+    // (if x (continue)) items first become elses (collapse_continue.cpp)
+    c.changes += ContinuesToElse(*c.p, loop);
     if (At(*c.p, loop).kind == ExprKind::For) {
         return CollapseFor(c, loop, out);
     }

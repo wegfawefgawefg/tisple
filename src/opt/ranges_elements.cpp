@@ -89,8 +89,8 @@ void SettleStores(Pass& p, const ElementStores& stores) {
         }
         bool reached = false;
         for (std::size_t f = 0; f < p.program->functions.size() && !reached; f++) {
-            reached = StoresMayReach(p, memory, static_cast<std::int32_t>(f),
-                                     static_cast<std::int32_t>(var));
+            reached = stores.runs[f] && StoresMayReach(p, memory, static_cast<std::int32_t>(f),
+                                                       static_cast<std::int32_t>(var));
         }
         if (reached) {
             continue;
