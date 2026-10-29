@@ -152,6 +152,47 @@ cse:
   compile; a call over its budget stays a call and is not tried again.
 - `--no-pass cse|eval`. Results: dogfood.md 42.
 
+Slice 4 (2026-10-29), what llvm-mos deleted in the worst race losses: loop collapse, value
+ranges, unread arguments. Each round now runs dead, loops, args, collapse, eval, consts,
+ranges, licm, cse:
+
+- `collapse*.cpp`: a for, or a counting while ((let c v) just before, (while (< c k) ...
+  (set c (+ c s)) ...)), whose passes all do the same runs its body once. A pass does what
+  the one before did when no cell it writes (a variable's bytes, or one element or field at
+  a literal index) is one it reads, the body's own lets and fors aside. Calls read and write
+  what their summaries say. Loads and stores reach what provenance says
+  (`collapse_memory.cpp`: addr_of, a local one let sets, a parameter nothing writes followed
+  to what the calls pass, a call's return); a load or store of memory no variable uses keeps
+  the loop, as do I/O, jsr, wait_cycles, :address, aux and :reserve variables, unknown
+  nodes, a break, continue or return that ends a pass, and a body over 3000 nodes.
+  - A for whose range the shapes do not decide runs behind (if (< a b) ...); a and b are
+    still worked out once.
+  - Accumulators, (set x (op x k)) with x read nowhere else, add up: (+ x (* k n)), (^ x k)
+    for odd n, (| x k) and (& x k) once; + - ^ only when n is known.
+  - A body that reads its counter collapses to its last pass, the counter's last value put
+    in, when every write outside its own variables lands in the same place on every pass:
+    not under a branch on the counter or what it makes, not in a loop inside whose range
+    differs or that may end early, no write by a call whose arguments differ, and the
+    accumulators add what does not differ.
+  - Inner loops first, so a nest collapses level by level.
+- `ranges*.cpp` (pass 8, in part): the values an expression may hold, from its shape (masks,
+  remainders and quotients by constants, shifts, sums and products that cannot wrap,
+  widenings, const tables) and the counters of the loops around it (a for's variable over
+  its range, a counting while's counter in [v, k - 1 + s]), decide compares, cut match
+  clauses no value reaches (a match left with its wildcard becomes it), and decide
+  (and x false) and (or x true). Only quiet operands: pure, no :address, aux or loads.
+  Ranges are not carried through lets or sets; the backend's byte ranges (ranges.cpp there)
+  are a separate thing.
+- `args.cpp`: an argument for a parameter its function never reads becomes 0 when it is
+  pure and quiet. Variable reads too: an inlined call then stores the 0 where the backend
+  would have bound the variable to the parameter, a few cycles, but a loop around a call
+  that reads what the loop writes does not collapse. Replacing them measured better than
+  leaving them for inlined calls (1.444 to 1.442).
+- licm: no FasterInLoops rule (the backend picks the multiply routines once per program from
+  run counts); a constant multiply costs what gen_mulconst.cpp emits: binary or signed
+  digits, byte products always inline, 16-bit ones inline up to four digits.
+- `--no-pass args|collapse|ranges`. Results: dogfood.md 46.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`

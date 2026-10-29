@@ -4,6 +4,7 @@
 // through a pointer reaches what it reads or loads (collapse_memory.cpp).
 //
 // - Accumulators (collapse.hpp) are taken out first; their steps are read like the rest.
+// - A variable a pass sets before anything in the pass reads it is the body's own too.
 // - A body that reads its counter: the last pass decides when every write outside the body's
 //   own variables lands in the same place on every pass, no store through a pointer or call
 //   may land elsewhere, and the accumulators add what does not differ between passes.
@@ -121,6 +122,24 @@ bool LastPassDecides(const Pass& p, const Access& a, const BodyPlan& plan) {
     return true;
 }
 
+// (set x v) as a pass's statement, nothing before it in the pass (nor v) reading x: x holds
+// what this pass gives it, like the body's own lets (a scalar no pointer reaches)
+void MarkFirstWrite(const Pass& p, Access& a, ExprId item) {
+    const Expr& set = At(p, item);
+    if (set.kind != ExprKind::Set || At(p, set.a).kind != ExprKind::VarRef) {
+        return;
+    }
+    std::int32_t x = At(p, set.a).ref;
+    const Var& v = VarOf(p, x);
+    if (x == a.counter || Own(a, x) || v.address_taken || Hardware(v) ||
+        !IsScalarKind(KindOf(*p.program, v.type)) || Mentions(a.reads, x)) {
+        return;
+    }
+    std::size_t at = static_cast<std::size_t>(x);
+    a.own[at] = true;
+    a.steady[at] = !a.varying && !Varies(p, a, set.b) && CountSets(p, a.body, x) == 1;
+}
+
 } // namespace
 
 void PassStatements(const Pass& p, ExprId body, std::vector<ExprId>& out) {
@@ -157,6 +176,7 @@ BodyPlan PlanBody(const Pass& p, MemoryFacts& m, ExprId body, std::int32_t count
             continue;
         }
         Scan(p, a, item);
+        MarkFirstWrite(p, a, item);
     }
     if (Conflict(p, m, a)) {
         return plan;

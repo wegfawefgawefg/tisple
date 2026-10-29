@@ -8,7 +8,8 @@
 //   that step its one write, c lies in [v, k - 1 + s].
 // - A compare whose operands' ranges decide it becomes a literal; a match clause no value in
 //   the range reaches goes, and a match left with only its wildcard becomes that clause; an
-//   and or or with a literal on its right is decided by it.
+//   and or or with a literal on its right is decided by it. (~ (~ x)) and (not (not x)) are
+//   x, which leaves (set g (~ (~ g))) a store of g itself.
 //   Only when the operands are pure and read no hardware (:address, aux, loads), which may
 //   answer differently or change when read.
 
@@ -83,6 +84,19 @@ void FoldLogic(Ranger& g, ExprId id) {
     } else {
         ReplaceWith(p, id, e.a);
     }
+    g.changes++;
+}
+
+// (~ (~ x)) and (not (not x)) are x
+void FoldTwice(Ranger& g, ExprId id) {
+    Pass& p = *g.p;
+    Expr e = At(p, id);
+    const Expr& inner = At(p, e.a);
+    if (inner.kind != ExprKind::Unary || inner.op != e.op || inner.type != e.type ||
+        !Allow(p, "not of a not", id, -1)) {
+        return;
+    }
+    ReplaceWith(p, id, inner.a);
     g.changes++;
 }
 
@@ -234,6 +248,12 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
             FoldLogic(g, id);
         }
         return;
+    case ExprKind::Unary:
+        Visit(g, e.a, shared, -1);
+        if (!shared) {
+            FoldTwice(g, id);
+        }
+        return;
     case ExprKind::Match:
         Visit(g, e.a, shared, -1);
         if (!shared && CutClauses(g, id)) {
@@ -252,7 +272,6 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
     case ExprKind::LoadField:
     case ExprKind::StoreField:
     case ExprKind::AddrOf:
-    case ExprKind::Unary:
     case ExprKind::PtrAdd:
     case ExprKind::PtrSub:
     case ExprKind::Convert:

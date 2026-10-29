@@ -71,6 +71,11 @@ void Same(TestResults& results) {
         // through a parameter, followed to what the calls pass
         "(fn put ((p (ptr u8)) (v u8)) void (store p v))\n"
         "(fn f ((x u8)) u8 (for i u8 0 4 (put (addr_of (at a 5)) (at b 0))) (at a 5))",
+        // a local each pass sets before it reads it: the pass's own
+        ("(fn f ((x u8)) u8 (let c u8 0)\n"
+         "    (for i u8 0 5 (set c (+ x 1)) (set c (* c 2)) (set g c)) (+ g c))"),
+        // (~ (~ g)) is g: a store of g itself, which goes
+        "(fn f ((x u8)) u8 (for i u8 0 4 (set g (~ (~ g))) (set h x)) (+ g h))",
         // a call that writes what nobody in the loop reads
         "(fn put ((v u8)) void (set h v))\n"
         "(fn f ((x u8)) u8 (for i u8 0 4 (put x)) h)",
@@ -145,6 +150,10 @@ void Kept(TestResults& results) {
         "(fn f ((x u8)) u8 (let p (ptr u8) (addr_of (at a 3)))\n"
         "    (for i u8 0 4 (store p (+ (at a 3) 1))) (at a 3))",
         "(fn f ((x u8)) u8 (for i u8 0 4 (set (at a 1) (+ (at a 1) x))) (at a 1))",
+        // a local read before the pass sets it, or set only on some passes
+        "(fn f ((x u8)) u8 (let c u8 0) (for i u8 0 5 (set g c) (set c (+ x 1))) g)",
+        ("(fn f ((x u8)) u8 (let c u8 0)\n"
+         "    (for i u8 0 5 (if (> g 2) (set c (+ x 1))) (set g (+ c 1))) g)"),
         // an accumulator read elsewhere in the loop
         "(fn f ((x u8)) u8 (for i u8 0 4 (set g (+ g 1)) (set h g)) h)",
         // the counter decides whether, or where, a pass writes

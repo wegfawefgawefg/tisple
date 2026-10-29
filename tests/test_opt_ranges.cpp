@@ -52,6 +52,8 @@ void Decided(TestResults& results) {
         "(fn f ((x u8)) u8 (for i u8 0 5 (if (> i 10) (set g i) (set (at a i) x))) g)",
         ("(fn f ((x u8)) u8 (let c u8 0) (while (< c 5) (set c (+ c 1))\n"
          "    (match c (15 (set g x)) (28 (set h x)) (_ (set (at a c) 1)))) g)"),
+        // (~ (~ x)) is x, so this compares x with itself
+        "(fn f ((x u8)) u8 (if (!= (~ (~ x)) x) (set g 1)) g)",
         // an and or an or decided by its right side
         "(fn f ((x u8)) u8 (if (and (> x 4) (< (& x 7) 0)) (set g 1)) g)",
         "(fn f ((x u8)) u8 (if (or (> x 4) (<= (& x 7) 7)) (set g 1)) g)",
