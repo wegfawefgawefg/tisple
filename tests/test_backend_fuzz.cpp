@@ -2,8 +2,9 @@
 // TISPLE_FUZZ=N runs N programs (default 300), TISPLE_FUZZ_SEED picks the first seed,
 // TISPLE_FUZZ_CYCLES=1 prints each program's cycles (to compare two backends seed by seed).
 // A seed in four also runs a second program, with loops entered by a jump ("(entries)"), one
-// in four a third, with dead work for the mid-level passes ("(dead)"), and one in four a
-// fourth, with loop-invariant work and constants ("(motion)").
+// in four a third, with dead work for the mid-level passes ("(dead)"), one in four a
+// fourth, with loop-invariant work and constants ("(motion)"), and one in four a fifth, with
+// work done twice, branches on equalities and calls with constant arguments ("(common)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -40,7 +41,7 @@ struct FuzzStats {
 };
 
 // every failing seed gets a line; the first three get their program too. `variant` is "" for
-// the seed's program, " (entries)", " (dead)" or " (motion)" for the others
+// the seed's program, " (entries)", " (dead)", " (motion)" or " (common)" for the others
 void Report(const char* what, std::uint64_t seed, const char* variant, const std::string& text,
             const std::string& why, std::uint64_t count) {
     std::fprintf(stderr, "fuzz %s, seed %llu%s: %s\n", what, static_cast<unsigned long long>(seed),
@@ -170,6 +171,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string motion = GenerateMotionProgram(seed);
         if (!motion.empty()) {
             FuzzOne(seed, " (motion)", motion, stats);
+        }
+        std::string common = GenerateCommonProgram(seed);
+        if (!common.empty()) {
+            FuzzOne(seed, " (common)", common, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

@@ -409,6 +409,9 @@ std::string Gen::Stmt(int depth) {
     if (motion_shapes && depth > 0 && motion_rng.Chance(20)) {
         return MotionShape(depth);
     }
+    if (common_shapes && depth > 0 && common_rng.Chance(20)) {
+        return CommonShape(depth);
+    }
     if (entry_shapes && depth > 0 && entry_rng.Chance(15)) {
         return EntryLoop(depth);
     }
@@ -613,6 +616,9 @@ std::string Gen::Program() {
     // small helpers taking pointers, inlined with the pointer read where it is
     text += "(fn peek2 ((p (ptr u8)) (k u8)) u8 (load (+ p (as u16 (& k 3)))))\n";
     text += "(fn poke2 ((p (ptr u8)) (k u8) (v u8)) void (store (+ p (as u16 (& k 3))) v))\n";
+    if (common_shapes) {
+        text += CommonHelpers();
+    }
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;
@@ -696,6 +702,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.motion_rng.Next();
     }
+    g.common_rng.s = seed * 0xD6E8FEB86659FD93ull + 0x6A09E667ull;
+    if (g.common_rng.s == 0) {
+        g.common_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.common_rng.Next();
+    }
 }
 
 } // namespace
@@ -743,6 +756,16 @@ std::string GenerateMotionProgram(std::uint64_t seed) {
         return "";
     }
     g.motion_shapes = true;
+    return g.Program();
+}
+
+std::string GenerateCommonProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.common_rng.Chance(kCommonPercent)) {
+        return "";
+    }
+    g.common_shapes = true;
     return g.Program();
 }
 

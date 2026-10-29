@@ -6,6 +6,7 @@
 #include "test_opt.hpp"
 
 #include <string>
+#include <vector>
 
 namespace tisple_tests {
 
@@ -138,6 +139,57 @@ void Globals(TestResults& results) {
                 "t.f", ExprKind::Binary, 1);
 }
 
+// what a condition says: inside (if (= x 5) ...) x is 5, and so on
+void Facts(TestResults& results) {
+    struct Case {
+        const char* text;
+        int binaries; // left in t.f
+        std::vector<std::uint16_t> args;
+    };
+    const Case cases[] = {
+        {"(fn f ((x u8)) u8 (if (= x 5) (set g (* x 3))) g)", 1, {5}},
+        {"(fn f ((x u8)) u8 (if (!= x 5) (set g 0) (set g (* x 3))) g)", 1, {5}},
+        {"(fn f ((x u8)) u8 (if (not (!= x 5)) (set g (* x 3))) g)", 1, {5}},
+        {"(fn f ((x u8) (y u8)) u8 (if (and (= x 5) (= 2 y)) (set g (* x y))) g)", 2, {5, 2}},
+        {"(fn f ((x u8) (y u8)) u8 (if (or (!= x 5) (!= y 2)) (set g 1) (set g (* x y))) g)",
+         2,
+         {5, 2}},
+        // the right side of an and
+        {"(fn f ((x u8)) u8 (if (and (= x 5) (> (* x 3) 10)) (set g 1)) g)", 1, {5}},
+        // a match's clauses
+        {"(fn f ((x u8)) u8 (match x (3 (set g (* x 7))) (9 (set g (+ x 1))) (_ (set g x))) g)",
+         0,
+         {9}},
+        // after a while that ends normally: its condition was false (and then the loop and
+        // its counter go)
+        {"(fn f ((x u8)) u8 (let c u8 x) (while (!= c 9) (set c (+ c 1))) (* c 3))", 0, {2}},
+        // a signed literal, through a widening
+        {"(fn f ((s i8)) u16 (if (= s -3) (set gw (as u16 s))) gw)", 1, {0xFD}},
+        // set again in the arm: the new value
+        {"(fn f ((x u8)) u8 (if (= x 5) (do (set x 7) (set g (* x 2)))) g)", 1, {5}},
+        // must stay unknown: a condition with an effect after the read, an :address let, an
+        // address-taken variable, a compare with an unknown, after the if
+        {"(fn bump () u8 (set h (+ h 1)) h)\n"
+         "(fn f ((x u8)) u8 (set h x) (if (and (= h 5) (= (bump) 6)) (set g (* h 2))) g)",
+         3,
+         {5}},
+        {"(fn f ((x u8)) u8 (set scr x) (if (= scr 5) (set g (* scr 2))) g)", 2, {5}},
+        {"(fn f ((x u8)) u8 (let d u8 x) (let p (ptr u8) (addr_of d))\n"
+         "    (if (= d 5) (do (store p 9) (set g (* d 2)))) g)",
+         2,
+         {5}},
+        {"(fn f ((x u8) (y u8)) u8 (if (= x y) (set g (* x 2))) g)", 2, {5, 5}},
+        {"(fn f ((x u8)) u8 (if (= x 5) (set g 1)) (* x 2))", 2, {5}},
+    };
+    for (const Case& c : cases) {
+        ExpectCount(results, With(c.text), "t.f", ExprKind::Binary, c.binaries);
+        CheckProgram(results, With(c.text), "t.f", c.args);
+        std::vector<std::uint16_t> other = c.args;
+        other[0] = static_cast<std::uint16_t>(other[0] + 1);
+        CheckProgram(results, With(c.text), "t.f", other);
+    }
+}
+
 // a node kind the passes do not know makes every variable unknown after it
 void UnknownNodes(TestResults& results) {
     std::string text = With("(fn f () u8 (let k u8 3) (set h 77) (+ k 1))");
@@ -168,6 +220,7 @@ void RunOptConstsTests(TestResults& results) {
     Branches(results);
     Loops(results);
     Globals(results);
+    Facts(results);
     UnknownNodes(results);
 }
 

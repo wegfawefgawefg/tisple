@@ -29,6 +29,9 @@ void FindInvariants(const Pass& p, ExprId loop, const LoopWrites& w, Invariants&
 
 // its estimated cycles beat reading a local enough to move it
 bool Worth(const Pass& p, ExprId id);
+// a rough count of the cycles the 6502 spends working id out (common subexpressions use it
+// too)
+std::int32_t EstimatedCycles(const Pass& p, ExprId id);
 // work the backend does faster inside a loop (a multiply by the quarter-square routines)
 bool FasterInLoops(const Pass& p, ExprId id);
 // how many passes a loop makes, when its literal range (or a let of its counter just before,

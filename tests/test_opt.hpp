@@ -29,6 +29,9 @@ void RunOptTests(TestResults& results);
 // constant propagation (test_opt_consts.cpp) and loop-invariant code motion (test_opt_licm.cpp)
 void RunOptConstsTests(TestResults& results);
 void RunOptLicmTests(TestResults& results);
+// common subexpressions (test_opt_cse.cpp) and compile-time evaluation (test_opt_eval.cpp)
+void RunOptCseTests(TestResults& results);
+void RunOptEvalTests(TestResults& results);
 // -O0, --opt-bisect and --no-pass (test_opt_flags.cpp)
 void RunOptFlagTests(TestResults& results);
 

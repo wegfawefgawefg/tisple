@@ -35,7 +35,8 @@ std::int32_t FunctionId(const Compiled& c, const std::string& name) {
 
 void TestDroppedFunctions(TestResults& results) {
     // tiny is only inlined, big is called, dead and dead2 are never called (dead2 only from
-    // dead), and leaf is called from big
+    // dead), and leaf is called from big; main's argument is read from a global, so the calls
+    // are not worked out at compile time
     Compiled c = CompileText("(let out u16 0)\n"
                              "(fn tiny ((x u8)) u8 (+ x 1))\n"
                              "(fn leaf ((x u16)) u16\n"
@@ -51,7 +52,7 @@ void TestDroppedFunctions(TestResults& results) {
                              "    (let a u16 (dead2 x x)) (let b u16 (+ a x)) (let d u16 (+ b a))\n"
                              "    (let e u16 (+ d b)) (let f u16 (+ e d)) (let h u16 (+ f e))\n"
                              "    (+ h (/ (dead2 x 3) 13)))\n"
-                             "(fn main () u16 (set out (big (as u16 (tiny 5)))) out)");
+                             "(fn main () u16 (set out (big (as u16 (tiny (as u8 out))))) out)");
     CHECK(results, c.ok);
     if (!c.ok) {
         std::fprintf(stderr, "%s\n", c.errors.c_str());

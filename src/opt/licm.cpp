@@ -35,32 +35,9 @@ struct Hoister {
     int depth = 0; // loops around the statement being looked at
 };
 
-// id's content becomes a read of var; its old children are let go
-void BecomeRead(Pass& p, ExprId id, std::int32_t var) {
-    Expr old = At(p, id);
-    Expr read;
-    read.kind = ExprKind::VarRef;
-    read.type = old.type;
-    read.ref = var;
-    read.loc = old.loc;
-    p.program->exprs[static_cast<std::size_t>(id)] = read;
-    EachChild(p, old, [&](ExprId child) { Release(p, child); });
-}
-
 // (let var value) for an expression moved out of its place, which now reads var
 ExprId MoveToLet(Hoister& h, ExprId id, Loc loc, std::int32_t& var) {
-    Pass& p = *h.p;
-    Expr value = At(p, id);
-    var = NewLocal(p, h.function, value.type, value.loc);
-    ExprId kept = NewExpr(p, value);
-    BecomeRead(p, id, var);
-    Expr let;
-    let.kind = ExprKind::Let;
-    let.type = kVoidType;
-    let.ref = var;
-    let.a = kept;
-    let.loc = loc;
-    return NewExpr(p, let);
+    return MoveToLet(*h.p, h.function, id, loc, var);
 }
 
 struct Moved {

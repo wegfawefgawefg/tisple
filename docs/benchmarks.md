@@ -70,3 +70,4 @@ variable's name); zero-page allocation moves them.
 | 2026-10-29 | (fuzz farm run 6: loops entered by a jump) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-29 | (mid-level passes 1-3: dead code, loop deletion) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |
 | 2026-10-29 | (mid-level passes 4-5: constants across statements, loop-invariant code motion) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |
+| 2026-10-29 | (mid-level passes 6-7: common subexpressions, facts from conditions, calls worked out at compile time) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |

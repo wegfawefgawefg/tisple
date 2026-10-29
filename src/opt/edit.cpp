@@ -254,6 +254,31 @@ void ReplaceWithLiteral(Pass& p, ExprId id, std::uint16_t bits) {
     EachChild(p, old, [&](ExprId child) { Release(p, child); });
 }
 
+void BecomeRead(Pass& p, ExprId id, std::int32_t var) {
+    Expr old = At(p, id);
+    Expr read;
+    read.kind = ExprKind::VarRef;
+    read.type = old.type;
+    read.ref = var;
+    read.loc = old.loc;
+    p.program->exprs[static_cast<std::size_t>(id)] = read;
+    EachChild(p, old, [&](ExprId child) { Release(p, child); });
+}
+
+ExprId MoveToLet(Pass& p, std::int32_t function, ExprId id, Loc loc, std::int32_t& var) {
+    Expr value = At(p, id);
+    var = NewLocal(p, function, value.type, value.loc);
+    ExprId kept = NewExpr(p, value);
+    BecomeRead(p, id, var);
+    Expr let;
+    let.kind = ExprKind::Let;
+    let.type = kVoidType;
+    let.ref = var;
+    let.a = kept;
+    let.loc = loc;
+    return NewExpr(p, let);
+}
+
 std::int32_t NewLocal(Pass& p, std::int32_t function, TypeId type, const Loc& loc) {
     Function& fn = p.program->functions[static_cast<std::size_t>(function)];
     Var var;

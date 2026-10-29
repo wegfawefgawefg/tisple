@@ -114,6 +114,11 @@ struct Gen {
     // stream of its own (fuzz_gen_motion.cpp); only in GenerateMotionProgram's programs
     Rng motion_rng;
     bool motion_shapes = false;
+    // what common subexpressions, facts from conditions and compile-time evaluation change or
+    // must keep, from a stream of its own (fuzz_gen_common.cpp); only in
+    // GenerateCommonProgram's programs
+    Rng common_rng;
+    bool common_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -263,6 +268,19 @@ struct Gen {
     std::string ConstGlobal();
     std::string SameOperands();
     std::string MotionShape(int depth);
+    // ---- values worked out twice, facts from conditions, calls at compile time
+    // (fuzz_gen_common.cpp)
+    // the pure helpers common shapes call, after peek2 and poke2
+    std::string CommonHelpers();
+    T CommonInt();
+    std::string CommonVar(T t);
+    std::string CommonWork(T t, const std::string& a, const std::string& b);
+    std::string CommonBetween(T t, const std::string& a, int depth);
+    std::string CommonTwice(int depth);
+    std::string DivApart(int depth);
+    std::string CondFact(int depth);
+    std::string ConstCall();
+    std::string CommonShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

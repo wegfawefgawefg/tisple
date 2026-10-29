@@ -341,6 +341,8 @@ void RunOptTests(TestResults& results) {
     UnknownNodes(results);
     RunOptConstsTests(results);
     RunOptLicmTests(results);
+    RunOptCseTests(results);
+    RunOptEvalTests(results);
     RunOptFlagTests(results);
 }
 

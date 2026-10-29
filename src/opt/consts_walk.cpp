@@ -89,6 +89,39 @@ void Assign(Walker& w, Env& env, std::int32_t var, Val v) {
 
 Val Walk(Walker& w, ExprId id, Env& env);
 
+// a variable not known yet holds k from here on, as a condition says
+void Learned(Walker& w, Env& env, std::int32_t var, Val k) {
+    std::int32_t bit = w.bit[static_cast<std::size_t>(var)];
+    if (bit < 0 || !env.reached || k.kind != Val::Const) {
+        return;
+    }
+    Val& v = env.vals[static_cast<std::size_t>(bit)];
+    if (v.kind != Val::Const) {
+        v = ConstOf(*w.p, VarOf(*w.p, var).type, k.bits);
+    }
+}
+
+// what cond coming out truth says (consts_facts.cpp), where cond is pure: a variable it
+// compares equal to a literal, or to a variable known here, holds that value
+void Learn(Walker& w, ExprId cond, bool truth, Env& env) {
+    if (!env.reached || !IsPure(*w.p, cond)) {
+        return;
+    }
+    std::vector<Equality> found;
+    FindEqualities(*w.p, cond, truth, found);
+    for (const Equality& eq : found) {
+        const Expr& other = At(*w.p, eq.other);
+        Val k;
+        if (other.kind == ExprKind::Literal && ConstType(*w.p->program, other.type)) {
+            k = ConstOf(*w.p, other.type, other.value);
+        } else if (other.kind == ExprKind::VarRef &&
+                   w.bit[static_cast<std::size_t>(other.ref)] >= 0) {
+            k = env.vals[static_cast<std::size_t>(w.bit[static_cast<std::size_t>(other.ref)])];
+        }
+        Learned(w, env, eq.var, k);
+    }
+}
+
 // the index expressions of a place (its root is neither read nor written here)
 void WalkPlace(Walker& w, ExprId id, Env& env) {
     const Expr& e = At(*w.p, id);
@@ -132,6 +165,7 @@ Val WalkShortCircuit(Walker& w, const Expr& e, Env& env) {
         return Walk(w, e.b, env);
     }
     Env other = env;
+    Learn(w, e.a, is_and, other);
     Walk(w, e.b, other);
     JoinEnv(env, other);
     return AnyVal();
@@ -148,6 +182,8 @@ Val WalkIf(Walker& w, const Expr& e, Env& env) {
         return e.c >= 0 ? v : AnyVal();
     }
     Env other = env;
+    Learn(w, e.a, true, env);
+    Learn(w, e.a, false, other);
     Val then = Walk(w, e.b, env);
     Val other_value = e.c >= 0 ? Walk(w, e.c, other) : AnyVal();
     JoinEnv(env, other);
@@ -173,9 +209,14 @@ Val WalkMatch(Walker& w, const Expr& e, Env& env) {
     Env out;
     Val value;
     bool wildcard = false;
+    const Expr& scrutinee_expr = At(*w.p, e.a);
     for (std::uint32_t i = 0; i < e.count; i++) {
         const Clause& clause = program.clauses[e.first + i];
         Env arm = env;
+        // in a clause, a variable matched on holds the clause's value
+        if (!clause.wildcard && scrutinee_expr.kind == ExprKind::VarRef) {
+            Learned(w, arm, scrutinee_expr.ref, ConstOf(*w.p, scrutinee_expr.type, clause.value));
+        }
         value = Join(value, Walk(w, clause.body, arm));
         JoinEnv(out, arm);
         wildcard = wildcard || clause.wildcard;
@@ -210,6 +251,7 @@ void WalkWhile(Walker& w, const Expr& e, Env& env) {
         Env body = h;
         body.reached = runs;
         if (runs) {
+            Learn(w, e.a, true, body);
             Walk(w, e.b, body);
         }
         LoopExits exits = w.loops.back();
@@ -225,6 +267,7 @@ void WalkWhile(Walker& w, const Expr& e, Env& env) {
             env.vals = entry.vals;
             if (leaves) {
                 env = h;
+                Learn(w, e.a, false, env);
             }
             JoinEnv(env, exits.exit);
             return;

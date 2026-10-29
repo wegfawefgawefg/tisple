@@ -1066,6 +1066,34 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     written names (FindNamedTables). text_demo's built chapter got 18 lines so
     the primes keep 1.6 KB of margin for the language card.
 
+42. Mid-level passes 6 and 7 (2026-10-29, docs/midlevel-optimizer.md): common
+    subexpressions (src/opt/cse*.cpp), facts from conditions
+    (consts_facts.cpp) and calls of pure functions worked out at compile time
+    (eval.cpp; 20000 interpreter steps a call, 400000 a compile). Random race,
+    seeds 1-2000, against the fastest C compiler: geomean 2.124 to 2.111 (cse
+    off 2.113, eval off 2.112: nearly all of it is facts from conditions),
+    median 1.74 to 1.73, wins 11.7% to 11.8%, worst 288.84 (seed 1241) the
+    same; the division family geomean 2.52 to 2.50, median 2.15 to 2.13.
+    102 programs faster, 21 slower (seed 495 the worst, 6%: an inner match a
+    fact cut leaves a loop that licm then guards for too little; the rest data
+    and zero page placed elsewhere). The race's programs seldom work
+    a value out twice or call a pure function with constants (11 of 400 have a
+    repeated product or division in one function), so cse and eval are for
+    real programs. Kernels, Life 56, plasma 243 and the tisple_tests cycle
+    lines the same; every program and example byte for byte but text_demo
+    (code 3395 to 3376 bytes: `(last_top)` worked out once in next_chapter).
+    20000 fuzz seeds (the variants both run): 326822489 to 325445564 cycles
+    (2290 faster, 685 slower, 516 of those by under 1%); the two worst, 7086
+    (86 to 273) and 12904 (motion), are backend choices a fact changes: byte
+    work hoisted out of a loop from a clause that never runs
+    (gen_reduce_byte.cpp collects from every arm), and a pointer kept out of
+    zero page. TISPLE_FUZZ=30000 from four bases: 269638 programs, 0
+    mismatches. Pass time on text_demo 0.6 to 0.75 ms. Tests:
+    tests/test_opt_cse.cpp, test_opt_eval.cpp, facts in test_opt_consts.cpp;
+    fuzz shape tests/fuzz_gen_common.cpp (`seed N (common)`, one seed in four).
+    Found on the way: the link read its list of the tables the program as
+    written names past its end once the passes add variables (ASan).
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
