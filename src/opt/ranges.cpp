@@ -304,7 +304,7 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
         std::size_t outer = g.counters.size();
         for (std::uint32_t i = 0; i < e.count; i++) {
             ExprId item = Item(p, At(p, id), i);
-            Visit(g, item, shared, i > 0 ? Item(p, At(p, id), i - 1) : -1);
+            Visit(g, item, shared, CounterBefore(p, id, i));
             Range type = TypeRange(p, g.written.var >= 0 ? VarOf(p, g.written.var).type : 0);
             bool narrow = g.written.var >= 0 &&
                           (g.written.range.lo > type.lo || g.written.range.hi < type.hi);

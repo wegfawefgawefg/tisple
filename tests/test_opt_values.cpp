@@ -1,7 +1,8 @@
 // slice 5's ranges (src/opt/ranges_vars.cpp, ranges.cpp, ranges_elements.cpp,
 // collapse_continue.cpp, consts_eval.cpp): what each variable may ever hold (arguments every
 // call passes, steps that wrap), what a set gives the items after it, elements no store
-// reaches, (if c (continue)) items, (+ x (~ x)), a bool tested false; what they must not
+// reaches, (if c (continue)) items, (+ x (~ x)), a bool tested false, short loops unrolled
+// (src/opt/unroll.cpp); what they must not
 // decide. Every program has a main (with none, any function may be called from outside) and
 // also runs from it on the 6502 against the interpreter, which runs it as written
 
@@ -103,6 +104,20 @@ void Decided(TestResults& results) {
         {"(fn f () u8 (if flag (return 1)) (if flag (set g 1)) 0)\n"
          "(fn main () void (set flag (> h 3)) (set g (f)))",
          1},
+        // short loops whose passes depend on the one before, unrolled and folded: 27, 18, and
+        // -1 from the pass that ors it in
+        {"(fn f () void (let v u8 1) (for i u8 0 4 (set v (+ (* v 2) i))) (if (!= v 27) (set h "
+         "1)))\n"
+         "(fn main () void (f))",
+         0},
+        {"(fn f () void (let c u8 0) (let v u8 3) (while (< c 3) (set c (+ c 1)) (set v (* v c)))\n"
+         "    (if (!= v 18) (set h 1)))\n"
+         "(fn main () void (f))",
+         0},
+        {"(fn f () void (let v i8 (as i8 scr)) (for i i8 -3 4 (set v (| i v)))\n"
+         "    (if (!= v -1) (set h 1)))\n"
+         "(fn main () void (f))",
+         0},
     };
     for (const Case& c : decided) {
         Expect(results, c, true);
@@ -160,6 +175,20 @@ void Kept(TestResults& results) {
         {"(fn f () void (set g (+ h (~ g))) (if (!= g 255) (set h 1)))\n(fn main () void (f))", 1},
         // a bool tested true is not known to be 1
         {"(fn f () u8 (if flag (if flag (set g 1))) 0)\n(fn main () void (set flag true) (f))", 2},
+        // loops not unrolled: nine passes; a call, I/O or a break in the body
+        {"(fn f () void (let v u8 1) (for i u8 0 9 (set v (+ (* v 2) i))) (set h v))\n"
+         "(fn main () void (f))",
+         1},
+        {"(fn f () void (let v u8 1) (for i u8 0 4 (set v (+ (* v 2) i)) (bump)) (set h v))\n"
+         "(fn main () void (f))",
+         1},
+        {"(fn f () void (let v u8 1) (for i u8 0 4 (set v (+ (* v 2) i)) (io_write u8 0xC030 v))\n"
+         "    (set h v))",
+         1},
+        {"(fn f () void (let v u8 1) (for i u8 0 4 (set v (+ (* v 2) i)) (if (> v scr) (break)))\n"
+         "    (set h v))\n"
+         "(fn main () void (f))",
+         1},
     };
     for (const Case& c : kept) {
         Expect(results, c, false);

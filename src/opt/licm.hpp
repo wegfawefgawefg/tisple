@@ -39,6 +39,10 @@ std::int32_t EstimatedCycles(const Pass& p, ExprId id);
 // how many passes a loop makes, when its literal range (or a let of its counter just before,
 // as before, and literal bounds and step) says; -1 when it does not
 std::int64_t KnownTrips(const Pass& p, ExprId loop, ExprId before);
+// the before KnownTrips takes for the item at index of a do: a counting while's counter's let
+// when only lets of other variables stand between them, else the item just before; -1 for
+// the first item
+ExprId CounterBefore(const Pass& p, ExprId list, std::uint32_t index);
 // a loop whose body surely runs once each time it is reached: a for with a literal range
 // that is not empty or that runs to the type's end, a (while true)
 bool BodyRuns(const Pass& p, ExprId loop);

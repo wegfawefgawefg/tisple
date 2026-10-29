@@ -16,10 +16,12 @@ struct Opted {
 };
 
 Opted Optimize(const std::string& text, const tisple::OptOptions& options = {});
+// every pass but unroll: for tests of what another pass leaves of a loop
+tisple::OptOptions NoUnroll();
 // nodes of a kind under a function's body after the passes; -1 for no such function
 int CountKind(const Opted& o, const std::string& function, tisple::ExprKind kind);
 void ExpectCount(TestResults& results, const std::string& text, const std::string& function,
-                 tisple::ExprKind kind, int want);
+                 tisple::ExprKind kind, int want, const tisple::OptOptions& options = {});
 
 // how deep in loops the deepest node of a kind (and op, for a binary) sits; 0: in no loop,
 // -1: no such node

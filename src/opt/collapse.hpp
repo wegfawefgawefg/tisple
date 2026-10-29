@@ -43,6 +43,10 @@ bool StoresMayReach(const Pass& p, MemoryFacts& m, std::int32_t function, std::i
 // (collapse_continue.cpp); returns the changes made
 std::uint64_t ContinuesToElse(Pass& p, ExprId loop);
 
+// a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
+// nobody yet; false when it stays. before: the item before it, for a counting while
+bool UnrollLoop(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
+
 // ---- what a loop body reads and writes (collapse_scan.cpp)
 
 // bytes [lo, hi) of a variable, in its packed layout

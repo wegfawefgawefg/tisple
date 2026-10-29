@@ -1,7 +1,7 @@
 // loop collapse (src/opt/collapse.cpp) and unread arguments (src/opt/args.cpp): loops whose
 // passes all do the same, or whose last pass decides, run once; accumulators add up at once;
-// what must stay a loop; each program also run on the 6502 against the interpreter, which runs
-// it as written
+// what must stay a loop (unrolling off, which would copy the loops these keep); each program
+// also run on the 6502 against the interpreter, which runs it as written
 
 #include "test_backend.hpp"
 #include "test_opt.hpp"
@@ -30,7 +30,7 @@ int Loops(const Opted& o) {
 // no loop left in t.f, and the 6502 agrees with the interpreter on each argument
 void ExpectCollapsed(TestResults& results, const char* text,
                      const std::vector<std::uint16_t>& args) {
-    Opted o = Optimize(With(text));
+    Opted o = Optimize(With(text), NoUnroll());
     if (Loops(o) != 0) {
         std::fprintf(stderr, "a loop stayed:\n%s\n", text);
     }
@@ -41,7 +41,7 @@ void ExpectCollapsed(TestResults& results, const char* text,
 }
 
 void ExpectKept(TestResults& results, const char* text, int loops) {
-    Opted o = Optimize(With(text));
+    Opted o = Optimize(With(text), NoUnroll());
     if (Loops(o) != loops) {
         std::fprintf(stderr, "%d loops, not %d:\n%s\n", Loops(o), loops, text);
     }
@@ -129,7 +129,7 @@ void LastPass(TestResults& results) {
     // it runs its last pass, the inner one stays
     std::string inner = With("(fn f ((x u8)) u8\n"
                              "    (for i u8 0 4 (for j u8 0 3 (set (at a j) (+ i j)))) (at a 2))");
-    CHECK(results, Loops(Optimize(inner)) == 1);
+    CHECK(results, Loops(Optimize(inner, NoUnroll())) == 1);
     CheckProgram(results, inner, "t.f", {3});
     // one whose range the counter changes, or that may end early: both stay
     const char* ranged[] = {
@@ -138,7 +138,7 @@ void LastPass(TestResults& results) {
          "    (at a 2))"),
     };
     for (const char* text : ranged) {
-        CHECK(results, Loops(Optimize(With(text))) == 2);
+        CHECK(results, Loops(Optimize(With(text), NoUnroll())) == 2);
         CheckProgram(results, With(text), "t.f", {3});
     }
 }
@@ -190,12 +190,12 @@ void Kept(TestResults& results) {
         "(fn f ((x u8)) u8 (for i u8 0 4 (wait_cycles 100) (set g x)) g)",
     };
     for (const char* text : hardware) {
-        Opted o = Optimize(With(text));
+        Opted o = Optimize(With(text), NoUnroll());
         CHECK(results, o.ok && Loops(o) == 1);
     }
     // a loop whose bounds may make it run no pass is behind a test of them
     std::string guarded = With("(fn f ((x u8)) u8 (for i u8 x 10 (set g 7)) g)");
-    ExpectCount(results, guarded, "t.f", ExprKind::If, 1);
+    ExpectCount(results, guarded, "t.f", ExprKind::If, 1, NoUnroll());
     CheckProgram(results, guarded, "t.f", {3});
     CheckProgram(results, guarded, "t.f", {12});
     // unless the shapes of its bounds say it runs
@@ -210,7 +210,7 @@ void UnreadArgs(TestResults& results) {
     tisple::OptOptions no_args;
     no_args.disabled = {"args"};
     int division = 0;
-    Opted o = Optimize(unread);
+    Opted o = Optimize(unread, NoUnroll());
     for (std::size_t id = 0; id < o.program.exprs.size(); id++) {
         const tisple::Expr& e = o.program.exprs[id];
         division += e.kind == ExprKind::Binary && e.op == tisple::Op::Div ? 1 : 0;
@@ -225,7 +225,7 @@ void UnreadArgs(TestResults& results) {
         "(fn two ((u u8) (v u8)) u8 v)\n(fn f ((x u8)) u8 (two scr x))",
     };
     for (const char* text : kept) {
-        Opted with = Optimize(With(text));
+        Opted with = Optimize(With(text), NoUnroll());
         Opted without = Optimize(With(text), no_args);
         CHECK(results, with.ok && with.report.applied == without.report.applied);
         CheckProgram(results, With(text), "t.f", {200});

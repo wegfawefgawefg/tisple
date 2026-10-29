@@ -5,7 +5,8 @@
 //     (for i T a b body)  ->  (if (< a b) body)
 //   with no test when the shapes of a and b say the body runs (-4 below (& x 7)), and nothing
 //   when they say it never does. a and b are still worked out once, in order.
-// - A counting while, (let c v) just before and (while (< c k) ... (set c (+ c s)) ...),
+// - A counting while, (let c v) just before (lets of other variables may stand between) and
+//   (while (< c k) ... (set c (+ c s)) ...),
 //   whose other statements do not read c: the body once and c set to where it ends.
 // - Accumulators, (set x (+ x k)) with x read nowhere else, add k once per pass:
 //   (set x (+ x (* k n))) for n passes, (^ x k) when n is odd, (| x k) and (& x k) once.
@@ -290,10 +291,10 @@ bool Collapsible(const Pass& p, ExprId id) {
 bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& out) {
     // (if x (continue)) items first become elses (collapse_continue.cpp)
     c.changes += ContinuesToElse(*c.p, loop);
-    if (At(*c.p, loop).kind == ExprKind::For) {
-        return CollapseFor(c, loop, out);
-    }
-    return CollapseWhile(c, loop, before, out);
+    bool collapsed = At(*c.p, loop).kind == ExprKind::For ? CollapseFor(c, loop, out)
+                                                          : CollapseWhile(c, loop, before, out);
+    // a short loop whose passes differ: a copy of the body per pass (unroll.cpp)
+    return collapsed || (c.p->unroll && UnrollLoop(*c.p, loop, before, out));
 }
 
 void Visit(Collapser& c, ExprId id, bool shared);
@@ -305,7 +306,7 @@ void VisitDo(Collapser& c, ExprId id, bool shared) {
     while (i < At(p, id).count) {
         ExprId item = Item(p, At(p, id), i);
         Visit(c, item, shared);
-        ExprId before = i > 0 ? Item(p, At(p, id), i - 1) : -1;
+        ExprId before = CounterBefore(p, id, i);
         std::vector<ExprId> stmts;
         if (shared || !Collapsible(p, item) || !TryCollapse(c, item, before, stmts)) {
             i++;

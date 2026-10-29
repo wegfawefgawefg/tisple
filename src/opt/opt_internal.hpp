@@ -82,6 +82,7 @@ struct Pass {
     std::vector<std::uint32_t> refs; // by expr: how many nodes (or function bodies) name it
     std::vector<Summary> summaries;  // by function
     VarRanges ranges;                // worked out at the start of each round
+    bool unroll = false;             // collapse may unroll short loops (--no-pass unroll)
     // compile-time evaluation (eval.cpp), over every round: the interpreter steps spent, and
     // each call tried (the function, then its arguments' bits) with its value, -1 when it
     // could not be worked out

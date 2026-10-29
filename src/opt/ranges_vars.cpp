@@ -175,7 +175,7 @@ void VisitSet(Walker& w, const Expr& e) {
 
 void VisitLoop(Walker& w, ExprId id, const Expr& e, ExprId parent, std::uint32_t index) {
     const Pass& p = *w.p;
-    ExprId before = parent >= 0 && index > 0 ? Item(p, At(p, parent), index - 1) : -1;
+    ExprId before = parent >= 0 ? CounterBefore(p, parent, index) : -1;
     if (parent >= 0) {
         LoopPlace place;
         place.loop = id;
