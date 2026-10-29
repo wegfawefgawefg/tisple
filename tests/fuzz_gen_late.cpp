@@ -24,14 +24,16 @@ std::string Gen::LateWait() {
         return "(wait_cycles " + std::to_string(2 + late_rng.Below(60)) + ")";
     case 1: {
         int n = kWaits[late_rng.Below(16)];
-        // a long one only where no loop repeats it
-        if (loops == 0 && late_rng.Chance(10)) {
+        // a long one only where nothing repeats it: main, outside loops (main calls the
+        // other functions, maybe from loops)
+        if (loops == 0 && current + 1 == fns.size() && late_rng.Chance(10)) {
             n = 2000 + late_rng.Below(63000);
         }
         return "(wait_cycles " + std::to_string(n) + ")";
     }
     case 2:
-        return "(wait_cycles (as u16 (& " + NonLit(T::U8, 1) + " 31)))";
+        // + 2: a count the checker folds (a const table's byte) must still be 2 or more
+        return "(wait_cycles (+ (as u16 (& " + NonLit(T::U8, 1) + " 31)) 2))";
     default: {
         std::string w = Fresh("w");
         return "(do (let " + w + " u16 (& " + Expr(T::U16, 2) + " 127)) (wait_cycles " + w + "))";
