@@ -124,10 +124,27 @@ void TestCountShifts(TestResults& results) {
                words, ns);
 }
 
+void TestConstShifts16(TestResults& results) {
+    std::vector<std::uint16_t> words = {0,      1,      0x00FF, 0x0100, 0x7FFF,
+                                        0x8000, 0x8001, 0xA5C3, 0xFFFF};
+    for (int c = 0; c <= 16; c++) {
+        std::string n = std::to_string(c);
+        for (const char* type : {"u16", "i16"}) {
+            std::string t = type;
+            // and the result's high byte used: (& ... 511) of a shift down by 8 or more
+            CheckPairs(results, "(fn f ((x " + t + ") (k u8)) " + t + " (& (>> x " + n + ") 511))",
+                       words, {0});
+            CheckPairs(results, "(fn f ((x " + t + ") (k u8)) " + t + " (<< x " + n + "))", words,
+                       {0});
+        }
+    }
+}
+
 } // namespace
 
 void RunBackendShiftTests(TestResults& results) {
     TestConstShifts8(results);
+    TestConstShifts16(results);
     TestCountShifts(results);
 }
 

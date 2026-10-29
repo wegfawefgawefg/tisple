@@ -309,6 +309,17 @@ bool ShiftKnown(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint32_t a_ma
         StoreA(g, d, 1);
         return true;
     }
+    if (op == Op::Shr && !is_signed && c >= 8 && c < 16) {
+        // the high byte, moved down
+        LoadA(g, a, 1);
+        for (int i = 8; i < c; i++) {
+            Emit(g, Mn::LSR, Mode::Acc);
+        }
+        StoreA(g, d, 0);
+        out.b[1] = ByteRef();
+        out.b[1].value = Num(0);
+        return true;
+    }
     if (op == Op::Shr && !is_signed && high_zero && c < 8) {
         LoadA(g, a, 0);
         for (int i = 0; i < c; i++) {
