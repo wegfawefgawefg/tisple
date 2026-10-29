@@ -346,6 +346,8 @@ struct Gen {
     // functions called in one place whose call was inlined here: that call made again (a
     // while test made twice) is a JSR
     std::vector<std::int32_t> inlined_once;
+    // data the code reads (a match's value tables), placed after the function's code
+    std::vector<AsmItem> tables;
     std::uint32_t temp_top = 0;
     std::uint32_t ptemp_top = 0;
     std::uint32_t last_file = 0xFFFFFFFF;

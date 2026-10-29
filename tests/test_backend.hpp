@@ -84,6 +84,8 @@ void RunBackendBindTests(TestResults& results);
 void RunBackendBuildTests(TestResults& results);
 // functions called in one place (test_backend_inline.cpp)
 void RunBackendInlineTests(TestResults& results);
+// match dispatch (test_backend_match.cpp)
+void RunBackendMatchTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

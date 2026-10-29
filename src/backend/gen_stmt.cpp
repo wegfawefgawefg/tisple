@@ -342,6 +342,7 @@ void GenFunction(Backend& be, std::int32_t function) {
         Emit(g, Mn::RTS, Mode::Imp);
     }
     InitPagePointers(g);
+    g.out->insert(g.out->end(), g.tables.begin(), g.tables.end());
     be.multiplies[static_cast<std::size_t>(function)] = g.multiplies;
 }
 
