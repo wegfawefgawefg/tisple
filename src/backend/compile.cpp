@@ -245,6 +245,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     FoldConstants(program);
     OptReport report;
     OptimizeProgram(program, options.opt, report);
+    std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     out = Compiled();
     out.origin = options.origin;
     out.main = program.main;
@@ -255,7 +256,9 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     if (!ShapeProgram(program, be.shapes, errors)) {
         return false;
     }
-    be.deref = FindDerefPointers(program);
+    be.counter_literals = counter_literals;
+    be.inlines = FindInlines(program, options.no_inline);
+    be.deref = FindDerefPointers(program, be.inlines);
     be.aliases = FindIndexAliases(program);
     be.unit_steps = FindUnitSteps(program);
     be.effects = ComputeEffects(program);
@@ -263,10 +266,6 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     be.ranges = FindValueRanges(program);
     be.fn_runs = FindRunCounts(program);
     be.multiplies.assign(program.functions.size(), {});
-    be.fn_exprs.assign(program.functions.size(), 0);
-    for (std::size_t f = 0; f < program.functions.size(); f++) {
-        be.fn_exprs[f] = CountExprs(program, program.functions[f].body);
-    }
     MakeSymbols(be);
     std::vector<WeightsAdded> added(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {

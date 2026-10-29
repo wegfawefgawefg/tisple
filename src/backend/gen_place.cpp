@@ -128,10 +128,10 @@ ExprId PeelConstant(const Gen& g, ExprId id, std::uint16_t& add) {
             return id;
         }
         std::uint16_t c = 0;
-        if (ConstValue(*g.program, e.b, c)) {
+        if (ConstOf(g, e.b, c)) {
             add = static_cast<std::uint16_t>(e.op == Op::Add ? add + c : add - c);
             id = e.a;
-        } else if (e.op == Op::Add && ConstValue(*g.program, e.a, c)) {
+        } else if (e.op == Op::Add && ConstOf(g, e.a, c)) {
             add = static_cast<std::uint16_t>(add + c);
             id = e.b;
         } else {
@@ -197,7 +197,7 @@ bool PointerBase(Gen& g, ExprId pointer, ExprId later, bool emit, PlaceRef& out)
         out.ptr_var = pe.ref;
     }
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, pointer, c)) {
+    if (ConstOf(g, pointer, c)) {
         out.ptr_const = true;
         out.ptr_value = c;
     }
@@ -272,12 +272,16 @@ bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, Ty
     out.type = type;
     const Expr& pe = At(g, pointer);
     std::uint16_t c = 0;
-    if (plain && pe.kind == ExprKind::PtrAdd && ConstValue(*g.program, pe.b, c)) {
+    if (plain && pe.kind == ExprKind::PtrAdd && ConstOf(g, pe.b, c)) {
         // a constant count is an offset: LDY #offset
         if (!PointerBase(g, pe.a, later, emit, out)) {
             return false;
         }
         out.cursor.address = static_cast<std::uint16_t>((offset + c * pe.value) & 0xFFFF);
+        return true;
+    }
+    if (plain && pe.kind == ExprKind::PtrAdd && emit && offset == 0 &&
+        ArrayPlusByte(g, pointer, type, out)) {
         return true;
     }
     if (plain && pe.kind == ExprKind::PtrAdd) {
@@ -326,7 +330,7 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         TypeId array = At(g, e.a).type;
         std::uint16_t c = 0;
         // (a counter bound to a constant reads as that constant)
-        if (ConstValue(*g.program, BoundTarget(g, e.b), c)) {
+        if (ConstOf(g, BoundTarget(g, e.b), c)) {
             out.cursor = ElementCursor(*g.program, g.be->shapes, out.root, out.cursor, array, c);
             out.type = e.type;
             return true;

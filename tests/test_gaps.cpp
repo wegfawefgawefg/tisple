@@ -155,7 +155,8 @@ void TestLifeCarries(TestResults& results) {
     CHECK(results, tisple::FindProgramGaps(c.built.program, c.code, options, cache, gaps, error));
     int step_carries = 0;
     for (const tisple::Finding& f : gaps.findings) {
-        if (f.pattern == tisple::Pattern::kFlagAlready && f.function == "main.step" &&
+        // main calls step once, so step's code is inlined there
+        if (f.pattern == tisple::Pattern::kFlagAlready && f.function == "main.main" &&
             f.text == "CLC" && f.source.find("(let n u8") != std::string::npos) {
             step_carries++;
         }
@@ -166,7 +167,7 @@ void TestLifeCarries(TestResults& results) {
     // and the row pointers step by 42
     bool strided = false;
     for (const tisple::Finding& f : gaps.findings) {
-        strided = strided || (f.pattern == tisple::Pattern::kStrided && f.function == "main.step" &&
+        strided = strided || (f.pattern == tisple::Pattern::kStrided && f.function == "main.main" &&
                               f.reason.find("+42") != std::string::npos);
     }
     CHECK(results, strided);

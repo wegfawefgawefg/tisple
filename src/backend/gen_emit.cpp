@@ -294,8 +294,57 @@ std::uint32_t LoopFactor(const Gen& g, ExprId loop) {
     return LoopTrips(*g.program, loop);
 }
 
+bool NeverNegative(const Gen& g, ExprId id) {
+    std::uint32_t top = ExprSize(*g.program, id) == 2 ? 0x8000 : 0x80;
+    return MaxOf(g, id) < top;
+}
+
 std::uint32_t MaxOf(const Gen& g, ExprId id) {
+    std::uint16_t c = 0;
+    if (!g.bound.empty() && ConstOf(g, id, c)) {
+        return c;
+    }
     return ExprMax(*g.program, g.be->ranges, id);
+}
+
+bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value) {
+    const Program& program = *g.program;
+    if (g.bound.empty()) {
+        return ConstValue(program, id, value);
+    }
+    const Expr& e = ExprOf(program, id);
+    std::uint16_t a = 0;
+    std::uint16_t b = 0;
+    switch (e.kind) {
+    case ExprKind::VarRef: {
+        ExprId target = BoundTarget(g, id);
+        return target != id && ConstOf(g, target, value);
+    }
+    case ExprKind::Unary:
+        if (!ConstOf(g, e.a, a)) {
+            return false;
+        }
+        value = EvalUnaryOp(e.op, KindOf(program, e.type), a);
+        return true;
+    case ExprKind::Binary: {
+        if (!ConstOf(g, e.a, a) || !ConstOf(g, e.b, b)) {
+            return false;
+        }
+        bool div_by_zero = false;
+        value = EvalBinaryOp(e.op, ExprKindOf(program, e.a), a, b, div_by_zero);
+        return !div_by_zero;
+    }
+    case ExprKind::Convert:
+        if (!ConstOf(g, e.a, a)) {
+            return false;
+        }
+        value = ConvertBits(ExprKindOf(program, e.a), KindOf(program, e.type), a);
+        return true;
+    case ExprKind::Reinterpret:
+        return ConstOf(g, e.a, value);
+    default:
+        return ConstValue(program, id, value);
+    }
 }
 
 int KnownImm(const Gen& g, const Opnd& o, int k) {
@@ -372,9 +421,36 @@ void LoadIndexReg(Gen& g, int reg, const Index& index) {
         StepIndexReg(g, reg, c.delta, index.delta)) {
         return;
     }
-    Emit(g, reg == 0 ? Mn::LDX : Mn::LDY, Mode::Abs, index.value);
+    Opnd stored = MemOpnd(index.value, 1, 1);
+    if (AHoldsByte(g, stored, 0)) {
+        // A was just stored there (or loaded from there): TAX instead of LDX, the register
+        // known to hold that byte as after the load
+        Emit(g, reg == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
+        g.reg[reg].known = index.value.sym >= 0;
+        g.reg[reg].mem = true;
+        g.reg[reg].v = index.value;
+        g.reg[reg].delta = 0;
+    } else {
+        Emit(g, reg == 0 ? Mn::LDX : Mn::LDY, Mode::Abs, index.value);
+    }
     if (!StepIndexReg(g, reg, 0, index.delta)) {
         Fail(g, Loc(), "internal: an index delta too big for INX/INY");
+    }
+}
+
+void PreloadIndex(Gen& g, const Opnd& dst, const Opnd& value) {
+    if (dst.size == 0 || dst.b[0].kind != ByteKind::MemIdx || dst.index.is_reg ||
+        !AHoldsByte(g, MemOpnd(dst.index.value, 1, 1), 0) || value.size == 0 || value.in_a) {
+        return;
+    }
+    for (int k = 0; k < value.size; k++) {
+        if (value.b[k].kind != ByteKind::Imm && value.b[k].kind != ByteKind::Mem) {
+            return;
+        }
+    }
+    int r = PickIndexReg(g, dst.index, Mn::STA);
+    if (g.pin[r] < 0) {
+        LoadIndexReg(g, r, dst.index);
     }
 }
 

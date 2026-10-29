@@ -4,6 +4,9 @@
 
 #include "check/program.hpp"
 
+#include <string>
+#include <vector>
+
 namespace tisple {
 
 const Expr& ExprOf(const Program& program, ExprId id);
@@ -14,6 +17,8 @@ std::uint32_t ExprSize(const Program& program, ExprId id); // bytes of its type
 // may write memory: calls, stores, sets, jsr (a let only writes a fresh local)
 bool HasWrites(const Program& program, ExprId id);
 bool HasCalls(const Program& program, ExprId id);
+// a while or for loop inside
+bool HasLoops(const Program& program, ExprId id);
 // anything that must run even when the value is unused: writes, I/O, control flow
 bool HasEffects(const Program& program, ExprId id);
 // may this code change var: a set rooted at it, or for globals and address-taken vars any
@@ -43,10 +48,22 @@ std::vector<bool> FindNamedTables(const Program& program);
 // functions this small (in expressions, CountExprs) are inlined at every call (gen_expr.cpp)
 constexpr std::uint32_t kMaxInlineExprs = 24;
 
-// pointer variables some load or store goes through directly, or that a small function's
+enum class InlineKind : std::uint8_t {
+    None,
+    Always, // at every call: at most kMaxInlineExprs expressions
+    Once,   // the program calls it in one place: there, the first time that call is made
+};
+
+// by function: how its calls are inlined. never names functions that stay functions
+// (qualified names; the race's t.init and t.checksum, whose entries time the work)
+std::vector<InlineKind> FindInlines(const Program& program, const std::vector<std::string>& never);
+// calls a function that is not inlined at every call (a JSR, or the one inlined copy)
+bool HasBigCalls(const Program& program, ExprId id, const std::vector<InlineKind>& inlines);
+
+// pointer variables some load or store goes through directly, or that an inlined function's
 // parameter some load or store goes through reads in place once the call is inlined: these
 // live in zero page
-std::vector<bool> FindDerefPointers(const Program& program);
+std::vector<bool> FindDerefPointers(const Program& program, const std::vector<InlineKind>& inlines);
 
 // how many times a loop's body may run each time the loop is reached: a for with constant
 // bounds its trip count (2 to 64), a while 8, any other loop 4 (run_counts.cpp)

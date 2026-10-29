@@ -70,6 +70,8 @@ bool ParseArgs(int argc, char** argv, bool run, BuildArgs& args) {
                 return false;
             }
             args.options.origin = static_cast<std::uint16_t>(number);
+        } else if (std::strcmp(arg, "--no-inline") == 0 && has_value) {
+            args.options.no_inline.push_back(argv[++i]);
         } else if (run && std::strcmp(arg, "--max-cycles") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number)) {
                 return false;
@@ -127,6 +129,7 @@ int RunBuildCommand(int argc, char** argv) {
         std::fprintf(stderr, "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm]\n"
                              "  [-O0|-O1] [--opt-bisect N]\n"
                              "  [--no-pass dead|loops|consts|licm|cse|eval]\n"
+                             "  [--no-inline module.fn] (a function its calls jump to)\n"
                              "addresses take $hex, 0xhex or decimal\n");
         return 1;
     }

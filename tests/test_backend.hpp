@@ -82,6 +82,26 @@ void RunBackendWideTests(TestResults& results);
 void RunBackendPeepTests(TestResults& results);
 void RunBackendBindTests(TestResults& results);
 void RunBackendBuildTests(TestResults& results);
+// functions called in one place (test_backend_inline.cpp)
+void RunBackendInlineTests(TestResults& results);
+// match dispatch (test_backend_match.cpp)
+void RunBackendMatchTests(TestResults& results);
+// shifts (test_backend_shift.cpp)
+void RunBackendShiftTests(TestResults& results);
+// 8-bit subtractions (test_backend_sub8.cpp)
+void RunBackendSub8Tests(TestResults& results);
+// signed compares of values never negative (test_backend_signed_cmp.cpp)
+void RunBackendSignedCmpTests(TestResults& results);
+// u16 for loops counted in a byte (test_backend_count16.cpp)
+void RunBackendCount16Tests(TestResults& results);
+// short loops copied with the counter a number (test_backend_unroll.cpp)
+void RunBackendUnrollTests(TestResults& results);
+// 16-bit runs a byte at a time (test_backend_spine.cpp)
+void RunBackendSpineTests(TestResults& results);
+// store indices into their registers early (test_backend_preload.cpp)
+void RunBackendPreloadTests(TestResults& results);
+// byte arrays indexed by a sum (test_backend_place_sum.cpp)
+void RunBackendPlaceSumTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

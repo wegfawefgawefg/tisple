@@ -353,7 +353,7 @@ std::vector<WhileRegs> Choices(const Gen& g, ExprId id) {
 bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
-    bool fixed = ConstValue(*g.program, e.a, c);
+    bool fixed = ConstOf(g, e.a, c);
     bool pinned = regs.var[0] >= 0 || regs.var[1] >= 0;
     bool outer = g.violation;
     if (pinned) {
@@ -593,7 +593,7 @@ bool SetPinnedVar(Gen& g, ExprId place, ExprId value) {
 void GenWhile(Gen& g, ExprId id) {
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, e.a, c) && c == 0) {
+    if (ConstOf(g, e.a, c) && c == 0) {
         return;
     }
     std::vector<WhileRegs> choices = Choices(g, id);

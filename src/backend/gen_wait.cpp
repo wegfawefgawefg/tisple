@@ -9,9 +9,13 @@
 //   it is on, so it too is exactly n cycles (kVarWaitMin for an n below that), the same as a
 //   constant n. A value that is not a plain pair of bytes (a sum, an element at a computed
 //   index, a register) goes into a temporary first; that copy is part of working n out.
+// - A variable bound to a number (an inlined call's argument) waits as that constant would
+//   in a variable wait: the number, kVarWaitMin at least.
 
 #include "asm/wait.hpp"
 #include "backend/gen.hpp"
+
+#include <algorithm>
 
 namespace tisple {
 
@@ -42,6 +46,12 @@ void GenWait(Gen& g, ExprId id) {
     const Expr& e = ExprOf(*g.program, id);
     if (e.value != 0) {
         EmitWait(g, MakeWait(e.value));
+        return;
+    }
+    std::uint16_t c = 0;
+    if (ConstOf(g, e.a, c) && !HasEffects(*g.program, e.a)) {
+        // a number once bound (an inlined argument): the variable wait's time, exactly
+        EmitWait(g, MakeWait(std::max<std::uint32_t>(c, kVarWaitMin)));
         return;
     }
     Opnd n = Eval(g, e.a, nullptr);

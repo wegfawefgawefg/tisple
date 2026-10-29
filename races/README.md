@@ -129,7 +129,7 @@ build/tisple race-gen --seed 285 --print              # the seed's Tisple; --pri
    | cc65 | `cl65 -t sim6502 -C toolchains/cc65-random.cfg -Oirs -Cl` (code, data and stack in $0800-$B7FF) |
    | LLVM-MOS | `mos-sim-clang -mcpu=mos6502 -O2` |
    | Oscar64 | `oscar64 -n -tm=c64 -tf=prg -O2`, its default layout |
-   | Tisple | `tisple build t.tsp --origin 0x4000` (above the hi-res page Tisple keeps clear) |
+   | Tisple | `tisple build t.tsp --origin 0x4000 --no-inline t.init --no-inline t.checksum` (above the hi-res page Tisple keeps clear; the clock's ends stay functions, as the C's `RACE_NOINLINE`) |
 
 5. `tisple race` runs each binary from its own startup and times from `t.init`'s return
    (`--after`) to `t.checksum`'s first instruction (`--stop`): the program's work, not the

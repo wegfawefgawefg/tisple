@@ -327,8 +327,8 @@ bool MaskTest(Gen& g, ExprId id, bool nonzero, std::int32_t label) {
         return false;
     }
     ExprId x = e.a;
-    if (!ConstValue(*g.program, e.b, c)) {
-        if (!ConstValue(*g.program, e.a, c)) {
+    if (!ConstOf(g, e.b, c)) {
+        if (!ConstOf(g, e.a, c)) {
             return false;
         }
         x = e.b;
@@ -373,35 +373,71 @@ bool MaskTest(Gen& g, ExprId id, bool nonzero, std::int32_t label) {
     return true;
 }
 
+namespace {
+
+// an order compare one side's constant decides, at the smallest or largest value of the type:
+// 1 always holds, 0 never, -1 neither
+int DecidedOrder(const Gen& g, const Expr& e, Op op, bool is_signed, std::uint32_t size) {
+    std::uint16_t max = is_signed ? (size == 1 ? 0x7F : 0x7FFF) : (size == 1 ? 0xFF : 0xFFFF);
+    std::uint16_t min = is_signed ? (size == 1 ? 0x80 : 0x8000) : 0;
+    std::uint16_t ca = 0;
+    std::uint16_t cb = 0;
+    bool a_const = ConstOf(g, e.a, ca);
+    bool b_const = ConstOf(g, e.b, cb);
+    bool a_max = a_const && ca == max;
+    bool a_min = a_const && ca == min;
+    bool b_max = b_const && cb == max;
+    bool b_min = b_const && cb == min;
+    switch (op) {
+    case Op::Ge:
+        return a_max || b_min ? 1 : -1;
+    case Op::Lt:
+        return a_max || b_min ? 0 : -1;
+    case Op::Le:
+        return a_min || b_max ? 1 : -1;
+    case Op::Gt:
+        return a_min || b_max ? 0 : -1;
+    default:
+        return -1;
+    }
+}
+
+} // namespace
+
 void GenCompare(Gen& g, const Expr& e, bool when, std::int32_t label) {
     Op op = when ? e.op : Negate(e.op);
     std::uint16_t zero = 0;
     bool equality = op == Op::Eq || op == Op::Ne;
-    if (equality && ConstValue(*g.program, e.b, zero) && zero == 0 &&
-        MaskTest(g, e.a, op == Op::Ne, label)) {
+    if (equality && ConstOf(g, e.b, zero) && zero == 0 && MaskTest(g, e.a, op == Op::Ne, label)) {
         return;
     }
-    if (equality && ConstValue(*g.program, e.a, zero) && zero == 0 &&
-        MaskTest(g, e.b, op == Op::Ne, label)) {
+    if (equality && ConstOf(g, e.a, zero) && zero == 0 && MaskTest(g, e.b, op == Op::Ne, label)) {
         return;
     }
     TypeKind kind = ExprKindOf(*g.program, e.a);
     bool is_signed = IsSignedKind(kind);
     std::uint32_t size = ExprSize(*g.program, e.a);
     std::uint16_t cb = 0;
-    bool b_const = ConstValue(*g.program, e.b, cb);
-    if (b_const && (op == Op::Gt || op == Op::Le)) {
-        std::uint16_t max = is_signed ? (size == 1 ? 0x7F : 0x7FFF) : (size == 1 ? 0xFF : 0xFFFF);
-        if (cb == max) {
-            // a > max never holds, a <= max always does
-            if (HasEffects(*g.program, e.a)) {
-                Eval(g, e.a, nullptr);
-            }
-            if (op == Op::Le) {
-                Jump(g, label);
-            }
-            return;
+    bool b_const = ConstOf(g, e.b, cb);
+    if (is_signed && !equality && NeverNegative(g, e.a) && NeverNegative(g, e.b)) {
+        // both in 0 to 127 (32767): signed and unsigned agree
+        is_signed = false;
+    }
+    int decided = equality ? -1 : DecidedOrder(g, e, op, is_signed, size);
+    if (decided >= 0) {
+        // a constant at the end of the type's range: (>= 0xFFFF x) always holds
+        if (HasEffects(*g.program, e.a)) {
+            Eval(g, e.a, nullptr);
         }
+        if (HasEffects(*g.program, e.b)) {
+            Eval(g, e.b, nullptr);
+        }
+        if (decided == 1) {
+            Jump(g, label);
+        }
+        return;
+    }
+    if (b_const && (op == Op::Gt || op == Op::Le)) {
         cb = static_cast<std::uint16_t>((cb + 1) & (size == 1 ? 0xFF : 0xFFFF));
         op = op == Op::Gt ? Op::Ge : Op::Lt;
     }
@@ -475,7 +511,7 @@ void GenBranch(Gen& g, ExprId id, bool when, std::int32_t label) {
     id = ForwardTarget(g, id);
     const Expr& e = At(g, id);
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, id, c)) {
+    if (ConstOf(g, id, c)) {
         if ((c != 0) == when) {
             Jump(g, label);
         }
@@ -529,7 +565,7 @@ void GenBranch(Gen& g, ExprId id, bool when, std::int32_t label) {
 void CondToA(Gen& g, ExprId id) {
     id = ForwardTarget(g, id);
     std::uint16_t c = 0;
-    if (ConstValue(*g.program, id, c)) {
+    if (ConstOf(g, id, c)) {
         Emit(g, Mn::LDA, Mode::Imm, Num(c != 0 ? 1 : 0));
         return;
     }

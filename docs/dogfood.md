@@ -1157,6 +1157,70 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     to 0.79 ms. Tests: tests/test_opt_collapse.cpp, test_opt_ranges.cpp; fuzz
     shape tests/fuzz_gen_collapse.cpp (`seed N (collapse)`, one seed in four).
 
+47. Backend round on the random race's worst families (2026-10-29). Random race
+    seeds 1-2000 against the fastest C compiler: geomean 1.649 to 1.349, median
+    1.41 to 1.13, wins 23.6% to 39.0% (473 to 781); 1890 programs faster, 49
+    slower (37 by under 2%: code moved, branches across pages; the worst, seed
+    504, 421 to 567: an unrolled outer loop leaves empty DEX loops the peephole
+    keeps). Families: pointer 2.75 to 2.26, match 2.68 to 1.67, u8 index 2.61
+    to 1.90, 8-bit &|^ 1.89 to 1.44, widen 1.66 to 1.28, shift by var 1.64 to
+    1.19, 16-bit +- 1.51 to 1.20, divide 1.50 to 1.28, multiply 1.79 to 1.49.
+    What changed, biggest first:
+    - A function called in one place is inlined there whatever its size
+      (FindInlines, analysis.cpp): t.run's JSR and RTS were 12 cycles of
+      programs that run 100 (geomean 1.654 to 1.523 alone). Not when the call
+      is inside a loop and the function has loops of its own (the JSR is
+      nothing next to its work; inlining hgr.line into the line kernel moved a
+      hot branch across a page), nor when the call is in a small function that
+      is itself inlined in several places (text_demo had two copies of a
+      function), nor in unrolled copies. `tisple build --no-inline NAME`
+      keeps a function a function; the random race passes t.init and t.checksum
+      (its clock's ends), as the C's RACE_NOINLINE.
+    - For loops with constant bounds and at most 16 trips whose body reads the
+      counter run as copies with the counter a number in each (gen_unroll.cpp:
+      literals made before code generation, bound like an inlined argument).
+      ConstOf sees numbers through bindings everywhere the generator asked
+      ConstValue; an inlined parameter given a number reads as it; a wait or a
+      for bound given one is a constant (a variable wait's time: the number,
+      69 at least).
+    - u16 for loops whose counter nothing reads count down in a byte when the
+      trips are constant (also through the type's top, `(for n u16 65533
+      65536 ...)`), and count in a byte when both ends fit one.
+    - match: statement clauses that do nothing go straight to the end, and a
+      match on a byte whose clauses all give numbers reads a table (no compare
+      when the scrutinee's range is inside it).
+    - Shifts: u8 >> 6 and 7 and << 6 and 7 through the carry the other way
+      round, signed >> 4 to 7 by sign extension, a count that may be 8 or more
+      one compare (8-bit: the result; 16-bit: a byte moved first), and a count
+      with code goes straight into X.
+    - 16-bit runs of + - & | ^ with one add a byte at a time (gen_spine.cpp);
+      (& (- i k) m) is no temporary.
+    - (+ (addr_of (at a i)) k) on a byte array with i + k below 256 is a,X with
+      the sum in X, not a zero-page pointer (gen_place_sum.cpp).
+    - A store's index just worked out in A goes to X with TAX; signed compares of
+      values never negative are unsigned; an order compare a constant at the end
+      of the type's range decides is no compare; a - b with b worked out first.
+    Leftovers from item 45: an inline below-c early out for u16 constant
+    divisions in loops measured 0.05% (6 programs) and was dropped; signed
+    constant divisions inline and seed 40's multiplier were not done (a few
+    points at most). What is left is mostly not the backend: llvm-mos deletes
+    loops whose only effect is a counter's final value (`(let j u8 0) (while (<
+    j 3) (set j (+ j 1)))`, in hundreds of programs), collapses loops that
+    store the same values each trip, and knows that array elements nothing but
+    t.init writes are still 0. Kernels, Life 56 and plasma 243 (230 and 975 in
+    40 M cycles) the same. Binaries: life 5285 to 5265 bytes, snake 1840 to
+    1792, plasma 2304 and paint 2800 the same size, dot 1520 the same, multi
+    203 to 196, fill 136 to 102, hires_plot 960 the same, keys 161 to 152,
+    speaker 266 to 158, text_demo code 3393 to 3297 (still in the language
+    card); macros, read_key and sprites byte for byte. Sound: snake's half
+    waves are 172 and 977 cycles (were 180 and 980) and examples/speaker's 817
+    (was 822), the loop around the wait being cheaper. Fuzz: 4 x 30000 seeds
+    at two commits (539,000 programs), 0 mismatches; ASan 3000 seeds twice, 0. The
+    in-suite 693 programs 4030845 to 3824700 cycles. tisple race --profile
+    writes each instruction's runs and cycles on the clock. Tests:
+    test_backend_inline, _match, _shift, _sub8, _signed_cmp, _count16,
+    _unroll, _spine, _preload, _place_sum.
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

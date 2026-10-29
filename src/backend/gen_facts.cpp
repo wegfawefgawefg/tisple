@@ -152,9 +152,9 @@ void Collect(Gen& g, ExprId id, bool when, ExprId scope, int depth) {
     Op op = when ? e.op : Negate(e.op);
     std::uint16_t c = 0;
     std::int32_t var = ByteVar(g, e.a);
-    if (var < 0 || !ConstValue(*g.program, e.b, c)) {
+    if (var < 0 || !ConstOf(g, e.b, c)) {
         var = ByteVar(g, e.b);
-        if (var < 0 || !ConstValue(*g.program, e.a, c)) {
+        if (var < 0 || !ConstOf(g, e.a, c)) {
             return;
         }
         op = Mirror(op);

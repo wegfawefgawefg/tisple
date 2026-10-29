@@ -69,7 +69,7 @@ Opnd EvalJsr(Gen& g, ExprId id) {
         regs[2] = ExprOf(*g.program, e.c).b;
     }
     std::uint16_t address = 0;
-    bool fixed = ConstValue(*g.program, e.a, address);
+    bool fixed = ConstOf(g, e.a, address);
     std::int32_t patch = -1;
     if (!fixed) {
         Opnd a = Eval(g, e.a, nullptr);
