@@ -191,9 +191,26 @@ Range ElementRange(const Pass& p, const Counters& counters, const Expr& e, Range
     return UnstoredRead(p, e, at, out) && Within(out, type) ? out : type;
 }
 
+Range WorkOut(const Pass& p, const Counters& counters, ExprId id);
+
 } // namespace
 
 Range ValueRange(const Pass& p, const Counters& counters, ExprId id) {
+    Pass::RangeMemo& memo = p.memo;
+    std::size_t at = static_cast<std::size_t>(id);
+    if (!memo.on || at >= memo.stamp.size()) {
+        return WorkOut(p, counters, id);
+    }
+    if (memo.stamp[at] != memo.now) {
+        memo.range[at] = WorkOut(p, counters, id);
+        memo.stamp[at] = memo.now;
+    }
+    return memo.range[at];
+}
+
+namespace {
+
+Range WorkOut(const Pass& p, const Counters& counters, ExprId id) {
     const Expr& e = At(p, id);
     Range type = TypeRange(p, e.type);
     TypeKind kind = KindOf(*p.program, e.type);
@@ -230,6 +247,8 @@ Range ValueRange(const Pass& p, const Counters& counters, ExprId id) {
         return type;
     }
 }
+
+} // namespace
 
 bool Quiet(const Pass& p, ExprId id) {
     if (id < 0) {

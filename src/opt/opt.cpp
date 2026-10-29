@@ -65,13 +65,11 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool args = !Disabled(options, "args");
     bool vars = !Disabled(options, "vars");
     bool elements = !Disabled(options, "elements");
-    bool unroll = !Disabled(options, "unroll");
-    // unrolling waits for the other passes to settle: a body they shorten may collapse, and
-    // its copies would not
-    bool settled = false;
+    // unrolling (in collapse's walk) waits for the other passes to settle: a body they shorten
+    // may collapse, and its copies would not
+    bool unroll = collapse && !Disabled(options, "unroll");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
-        p.unroll = unroll && settled;
         opt::CountRefs(p);
         opt::ComputeSummaries(p);
         opt::ComputeVarRanges(p, vars, elements);
@@ -107,13 +105,15 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && cse; f++) {
             changes += opt::CommonSubexpressions(p, static_cast<std::int32_t>(f));
         }
-        if (changes == 0 && (!unroll || settled)) {
-            break;
+        if (changes == 0 && unroll) {
+            // settled: what this round worked out still holds, and only unrolling is left to
+            // change anything; the rounds after it fold the copies
+            p.unroll = true;
+            changes = opt::CollapseLoops(p);
+            p.unroll = false;
         }
-        // nothing changed: one more round, unrolling; something did: settle again first
-        settled = changes == 0;
-        if (settled) {
-            continue;
+        if (changes == 0) {
+            break;
         }
         // literals put in for variables join the constant chains around them: (+ 65535 v) is
         // (- v 1) again, the shape the backend knows

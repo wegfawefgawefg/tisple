@@ -289,12 +289,15 @@ bool Collapsible(const Pass& p, ExprId id) {
 }
 
 bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& out) {
+    // the round after the passes settled only unrolls (unroll.cpp): collapse found nothing
+    // in the round before, and nothing changed since
+    if (c.p->unroll) {
+        return UnrollLoop(*c.p, loop, before, out);
+    }
     // (if x (continue)) items first become elses (collapse_continue.cpp)
     c.changes += ContinuesToElse(*c.p, loop);
-    bool collapsed = At(*c.p, loop).kind == ExprKind::For ? CollapseFor(c, loop, out)
-                                                          : CollapseWhile(c, loop, before, out);
-    // a short loop whose passes differ: a copy of the body per pass (unroll.cpp)
-    return collapsed || (c.p->unroll && UnrollLoop(*c.p, loop, before, out));
+    return At(*c.p, loop).kind == ExprKind::For ? CollapseFor(c, loop, out)
+                                                : CollapseWhile(c, loop, before, out);
 }
 
 void Visit(Collapser& c, ExprId id, bool shared);

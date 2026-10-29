@@ -38,8 +38,14 @@ struct Ranger {
     Counter written;
 };
 
+// the counters or facts change: ranges worked out before may no longer hold
+void Changed(Ranger& g) {
+    g.p->memo.now++;
+}
+
 // var may be written here: what the sets before said of it no longer holds
 void Forget(Ranger& g, std::int32_t var) {
+    Changed(g);
     for (Counter& c : g.counters) {
         if (c.fact && c.var == var) {
             c.var = -1;
@@ -49,6 +55,7 @@ void Forget(Ranger& g, std::int32_t var) {
 
 // every global (all: every variable) may be written here
 void ForgetGlobals(Ranger& g, bool all) {
+    Changed(g);
     for (Counter& c : g.counters) {
         if (c.fact && c.var >= 0 && (all || VarOf(*g.p, c.var).kind == VarKind::Global)) {
             c.var = -1;
@@ -65,16 +72,48 @@ bool AnyFacts(const Ranger& g) {
     return false;
 }
 
-// a loop: what it writes anywhere in it may differ on its later passes
-void ForgetLoopWrites(Ranger& g, ExprId loop) {
-    if (!AnyFacts(g)) {
+void ForgetCallWrites(Ranger& g, std::int32_t function);
+
+// what id may write: sets, lets and fors of variables, calls' summaries, io_write and jsr
+// (globals)
+void ForgetWritesIn(Ranger& g, ExprId id) {
+    if (id < 0) {
         return;
     }
-    LoopWrites w = FindLoopWrites(*g.p, loop);
-    for (Counter& c : g.counters) {
-        if (c.fact && c.var >= 0 && (w.all || w.vars[static_cast<std::size_t>(c.var)])) {
-            c.var = -1;
+    const Pass& p = *g.p;
+    const Expr& e = At(p, id);
+    switch (e.kind) {
+    case ExprKind::Set:
+        if (PlaceRoot(p, e.a) >= 0) {
+            Forget(g, PlaceRoot(p, e.a));
         }
+        break;
+    case ExprKind::Let:
+    case ExprKind::For:
+        Forget(g, e.ref);
+        break;
+    case ExprKind::Call:
+        ForgetCallWrites(g, e.ref);
+        break;
+    case ExprKind::IoWrite:
+    case ExprKind::Jsr:
+        ForgetGlobals(g, false);
+        break;
+    case ExprKind::Literal:
+    case ExprKind::VarRef:
+    case ExprKind::Break:
+    case ExprKind::Continue:
+        return;
+    default:
+        break;
+    }
+    EachChild(p, e, [&](ExprId child) { ForgetWritesIn(g, child); });
+}
+
+// a loop: what it writes anywhere in it may differ on its later passes
+void ForgetLoopWrites(Ranger& g, ExprId loop) {
+    if (AnyFacts(g)) {
+        ForgetWritesIn(g, loop);
     }
 }
 
@@ -85,6 +124,7 @@ void ForgetCallWrites(Ranger& g, std::int32_t function) {
         ForgetGlobals(g, false);
         return;
     }
+    Changed(g);
     for (Counter& c : g.counters) {
         if (c.fact && c.var >= 0 && static_cast<std::size_t>(c.var) < s.writes.size() &&
             s.writes[static_cast<std::size_t>(c.var)]) {
@@ -233,11 +273,12 @@ void FoldValue(Ranger& g, ExprId id) {
     Pass& p = *g.p;
     const Expr& e = At(p, id);
     TypeKind kind = KindOf(*p.program, e.type);
-    if ((!IsIntegerKind(kind) && kind != TypeKind::Enum) || !Quiet(p, id) || !IsPure(p, id)) {
+    if (!IsIntegerKind(kind) && kind != TypeKind::Enum) {
         return;
     }
+    // the range first: it is rarely one value, and the walks below are as long
     Range r = ValueRange(p, g.counters, id);
-    if (r.lo != r.hi ||
+    if (r.lo != r.hi || !Quiet(p, id) || !IsPure(p, id) ||
         !Allow(p, "value decided by ranges", id, e.kind == ExprKind::VarRef ? e.ref : -1)) {
         return;
     }
@@ -280,6 +321,7 @@ void VisitLoop(Ranger& g, ExprId id, bool shared, ExprId before) {
     bool counted = LoopCounter(p, g.counters, id, before, counter);
     ForgetLoopWrites(g, id);
     if (counted) {
+        Changed(g);
         g.counters.push_back(counter);
     }
     if (e.kind == ExprKind::While) {
@@ -287,6 +329,7 @@ void VisitLoop(Ranger& g, ExprId id, bool shared, ExprId before) {
     }
     Visit(g, e.kind == ExprKind::For ? e.c : e.b, shared, -1);
     if (counted) {
+        Changed(g);
         g.counters.pop_back();
     }
 }
@@ -309,11 +352,15 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
             bool narrow = g.written.var >= 0 &&
                           (g.written.range.lo > type.lo || g.written.range.hi < type.hi);
             if (g.last_write == item && narrow) {
+                Changed(g);
                 g.counters.push_back(g.written);
             }
             g.last_write = -1;
         }
-        g.counters.resize(outer);
+        if (g.counters.size() != outer) {
+            Changed(g);
+            g.counters.resize(outer);
+        }
         return;
     }
     case ExprKind::While:
@@ -421,9 +468,15 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
 std::uint64_t FoldRanges(Pass& p) {
     Ranger g;
     g.p = &p;
+    // each node's range is worked out once while what is around it stays (ValueRange)
+    p.memo.on = true;
+    p.memo.stamp.assign(p.program->exprs.size(), 0);
+    p.memo.range.resize(p.program->exprs.size());
     for (std::size_t f = 0; f < p.program->functions.size(); f++) {
+        Changed(g);
         Visit(g, p.program->functions[f].body, false, -1);
     }
+    p.memo.on = false;
     return g.changes;
 }
 
