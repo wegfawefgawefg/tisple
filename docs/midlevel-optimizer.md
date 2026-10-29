@@ -64,6 +64,18 @@ by the existing differential tests and the fuzz farm.
 9. **Division by variables.** A u8 / u8 fast path; hoisting loop-invariant
    divisors' reciprocal tables when a divisor repeats.
 
+## Flags
+
+- `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`
+  release, adds slow search (solver superoptimisation, exact allocation) with a
+  persistent cache keyed by code window; `-Os` size instead of cycles;
+  `--cpu nmos|65c02`.
+- Developer: `--opt-bisect N` (apply only the first N transformations, for
+  bisecting miscompiles; build this first), `--no-pass NAME`, `--remarks` (what
+  was not optimised and why, with the source line).
+- No per-optimisation user flags and no in-code annotations until a real
+  program needs them (minimal rule).
+
 ## Measure
 
 - After each pass: the random race on 2,000 local seeds (`races/random.sh
