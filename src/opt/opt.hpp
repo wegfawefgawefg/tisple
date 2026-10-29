@@ -10,8 +10,8 @@
 // - dead: lets and stores nobody reads, (set x x), statements with no effect
 // - loops: loops with no effect outside themselves that provably end
 // - args: arguments for parameters their function never reads are not worked out
-// - collapse: loops whose passes all do the same run their body once; accumulators
-//   (set x (+ x k)) add k times the passes
+// - collapse: loops whose passes all do the same, or whose last pass decides, run their body
+//   once; accumulators (set x (+ x k)) add k times the passes
 // - consts: constant propagation and folding across statements, branches on constants cut
 // - ranges: compares and match clauses decided by the values their operands may hold
 // - eval: calls of pure functions with constant arguments worked out at compile time, in the

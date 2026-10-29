@@ -77,13 +77,37 @@ bool Own(const Access& a, std::int32_t var) {
 }
 
 // does id read the counter or a variable of the body's own
+namespace {
+
+bool Differs(const Access& a, std::int32_t var) {
+    return var == a.counter || (Own(a, var) && !a.steady[static_cast<std::size_t>(var)]);
+}
+
+bool CallVaries(const Pass& p, const Access& a, const Expr& call) {
+    const Summary& s = p.summaries[static_cast<std::size_t>(call.ref)];
+    if (a.own_pointed && s.loads) {
+        return true;
+    }
+    for (std::int32_t var : a.own_globals) {
+        if (s.reads[static_cast<std::size_t>(var)] && Differs(a, var)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 bool Varies(const Pass& p, const Access& a, ExprId id) {
     if (id < 0) {
         return false;
     }
     const Expr& e = At(p, id);
-    if (e.kind == ExprKind::VarRef &&
-        (e.ref == a.counter || (Own(a, e.ref) && !a.steady[static_cast<std::size_t>(e.ref)]))) {
+    if (e.kind == ExprKind::VarRef && Differs(a, e.ref)) {
+        return true;
+    }
+    bool load = e.kind == ExprKind::Load || e.kind == ExprKind::LoadField;
+    if ((load && a.own_pointed) || (e.kind == ExprKind::Call && CallVaries(p, a, e))) {
         return true;
     }
     bool varies = false;
@@ -156,7 +180,7 @@ void ScanCall(const Pass& p, Access& a, const Expr& e) {
     }
     // with the same arguments on every pass a call does the same (what it reads no pass
     // writes, or the loop does not collapse): its writes land where they did
-    bool same = !a.varying;
+    bool same = !a.varying && !CallVaries(p, a, e);
     for (std::uint32_t i = 0; i < e.count && same; i++) {
         same = !Varies(p, a, Item(p, e, i));
     }
@@ -227,6 +251,7 @@ void Scan(const Pass& p, Access& a, ExprId id) {
         a.steady[static_cast<std::size_t>(e.ref)] =
             !a.varying && !Varies(p, a, e.a) && CountSets(p, a.body, e.ref) == 1;
         a.own[static_cast<std::size_t>(e.ref)] = true;
+        a.own_pointed = a.own_pointed || VarOf(p, e.ref).address_taken;
         break;
     case ExprKind::For: {
         // a for inside makes the same passes on every pass of the loop when its range is the

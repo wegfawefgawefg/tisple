@@ -160,6 +160,10 @@ void Kept(TestResults& results) {
         "(fn f ((x u8)) u8 (for i u8 0 4 (if (= i x) (set g 9))) g)",
         "(fn f ((x u8)) u8 (for i u8 0 4 (set (at a i) x)) (at a 2))",
         "(fn f ((x u8)) u8 (for i u8 0 4 (set g (+ g i))) g)",
+        // a call that reads a global the pass set from the counter: it writes elsewhere each
+        // pass (fuzz seed 5016237, collapse)
+        ("(fn put () void (set (at a (& g 7)) h))\n"
+         "(fn f ((x u8)) u8 (for i u8 0 4 (set g (^ i 255)) (put)) (at a 7))"),
         "(fn w ((v u8)) void (if (= v 2) (set g 5)))\n"
         "(fn f ((x u8)) u8 (for i u8 0 4 (w i)) g)",
         "(fn f ((x u8)) u8 (let p (ptr u8) (addr_of (at a 0))) (for i u8 0 4 (store (+ p i) x))\n"

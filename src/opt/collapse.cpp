@@ -1,4 +1,4 @@
-// Loop collapse: a loop whose passes all do the same (collapse_scan.cpp) runs its body once.
+// Loop collapse: a loop whose passes all do the same (collapse_plan.cpp) runs its body once.
 // Inner loops go first, so a nest whose inner loop collapses may collapse in turn.
 //
 // - A for whose body does not read its variable:
@@ -10,6 +10,9 @@
 // - Accumulators, (set x (+ x k)) with x read nowhere else, add k once per pass:
 //   (set x (+ x (* k n))) for n passes, (^ x k) when n is odd, (| x k) and (& x k) once.
 //   Only when n is known, but for | and &.
+// - A body that reads its counter and whose last pass decides: a for with a literal range
+//   runs that pass with the counter's last value put in, a counting while sets the counter
+//   to where its last pass starts and runs that pass.
 // A loop that may end its pass early (break, continue, return) is left alone.
 
 #include "opt/collapse.hpp"

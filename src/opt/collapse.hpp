@@ -66,6 +66,10 @@ struct Access {
     ExprId body = -1;
     std::int32_t counter = -1;
     std::vector<bool> steady; // by var: an own variable that is the same on every pass
+    // globals a pass sets before reading them (own, see collapse_plan.cpp), which a call may
+    // read; an own variable whose address is taken, which a load may read
+    std::vector<std::int32_t> own_globals;
+    bool own_pointed = false;
     bool varying = false;
     bool unsteady = false;
 };
@@ -74,7 +78,9 @@ struct Access {
 bool Hardware(const Var& v);
 // a variable a let or for inside the body declares
 bool Own(const Access& a, std::int32_t var);
-// does id read the counter or an own variable that is not steady
+// does id read the counter or an own variable that is not steady: directly, in a call (the
+// globals its summary reads) or through a pointer (a load, when an own variable's address
+// is taken)
 bool Varies(const Pass& p, const Access& a, ExprId id);
 // what id reads and writes, into a
 void Scan(const Pass& p, Access& a, ExprId id);

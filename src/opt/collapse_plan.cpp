@@ -138,6 +138,9 @@ void MarkFirstWrite(const Pass& p, Access& a, ExprId item) {
     std::size_t at = static_cast<std::size_t>(x);
     a.own[at] = true;
     a.steady[at] = !a.varying && !Varies(p, a, set.b) && CountSets(p, a.body, x) == 1;
+    if (v.kind == VarKind::Global) {
+        a.own_globals.push_back(x);
+    }
 }
 
 } // namespace

@@ -159,7 +159,8 @@ ranges, licm, cse:
 - `collapse*.cpp`: a for, or a counting while ((let c v) just before, (while (< c k) ...
   (set c (+ c s)) ...)), whose passes all do the same runs its body once. A pass does what
   the one before did when no cell it writes (a variable's bytes, or one element or field at
-  a literal index) is one it reads, the body's own lets and fors aside. Calls read and write
+  a literal index) is one it reads, the body's own variables aside: its lets and fors, and a
+  scalar a pass sets before anything in the pass reads it. Calls read and write
   what their summaries say. Loads and stores reach what provenance says
   (`collapse_memory.cpp`: addr_of, a local one let sets, a parameter nothing writes followed
   to what the calls pass, a call's return); a load or store of memory no variable uses keeps
@@ -181,6 +182,7 @@ ranges, licm, cse:
   its range, a counting while's counter in [v, k - 1 + s]), decide compares, cut match
   clauses no value reaches (a match left with its wildcard becomes it), and decide
   (and x false) and (or x true). Only quiet operands: pure, no :address, aux or loads.
+  (~ (~ x)) and (not (not x)) become x, so (set g (~ (~ g))) is a dead store.
   Ranges are not carried through lets or sets; the backend's byte ranges (ranges.cpp there)
   are a separate thing.
 - `args.cpp`: an argument for a parameter its function never reads becomes 0 when it is
