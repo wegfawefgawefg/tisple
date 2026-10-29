@@ -110,6 +110,10 @@ struct Gen {
     // (fuzz_gen_dead.cpp); only in GenerateDeadProgram's programs
     Rng dead_rng;
     bool dead_shapes = false;
+    // what constant propagation and loop-invariant code motion change or must keep, from a
+    // stream of its own (fuzz_gen_motion.cpp); only in GenerateMotionProgram's programs
+    Rng motion_rng;
+    bool motion_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -247,6 +251,18 @@ struct Gen {
     std::string DeadFor(int depth);
     // a dead let, store, statement or loop, or a loop whose result is read after it
     std::string DeadShape(int depth);
+    // ---- loop-invariant work and constants (fuzz_gen_motion.cpp)
+    T MotionInt();
+    std::string MotionOperand(T t, bool literal);
+    std::string MotionWork(T t, const std::string& a, const std::string& b);
+    std::string MotionItem(T t, const std::string& work, const std::string& count_var, int depth);
+    // a loop whose body works out what it (most of the time) never changes the inputs of
+    std::string InvariantLoop(int depth);
+    // a let of a constant, things that may change it, reads of it
+    std::string ConstLet(int depth);
+    std::string ConstGlobal();
+    std::string SameOperands();
+    std::string MotionShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

@@ -21,7 +21,14 @@ int CountKind(const Opted& o, const std::string& function, tisple::ExprKind kind
 void ExpectCount(TestResults& results, const std::string& text, const std::string& function,
                  tisple::ExprKind kind, int want);
 
+// how deep in loops the deepest node of a kind (and op, for a binary) sits; 0: in no loop,
+// -1: no such node
+int LoopDepth(const Opted& o, const std::string& function, tisple::ExprKind kind, int op = -1);
+
 void RunOptTests(TestResults& results);
+// constant propagation (test_opt_consts.cpp) and loop-invariant code motion (test_opt_licm.cpp)
+void RunOptConstsTests(TestResults& results);
+void RunOptLicmTests(TestResults& results);
 // -O0, --opt-bisect and --no-pass (test_opt_flags.cpp)
 void RunOptFlagTests(TestResults& results);
 

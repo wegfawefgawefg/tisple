@@ -1044,6 +1044,28 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     `wait_cycles` (half now in cycles), same pitch: 180 and 980 cycles per half
     wave in snake, 822 in the example.
 
+41. Mid-level passes 4 and 5 (2026-10-29, docs/midlevel-optimizer.md):
+    constant propagation across statements (src/opt/consts*.cpp) and
+    loop-invariant code motion (src/opt/licm*.cpp). Random race, seeds
+    1-2000, against the fastest C compiler: geomean 2.420 to 2.124 (consts
+    alone 2.213, licm alone 2.321), median 2.00 to 1.74, wins 9.0% to 11.7%,
+    worst 312x to 289x (seed 1241); the division family (889 programs)
+    geomean 3.00 to 2.52, median 2.47 to 2.15. 1188 programs faster, 128
+    slower (81 by under 2%, the worst 16%: loops left on their first pass
+    after their invariant work moved). Kernels, Life 56, plasma 243 and the
+    tisple_tests cycle lines the same; every program and example byte for byte
+    but text_demo (code 4587 to 4574 bytes). 20000 fuzz seeds (plain, entries,
+    dead): 232958305 cycles to 201174190. Pass time on text_demo 0.2 to 0.8 ms.
+    Dead locals keep their frame bytes (the interpreter shares the compiled
+    layout). Tests: tests/test_opt_consts.cpp, test_opt_licm.cpp; fuzz shape
+    tests/fuzz_gen_motion.cpp (`seed N (motion)`, one seed in four).
+    At merge with string literals: consts folded const-table reads, the link
+    then left those tables out, and the interpreter (running the program as
+    written on the compiled layout) read other data there: 50 fuzz mismatches,
+    none in the 6502 code. The link now keeps every table the program as
+    written names (FindNamedTables). text_demo's built chapter got 18 lines so
+    the primes keep 1.6 KB of margin for the language card.
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

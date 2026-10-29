@@ -47,9 +47,9 @@
     "Turn the page for how it all fits."
     "")
 
-(const BUILT_LINES u16 50)
+(const BUILT_LINES u16 68)
 
-(book.chapter built 50
+(book.chapter built 68
     ()
     "# How the program is put together"
     ""
@@ -96,6 +96,24 @@
     "title and status lines print theirs with (text80.put_str \"...\"), one loop over"
     "the bytes, where text80.print unrolls a call for every character; that took"
     "about 1.2 KB of code off this program."
+    ""
+    "The optimiser. Between checking and code generation, passes rewrite the tree:"
+    "lets and stores nobody reads go, loops that provably end and do nothing seen"
+    "outside them go, work a loop does not change moves out in front of it, and"
+    "values known while compiling replace the code that would compute them. The"
+    "reference interpreter still runs the program as written, so every fuzzed"
+    "program checks the passes. -O0 turns them off, --no-pass names one to leave"
+    "out, and --opt-bisect N keeps only the first N changes, to find the one that"
+    "broke a program."
+    ""
+    "Waits. (wait_cycles n) takes exactly n cycles wherever the code lands, page"
+    "crossings counted; a variable n takes 69 at least. Timing loops are written"
+    "with it, since the optimiser deletes an empty loop that provably ends: the"
+    "speaker library's buzz waits this way."
+    ""
+    "Placement is first fit, in the order the lets are written, so a few bytes"
+    "less code can move a whole chapter from one memory to another. This chapter"
+    "is long enough that the primes stay in the language card."
     ""
     "Sizes, from tisple build --disk: the main file from $6000, a segment below it,"
     "one in the language card and one in aux memory. Together they are far past"

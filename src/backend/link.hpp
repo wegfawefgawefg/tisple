@@ -12,6 +12,7 @@ struct LinkInput {
     const FramePlan* plan = nullptr;
     const std::vector<bool>* kept = nullptr; // by function: its code is in the program
     const std::vector<AsmItem>* runtime = nullptr;
+    const std::vector<bool>* source_tables = nullptr; // by var: FindNamedTables on the source
 };
 
 enum class LinkResult : std::uint8_t {

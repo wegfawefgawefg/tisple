@@ -35,6 +35,11 @@ std::uint32_t CountExprs(const Program& program, ExprId id);
 // (+ t 7), (* x 1) is x, (+ (+ p 0) 2) is (+ p 2), a constant tree a literal (fold.cpp)
 void FoldConstants(Program& program);
 
+// by var: the const tables that functions reachable from main (all functions, with no main)
+// name. Run on the program as written, these must keep their memory: the interpreter reads
+// them even where the mid-level passes folded every read away
+std::vector<bool> FindNamedTables(const Program& program);
+
 // pointer variables some load or store goes through directly: these live in zero page
 std::vector<bool> FindDerefPointers(const Program& program);
 

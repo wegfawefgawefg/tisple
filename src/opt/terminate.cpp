@@ -43,44 +43,6 @@ std::uint32_t CountWrites(const Pass& p, ExprId id, std::int32_t var) {
     return count;
 }
 
-// a continue inside id that goes to the loop id sits in (depth 0), not to a loop inside it
-bool ContinuesHere(const Pass& p, ExprId id, int depth) {
-    if (id < 0) {
-        return false;
-    }
-    const Expr& e = At(p, id);
-    switch (e.kind) {
-    case ExprKind::Continue:
-        return depth == 0;
-    case ExprKind::While:
-        return ContinuesHere(p, e.a, depth) || ContinuesHere(p, e.b, depth + 1);
-    case ExprKind::For:
-        return ContinuesHere(p, e.a, depth) || ContinuesHere(p, e.b, depth) ||
-               ContinuesHere(p, e.c, depth + 1);
-    default:
-        break;
-    }
-    if (ContinuesHere(p, e.a, depth) || ContinuesHere(p, e.b, depth) ||
-        ContinuesHere(p, e.c, depth)) {
-        return true;
-    }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            if (ContinuesHere(p, Item(p, e, i), depth)) {
-                return true;
-            }
-        }
-    }
-    if (e.kind == ExprKind::Match) {
-        for (std::uint32_t i = 0; i < e.count; i++) {
-            if (ContinuesHere(p, p.program->clauses[e.first + i].body, depth)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 std::int64_t ValueOf(TypeKind kind, std::uint32_t raw) {
     switch (kind) {
     case TypeKind::I8:
@@ -224,6 +186,44 @@ bool CondEnds(const Pass& p, ExprId loop, ExprId cond) {
 }
 
 } // namespace
+
+// a continue inside id that goes to the loop id sits in (depth 0), not to a loop inside it
+bool ContinuesHere(const Pass& p, ExprId id, int depth) {
+    if (id < 0) {
+        return false;
+    }
+    const Expr& e = At(p, id);
+    switch (e.kind) {
+    case ExprKind::Continue:
+        return depth == 0;
+    case ExprKind::While:
+        return ContinuesHere(p, e.a, depth) || ContinuesHere(p, e.b, depth + 1);
+    case ExprKind::For:
+        return ContinuesHere(p, e.a, depth) || ContinuesHere(p, e.b, depth) ||
+               ContinuesHere(p, e.c, depth + 1);
+    default:
+        break;
+    }
+    if (ContinuesHere(p, e.a, depth) || ContinuesHere(p, e.b, depth) ||
+        ContinuesHere(p, e.c, depth)) {
+        return true;
+    }
+    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (ContinuesHere(p, Item(p, e, i), depth)) {
+                return true;
+            }
+        }
+    }
+    if (e.kind == ExprKind::Match) {
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (ContinuesHere(p, p.program->clauses[e.first + i].body, depth)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 bool WhileEnds(const Pass& p, ExprId loop) {
     return CondEnds(p, loop, At(p, loop).a);

@@ -200,4 +200,38 @@ std::vector<bool> FindDerefPointers(const Program& program) {
     return deref;
 }
 
+std::vector<bool> FindNamedTables(const Program& program) {
+    std::size_t count = program.functions.size();
+    std::vector<bool> reached(count, program.main < 0);
+    std::vector<std::int32_t> work;
+    if (program.main >= 0) {
+        reached[static_cast<std::size_t>(program.main)] = true;
+        work.push_back(program.main);
+    }
+    while (!work.empty()) {
+        const Function& f = program.functions[static_cast<std::size_t>(work.back())];
+        work.pop_back();
+        for (std::int32_t callee : f.callees) {
+            if (!reached[static_cast<std::size_t>(callee)]) {
+                reached[static_cast<std::size_t>(callee)] = true;
+                work.push_back(callee);
+            }
+        }
+    }
+    std::vector<bool> named(program.vars.size(), false);
+    for (std::size_t f = 0; f < count; f++) {
+        if (!reached[f]) {
+            continue;
+        }
+        AnyExpr(program, program.functions[f].body, [&](const Expr& e) {
+            if (e.kind == ExprKind::VarRef &&
+                program.vars[static_cast<std::size_t>(e.ref)].kind == VarKind::ConstArray) {
+                named[static_cast<std::size_t>(e.ref)] = true;
+            }
+            return false;
+        });
+    }
+    return named;
+}
+
 } // namespace tisple

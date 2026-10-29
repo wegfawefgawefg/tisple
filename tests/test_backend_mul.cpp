@@ -40,17 +40,21 @@ const char* const kMul =
     "    (^ (+ x (* y 3)) (+ (+ z v) u)))\n"
     "(fn signed ((a i16) (b i16)) i16\n"
     "    (+ (* a b) (* (as i16 (as i8 a)) (as i16 (as i8 b)))))\n"
-    // the same in loops, which take the quarter-square routines
-    "(fn mixed_loop ((a u8) (w u16)) u16 (let r u16 0) (for k u8 0 1 (set r (mixed a w))) r)\n"
-    "(fn signed_loop ((a i16) (b i16)) i16 (let r i16 0) (for k u8 0 1 (set r (signed a b))) r)\n"
+    // the same in loops, which take the quarter-square routines (k is 0: an operand the loop
+    // changes, so the product is not moved out of it)
+    "(fn mixed_loop ((a u8) (w u16)) u16 (let r u16 0) (for k u8 0 1 (set r (mixed (+ a k) w)))\n"
+    "    r)\n"
+    "(fn signed_loop ((a i16) (b i16)) i16 (let r i16 0)\n"
+    "    (for k u8 0 1 (set r (signed (+ a (as i16 k)) b))) r)\n"
     // one product: of bytes widened, of bytes kept to 8 bits, of words; and in loops
     "(fn wide ((a u8) (b u8)) u16 (* (as u16 a) (as u16 b)))\n"
     "(fn narrow ((a u8) (b u8)) u8 (* a b))\n"
     "(fn word ((a u16) (b u16)) u16 (* a b))\n"
-    "(fn wide_loop ((a u8) (b u8)) u16 (let r u16 0) (for k u8 0 1 (set r (* (as u16 a) (as u16 "
-    "b)))) r)\n"
-    "(fn narrow_loop ((a u8) (b u8)) u8 (let r u8 0) (for k u8 0 1 (set r (* a b))) r)\n"
-    "(fn word_loop ((a u16) (b u16)) u16 (let r u16 0) (for k u8 0 1 (set r (* a b))) r)\n";
+    "(fn wide_loop ((a u8) (b u8)) u16 (let r u16 0)\n"
+    "    (for k u8 0 1 (set r (* (as u16 (+ a k)) (as u16 b)))) r)\n"
+    "(fn narrow_loop ((a u8) (b u8)) u8 (let r u8 0) (for k u8 0 1 (set r (* (+ a k) b))) r)\n"
+    "(fn word_loop ((a u16) (b u16)) u16 (let r u16 0)\n"
+    "    (for k u8 0 1 (set r (* (+ a (as u16 k)) b))) r)\n";
 
 bool HasRoutine(const Compiled& c, const std::string& name) {
     for (const tisple::AsmItem& item : c.code.as.items) {

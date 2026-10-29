@@ -219,7 +219,8 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
 }
 
 // by var: a const table (string literals among them) that no kept code names, so it takes
-// no memory; one with an :address stays where it was put
+// no memory; one with an :address stays where it was put, and one the program as written
+// names stays for the interpreter
 std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
     const Program& program = *be.program;
     std::vector<bool> named(program.vars.size(), false);
@@ -238,7 +239,9 @@ std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
     std::vector<bool> dropped(program.vars.size(), false);
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const Var& var = program.vars[v];
-        dropped[v] = var.kind == VarKind::ConstArray && !var.placement.has_address && !named[v];
+        bool source = in.source_tables != nullptr && (*in.source_tables)[v];
+        dropped[v] = var.kind == VarKind::ConstArray && !var.placement.has_address && !named[v] &&
+                     !source;
     }
     return dropped;
 }
