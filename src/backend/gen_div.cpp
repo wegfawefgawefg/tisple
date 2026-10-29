@@ -89,7 +89,7 @@ void RuntimeDiv8(Gen& g, ExprId id, const Expr& e, bool is_signed) {
     bool a_placed = false;
     if (a.size == 0 || MayWriteOpnd(g, e.b, a)) {
         EvalA(g, e.a);
-        if (UsesRuntime(*g.program, e.b)) {
+        if (UsesRuntime(*g.program, e.b, g.be->aliases)) {
             a = SpillA(g);
         } else {
             Emit(g, Mn::STA, Mode::Abs, rt_a);
@@ -177,7 +177,7 @@ Opnd RuntimeDiv16(Gen& g, const Expr& e, bool is_signed, Opnd a, const Opnd* dst
     Opnd rt_a = MemOpnd(SymValue(g.be->rt_a), 2, 1);
     Opnd rt_b = MemOpnd(SymValue(g.be->rt_b), 2, 1);
     Opnd rt_r = MemOpnd(SymValue(g.be->rt_r), 2, 1);
-    if (UsesRuntime(*g.program, e.b)) {
+    if (UsesRuntime(*g.program, e.b, g.be->aliases)) {
         Opnd b = Eval(g, e.b, nullptr);
         CopyOpnd(g, a, rt_a);
         CopyOpnd(g, b, rt_b);
@@ -302,7 +302,8 @@ Opnd EvalDiv16(Gen& g, ExprId id, const Expr& e, const Opnd* dst) {
     if (!fixed || is_signed || !IsSmallDivisor(c)) {
         Opnd rt_a = MemOpnd(SymValue(g.be->rt_a), 2, 1);
         // a dividend that calls a routine itself may set rt_a before it is done
-        bool direct = !UsesRuntime(*g.program, e.a) && !UsesRuntime(*g.program, e.b);
+        bool direct = !UsesRuntime(*g.program, e.a, g.be->aliases) &&
+                      !UsesRuntime(*g.program, e.b, g.be->aliases);
         Opnd a = Eval(g, e.a, direct ? &rt_a : nullptr);
         return RuntimeDiv16(g, e, is_signed, a, dst);
     }

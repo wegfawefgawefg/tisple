@@ -2,6 +2,7 @@
 
 // Facts about expressions the code generator needs: effects, constants, sameness.
 
+#include "backend/index_alias.hpp"
 #include "check/program.hpp"
 
 #include <string>
@@ -18,8 +19,9 @@ std::uint32_t ExprSize(const Program& program, ExprId id); // bytes of its type
 bool HasWrites(const Program& program, ExprId id);
 bool HasCalls(const Program& program, ExprId id);
 // may call a runtime routine (they keep their operands in rt_a, rt_b, rt_r): a multiply, a
-// division, or any call
-bool UsesRuntime(const Program& program, ExprId id);
+// division, or any call, also in the value of a let that is worked out where it is read
+// (IndexAlias::forward)
+bool UsesRuntime(const Program& program, ExprId id, const std::vector<IndexAlias>& aliases);
 // a while or for loop inside
 bool HasLoops(const Program& program, ExprId id);
 // anything that must run even when the value is unused: writes, I/O, control flow

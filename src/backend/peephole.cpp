@@ -138,7 +138,7 @@ struct Pass {
 
 struct Tracker {
     const Assembly* as = nullptr;
-    const std::vector<std::int32_t>* frames = nullptr; // FrameSharers, by symbol
+    const std::vector<std::int32_t>* frames = nullptr;    // FrameSharers, by symbol
     Content reg[3];                                       // A, X, Y
     std::vector<std::pair<AsmValue, AsmValue>> mem_const; // memory byte, constant there
     std::vector<std::pair<AsmValue, AsmValue>> mem_copy;  // memory byte, the byte it equals

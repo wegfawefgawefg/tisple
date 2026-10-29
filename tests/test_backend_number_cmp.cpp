@@ -11,9 +11,9 @@ namespace tisple_tests {
 namespace {
 
 void CheckAll(TestResults& results, const std::string& text) {
-    std::vector<std::uint16_t> xs = {0,     1,     2,     0x7E,  0x7F,   0x80,   0x81,
-                                     0xFE,  0xFF,  0x100, 0x101, 0x7FFE, 0x7FFF, 0x8000,
-                                     0x8001, 0xFFFE, 0xFFFF};
+    std::vector<std::uint16_t> xs = {0,      1,      2,      0x7E,   0x7F,  0x80,
+                                     0x81,   0xFE,   0xFF,   0x100,  0x101, 0x7FFE,
+                                     0x7FFF, 0x8000, 0x8001, 0xFFFE, 0xFFFF};
     Compiled c = CompileText(text);
     Diff d;
     bool ok = StartDiff(d, c);
@@ -42,8 +42,8 @@ void TestEveryOp(TestResults& results) {
         for (const char* op : {"<", "<=", ">", ">=", "=", "!="}) {
             for (const char* k : t.numbers) {
                 // the other side needs code (an add), so it is worked out in A
-                CheckAll(results, "(fn f ((x u16)) u8 (if (" + std::string(op) + " " + k +
-                                      " (as " + n + " (+ x 1))) 1 2))");
+                CheckAll(results, "(fn f ((x u16)) u8 (if (" + std::string(op) + " " + k + " (as " +
+                                      n + " (+ x 1))) 1 2))");
                 CheckAll(results, "(let g " + n + " 0)\n(fn f ((x u16)) bool (set g (as " + n +
                                       " x)) (" + op + " " + k + " g))");
             }
@@ -65,7 +65,9 @@ void TestGuard(TestResults& results) {
                           "(fn f ((x u16)) u8\n"
                           "    (set n 0)\n"
                           "    (for i i8 " +
-                              (s == "254" ? std::string("-2") : s == "255" ? "-1" : s) +
+                              (s == "254"   ? std::string("-2")
+                               : s == "255" ? "-1"
+                                            : s) +
                               " (as i8 (+ (as u8 x) 1)) (set n (+ n 1)))\n"
                               "    n)");
     }
