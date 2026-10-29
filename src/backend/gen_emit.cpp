@@ -294,6 +294,11 @@ std::uint32_t LoopFactor(const Gen& g, ExprId loop) {
     return LoopTrips(*g.program, loop);
 }
 
+bool NeverNegative(const Gen& g, ExprId id) {
+    std::uint32_t top = ExprSize(*g.program, id) == 2 ? 0x8000 : 0x80;
+    return MaxOf(g, id) < top;
+}
+
 std::uint32_t MaxOf(const Gen& g, ExprId id) {
     return ExprMax(*g.program, g.be->ranges, id);
 }

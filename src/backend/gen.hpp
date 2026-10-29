@@ -370,6 +370,9 @@ bool CarryClearNow(const Gen& g);
 bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
+// id's value is never negative as its signed type reads it (its top bit never set), so a
+// signed compare of it with another such value is the unsigned one
+bool NeverNegative(const Gen& g, ExprId id);
 // byte k of o as a number known now: a plain number, or a byte of a symbol already placed
 // (an :address variable); -1 if it is not one
 int KnownImm(const Gen& g, const Opnd& o, int k);

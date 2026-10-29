@@ -390,6 +390,10 @@ void GenCompare(Gen& g, const Expr& e, bool when, std::int32_t label) {
     std::uint32_t size = ExprSize(*g.program, e.a);
     std::uint16_t cb = 0;
     bool b_const = ConstValue(*g.program, e.b, cb);
+    if (is_signed && !equality && NeverNegative(g, e.a) && NeverNegative(g, e.b)) {
+        // both in 0 to 127 (32767): signed and unsigned agree
+        is_signed = false;
+    }
     if (b_const && (op == Op::Gt || op == Op::Le)) {
         std::uint16_t max = is_signed ? (size == 1 ? 0x7F : 0x7FFF) : (size == 1 ? 0xFF : 0xFFFF);
         if (cb == max) {

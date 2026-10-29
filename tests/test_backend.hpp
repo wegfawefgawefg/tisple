@@ -90,6 +90,8 @@ void RunBackendMatchTests(TestResults& results);
 void RunBackendShiftTests(TestResults& results);
 // 8-bit subtractions (test_backend_sub8.cpp)
 void RunBackendSub8Tests(TestResults& results);
+// signed compares of values never negative (test_backend_signed_cmp.cpp)
+void RunBackendSignedCmpTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

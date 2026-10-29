@@ -472,7 +472,8 @@ void GenFor(Gen& g, ExprId id) {
         f.trips = static_cast<std::uint8_t>(trips & 0xFF);
     }
     if (e.b >= 0 && !fixed) {
-        CompareJump(g, Op::Ge, is_signed, f.start, f.end, f.end_label);
+        bool both_up = NeverNegative(g, e.a) && NeverNegative(g, e.b);
+        CompareJump(g, Op::Ge, is_signed && !both_up, f.start, f.end, f.end_label);
     }
 
     LoopCtx ctx;
