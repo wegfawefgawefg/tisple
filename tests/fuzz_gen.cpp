@@ -406,6 +406,9 @@ std::string Gen::Stmt(int depth) {
     if (dead_shapes && depth > 0 && dead_rng.Chance(20)) {
         return DeadShape(depth);
     }
+    if (motion_shapes && depth > 0 && motion_rng.Chance(20)) {
+        return MotionShape(depth);
+    }
     if (entry_shapes && depth > 0 && entry_rng.Chance(15)) {
         return EntryLoop(depth);
     }
@@ -676,6 +679,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.dead_rng.Next();
     }
+    g.motion_rng.s = seed * 0x94D049BB133111EBull + 0x2545F491ull;
+    if (g.motion_rng.s == 0) {
+        g.motion_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.motion_rng.Next();
+    }
 }
 
 } // namespace
@@ -703,6 +713,16 @@ std::string GenerateDeadProgram(std::uint64_t seed) {
         return "";
     }
     g.dead_shapes = true;
+    return g.Program();
+}
+
+std::string GenerateMotionProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.motion_rng.Chance(kMotionPercent)) {
+        return "";
+    }
+    g.motion_shapes = true;
     return g.Program();
 }
 

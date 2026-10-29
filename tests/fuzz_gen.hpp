@@ -25,6 +25,12 @@ std::string GenerateEntryProgram(std::uint64_t seed);
 constexpr int kDeadPercent = 25;
 std::string GenerateDeadProgram(std::uint64_t seed);
 
+// for one seed in kMotionPercent hundred, the seed's program with loop-invariant work and
+// constants (fuzz_gen_motion.cpp) among its statements, for constant propagation and code
+// motion; "" for the others. A program of its own too
+constexpr int kMotionPercent = 25;
+std::string GenerateMotionProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at
