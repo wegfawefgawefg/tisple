@@ -35,6 +35,8 @@ void RunOptEvalTests(TestResults& results);
 // loop collapse and unread arguments (test_opt_collapse.cpp), value ranges (test_opt_ranges.cpp)
 void RunOptCollapseTests(TestResults& results);
 void RunOptRangesTests(TestResults& results);
+// slice 5's variable ranges, sets' ranges and unstored elements (test_opt_values.cpp)
+void RunOptValuesTests(TestResults& results);
 // -O0, --opt-bisect and --no-pass (test_opt_flags.cpp)
 void RunOptFlagTests(TestResults& results);
 

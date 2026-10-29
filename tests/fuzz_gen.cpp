@@ -415,6 +415,9 @@ std::string Gen::Stmt(int depth) {
     if (collapse_shapes && depth > 0 && collapse_rng.Chance(20)) {
         return CollapseShape(depth);
     }
+    if (values_shapes && depth > 0 && values_rng.Chance(20)) {
+        return ValuesShape(depth);
+    }
     if (entry_shapes && depth > 0 && entry_rng.Chance(15)) {
         return EntryLoop(depth);
     }
@@ -622,6 +625,9 @@ std::string Gen::Program() {
     if (common_shapes) {
         text += CommonHelpers();
     }
+    if (values_shapes) {
+        text += ValuesHelpers();
+    }
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;
@@ -719,6 +725,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.collapse_rng.Next();
     }
+    g.values_rng.s = seed * 0x9E6C63D0676A9A99ull + 0x3C6EF372ull;
+    if (g.values_rng.s == 0) {
+        g.values_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.values_rng.Next();
+    }
 }
 
 } // namespace
@@ -786,6 +799,16 @@ std::string GenerateCollapseProgram(std::uint64_t seed) {
         return "";
     }
     g.collapse_shapes = true;
+    return g.Program();
+}
+
+std::string GenerateValuesProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.values_rng.Chance(kValuesPercent)) {
+        return "";
+    }
+    g.values_shapes = true;
     return g.Program();
 }
 

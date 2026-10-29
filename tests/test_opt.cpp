@@ -349,6 +349,7 @@ void RunOptTests(TestResults& results) {
     RunOptEvalTests(results);
     RunOptCollapseTests(results);
     RunOptRangesTests(results);
+    RunOptValuesTests(results);
     RunOptFlagTests(results);
 }
 
