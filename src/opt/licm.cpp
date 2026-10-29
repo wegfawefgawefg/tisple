@@ -9,10 +9,11 @@
 //   (quarter squares) out of every loop, from a loop of two passes.
 // - From the body: when the body surely runs (BodyRuns, KnownTrips), else behind a guard that
 //   tests the loop's condition once more, so a loop that runs zero times does not pay:
-//     (let s start) (let e end) (if (< s e) (do (let t work) (for i T s e ...t...)))
+//     (if (< start end) (do (let t work) (for i T start end ...t...)))
 //     (if cond (do (let t work) (while cond ...t...)))
-//   A range or condition that is not pure (or too big to test twice) keeps the body's work
-//   where it is. Constant propagation cuts guards it can decide.
+//   A bound too big to work out twice moves into a let both read. A range or condition that
+//   is not pure (or too big to test twice) keeps the body's work where it is. Constant
+//   propagation cuts guards it can decide.
 // - The same expression twice in a loop is worked out once.
 // - The loop's own range (a for's start and end) is worked out once already: left alone.
 

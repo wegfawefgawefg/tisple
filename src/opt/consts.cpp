@@ -41,14 +41,19 @@ void MakeEmptyDo(Pass& p, ExprId id) {
     EachChild(p, old, [&](ExprId child) { Release(p, child); });
 }
 
-// may arm stand where branch was: the same type, or a statement that is not a do with a value
+// may arm stand where branch was: the same type; or, for a statement, an exit or a scalar
+// value as code may write one (a do with a value never is one), as dead.cpp leaves them
 bool FitsFor(const Pass& p, ExprId branch, ExprId arm) {
     const Expr& b = At(p, branch);
     const Expr& a = At(p, arm);
     if (a.type == b.type) {
         return true;
     }
-    return b.type == kVoidType && a.kind != ExprKind::Do;
+    if (b.type != kVoidType) {
+        return false;
+    }
+    bool scalar = IsScalarKind(KindOf(*p.program, a.type)) && a.kind != ExprKind::Do;
+    return a.type == kNeverType || scalar;
 }
 
 // the arm (or nothing) a branch on a known condition takes in place of the branch
