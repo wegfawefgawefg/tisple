@@ -166,15 +166,21 @@ void RunFarmPrograms(TestResults& results) {
         tisple::SourceFile file;
         std::string error;
         CHECK(results, tisple::LoadSourceFile(path, file, error));
-        Compiled c = CompileMainText(file.text);
-        Diff d;
-        d.in.max_steps = 300000;
-        d.max_cycles = 40000000;
-        bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
-        if (!ok) {
-            std::fprintf(stderr, "fuzz farm program %s: %s\n", path.c_str(), d.message.c_str());
+        // and with no mid-level passes, which fold away some of what the backend got wrong
+        for (int level : {1, 0}) {
+            tisple::OptOptions opt;
+            opt.level = level;
+            Compiled c = CompileMainText(file.text, opt);
+            Diff d;
+            d.in.max_steps = 300000;
+            d.max_cycles = 40000000;
+            bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+            if (!ok) {
+                std::fprintf(stderr, "fuzz farm program %s at -O%d: %s\n", path.c_str(), level,
+                             d.message.c_str());
+            }
+            CHECK(results, ok);
         }
-        CHECK(results, ok);
     }
     CHECK(results, paths.size() >= 14 + 227);
 }

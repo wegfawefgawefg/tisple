@@ -40,6 +40,10 @@ void ScanSets(const Gen& g, ExprId id, int depth, std::vector<std::uint8_t>& sta
         // 1: only steps by one so far, 2: something else
         state[var] = IsStepByOne(g, e.a, e.b) && state[var] != 2 ? 1 : 2;
     }
+    // a let inside the loop starts the variable afresh on every pass: not a step
+    if (e.kind == ExprKind::Let && e.ref >= 0) {
+        state[static_cast<std::size_t>(e.ref)] = 2;
+    }
     ScanSets(g, e.a, depth + 1, state, nested);
     ScanSets(g, e.b, depth + 1, state, nested);
     ScanSets(g, e.c, depth + 1, state, nested);
