@@ -162,6 +162,14 @@ bool FoldInit(Checker& ck, ExprId id, std::vector<std::uint8_t>& bytes, std::uin
 bool ConstCount(Checker& ck, const Node& node, std::uint32_t& count);
 void ResolveGlobal(Checker& ck, std::int32_t var);
 
+// placement options (placement.cpp). ReadOption reads the option at key and gives how many
+// items it took; CheckRegionOptions checks :reserve and :in aux once the type is known;
+// SplitOptions reads the options that end a const form into holder and leaves the rest in
+// trimmed, giving the first option or null
+int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value);
+void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_value);
+const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& holder);
+
 // expressions (expr.cpp)
 ExprId CheckExpr(Checker& ck, const Node& node, TypeId hint);
 ExprId CheckIntLiteral(Checker& ck, const Node& node, TypeId hint);

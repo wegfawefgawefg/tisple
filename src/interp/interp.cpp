@@ -456,7 +456,7 @@ void InitInterp(Interp& in, const Program& program, const Layout& layout) {
     in.memory.assign(0x10000, 0);
     for (std::size_t i = 0; i < program.vars.size(); i++) {
         const Var& var = program.vars[i];
-        // aux memory is not modelled: code reaches it only through lib/aux, whose jsr needs
+        // aux memory is not modelled: code reaches it only through lib/auxmem, whose jsr needs
         // the machine
         if (var.init.empty() || var.type == kErrorType || var.placement.in_aux) {
             continue;

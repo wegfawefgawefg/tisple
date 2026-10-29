@@ -34,7 +34,7 @@ void Load(SimRunner& run, const Compiled& compiled) {
     InitMachine(*run.machine);
     LoadBytes(*run.machine, compiled.origin, compiled.image.data(), compiled.image.size());
     // the flat memory has no banks: main and language card segments load where they run;
-    // aux data is out of reach here, as it is for code without lib/aux
+    // aux data is out of reach here, as it is for code without lib/auxmem
     for (const MemorySegment& segment : compiled.segments) {
         if (segment.bank != MemoryBank::kAux) {
             LoadBytes(*run.machine, segment.address, segment.bytes.data(), segment.bytes.size());

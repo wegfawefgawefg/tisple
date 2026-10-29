@@ -169,6 +169,25 @@ void TestCompiledRegionsBoot(TestResults& results) {
     std::unique_ptr<tisple::Apple2> booted = MachineWithDisk(*disk);
     BootToStop(*booted, info.return_pc);
     CHECK(results, booted->stop_reason == tisple::MachineStop::kReturned);
+    // and through Apple's main and disk roms, when the owner has them
+    std::vector<uint8_t> main_rom = OwnerRom("Apple2e.rom");
+    std::vector<uint8_t> disk_rom = OwnerRom("DISK2.rom");
+    std::unique_ptr<tisple::Apple2> apple;
+    if (!main_rom.empty() && disk_rom.size() == 256) {
+        apple = MachineWithDisk(*disk);
+        CHECK(results, tisple::LoadRom(*apple, main_rom.data(), main_rom.size(), error));
+        std::memcpy(apple->slots.disk2.rom, disk_rom.data(), 256);
+        apple->return_pc = info.return_pc;
+        tisple::ResetApple2(*apple);
+        uint64_t start = tisple::Cycles(*apple);
+        while (!apple->stopped && tisple::Cycles(*apple) - start < kBudget) {
+            tisple::RunApple2(*apple, tisple::kCyclesPerFrame);
+        }
+        CHECK(results, apple->stop_reason == tisple::MachineStop::kReturned);
+        CHECK(results, std::memcmp(apple->cpu.mem + 0x0300, booted->cpu.mem + 0x0300, 2) == 0);
+    } else {
+        std::printf("disk: Apple ROMs not found, skipping the Apple ROM segments boot\n");
+    }
 
     std::unique_ptr<tisple::Apple2> direct = tisple::NewApple2();
     for (size_t i = 1; i < segments.size(); i++) {
@@ -184,6 +203,7 @@ void TestCompiledRegionsBoot(TestResults& results) {
     for (const MemorySegment& s : segments) {
         if (s.bank == MemoryBank::kAux) {
             CHECK(results, Loaded(*booted, s));
+            CHECK(results, apple == nullptr || Loaded(*apple, s));
         }
     }
 }

@@ -21,11 +21,17 @@ struct Probe {
     const char* what = "";
 };
 
-// one address in each part of memory the switches treat differently
+// one address in each part of memory the switches treat differently, and the bytes on each
+// side of every edge between them
 const Probe kProbes[] = {
-    {0x0010, "zero page"},  {0x0150, "stack"},         {0x0300, "page 3"},
-    {0x0480, "text page"},  {0x2100, "hires page"},    {0x5000, "plain ram"},
-    {0xBF00, "top of ram"}, {0xD000, "language card"},
+    {0x0000, "zero page"},     {0x0010, "zero page"},     {0x0150, "stack"},
+    {0x01FF, "stack"},         {0x0200, "page 2"},        {0x0300, "page 3"},
+    {0x03FF, "page 3"},        {0x0400, "text page"},     {0x0480, "text page"},
+    {0x07FF, "text page"},     {0x0800, "text page 2"},   {0x1FFF, "below hires"},
+    {0x2000, "hires page"},    {0x2100, "hires page"},    {0x3FFF, "hires page"},
+    {0x4000, "hires page 2"},  {0x5000, "plain ram"},     {0xBF00, "top of ram"},
+    {0xBFFF, "top of ram"},    {0xD000, "language card"}, {0xDFFF, "language card"},
+    {0xE000, "language card"}, {0xFFFF, "language card"},
 };
 
 struct Switches {
@@ -94,11 +100,18 @@ std::vector<uint8_t> ProbeProgram(const Switches& s) {
     return code;
 }
 
+// with the language card's bank 2 at $D000, as the probe program leaves it
 uint8_t* MainByte(tisple::Apple2& a, uint16_t addr) {
+    if (addr >= 0xE000) {
+        return &a.lc.e000[addr - 0xE000];
+    }
     return addr >= 0xD000 ? &a.lc.bank2_d000[addr - 0xD000] : &a.cpu.mem[addr];
 }
 
 uint8_t* AuxByte(tisple::Apple2& a, uint16_t addr) {
+    if (addr >= 0xE000) {
+        return &a.lc.aux_e000[addr - 0xE000];
+    }
     return addr >= 0xD000 ? &a.lc.aux_bank2_d000[addr - 0xD000] : &a.aux[addr];
 }
 
@@ -138,8 +151,10 @@ bool RunCombination(const Switches& s, std::string& failure) {
         bool write_ok = write_aux ? aux_after == kStored && main_after == kMainMark
                                   : main_after == kStored && aux_after == kAuxMark;
         if (!read_ok || !write_ok) {
-            failure = std::string(p.what) + (read_ok ? ": write" : ": read") + " went to the " +
-                      "wrong ram";
+            char where[16];
+            std::snprintf(where, sizeof(where), " $%04X", p.addr);
+            failure = std::string(p.what) + where + (read_ok ? ": write" : ": read") +
+                      " went to the wrong ram";
             return false;
         }
     }

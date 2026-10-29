@@ -290,8 +290,8 @@ void CheckRegionUses(Checker& ck) {
         } else if (var.placement.in_aux && !under_addr_of[i]) {
             AddError(*ck.errors, e.loc,
                      name +
-                         " is in aux memory, which code reaches only through lib/aux; copy "
-                         "it with (aux.read (addr_of buffer) (addr_of " +
+                         " is in aux memory, which code reaches only through lib/auxmem; copy "
+                         "it with (auxmem.read (addr_of buffer) (addr_of " +
                          name + ") count)");
         }
     }

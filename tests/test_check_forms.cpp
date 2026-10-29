@@ -174,18 +174,18 @@ void DeclarationTests(TestResults& results) {
                 "in (as (ptr u8) 0x2000)");
     ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :reserve)",
                 "t.tsp:1:47: :reserve is for top-level lets; make T a let");
-    // :in aux: reached only through addr_of and lib/aux
+    // :in aux: reached only through addr_of and lib/auxmem
     ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :in aux)",
                 "t.tsp:1:47: :in aux is for top-level lets; make T a let");
     ExpectError(results, "(let doc (array u8 100) :in aux)\n(fn f () u8 (at doc 3))",
-                "t.tsp:2:17: doc is in aux memory, which code reaches only through lib/aux; copy "
-                "it with (aux.read (addr_of buffer) (addr_of doc) count)");
+                "t.tsp:2:17: doc is in aux memory, which code reaches only through "
+                "lib/auxmem; copy it with (auxmem.read (addr_of buffer) (addr_of doc) count)");
     ExpectError(results, "(let n u8 :in aux)\n(fn f () void (set n 3))",
-                "t.tsp:2:20: n is in aux memory, which code reaches only through lib/aux; copy it "
-                "with (aux.read (addr_of buffer) (addr_of n) count)");
+                "t.tsp:2:20: n is in aux memory, which code reaches only through lib/auxmem; "
+                "copy it with (auxmem.read (addr_of buffer) (addr_of n) count)");
     ExpectError(results, "(let doc (array u8 16) :address 0x0100 :in aux)",
-                "t.tsp:1:1: doc is in aux memory at an :address outside $0200-$BFFF, which lib/aux "
-                "cannot reach; move it");
+                "t.tsp:1:1: doc is in aux memory at an :address outside $0200-$BFFF, which "
+                "lib/auxmem cannot reach; move it");
     CHECK(results, BuildText("(let doc (array u8 100) :in aux)\n"
                              "(fn f () u16 (as u16 (addr_of (at doc 7))))")
                        .ok);

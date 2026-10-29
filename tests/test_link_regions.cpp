@@ -61,6 +61,62 @@ bool Report(const Compiled& c) {
     return c.ok;
 }
 
+bool Overlaps(std::uint32_t a_start, std::uint32_t a_end, std::uint32_t b_start,
+              std::uint32_t b_end) {
+    return a_start < b_end && b_start < a_end;
+}
+
+// one segment's bytes against the memory nothing may load over: zero page to text page 1,
+// I/O, the other segments of its memory and every :reserve let in its memory. all[0] is the
+// main file, which runs from the origin over whatever is in it, :reserve lets too, as it
+// does over any :address let (docs/language.md, Placement)
+bool SegmentApart(const Compiled& c, const std::vector<tisple::MemorySegment>& all, std::size_t i) {
+    const tisple::MemorySegment& s = all[i];
+    std::uint32_t start = s.address;
+    std::uint32_t end = start + static_cast<std::uint32_t>(s.bytes.size());
+    if (Overlaps(start, end, 0x0000, 0x0800) || Overlaps(start, end, 0xC000, 0xD000) ||
+        end > 0x10000) {
+        return false;
+    }
+    for (std::size_t j = 0; j < all.size(); j++) {
+        const tisple::MemorySegment& o = all[j];
+        bool same_ram = (o.bank == MemoryBank::kAux) == (s.bank == MemoryBank::kAux);
+        std::uint32_t o_end = o.address + static_cast<std::uint32_t>(o.bytes.size());
+        if (j != i && same_ram && Overlaps(start, end, o.address, o_end)) {
+            return false;
+        }
+    }
+    const tisple::Program& program = c.built.program;
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        const tisple::Placement& place = program.vars[v].placement;
+        std::uint32_t r_start = c.code.layout.vars[v].address;
+        std::uint32_t r_end = r_start + c.code.layout.vars[v].size;
+        bool same_ram = place.in_aux == (s.bank == MemoryBank::kAux);
+        if (i > 0 && place.reserve && same_ram && Overlaps(start, end, r_start, r_end)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+// every piece of a built program in memory of its own (test_backend.hpp)
+void CheckSegmentsApart(TestResults& results, const Compiled& c) {
+    std::vector<tisple::MemorySegment> all = tisple::ProgramSegments(c.code);
+    for (std::size_t i = 0; i < all.size(); i++) {
+        bool apart = SegmentApart(c, all, i);
+        if (!apart) {
+            std::fprintf(stderr, "segment of %u bytes at $%04X in %s memory overlaps\n",
+                         static_cast<unsigned>(all[i].bytes.size()), all[i].address,
+                         tisple::MemoryBankName(all[i].bank));
+        }
+        CHECK(results, apart);
+    }
+}
+
+namespace {
+
 const char* kSpill = "(let a (array u8 13000))\n"
                      "(let b (array u8 7000))\n"
                      "(fn f () u16\n"
@@ -75,6 +131,7 @@ void TestDataSpill(TestResults& results) {
         CHECK(results, false);
         return;
     }
+    CheckSegmentsApart(results, c);
     std::uint16_t b = AddressOf(c, "t.b");
     CHECK(results, AddressOf(c, "t.a") >= 0x6000 && b >= 0x0800 && b + 7000 <= 0x6000);
     CHECK(results, SegmentWith(c, MemoryBank::kMain, b) != nullptr);
@@ -89,6 +146,7 @@ void TestDataSpill(TestResults& results) {
         CompileAll(std::string("(let page (array u8 8192) :address 0x2000 :reserve)\n") + kSpill);
     std::uint16_t moved = AddressOf(kept, "t.b");
     CHECK(results, kept.ok && moved >= 0x4000 && moved < 0x6000);
+    CheckSegmentsApart(results, kept);
     // nothing loads over the reserved page
     for (const tisple::MemorySegment& s : kept.code.segments) {
         CHECK(results, s.address >= 0x4000 || s.address + s.bytes.size() <= 0x2000);
@@ -116,6 +174,7 @@ void TestCodeSpill(TestResults& results) {
         CHECK(results, false);
         return;
     }
+    CheckSegmentsApart(results, c);
     int below = 0;
     for (const char* name : {"t.f1", "t.f2", "t.f3", "t.f4", "t.f5", "t.f6"}) {
         below += FunctionAt(c, name) < 0x6000 ? 1 : 0;
@@ -149,6 +208,7 @@ void TestLanguageCard(TestResults& results) {
         CHECK(results, false);
         return;
     }
+    CheckSegmentsApart(results, c);
     std::uint16_t at = AddressOf(c, "t.c");
     CHECK(results, c.code.card_ram && at >= 0xD000);
     const tisple::MemorySegment* card = SegmentWith(c, MemoryBank::kCard, at);
@@ -172,6 +232,22 @@ void TestLanguageCard(TestResults& results) {
     std::string calls_rom = std::string(kCard) + "\n(fn bell () void (jsr 0xFBDD))";
     Compiled no_card = CompileAll(calls_rom);
     CHECK(results, !no_card.ok && no_card.errors.find("no room") != std::string::npos);
+    // so does a constant address there in an io_read, an io_write or a pointer made with
+    // as, and a main-memory :address let that reaches $D000
+    const char* const rom_uses[] = {
+        "(fn id () u8 (io_read u8 0xFBB3))",
+        "(fn poke () void (io_write u8 0xD000 1))",
+        "(fn id () u8 (load (as (ptr u8) 0xFBC0)))",
+        "(let top (array u8 8) :address 0xCFFC)\n(fn f () void (set (at top 5) 1))",
+    };
+    for (const char* use : rom_uses) {
+        ExpectLinkError(results, std::string(kCard) + "\n" + use, "no room");
+    }
+    // a pointer below $D000, or a computed one, leaves it free
+    Compiled low_pointer = CompileAll(std::string(kCard) + "\n" +
+                                      "(fn id ((p u16)) u8 (+ (load (as (ptr u8) 0xC000)) "
+                                      "(load (as (ptr u8) p))))");
+    CHECK(results, Report(low_pointer) && low_pointer.code.card_ram);
     tisple::BuildOptions off;
     off.use_card = false;
     off.keep_all_functions = true;
@@ -189,6 +265,7 @@ void TestAuxPlacement(TestResults& results) {
         CHECK(results, false);
         return;
     }
+    CheckSegmentsApart(results, c);
     std::uint16_t doc = AddressOf(c, "t.doc");
     std::uint16_t big = AddressOf(c, "t.big");
     CHECK(results, doc >= 0x0800 && big >= 0x5040 && big + 25000 <= 0xC000); // around page
@@ -228,6 +305,7 @@ void TestReserveOverlaps(TestResults& results) {
                    "(fn f3 () void (stores 60))\n"
                    "(fn f4 () void (f1) (f2) (f3))");
     CHECK(results, around.ok);
+    CheckSegmentsApart(results, around);
     for (const char* name : {"t.f1", "t.f2", "t.f3", "t.f4"}) {
         std::uint16_t at = FunctionAt(around, name);
         CHECK(results, at < 0x6100 || at >= 0x6200);
