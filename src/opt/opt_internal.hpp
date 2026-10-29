@@ -5,6 +5,7 @@
 #include "opt/opt.hpp"
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -56,6 +57,11 @@ struct Pass {
     OptReport* report = nullptr;
     std::vector<std::uint32_t> refs; // by expr: how many nodes (or function bodies) name it
     std::vector<Summary> summaries;  // by function
+    // compile-time evaluation (eval.cpp), over every round: the interpreter steps spent, and
+    // each call tried (the function, then its arguments' bits) with its value, -1 when it
+    // could not be worked out
+    std::uint64_t eval_steps = 0;
+    std::map<std::vector<std::uint32_t>, std::int32_t> evaluated;
     // the last transformation made, for --opt-bisect
     const char* last_what = "";
     ExprId last_at = -1;
@@ -145,6 +151,11 @@ void ReplaceWith(Pass& p, ExprId id, ExprId from);
 void ReplaceWithLiteral(Pass& p, ExprId id, std::uint16_t bits);
 // a fresh local of function, for a value a pass computes once
 std::int32_t NewLocal(Pass& p, std::int32_t function, TypeId type, const Loc& loc);
+// id's content becomes a read of var; its old children are let go
+void BecomeRead(Pass& p, ExprId id, std::int32_t var);
+// (let var value) for an expression moved out of its place, which now reads var, a new local
+// of function; the let is named by nobody yet
+ExprId MoveToLet(Pass& p, std::int32_t function, ExprId id, const Loc& loc, std::int32_t& var);
 
 // what a pass does with one statement (a form whose value is unused)
 struct Action {
@@ -169,5 +180,10 @@ Action DecideLoop(const Pass& p, const Liveness& live, ExprId stmt); // loops.cp
 std::uint64_t PropagateConstants(Pass& p);
 // loop-invariant code motion (licm.cpp); returns the changes made
 std::uint64_t HoistInvariants(Pass& p, std::int32_t function);
+// common subexpressions (cse.cpp, cse_walk.cpp); returns the changes made
+std::uint64_t CommonSubexpressions(Pass& p, std::int32_t function);
+// calls of pure functions with constant arguments worked out at compile time (eval.cpp);
+// returns the changes made
+std::uint64_t EvaluateCalls(Pass& p);
 
 } // namespace tisple::opt

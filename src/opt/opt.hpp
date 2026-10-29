@@ -10,7 +10,10 @@
 // - dead: lets and stores nobody reads, (set x x), statements with no effect
 // - loops: loops with no effect outside themselves that provably end
 // - consts: constant propagation and folding across statements, branches on constants cut
+// - eval: calls of pure functions with constant arguments worked out at compile time, in the
+//   interpreter (it runs before consts, which carries the values on)
 // - licm: pure expressions a loop never changes the inputs of, worked out before it
+// - cse: a value worked out again while the first working out holds, kept in a local
 // Effect summaries (what each function may read and write) feed them all.
 //
 // Nodes the passes do not know count as having every effect, so a new effect (an I/O-like

@@ -58,6 +58,8 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool loops = !Disabled(options, "loops");
     bool consts = !Disabled(options, "consts");
     bool licm = !Disabled(options, "licm");
+    bool cse = !Disabled(options, "cse");
+    bool eval = !Disabled(options, "eval");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
         opt::CountRefs(p);
@@ -69,12 +71,21 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && loops; f++) {
             changes += opt::EditStatements(p, static_cast<std::int32_t>(f), opt::DecideLoop);
         }
+        // before constant propagation, which carries the values on
+        if (eval) {
+            changes += opt::EvaluateCalls(p);
+        }
         if (consts) {
             changes += opt::PropagateConstants(p);
         }
-        // last: it adds variables the summaries of this round do not know
+        // last: they add variables the summaries of this round do not know (locals only, so
+        // what the summaries say of globals still holds). Common subexpressions after code
+        // motion, which works out the same value twice in a loop once already
         for (std::size_t f = 0; f < fn_count && licm; f++) {
             changes += opt::HoistInvariants(p, static_cast<std::int32_t>(f));
+        }
+        for (std::size_t f = 0; f < fn_count && cse; f++) {
+            changes += opt::CommonSubexpressions(p, static_cast<std::int32_t>(f));
         }
         if (changes == 0) {
             break;
@@ -96,7 +107,8 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 } // namespace
 
 const std::vector<std::string>& OptPassNames() {
-    static const std::vector<std::string> names = {"dead", "loops", "consts", "licm"};
+    static const std::vector<std::string> names = {"dead", "loops", "consts",
+                                                   "licm", "cse",   "eval"};
     return names;
 }
 

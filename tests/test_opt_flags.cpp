@@ -38,6 +38,19 @@ const char* const kMotion =
     "    (+ g (/ h (| z 1))))\n"
     "(fn k ((x u8)) u8 (let s u8 0) (for i u8 0 5 (set s (+ s (/ x 3)))) s)\n";
 
+// values worked out twice (a division and its remainder apart), a call worked out at compile
+// time, what a condition says
+const char* const kCommon =
+    "(let g u16 0)\n(let h u16 0)\n(let gb u8 0)\n"
+    "(fn tri ((n u8)) u16 (let s u16 0) (for i u8 0 n (set s (+ s (as u16 i)))) s)\n"
+    "(fn f ((x u8)) u8\n"
+    "    (let w u16 (as u16 x)) (set g (+ (* w (+ w 3)) (tri 9)))\n"
+    "    (if (> x 9) (set gb 1)) (set h (- (* w (+ w 3)) 1))\n"
+    "    (set g (+ g (/ w 7))) (if (= x 3) (set gb (+ x 1))) (set h (+ h (% w 7)))\n"
+    "    (match x (4 (set gb (* x 5))) (_ (do)))\n"
+    "    (+ gb (as u8 (+ g h))))\n"
+    "(fn k ((x u8)) u8 (as u8 (+ (tri 12) (as u16 x))))\n";
+
 struct Call {
     const char* function;
     std::uint16_t arg;
@@ -76,7 +89,7 @@ void Flags(TestResults& results) {
     CHECK(results, Parses({"--no-pass", "loops"}, o, error) && error.empty());
     CHECK(results, o.disabled.size() == 1 && o.disabled[0] == "loops");
     CHECK(results, Parses({"--no-pass", "fold"}, o, error) &&
-                       error.find("dead loops consts licm") != std::string::npos);
+                       error.find("dead loops consts licm cse eval") != std::string::npos);
     error.clear();
     CHECK(results, Parses({"--opt-bisect", "-3"}, o, error) && !error.empty());
     error.clear();
@@ -173,6 +186,16 @@ void PassesOff(TestResults& results) {
     CHECK(results, LoopDepth(Optimize(kMotion, no_licm), "t.k", ExprKind::Binary, division) == 1);
     CHECK(results, LoopDepth(Optimize(kMotion), "t.k", ExprKind::Binary, division) == 0);
     CHECK(results, LoopDepth(Optimize(kMotion), "t.f", ExprKind::Binary, division) == 0);
+
+    // the products stay two without cse; tri stays a call without eval
+    tisple::OptOptions no_cse;
+    no_cse.disabled = {"cse"};
+    CHECK(results, CountKind(Optimize(kCommon, no_cse), "t.f", ExprKind::Let) == 1);
+    CHECK(results, CountKind(Optimize(kCommon), "t.f", ExprKind::Let) == 4);
+    tisple::OptOptions no_eval;
+    no_eval.disabled = {"eval"};
+    CHECK(results, CountKind(Optimize(kCommon, no_eval), "t.k", ExprKind::Call) == 1);
+    CHECK(results, CountKind(Optimize(kCommon), "t.k", ExprKind::Call) == 0);
 }
 
 } // namespace
@@ -181,6 +204,7 @@ void RunOptFlagTests(TestResults& results) {
     Flags(results);
     Bisect(results, kProgram, {{"t.f", 7}, {"t.f", 200}, {"t.k", 9}}, 8);
     Bisect(results, kMotion, {{"t.f", 7}, {"t.f", 0}, {"t.f", 200}, {"t.k", 9}}, 12);
+    Bisect(results, kCommon, {{"t.f", 3}, {"t.f", 4}, {"t.f", 200}, {"t.k", 9}}, 6);
     PassesOff(results);
 }
 

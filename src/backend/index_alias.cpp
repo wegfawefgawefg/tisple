@@ -130,13 +130,45 @@ bool EffectFreeParts(const Program& program, const Expr& form, ExprId parts[2]) 
     return true;
 }
 
+// the let at `at` and the one before or after it work out (/ a b) and (% a b) of the same
+// operands, which one division gives both of (src/opt/cse.cpp puts them side by side)
+bool DivisionPair(const Program& program, const Expr& block, std::uint32_t at) {
+    const Expr& let = ExprOf(program, ListItem(program, block, at));
+    const Expr& x = ExprOf(program, let.a);
+    if (x.kind != ExprKind::Binary || (x.op != Op::Div && x.op != Op::Mod)) {
+        return false;
+    }
+    for (std::int64_t step : {-1, 1}) {
+        std::int64_t other = static_cast<std::int64_t>(at) + step;
+        if (other < 0 || other >= static_cast<std::int64_t>(block.count)) {
+            continue;
+        }
+        const Expr& next =
+            ExprOf(program, ListItem(program, block, static_cast<std::uint32_t>(other)));
+        if (next.kind != ExprKind::Let) {
+            continue;
+        }
+        const Expr& y = ExprOf(program, next.a);
+        bool partner = y.kind == ExprKind::Binary && y.op != x.op &&
+                       (y.op == Op::Div || y.op == Op::Mod) && y.type == x.type;
+        if (partner && SameExpr(program, x.a, y.a) && SameExpr(program, x.b, y.b)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // a let read once, by a later form of its do before that form does anything, with nothing
-// in between changing what its value reads: the read can be the value itself
+// in between changing what its value reads: the read can be the value itself. Not half of a
+// division pair, which would then divide twice
 void CheckForwardLet(const Program& program, const Expr& block, std::uint32_t at,
                      std::vector<IndexAlias>& out, std::vector<std::int32_t>& reader_let) {
     const Expr& let = ExprOf(program, ListItem(program, block, at));
     TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(let.ref)].type);
     if (!IsScalarKind(kind) || kind == TypeKind::Ptr || HasEffects(program, let.a)) {
+        return;
+    }
+    if (DivisionPair(program, block, at)) {
         return;
     }
     std::vector<std::int32_t> vars;

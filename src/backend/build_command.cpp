@@ -125,7 +125,8 @@ int RunBuildCommand(int argc, char** argv) {
     BuildArgs args;
     if (!ParseArgs(argc, argv, false, args)) {
         std::fprintf(stderr, "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm]\n"
-                             "  [-O0|-O1] [--opt-bisect N] [--no-pass dead|loops|consts|licm]\n"
+                             "  [-O0|-O1] [--opt-bisect N]\n"
+                             "  [--no-pass dead|loops|consts|licm|cse|eval]\n"
                              "addresses take $hex, 0xhex or decimal\n");
         return 1;
     }

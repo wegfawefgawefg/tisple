@@ -171,6 +171,10 @@ std::uint32_t CountSets(const Pass& p, ExprId id, std::int32_t var) {
     return count;
 }
 
+std::int32_t EstimatedCycles(const Pass& p, ExprId id) {
+    return Cost(p, id);
+}
+
 bool Worth(const Pass& p, ExprId id) {
     const Expr& e = At(p, id);
     // a condition branches on its compare directly; a bool in a local would be made, then

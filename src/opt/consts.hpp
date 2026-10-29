@@ -37,6 +37,17 @@ Val ValueOf(const ConstFacts& facts, ExprId id);
 // integers, bools and enums: the scalars the analysis follows (not pointers)
 bool ConstType(const Program& program, TypeId type);
 
+// ---- facts from conditions (consts_facts.cpp)
+
+// var holds the value of other where a condition came out as it did
+struct Equality {
+    std::int32_t var = -1;
+    ExprId other = -1;
+};
+
+// what cond coming out truth says: (= x k) true, (!= x k) false, through not, and and or
+void FindEqualities(const Pass& p, ExprId cond, bool truth, std::vector<Equality>& out);
+
 // ---- values from operands' values (consts_eval.cpp)
 
 Val AnyVal();
