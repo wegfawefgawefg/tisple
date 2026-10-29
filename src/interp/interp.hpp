@@ -66,6 +66,9 @@ struct Interp {
     std::vector<std::uint8_t> memory; // 64 KB
     IoHooks io;
     std::uint64_t max_steps = 10000000;
+    // when set, one count per expr id of how often it was evaluated (tisple race-gen's
+    // record of where a program's work is); sized to the program's exprs
+    std::vector<std::uint32_t>* expr_counts = nullptr;
 
     // run state
     std::uint64_t steps = 0;

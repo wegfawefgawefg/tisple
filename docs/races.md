@@ -5,7 +5,8 @@ Started 2026-10-26. Tisple against the best 6502 C compilers, cc65 V2.19, LLVM-M
 cycle-exact simulator, so all four are on one clock. `races/README.md` has the versions,
 download URLs, flags and the timing rules; `races/run.sh` reruns everything and prints the
 tables below. Add a dated note when something changes; regenerate the tables with
-`races/run.sh --update-doc`.
+`races/run.sh --update-doc`. The same race on thousands of random programs is the last
+section, "Random programs".
 
 In short: the kernel is `main` in every language. Its inputs are written into fixed
 buffers when main is entered, so no compiler can fold them, and the cycles count from
@@ -428,26 +429,181 @@ inputs; before, gaps ran them on zeroed buffers, where strlen's string was empty
 - Oscar64 misreads `(uint16_t)a[i]` when `a` is a macro for a constant pointer (it applies
   `[i]` to the cast), so the C kernels write `(uint16_t)(a[i])`.
 
-## Later: random-program races
+## Random programs
 
-The fuzz generator (`tests/fuzz_gen*.cpp`) writes random valid Tisple programs; it could
-also write the same program in C, so the race gets thousands of programs nobody tuned.
-Not built yet; the plan:
+Started 2026-10-27. Thirteen kernels are a narrow claim, so the random race takes the fuzz
+generator's programs (`tests/fuzz_gen*.cpp`, the ones the backend is fuzzed with), writes
+each one in C as well, and races all four compilers on every one, each at its best kernel
+setting: cc65 `-Oirs -Cl`, LLVM-MOS `-O2`, Oscar64 `-O2`. `races/README.md`, "Random
+programs", has how a program is made, timed and checked, and the commands, long runs on the
+Mac mini included; `races/random.sh --report --update-doc` rewrites the part between the
+markers below.
 
-1. Emit C beside the Tisple text from the same generator state: one `uint8_t`/`int8_t`/
-   `uint16_t`/`int16_t` per type, structs as structs, enums as `uint8_t`, `match` as
-   `switch`, `for` as `for`, pointers as pointers (Tisple's `(+ p n)` already moves by
-   elements, like C).
-2. Write every operation so C means exactly Tisple's wrapping semantics: arithmetic on the
-   unsigned type with a cast back (`(uint8_t)(a + b)`, signed through `uint16_t` then
-   back), since signed overflow is undefined in C; shifts by the width or more and
-   division by zero as small inline helpers that give Tisple's defined results; `>>` on
-   signed values through a helper rather than relying on implementation-defined shifts.
-3. I/O: `io_read`/`io_write` at `$C0xx` become `volatile` accesses; `tisple race` would get
-   an I/O hook giving `IoReadValue`'s fixed pattern, as `sim_run` does.
-4. Result: generated code at the end of main folds every global into a 16-bit checksum and
-   stores it at a fixed address, in both languages, so no layout mapping is needed; the
-   reference is the interpreter's checksum.
-5. Timing as now: main entry to RTS. Report the sum and geometric mean of the cycle
-   ratios per compiler over N seeds, and the seeds where Tisple loses most, each a ready
-   test case for `tisple gaps --fuzz` and the backend.
+In short: `tisple race-gen` writes the seed's program in race mode (no I/O; the generated
+main is `t.run`), the same program in C (`src/race/race_c.hpp`: exact widths, Tisple's
+wrapping and its results for shifts past the width and division by zero spelled out, left
+to right evaluation kept with temporaries), and the interpreter's checksum of every global.
+Start values are set by `t.init` from an opaque 0 no compiler can see through, as the
+kernels' inputs are written at main's entry. The clock runs from `t.init`'s return to
+`t.checksum`'s entry. Every compiler's checksum must be the interpreter's; when a C compiler
+is wrong, the C is first checked on the host under the address and undefined-behaviour
+sanitizers, so a fault in our C is never blamed on a compiler.
+
+<!-- random race: begin (races/random.sh --report --update-doc writes this part) -->
+
+2000 programs (seeds 1..2000): 2000 ok; 2000 raced (Tisple and a C compiler right).
+
+Tisple against the fastest other compiler, per program: wins 122 (6.1%), ties 2 (0.1%), losses 1876 (93.8%). Geometric mean of the ratios 3.087.
+
+| Percentile | 1 | 5 | 10 | 25 | 50 | 75 | 90 | 95 | 99 | max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Tisple / best other | 0.72 | 0.95 | 1.14 | 1.56 | 2.51 | 4.81 | 11.25 | 21.41 | 79.99 | 1427.52 |
+
+| Ratio | < 0.50 | 0.50-0.75 | 0.75-0.90 | 0.90-1.00 | 1.00 | 1.00-1.10 | 1.10-1.25 | 1.25-1.50 | 1.50-2.00 | >= 2.00 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Programs | 4 | 25 | 52 | 41 | 2 | 52 | 105 | 179 | 306 | 1234 |
+
+Against each compiler:
+
+| Against | Programs | Tisple faster | Cycles, geomean of Tisple / it | Bytes, geomean of Tisple / it | Fastest of all |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| cc65 | 1965 | 97.3% | 0.399 | 0.551 | 0.0% |
+| llvm-mos | 1998 | 12.9% | 2.766 | 1.481 | 63.5% |
+| oscar64 | 1930 | 11.9% | 1.961 | 1.492 | 30.3% |
+
+By where the work is (the feature family with the largest share of t.run's weighed work), worst first:
+
+| Most of the work is | Programs | Tisple loses | Geomean ratio | Median ratio | Fastest most often |
+| --- | ---: | ---: | ---: | ---: | --- |
+| divide | 889 | 97.0% | 4.00 | 3.38 | llvm-mos (72.0%) |
+| u8 index | 59 | 98.3% | 3.67 | 2.67 | llvm-mos (64.4%) |
+| match | 13 | 100.0% | 3.63 | 1.82 | llvm-mos (84.6%) |
+| call | 28 | 96.4% | 3.55 | 2.78 | llvm-mos (53.6%) |
+| pointer | 56 | 98.2% | 3.27 | 2.26 | llvm-mos (75.0%) |
+| 16-bit for | 13 | 100.0% | 3.22 | 3.00 | llvm-mos (69.2%) |
+| multiply | 238 | 91.2% | 2.77 | 2.55 | llvm-mos (63.0%) |
+| 8-bit &|^ | 107 | 99.1% | 2.62 | 1.99 | llvm-mos (55.1%) |
+| 8-bit +- | 58 | 89.7% | 2.37 | 2.02 | llvm-mos (65.5%) |
+| widen | 100 | 98.0% | 2.37 | 2.11 | llvm-mos (55.0%) |
+| 16-bit &|^ | 30 | 83.3% | 2.37 | 1.79 | llvm-mos (43.3%) |
+| shift by var | 70 | 94.3% | 2.36 | 1.81 | oscar64 (50.0%) |
+| unsigned compare | 102 | 76.5% | 2.35 | 1.74 | llvm-mos (54.9%) |
+| shift by const | 7 | 100.0% | 2.29 | 2.01 | llvm-mos (71.4%) |
+| narrow | 7 | 100.0% | 2.26 | 2.24 | llvm-mos (57.1%) |
+| u16 index | 26 | 69.2% | 2.13 | 1.45 | llvm-mos (42.3%) |
+
+
+| The worst 100 losses, by their two heaviest families | Programs | Geomean ratio |
+| --- | ---: | ---: |
+| divide + multiply | 22 | 53.76 |
+| 8-bit &|^ + divide | 6 | 35.32 |
+| call + divide | 6 | 56.60 |
+| 16-bit &|^ + divide | 5 | 49.48 |
+| divide + unsigned compare | 5 | 36.60 |
+| divide + widen | 5 | 29.44 |
+| 16-bit +- + divide | 4 | 54.86 |
+| divide + shift by var | 4 | 40.95 |
+| divide + u8 index | 4 | 40.87 |
+| 16-bit +- + unsigned compare | 2 | 67.40 |
+
+Worst losses:
+
+| Seed | Ratio | Fastest | Tisple cycles | Its cycles | Where the work is |
+| ---: | ---: | --- | ---: | ---: | --- |
+| 1740 | 1427.52 | llvm-mos | 204135 | 143 | unsigned compare 36%, 8-bit +- 27%, while 9% |
+| 1241 | 311.64 | llvm-mos | 29606 | 95 | divide 84%, 16-bit &|^ 2%, 8-bit &|^ 2% |
+| 567 | 220.67 | llvm-mos | 20302 | 92 | divide 89%, 16-bit +- 2%, 16-bit &|^ 2% |
+| 1114 | 194.69 | llvm-mos | 60548 | 311 | divide 80%, call 4%, widen 2% |
+| 50 | 184.03 | llvm-mos | 50423 | 274 | divide 37%, multiply 37%, 8-bit &|^ 7% |
+| 745 | 135.42 | llvm-mos | 40490 | 299 | divide 71%, multiply 9%, unsigned compare 3% |
+| 1326 | 126.87 | llvm-mos | 5963 | 47 | divide 67%, multiply 8%, shift by var 4% |
+| 741 | 126.23 | llvm-mos | 35093 | 278 | 16-bit +- 36%, unsigned compare 27%, u8 index 18% |
+| 1922 | 126.16 | llvm-mos | 8074 | 64 | multiply 72%, 8-bit +- 7%, divide 4% |
+| 1559 | 122.09 | llvm-mos | 14162 | 116 | multiply 38%, u8 index 13%, 8-bit &|^ 11% |
+| 76 | 119.29 | llvm-mos | 23500 | 197 | u16 index 21%, u8 index 16%, if 12% |
+| 1467 | 117.00 | llvm-mos | 2574 | 22 | divide 66%, multiply 22%, shift by var 3% |
+| 1728 | 110.25 | llvm-mos | 1323 | 12 | 8-bit &|^ 28%, u8 index 23%, unsigned compare 12% |
+| 161 | 108.87 | llvm-mos | 16004 | 147 | multiply 73%, divide 6%, pointer 4% |
+| 1349 | 99.77 | llvm-mos | 20354 | 204 | divide 57%, shift by var 14%, 8-bit &|^ 5% |
+
+Bugs (a compiler whose checksum is not the interpreter's, or that failed to build or run the program):
+
+| Who is wrong | What | Programs | Seeds |
+| --- | --- | ---: | --- |
+| cc65 | build or run failed | 4 | 118, 243, 866, 1002 |
+| cc65 | wrong checksum | 31 | 32, 96, 128, 165, 233, 325, 518, 553, 557, 758, 917, 933 ... |
+| llvm-mos | build or run failed | 2 | 1587, 1855 |
+| oscar64 | build or run failed | 26 | 118, 164, 374, 500, 518, 620, 631, 688, 794, 841, 892, 939 ... |
+| oscar64 | wrong checksum | 44 | 85, 96, 127, 181, 324, 341, 362, 404, 459, 464, 578, 648 ... |
+
+<!-- random race: end -->
+
+### What loses, and why (2026-10-27, seeds 1 to 2000)
+
+Tisple, fastest on all 13 kernels (by 6% to 2.2x), is about 3x behind the fastest C
+compiler on random programs (the geometric mean; the median program 2.5x), and the reason
+is mostly not code generation: the generator's programs are full of work whose result
+nobody reads, and LLVM-MOS and Oscar64 delete it while Tisple compiles every form it is
+given. The losses by shape are losses by how much dead or repeated work a program carries,
+and a division is the most expensive work to carry, so the programs whose work is mostly
+dividing lose most (4x). Typical cases, each in `races/out/random/worst/` after a
+`--report`:
+
+- **Dead loops.** Seed 1740 (1427x): `(for w35 u16 61 486 (let j36 u8 0) (while (< j36 3)
+  (set j36 (+ j36 1))) (if (< n32 127) (continue)))` does nothing a later form reads, 12
+  times over; LLVM-MOS runs the program in 143 cycles, Tisple in 204135. Seed 25 (2.5x
+  against Oscar64) spends most of its time in a 289-pass loop around an empty 3-pass while
+  and a match with empty arms.
+- **Dead values.** Seed 285 (37x against Oscar64): `(let p24 (ptr u8) (addr_of (at pt (&
+  (/ g1 ...) 7))))` is never read, so its division goes; and `(set g5 (% g5 9)) (set g5
+  (/ g5 9))` five times is `g5 = 0` once a compiler knows `x % 9 < 9`. Oscar64 takes 45
+  cycles, LLVM-MOS 54, Tisple 1661.
+- **Loop-invariant work.** Seed 23 (45x): a 7-pass for whose body, and its inner 3-pass
+  while, store the same divisions every pass; LLVM-MOS takes 521 cycles, Tisple 23680.
+
+Most of the worst hundred losses (`--report`'s table of their two heaviest families) have
+divide among them. So the next backend items the random race asks for are mid-level,
+before code generation: removing stores and lets nobody reads, deleting loops with no
+effects, hoisting loop-invariant pure expressions (divisions first), and value ranges
+(`x % 9 < 9`). Real programs carry less dead work than these, so the kernels stay the
+measure of code generation; the random race measures what happens to code nobody tuned,
+and finds the shapes. Tisple is still faster than cc65 on 97% of the programs, and faster
+than all three on 6%.
+
+### C compiler bugs found
+
+Each a program where that compiler's checksum is not the interpreter's (and the host build
+of the C agrees with the interpreter), or that it fails to build or run; the programs are
+kept in `races/out/random/bugs/<seed>/` with every build. Two reduced by hand:
+
+- **cc65 V2.19** drops the cast in `(uint8_t)~x` when the value is used wider, at every
+  optimisation level: `uint8_t g = 0x12; uint16_t s = 0x100; s = s + (uint8_t)~g;` gives
+  237 ($00ED, it added $FFED), not 493 ($01ED). 29 of the 31 programs cc65 gets wrong
+  use `~` on a byte. Seed 32 is wrong only with `-O` (right with `-Cl` alone), and the
+  compiler dies with signal 11 on 4 programs (seeds 118, 243, 866, 1002).
+- **Oscar64 v1.32.273** folds `(uint8_t)(c + 255)` as 256 when it knows `c` is 1, even at
+  `-O0`: `c = 0; while (c < 1) { c = (uint8_t)(c + 1); if (g <= (uint8_t)(c + 255)) ...`
+  takes the branch for g = 5 (seed 181). 44 programs in all have a wrong checksum, some
+  only when optimising (seeds 85, 96, 127: right at `-O0`); internal assertions fail on 22
+  (`NumberSet.h:64 elem >= 0 && elem < size` on 15, `mEntryRequiredTemps` on 4, and
+  `ExpandingArray::Last size > 0`, a linker object's address, `mNumEntries`); 3 never
+  finish compiling (seeds 1089, 1453, 1496: the race gives a build 60 s); seed 1989's
+  binary runs past the 400M-cycle limit. It also rejects `(p + n)[k]` ("Array expected
+  for indexing"), so the C writer writes `*(p + n + k)` instead.
+- **LLVM-MOS** (llvm-mos-sdk v23.4.0) fails "ran out of registers during register
+  allocation in function 'main'" on two programs (seeds 1587, 1855). Its checksums were
+  all right.
+
+No program needed the C writer blamed: all 2000 were also built for the host with the
+sanitizers (`--host`), and every host checksum was the interpreter's.
+
+### Caveats
+
+- The race is only as varied as the generator: no recursion, no 32-bit values, small
+  arrays, programs of tens of cycles to two million. Half the programs run in under
+  1000 cycles on Tisple (the median is 786), where a call or two decides the ratio.
+- The shape signature is crude: features weighed by how often the interpreter ran them and
+  a guessed cost each, so "divide 80%" means the program spends its time dividing, not that
+  Tisple's division is slow (it is not; the kernels race it).
+- Bytes count whole functions that ran while the clock ran, as in the kernel race; cc65's
+  module is cut at its function labels.

@@ -8,6 +8,7 @@
 #include "interp/interp_command.hpp"
 #include "machine/machine_command.hpp"
 #include "race/race_command.hpp"
+#include "race/race_gen.hpp"
 #include "reader/commands.hpp"
 
 #include <cstdio>
@@ -42,7 +43,8 @@ void PrintUsage() {
                 "  disk    disk images: new, list, put, get, delete (DOS 3.3), boot\n");
     std::printf("  gaps    rank where the compiled code is worse than it could be (--superopt,\n"
                 "          --fuzz N for the fuzz generator's programs)\n"
-                "  race    time one kernel inside a binary, for races/run.sh\n");
+                "  race    time one kernel inside a binary, for races/run.sh\n"
+                "  race-gen  random race programs in Tisple and C, for races/random.sh\n");
 }
 
 } // namespace
@@ -101,6 +103,9 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[1], "race") == 0) {
         return tisple::RunRaceCommand(argc, argv);
+    }
+    if (std::strcmp(argv[1], "race-gen") == 0) {
+        return tisple::RunRaceGenCommand(argc, argv, tisple_tests::GenerateRaceProgram);
     }
     if (std::strcmp(argv[1], "gaps") == 0) {
         return tisple::RunGapsCommand(argc, argv, tisple_tests::GenerateProgram);

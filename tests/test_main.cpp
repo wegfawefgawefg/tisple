@@ -70,6 +70,7 @@ int main() {
     tisple_tests::RunGapsTests(results);
     tisple_tests::RunSuperoptTests(results);
     tisple_tests::RunRaceTests(results);
+    tisple_tests::RunRaceCTests(results);
 
     std::printf("%d passed, %d failed\n", results.passed, results.failed);
     return results.failed == 0 ? 0 : 1;

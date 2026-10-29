@@ -437,7 +437,7 @@ std::string Gen::IntExpr(T t, int depth) {
         return "(at " + a.name + " " + Index(a) + ")";
     }
     case 10:
-        if (t == T::U8 || t == T::U16) {
+        if ((t == T::U8 || t == T::U16) && !race) {
             return std::string("(io_read ") + Name(t) + " " + IoAddress() + ")";
         }
         return Leaf(t);

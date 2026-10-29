@@ -53,6 +53,12 @@ Tisple wins every one. Details, settings and versions in
 cc65 V2.19, llvm-mos-sdk v23.4.0, Oscar64 v1.32.273, each at its fastest
 setting, plain NMOS 6502. Fill and memcpy use Tisple's `unroll` macro.
 
+Honest status (2026-10-27): these are 13 kernels. On random programs raced
+the same way, LLVM-MOS and Oscar64 still win most, because Tisple doesn't yet
+delete dead work or hoist loop-invariant work (see "Random programs" in
+`docs/races.md`). And the backend that set these numbers has rare miscompiles
+the fuzz farm found, about 1 in 150,000 random programs; fixes are in progress.
+
 How: whole-program compilation, no recursion (static frames shared between
 functions that never run together, all in zero page where they fit), struct
 and 16-bit arrays split into byte tables (`LDA field,X`), pointers stepped in

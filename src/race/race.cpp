@@ -50,6 +50,54 @@ bool RunToEntry(Machine& m, const RaceOptions& options, RaceResult& result) {
     }
 }
 
+struct ReturnPoint {
+    std::uint16_t pc = 0;
+    std::uint8_t sp = 0;
+};
+
+// where the function just entered goes back to: JSR pushed the return address minus one
+ReturnPoint ReturnOf(const Machine& m) {
+    std::uint8_t sp = m.cpu.S;
+    std::uint16_t low = m.mem[0x100 + static_cast<std::uint8_t>(sp + 1)];
+    std::uint16_t high = m.mem[0x100 + static_cast<std::uint8_t>(sp + 2)];
+    ReturnPoint out;
+    out.pc = static_cast<std::uint16_t>((low | (high << 8)) + 1);
+    out.sp = static_cast<std::uint8_t>(sp + 2);
+    return out;
+}
+
+// the kernel's untimed start: runs until the function at options.after is called and has
+// returned; false with the error set if something else happens first
+bool RunPastAfter(Machine& m, const RaceOptions& options, ReturnPoint back, RaceResult& result) {
+    std::uint64_t start_cycles = m.cycles;
+    bool inside = false;
+    ReturnPoint after_back;
+    for (;;) {
+        std::uint16_t pc = M6502_GET_ADDR(m.pins);
+        if (inside && pc == after_back.pc && m.cpu.S == after_back.sp) {
+            return true;
+        }
+        if (!inside && pc == options.after) {
+            inside = true;
+            after_back = ReturnOf(m);
+        }
+        if (pc == back.pc && m.cpu.S == back.sp) {
+            result.error = "the kernel returned before the clock started";
+            return false;
+        }
+        const char* bad = BadInstruction(m, pc);
+        if (bad != nullptr) {
+            result.error = ErrorAt(bad, "before the clock started", pc);
+            return false;
+        }
+        if (m.cycles - start_cycles >= options.max_cycles) {
+            result.error = "kernel cycle limit before the clock started";
+            return false;
+        }
+        StepInstruction(m);
+    }
+}
+
 void ApplyPatches(Machine& m, const RaceOptions& options) {
     for (const RacePatch& patch : options.patches) {
         LoadBytes(m, patch.address, patch.bytes.data(), patch.bytes.size());
@@ -110,17 +158,22 @@ RaceResult RunRace(Machine& m, const RaceOptions& options) {
     }
     ApplyPatches(m, options);
 
-    // the caller's return address is on top of the stack: JSR pushed it minus one
-    std::uint8_t sp = m.cpu.S;
-    std::uint16_t low = m.mem[0x100 + static_cast<std::uint8_t>(sp + 1)];
-    std::uint16_t high = m.mem[0x100 + static_cast<std::uint8_t>(sp + 2)];
-    std::uint16_t back = static_cast<std::uint16_t>((low | (high << 8)) + 1);
-    std::uint8_t back_sp = static_cast<std::uint8_t>(sp + 2);
-
+    ReturnPoint back = ReturnOf(m);
+    std::uint64_t entry_cycles = m.cycles;
+    if (options.has_after && !RunPastAfter(m, options, back, result)) {
+        result.total_cycles = m.cycles - entry_cycles;
+        result.regs = GetRegs(m);
+        return result;
+    }
     std::uint64_t start_cycles = m.cycles;
+    bool clock = true;
     for (;;) {
         std::uint16_t pc = M6502_GET_ADDR(m.pins);
-        if (pc == back && m.cpu.S == back_sp) {
+        if (clock && options.has_stop && pc == options.stop) {
+            clock = false;
+            result.kernel_cycles = m.cycles - start_cycles;
+        }
+        if (pc == back.pc && m.cpu.S == back.sp) {
             result.returned = true;
             break;
         }
@@ -133,10 +186,19 @@ RaceResult RunRace(Machine& m, const RaceOptions& options) {
             result.error = "kernel cycle limit";
             break;
         }
-        result.executed[pc] = 1;
+        if (clock) {
+            result.executed[pc] = 1;
+        }
         StepInstruction(m);
     }
-    result.kernel_cycles = m.cycles - start_cycles;
+    result.total_cycles = m.cycles - entry_cycles;
+    if (clock) {
+        result.kernel_cycles = m.cycles - start_cycles;
+    }
+    if (clock && options.has_stop && result.returned) {
+        result.returned = false;
+        result.error = "the kernel returned without reaching the stop address";
+    }
     result.regs = GetRegs(m);
     return result;
 }

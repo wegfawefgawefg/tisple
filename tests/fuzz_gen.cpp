@@ -446,6 +446,9 @@ std::string Gen::Stmt(int depth) {
             return store;
         }
         if (rng.Chance(50)) {
+            if (race) {
+                return RaceStore();
+            }
             return "(io_write u8 " + IoAddress() + " " + Expr(T::U8, 2) + ")";
         }
         return PointerLet();
@@ -466,6 +469,9 @@ std::string Gen::Stmt(int depth) {
         return Match(depth);
     case 12: {
         if (current == 0) {
+            if (race) {
+                return RaceStore();
+            }
             return "(io_read u8 " + IoAddress() + ")";
         }
         return CallText(fns[static_cast<std::size_t>(rng.Below(static_cast<int>(current)))], 2);
@@ -508,7 +514,7 @@ std::string Gen::Function(std::size_t index) {
     }
 
     // small functions get inlined, big ones called
-    budget = fn.name != "main" && rng.Chance(40) ? 1 + rng.Below(2) : 6 + rng.Below(14);
+    budget = fn.name != entry && rng.Chance(40) ? 1 + rng.Below(2) : 6 + rng.Below(14);
     while (budget > 0) {
         text += "\n    " + Stmt(3);
     }
@@ -529,6 +535,9 @@ std::string Gen::Program() {
         for (int i = 0; i < count; i++) {
             std::string name = Fresh("g");
             std::string init = rng.Chance(70) ? " " + Literal(t) : "";
+            if (race) {
+                init = RaceStart(name, t, init);
+            }
             text += std::string("(let ") + name + " " + Name(t) + init + ")\n";
             globals.push_back(VarInfo{name, t, false});
         }
@@ -551,6 +560,9 @@ std::string Gen::Program() {
                 init += " " + Literal(a.elem);
             }
             init += ")";
+        }
+        if (race) {
+            init = RaceArrayStart(a.name, a.elem, init);
         }
         text += "(let " + a.name + " " + type + init + ")\n";
         arrays.push_back(a);
@@ -577,8 +589,12 @@ std::string Gen::Program() {
     text += "))\n";
     arrays.push_back(table);
     text += "(let sa (array S 8))\n(let sp (array S 4))\n";
-    text += "(let gs S (make S :a " + Literal(T::U8) + " :b " + Literal(T::I16) + " :c " +
-            Literal(T::Bool) + " :d " + Literal(T::U8) + "))\n";
+    if (race) {
+        text += "(let gs S)\n" + RaceStructStart();
+    } else {
+        text += "(let gs S (make S :a " + Literal(T::U8) + " :b " + Literal(T::I16) + " :c " +
+                Literal(T::Bool) + " :d " + Literal(T::U8) + "))\n";
+    }
 
     // rows of wb, 37 bytes apart, for StrideLets
     text += "(fn rowp ((b (ptr u8)) (y u8)) (ptr u8) (+ b (* (as u16 y) 37)))\n";
@@ -589,7 +605,7 @@ std::string Gen::Program() {
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;
         bool is_main = f == fn_count - 1;
-        fn.name = is_main ? "main" : "f" + std::to_string(f);
+        fn.name = is_main ? entry : "f" + std::to_string(f);
         int params = is_main ? 0 : rng.Below(4);
         for (int p = 0; p < params; p++) {
             fn.params.push_back(AnyType());
@@ -601,6 +617,9 @@ std::string Gen::Program() {
     for (std::size_t f = 0; f < fns.size(); f++) {
         text += Function(f);
     }
+    if (race) {
+        text += RaceTail();
+    }
     return text;
 }
 
@@ -608,8 +627,9 @@ std::string Gen::Program() {
 
 namespace tisple_tests {
 
-std::string GenerateProgram(std::uint64_t seed) {
-    fuzz::Gen g;
+namespace {
+
+void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     g.rng.s = seed * 0x9E3779B97F4A7C15ull + 0x1234567ull;
     if (g.rng.s == 0) {
         g.rng.s = 1;
@@ -636,6 +656,21 @@ std::string GenerateProgram(std::uint64_t seed) {
     }
     // in one program in four
     g.loop_shapes = g.loops_rng.Chance(25);
+}
+
+} // namespace
+
+std::string GenerateProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    return g.Program();
+}
+
+std::string GenerateRaceProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    g.race = true;
+    g.entry = "run";
     return g.Program();
 }
 
