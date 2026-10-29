@@ -91,6 +91,7 @@ struct Pass {
     std::vector<AsmItem>* items = nullptr;
     std::vector<bool> dead;
     std::vector<bool> flags_dead; // FlagsDeadIn, as the round began
+    const std::vector<std::int32_t>* frames = nullptr;
     bool changed = false;
 
     AsmItem& At(std::size_t i) {
@@ -137,6 +138,7 @@ struct Pass {
 
 struct Tracker {
     const Assembly* as = nullptr;
+    const std::vector<std::int32_t>* frames = nullptr; // FrameSharers, by symbol
     Content reg[3];                                       // A, X, Y
     std::vector<std::pair<AsmValue, AsmValue>> mem_const; // memory byte, constant there
     std::vector<std::pair<AsmValue, AsmValue>> mem_copy;  // memory byte, the byte it equals
@@ -176,7 +178,42 @@ struct Tracker {
             }
         }
     }
+    // a write to the frame of function `owner`, which shares its bytes with the frames of
+    // other functions inlined here: what was known of their bytes may be gone too
+    bool Shares(std::int32_t sym, std::int32_t owner) const {
+        if (sym < 0 || frames == nullptr || static_cast<std::size_t>(sym) >= frames->size()) {
+            return false;
+        }
+        std::int32_t other = (*frames)[static_cast<std::size_t>(sym)];
+        return other >= 0 && other != owner;
+    }
+    void ForgetSharers(std::int32_t sym) {
+        if (frames == nullptr || sym < 0 || static_cast<std::size_t>(sym) >= frames->size() ||
+            (*frames)[static_cast<std::size_t>(sym)] < 0) {
+            return;
+        }
+        std::int32_t owner = (*frames)[static_cast<std::size_t>(sym)];
+        for (Content& c : reg) {
+            if (c.known && c.mem && Shares(c.v.sym, owner)) {
+                c.known = false;
+            }
+        }
+        auto touches = [&](const std::pair<AsmValue, AsmValue>& entry) {
+            return Shares(entry.first.sym, owner) || Shares(entry.second.sym, owner);
+        };
+        for (std::size_t i = mem_copy.size(); i-- > 0;) {
+            if (touches(mem_copy[i])) {
+                mem_copy.erase(mem_copy.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        }
+        for (std::size_t i = mem_const.size(); i-- > 0;) {
+            if (touches(mem_const[i])) {
+                mem_const.erase(mem_const.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        }
+    }
     void ForgetByte(const AsmValue& m) {
+        ForgetSharers(m.sym);
         for (Content& c : reg) {
             if (!c.known || !c.mem) {
                 continue;
@@ -202,6 +239,7 @@ struct Tracker {
     }
     // an indexed store into the array at sym (it stays inside: indices are in bounds)
     void ForgetSym(std::int32_t sym) {
+        ForgetSharers(sym);
         for (Content& c : reg) {
             if (c.known && c.mem && (c.v.sym == sym || c.index == kThroughY)) {
                 c.known = false;
@@ -649,6 +687,7 @@ using BackStates = std::map<std::int32_t, Tracker>;
 void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
     Tracker t;
     t.as = p.as;
+    t.frames = p.frames;
     KnownLabels known = FindKnownLabels(p);
     auto is_mergeable = [&](std::int32_t sym) { return Contains(known.mergeable, sym); };
     auto is_loop = [&](std::int32_t sym) { return Contains(known.loop, sym); };
@@ -1033,10 +1072,11 @@ void FlowPass(Pass& p) {
 } // namespace
 
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
-              const std::vector<StoreScope>& scopes) {
+              const std::vector<StoreScope>& scopes, const std::vector<std::int32_t>& frames) {
     for (int round = 0; round < kMaxRounds; round++) {
         Pass p;
         p.as = &as;
+        p.frames = &frames;
         p.items = &items;
         p.dead.assign(items.size(), false);
         p.flags_dead = FlagsDeadIn(as, items);

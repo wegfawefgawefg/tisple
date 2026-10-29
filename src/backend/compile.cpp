@@ -46,6 +46,24 @@ std::vector<StoreScope> StoreScopes(const Backend& be, std::int32_t function) {
     return out;
 }
 
+// by symbol, for this function's code: the function whose frame holds the byte, for the
+// locals and parameters of the functions it inlines (frames.cpp may give their frames the
+// same bytes, as they never run at the same time); -1 for its own, globals and fixed places
+std::vector<std::int32_t> FrameSharers(const Backend& be, std::int32_t function) {
+    std::vector<std::int32_t> out(be.info.size(), -1);
+    for (std::size_t s = 0; s < be.info.size(); s++) {
+        const SymInfo& info = be.info[s];
+        if (info.role != SymRole::Var) {
+            continue;
+        }
+        const Var& var = be.program->vars[static_cast<std::size_t>(info.owner)];
+        if (var.function >= 0 && var.function != function && !var.placement.has_address) {
+            out[s] = var.function;
+        }
+    }
+    return out;
+}
+
 void MakeSymbols(Backend& be) {
     const Program& program = *be.program;
     be.var_sym.resize(program.vars.size());
@@ -275,7 +293,8 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         std::vector<std::uint64_t> weights = Weights(be);
         GenFunction(be, static_cast<std::int32_t>(f));
-        Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)));
+        Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
+                 FrameSharers(be, static_cast<std::int32_t>(f)));
         added[f] = AddedSince(be, weights);
     }
     if (errors.size() != before) {

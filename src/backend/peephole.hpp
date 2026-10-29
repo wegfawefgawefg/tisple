@@ -29,8 +29,11 @@ enum class StoreScope : std::uint8_t {
     Exposed,   // read directly by any code: what calls, jumps out and the return may read
 };
 
+// frames: by symbol, for a byte of an inlined callee's frame, the callee (else -1). Frames of
+// functions that never run at the same time share bytes (frames.cpp), and code with several
+// callees inlined holds bytes of each: a write to one callee's byte may change another's.
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
-              const std::vector<StoreScope>& scopes);
+              const std::vector<StoreScope>& scopes, const std::vector<std::int32_t>& frames);
 // true if any store went
 bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& scopes);
 // true if any CLC or SEC went or moved
