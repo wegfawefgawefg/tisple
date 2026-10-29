@@ -40,8 +40,20 @@ void FoldConstants(Program& program);
 // them even where the mid-level passes folded every read away
 std::vector<bool> FindNamedTables(const Program& program);
 
-// pointer variables some load or store goes through directly: these live in zero page
+// functions this small (in expressions, CountExprs) are inlined at every call (gen_expr.cpp)
+constexpr std::uint32_t kMaxInlineExprs = 24;
+
+// pointer variables some load or store goes through directly, or that a small function's
+// parameter some load or store goes through reads in place once the call is inlined: these
+// live in zero page
 std::vector<bool> FindDerefPointers(const Program& program);
+
+// how many times a loop's body may run each time the loop is reached: a for with constant
+// bounds its trip count (2 to 64), a while 8, any other loop 4 (run_counts.cpp)
+std::uint32_t LoopTrips(const Program& program, ExprId loop);
+// by function: how many times it may run in one run of the program, from the calls to it and
+// the loops around them (at most 2^32; 0 for a function main never reaches)
+std::vector<std::uint64_t> FindRunCounts(const Program& program);
 
 // by var: locals every let and set gives 1 or -1 (unit_steps.cpp)
 std::vector<bool> FindUnitSteps(const Program& program);

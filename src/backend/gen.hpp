@@ -68,11 +68,15 @@ enum class Runtime : std::uint8_t {
 };
 constexpr int kRuntimeCount = static_cast<int>(Runtime::Count);
 
-// a division routine for one constant divisor (gen_div.cpp)
+// a division routine for one constant divisor (gen_div_const.cpp): unsigned by divisor, or
+// signed by value
 struct DivRoutine {
     std::uint32_t divisor = 0;
     bool wide = false;
+    bool is_signed = false;
+    std::int32_t value = 0;
     std::int32_t sym = -1;
+    std::int32_t needs = -1; // the unsigned routine a signed one calls, if any
 };
 
 struct Backend {
@@ -89,7 +93,10 @@ struct Backend {
     std::vector<std::int32_t> lptr_sym;
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
-    std::vector<std::uint32_t> fn_exprs;  // by function: expressions in its body
+    std::vector<std::uint32_t> fn_exprs; // by function: expressions in its body
+    std::vector<std::uint64_t> fn_runs;  // by function: FindRunCounts
+    // by function: its Gen::multiplies, for the choice of multiply routines
+    std::vector<std::vector<std::pair<ExprId, std::uint64_t>>> multiplies;
     std::vector<bool> deref;              // by var: some load or store goes straight through it
     std::vector<IndexAlias> aliases;      // by var: locals that only name a byte index
     std::vector<bool> unit_steps;         // by var: FindUnitSteps
@@ -318,6 +325,8 @@ struct Gen {
     std::vector<std::pair<ExprId, Opnd>> bumped;
     int while_pins = 0; // while loops being generated with variables pinned
     DivDone div;
+    // the multiplies by a routine so far: the expression, how often this copy may run
+    std::vector<std::pair<ExprId, std::uint64_t>> multiplies;
     std::vector<std::int32_t> reduced; // vars of lets worked out before their loop
     std::vector<ReducedByte> reduced_bytes;
     // parameters of the calls being inlined that read their argument, a plain variable the
@@ -544,8 +553,13 @@ void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
 // a + b, 16-bit, with bytes known before running needing no code (gen_wide.cpp); the
 // result is in dst (or a temporary) except for bytes that are numbers or one operand's byte
 Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst);
-// multiply a 16-bit operand by a constant into dst
+// multiply by a constant (gen_mulconst.cpp): A = A * c; a 16-bit operand into dst; whether a
+// 16-bit multiply by c is inline rather than the routine
+void MulConst8A(Gen& g, std::uint32_t c);
 void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst);
+bool InlineMulConst16(std::uint32_t c);
+// every byte a number or a plain memory byte, which only a write to it changes
+bool IsPlainMemory(const Opnd& o);
 void CallRuntime(Gen& g, Runtime routine);
 // division and remainder (gen_div.cpp): 8-bit into A, 16-bit into dst or a temporary
 void EvalDiv8(Gen& g, ExprId id, const Expr& e);

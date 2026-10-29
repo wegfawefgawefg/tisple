@@ -1115,6 +1115,16 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     keeps its threaded loop). Farm programs 6001453322.tsp and _reduced.tsp.
     TISPLE_FUZZ_OPT adds pass options to TISPLE_FUZZ_FILE (-O0 showed this was
     the backend).
+45. Backend division and multiplies (2026-10-29): divisions by a variable
+    take one compare when the dividend is below the divisor or the divisor is
+    0, 1 or has its top bit set, else one step per quotient bit
+    (runtime_div.cpp); signed constant divisors divide magnitudes in a routine
+    per divisor; constant multiplies use signed digits, every byte product
+    inline; quarter squares for every multiply once one may run twice
+    (run_counts.cpp); pointers bound in inlined calls live in zero page. Random
+    race seeds 1-2000: geomean 2.124 to 1.659, median 1.74 to 1.42, wins 11.7%
+    to 23.4%; divide family 2.53 to 1.51, multiply 2.01 to 1.79. Kernels, Life,
+    plasma the same; snake, hires_plot, text_demo change (bigger divu8/divu16).
 
 ## Gap finder (2026-10-26)
 

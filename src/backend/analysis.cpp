@@ -197,6 +197,33 @@ std::vector<bool> FindDerefPointers(const Program& program) {
             break;
         }
     }
+    // a pointer handed to such a parameter of a function small enough to inline: the inlined
+    // body reads the argument where it is (gen_expr.cpp, CanBind), so it is the one used
+    std::vector<bool> small(program.functions.size(), false);
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        small[f] = CountExprs(program, program.functions[f].body) <= kMaxInlineExprs;
+    }
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (const Expr& e : program.exprs) {
+            if (e.kind != ExprKind::Call || !small[static_cast<std::size_t>(e.ref)]) {
+                continue;
+            }
+            const Function& fn = program.functions[static_cast<std::size_t>(e.ref)];
+            for (std::uint32_t i = 0; i < e.count && i < fn.params.size(); i++) {
+                const Expr& arg = ExprOf(program, ListItem(program, e, i));
+                std::size_t param = static_cast<std::size_t>(fn.params[i]);
+                if (!deref[param] || arg.kind != ExprKind::VarRef) {
+                    continue;
+                }
+                std::size_t var = static_cast<std::size_t>(arg.ref);
+                if (!deref[var] && program.vars[var].kind != VarKind::ConstArray) {
+                    deref[var] = true;
+                    changed = true;
+                }
+            }
+        }
+    }
     return deref;
 }
 

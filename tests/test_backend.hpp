@@ -74,6 +74,8 @@ void RunBackendProgramTests(TestResults& results);
 void RunBackendIndexTests(TestResults& results);
 void RunBackendFuzzTests(TestResults& results);
 void RunBackendDivTests(TestResults& results);
+// division by variables and signed constants (test_backend_div_var.cpp)
+void RunBackendDivVarTests(TestResults& results);
 void RunBackendCarryTests(TestResults& results);
 void RunBackendReduceTests(TestResults& results);
 void RunBackendWideTests(TestResults& results);
