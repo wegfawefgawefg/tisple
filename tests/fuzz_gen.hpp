@@ -13,6 +13,12 @@ namespace tisple_tests {
 // the program for one seed; main is t.main and takes no arguments
 std::string GenerateProgram(std::uint64_t seed);
 
+// for one seed in kEntryPercent hundred, the seed's program with loops entered by a jump
+// (fuzz_gen_entries.cpp) among its statements; "" for the others. A second program for those
+// seeds, so GenerateProgram's programs stay what they were
+constexpr int kEntryPercent = 25;
+std::string GenerateEntryProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at
