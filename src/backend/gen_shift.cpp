@@ -112,10 +112,10 @@ void ByteFirst(Gen& g, Op op, bool is_signed, const Opnd& d, int r, std::int32_t
     Branch(g, Mn::BEQ, done);
 }
 
-// 16-bit shift of a into d (plain memory); a constant count c, or the count operand and the
-// largest it can be
+// 16-bit shift of a into d (plain memory); a constant count c, or the count operand (or with
+// in_reg, the count already in the counter register) and the largest it can be
 void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool fixed,
-             std::uint16_t c, const Opnd& count, std::uint32_t count_max) {
+             std::uint16_t c, const Opnd& count, std::uint32_t count_max, bool in_reg) {
     bool left = op == Op::Shl;
     if (fixed && c >= 8) {
         int n = c >= 16 ? 15 : c;
@@ -222,7 +222,11 @@ void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool f
     if (!fixed) {
         done = NewLabel(g);
         loop = NewLabel(g);
-        LoadCount(g, r, count);
+        if (in_reg) {
+            Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(0));
+        } else {
+            LoadCount(g, r, count);
+        }
         Branch(g, Mn::BEQ, done);
         if (count_max >= 8) {
             ByteFirst(g, op, is_signed, d, r, loop, done);
@@ -330,7 +334,7 @@ Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t co
     if (ShiftKnown(g, op, is_signed, a, 0xFFFF, count, d, known)) {
         return known;
     }
-    Shift16(g, op, is_signed, a, d, true, count, Opnd(), 0);
+    Shift16(g, op, is_signed, a, d, true, count, Opnd(), 0, false);
     return d;
 }
 
@@ -356,12 +360,19 @@ Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst) {
     if (Overlaps(g, a, d) && !in_place) {
         d = NewTemp(g, 2);
     }
+    // a count just worked out in A goes straight into its register when nothing on the way
+    // needs one
+    bool in_reg =
+        !fixed && count.temp && AHoldsByte(g, count, 0) && IsPlainMemory(a) && IsPlainMemory(d);
+    if (in_reg) {
+        Emit(g, CounterReg(g) == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
+    }
     bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
     Opnd known;
     if (fixed && !in_place && ShiftKnown(g, op, is_signed, a, MaxOf(g, e.a), c, d, known)) {
         return known;
     }
-    Shift16(g, op, is_signed, a, d, fixed, c, count, fixed ? 0 : MaxOf(g, e.b));
+    Shift16(g, op, is_signed, a, d, fixed, c, count, fixed ? 0 : MaxOf(g, e.b), in_reg);
     return d;
 }
 
