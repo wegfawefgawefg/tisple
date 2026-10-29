@@ -171,6 +171,9 @@ bool Quiet(const Pass& p, ExprId id) {
     case ExprKind::Reinterpret:
     case ExprKind::And:
     case ExprKind::Or:
+    case ExprKind::AddrOf:
+    case ExprKind::PtrAdd:
+    case ExprKind::PtrSub:
         return Quiet(p, e.a) && Quiet(p, e.b);
     case ExprKind::If:
         return Quiet(p, e.a) && Quiet(p, e.b) && Quiet(p, e.c);

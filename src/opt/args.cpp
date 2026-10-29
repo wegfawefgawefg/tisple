@@ -1,9 +1,12 @@
 // Unread parameters: a call's argument for a parameter its function never reads is not worked
 // out; a literal 0 goes in its place, when the argument is pure and reads no hardware. The
-// function may still set the parameter; nothing reads what the call passed. Loops whose
+// function may still set the parameter; nothing reads what the call passed. Variable reads
+// too: an inlined call would read one in place (the backend binds it to the parameter) and
+// stores the literal, a few cycles, but a loop around a call that reads what the loop writes
+// does not collapse. Loops whose
 // passes differ only in such an argument then collapse (collapse.cpp).
 
-#include "opt/opt_internal.hpp"
+#include "opt/ranges.hpp"
 
 namespace tisple::opt {
 
@@ -24,38 +27,6 @@ bool ReadsVar(const Pass& p, ExprId id, std::int32_t var) {
     bool reads = false;
     EachChild(p, e, [&](ExprId child) { reads = reads || ReadsVar(p, child, var); });
     return reads;
-}
-
-// pure, and reads no hardware (:address, aux, loads), so never working it out changes nothing
-bool Quiet(const Pass& p, ExprId id) {
-    if (id < 0) {
-        return true;
-    }
-    const Expr& e = At(p, id);
-    switch (e.kind) {
-    case ExprKind::Literal:
-        return true;
-    case ExprKind::VarRef: {
-        const Var& v = VarOf(p, e.ref);
-        return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve;
-    }
-    case ExprKind::Index:
-    case ExprKind::Field:
-    case ExprKind::Unary:
-    case ExprKind::Binary:
-    case ExprKind::Convert:
-    case ExprKind::Reinterpret:
-    case ExprKind::And:
-    case ExprKind::Or:
-    case ExprKind::AddrOf:
-    case ExprKind::PtrAdd:
-    case ExprKind::PtrSub:
-        return Quiet(p, e.a) && Quiet(p, e.b);
-    case ExprKind::If:
-        return Quiet(p, e.a) && Quiet(p, e.b) && Quiet(p, e.c);
-    default:
-        return false;
-    }
 }
 
 // integers, bools and enums, whose 0 is a literal like any other

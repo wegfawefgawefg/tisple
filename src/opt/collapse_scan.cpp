@@ -154,14 +154,21 @@ void ScanCall(const Pass& p, Access& a, const Expr& e) {
         a.all = true;
         return;
     }
+    // with the same arguments on every pass a call does the same (what it reads no pass
+    // writes, or the loop does not collapse): its writes land where they did
+    bool same = !a.varying;
+    for (std::uint32_t i = 0; i < e.count && same; i++) {
+        same = !Varies(p, a, Item(p, e, i));
+    }
     for (std::size_t v = 0; v < s.reads.size(); v++) {
         std::int32_t var = static_cast<std::int32_t>(v);
         if (s.reads[v]) {
             a.reads.push_back(WholeVar(p, var));
         }
         if (s.writes[v]) {
-            a.writes.push_back(WholeVar(p, var));
-            a.unsteady = true; // the callee may write it on some calls only
+            Cell cell = WholeVar(p, var);
+            cell.steady = same;
+            a.writes.push_back(cell);
         }
         if ((s.reads[v] || s.writes[v]) && Hardware(VarOf(p, var))) {
             a.all = true;
@@ -170,7 +177,7 @@ void ScanCall(const Pass& p, Access& a, const Expr& e) {
     if (s.loads || s.stores) {
         a.memory.calls.push_back(e.ref);
     }
-    a.unsteady = a.unsteady || s.stores;
+    a.unsteady = a.unsteady || (s.stores && !same);
     for (std::uint32_t i = 0; i < e.count; i++) {
         Scan(p, a, Item(p, e, i));
     }

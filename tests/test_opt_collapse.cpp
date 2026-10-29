@@ -110,6 +110,9 @@ void LastPass(TestResults& results) {
         "(fn f ((x u8)) u8 (for i i8 -3 2 (set (at a 1) (as u8 i)) (set g (+ g 1))) (at a 1))",
         // a branch on what no pass changes, a write there
         "(fn f ((x u8)) u8 (for i u8 0 5 (if (> x 9) (set g i) (set h i))) (+ g h))",
+        // a call with the same arguments every pass, which writes where it did
+        ("(fn put ((p (ptr u8)) (v u8)) void (store p v) (set h v))\n"
+         "(fn f ((x u8)) u8 (for i u8 0 4 (put (addr_of (at a 1)) x) (set g i)) (+ g (at a 1)))"),
         // a store through a pointer at the same place every pass
         ("(fn f ((x u8)) u8 (let p (ptr u8) (addr_of (at a 0))) (for i u8 0 4 (store p i))\n"
          "    (at a 0))"),
