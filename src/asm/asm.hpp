@@ -39,7 +39,7 @@ enum class ItemKind : std::uint8_t {
     Byte,  // one data byte: the value's low byte (or the part asked for)
     Note,  // listing text in Assembly::notes[note]
     // an exact delay: mode Imp, value the cycles (a number); or mode Abs, a variable wait of
-    // the u16 at value plus kVarWaitOverhead, counting in the zero-page byte `scratch`
+    // the u16 at value (kVarWaitMin at least), counting in the zero-page bytes at `scratch`
     Wait,
 };
 

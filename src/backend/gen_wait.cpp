@@ -1,14 +1,14 @@
 // (wait_cycles n): one assembler item (asm/wait.hpp), whose code depends on where it lands so
 // the count is exact at any address. The passes over the items never drop, merge or move it,
-// and treat it as keeping every register and all memory but the scratch byte a variable one
-// counts in, while the flags change: peephole.cpp, carry.cpp, dead_regs.cpp; dead_stores.cpp
+// and treat it as keeping every register and all memory but the two scratch bytes a variable
+// one counts in, while the flags change: peephole.cpp, carry.cpp, dead_regs.cpp; dead_stores.cpp
 // takes a variable wait's count as read like any other operand of an item it does not know.
 //
 // - A constant n is exactly n cycles.
 // - A variable n is read from memory by the wait itself, with absolute loads whatever page
-//   it is on, so the overhead is the same everywhere: kVarWaitOverhead. A value that is not a
-//   plain pair of bytes (a sum, an element at a computed index, a register) goes into a
-//   temporary first; that copy is part of working n out.
+//   it is on, so it too is exactly n cycles (kVarWaitMin for an n below that), the same as a
+//   constant n. A value that is not a plain pair of bytes (a sum, an element at a computed
+//   index, a register) goes into a temporary first; that copy is part of working n out.
 
 #include "asm/wait.hpp"
 #include "backend/gen.hpp"

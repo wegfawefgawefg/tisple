@@ -326,8 +326,8 @@ std::string ItemText(const Assembly& as, const AsmItem& item) {
         return ".byte " + Hex2(v) + (sym.empty() ? "" : "  ; " + sym);
     }
     if (item.kind == ItemKind::Wait && item.mode == Mode::Abs) {
-        return "WAIT (" + (known ? Hex4(v) : std::string("?")) + ") + " +
-               std::to_string(kVarWaitOverhead) + " cycles" + (sym.empty() ? "" : "  ; " + sym);
+        return "WAIT (" + (known ? Hex4(v) : std::string("?")) + ") cycles, " +
+               std::to_string(kVarWaitMin) + " or more" + (sym.empty() ? "" : "  ; " + sym);
     }
     if (item.kind == ItemKind::Wait) {
         return "WAIT " + std::to_string(item.value.offset) + " cycles";
@@ -350,7 +350,7 @@ std::string ItemText(const Assembly& as, const AsmItem& item) {
 
 int ItemCycles(const Assembly& as, const AsmItem& item) {
     if (item.kind == ItemKind::Wait) {
-        return item.mode == Mode::Abs ? static_cast<int>(kVarWaitOverhead) : item.value.offset;
+        return item.mode == Mode::Abs ? static_cast<int>(kVarWaitMin) : item.value.offset;
     }
     if (item.kind != ItemKind::Ins) {
         return 0;

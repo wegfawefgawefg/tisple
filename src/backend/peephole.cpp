@@ -675,12 +675,13 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
             continue;
         }
         if (item.kind == ItemKind::Wait) {
-            // the registers and memory stay, but for a variable wait's counter; the flags go
+            // the registers and memory stay, but for a variable wait's counters; the flags go
             t.nz_a = false;
             t.nz_known = false;
             t.c_known = false;
             if (item.mode == Mode::Abs) {
                 t.ForgetByte(item.scratch);
+                t.ForgetByte(SymValue(item.scratch.sym, item.scratch.offset + 1));
             }
             falls = true;
             continue;

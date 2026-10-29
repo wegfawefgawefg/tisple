@@ -240,7 +240,7 @@ ExprId CheckJsr(Checker& ck, const Node& node);
 std::int32_t StringTable(Checker& ck, const Node& node);
 ExprId StringPointer(Checker& ck, const Node& node, std::int32_t table);
 ExprId CheckString(Checker& ck, const Node& node);
-// (wait_cycles n): an exact delay; a constant n of 2 or more, or a u16 waited plus an overhead
+// (wait_cycles n): an exact delay; a constant n of 2 or more, or any u16
 ExprId CheckWaitCycles(Checker& ck, const Node& node);
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function);
 // (make Sprite :x 1 ...): the fields are items[2..]

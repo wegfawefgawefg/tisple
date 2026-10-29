@@ -191,7 +191,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(addr_of place)` | address of a variable, element or field |
 | `(io_read t addr)` / `(io_write t addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
 | `(jsr addr (a v) (x v) (y v))` | call machine code (ROM, card firmware) with registers set; gives A after; see Machine code |
-| `(wait_cycles n)` | exactly n cycles for a constant n, n + 47 for a `u16` one; see Exact delays |
+| `(wait_cycles n)` | exactly n cycles (a variable n: 69 at least); see Exact delays |
 | `"text"` | a `(ptr u8)` to the text's ASCII bytes and a 0; see Strings |
 
 The parameter list is always written, `()` when empty, and the return type is
@@ -687,12 +687,15 @@ out of the binary.
   to 1300 cycles and 23 up to 65535. A taken branch costs a cycle more when it
   crosses a page, so the loop's counts are worked out for the address it lands
   at, in a size that is the same at every address.
-- A variable `u16` n takes n + 47 cycles, for every n from 0. The wait reads n
-  itself, with absolute loads wherever n lives, then counts 256-cycle rounds
-  for the high byte and takes the low byte bit by bit; a `JMP` over a filler
-  keeps every branch inside its page (57 bytes). When n is more than a variable
-  or field (a sum, an element at a computed index), the code working it out
-  into a temporary comes first and is not part of the 47.
+- A variable `u16` n takes exactly n cycles too, counted from the start of the
+  wait, so a constant n and the same n in a variable wait alike, whatever the
+  optimiser folds. Its own fixed cost is 69 cycles, so an n below 69 takes 69:
+  that least is `timing.WAIT_MIN` in lib/timing. The wait reads n itself, with
+  absolute loads wherever n lives, takes off the 69, then counts 256-cycle
+  rounds for the high byte and takes the low byte bit by bit; a `JMP` over a
+  filler keeps every branch inside its page (76 bytes). When n is more than a
+  variable or field (a sum, an element at a computed index), the code working
+  it out into a temporary comes first and is not part of the wait.
 - Either keeps A, X, Y and memory (a variable wait counts in the compiler's
   zero-page scratch) and may change N, V, Z and C. It is an effect like
   `io_read`: never dropped, merged or moved. The interpreter does nothing for it.

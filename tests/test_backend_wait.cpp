@@ -1,6 +1,7 @@
 // (wait_cycles n) through the compiler: exact cycles for constant and variable counts at
-// code addresses on every side of a page boundary, the waits kept where they were written,
-// the registers and memory around them as the interpreter has them, and the checker's errors
+// code addresses on every side of a page boundary, a constant and a variable n alike from
+// kVarWaitMin on, the waits kept where they were written, the registers and memory around
+// them as the interpreter has them, and the checker's errors
 
 #include "asm/wait.hpp"
 #include "test_backend.hpp"
@@ -85,16 +86,58 @@ void TestTiming(TestResults& results) {
             }
             CHECK(results, got == want.cycles);
         }
-        const std::uint16_t counts[] = {0, 1, 2, 255, 256, 1001, 40000};
+        const std::uint16_t counts[] = {0, 1, 2, 68, 69, 70, 255, 256, 1001, 40000, 65535};
         for (std::uint16_t n : counts) {
+            std::int64_t want = n < tisple::kVarWaitMin ? tisple::kVarWaitMin : n;
             std::int64_t got = CallCycles(c, sim, "t.wp", {n}) - base;
-            CHECK(results, got == n + tisple::kVarWaitOverhead);
+            CHECK(results, got == want);
             std::int32_t v = tisple::FindVar(c.built.program, "t.v");
             std::uint16_t at = c.code.layout.vars[static_cast<std::size_t>(v)].address;
             sim.machine->mem[at] = static_cast<std::uint8_t>(n & 0xFF);
             sim.machine->mem[at + 1] = static_cast<std::uint8_t>(n >> 8);
             got = CallCycles(c, sim, "t.wv", {}) - base;
-            CHECK(results, got == n + tisple::kVarWaitOverhead);
+            CHECK(results, got == want);
+        }
+    }
+}
+
+// from kVarWaitMin on, a constant n and the same n read from a variable take the same cycles,
+// so a value the optimiser folds into a constant waits as long as before
+void TestSameAsConstant(TestResults& results) {
+    const std::uint32_t counts[] = {tisple::kVarWaitMin,
+                                    tisple::kVarWaitMin + 1,
+                                    100,
+                                    255,
+                                    256,
+                                    257,
+                                    1285,
+                                    1300,
+                                    4097,
+                                    40000,
+                                    65534,
+                                    65535};
+    std::string text = "(fn e () void)\n(fn wp ((n u16)) void (wait_cycles n))\n";
+    for (std::uint32_t n : counts) {
+        text += "(fn c" + std::to_string(n) + " () void (wait_cycles " + std::to_string(n) + "))\n";
+    }
+    for (std::uint16_t shift = 0; shift < 256; shift += 17) {
+        Compiled c = CompileAt(text, static_cast<std::uint16_t>(0x6000 + shift));
+        tisple::SimRunner sim;
+        std::string error;
+        if (!c.ok || !tisple::StartCompiled(sim, c.code, error)) {
+            std::fprintf(stderr, "%s%s\n", c.errors.c_str(), error.c_str());
+            CHECK(results, false);
+            return;
+        }
+        for (std::uint32_t n : counts) {
+            std::int64_t constant = CallCycles(c, sim, "t.c" + std::to_string(n), {});
+            std::int64_t variable = CallCycles(c, sim, "t.wp", {static_cast<std::uint16_t>(n)});
+            if (constant != variable) {
+                std::fprintf(stderr, "wait %u at origin $%04X: constant %lld, variable %lld\n", n,
+                             0x6000 + shift, static_cast<long long>(constant),
+                             static_cast<long long>(variable));
+            }
+            CHECK(results, constant == variable && constant >= 0);
         }
     }
 }
@@ -167,6 +210,7 @@ void TestErrors(TestResults& results) {
 
 void RunBackendWaitTests(TestResults& results) {
     TestTiming(results);
+    TestSameAsConstant(results);
     TestKept(results);
     TestErrors(results);
 }

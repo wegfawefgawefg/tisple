@@ -3,6 +3,9 @@
 
 (import apple2 a2)
 
+; the fewest cycles (wait_cycles n) takes when n is a variable: a smaller n takes this many
+(const WAIT_MIN u16 69)
+
 ; bit 7 of RDVBLBAR is 0 during vertical blank on a IIe: leave this blank, wait for the next
 (fn frame () void
     (while (< (io_read u8 a2.RDVBLBAR) 0x80))

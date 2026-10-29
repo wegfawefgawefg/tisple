@@ -1,6 +1,7 @@
 // exact delays (asm/wait.hpp) run on the simulator: every constant count from 2 to 700 and a
 // spread up to 65535 at addresses whose loop branches cross a page and ones whose do not,
-// and variable waits at every address in a page, each to the cycle
+// and variable waits, n cycles from kVarWaitMin on, at every address in a page, each to the
+// cycle
 
 #include "asm/wait.hpp"
 #include "emu/harness.hpp"
@@ -23,7 +24,7 @@ struct WaitRun {
 };
 
 // runs bytes at address up to the BRK after them; cycles, or -1 if a register, the stack
-// pointer, zero page (but the scratch byte) or the code changed
+// pointer, zero page (but the two scratch bytes) or the code changed
 std::int64_t RunWait(WaitRun& run, std::uint16_t address, const std::vector<std::uint8_t>& code,
                      std::uint8_t flags) {
     tisple::Machine& m = *run.m;
@@ -49,7 +50,8 @@ std::int64_t RunWait(WaitRun& run, std::uint16_t address, const std::vector<std:
                 result.regs.s == regs.s && (result.regs.p & tisple::kFlagD) == 0 &&
                 (result.regs.p & tisple::kFlagI) == (flags & tisple::kFlagI);
     for (int i = 0; i < 256 && kept; i++) {
-        kept = i == kScratch || m.mem[i] == static_cast<std::uint8_t>(i * 7 + 3);
+        kept =
+            i == kScratch || i == kScratch + 1 || m.mem[i] == static_cast<std::uint8_t>(i * 7 + 3);
     }
     for (std::size_t i = 0; i < code.size() && kept; i++) {
         kept = m.mem[static_cast<std::uint16_t>(address + i)] == code[i];
@@ -116,6 +118,11 @@ void TestConstantWaits(TestResults& results) {
     CHECK(results, worst <= 23);
 }
 
+// what a variable wait of n takes: n, and never less than its own cost
+std::uint32_t VarCycles(std::uint32_t n) {
+    return n < tisple::kVarWaitMin ? tisple::kVarWaitMin : n;
+}
+
 void TestVariableWaits(TestResults& results) {
     WaitRun run;
     run.m = std::make_unique<tisple::Machine>();
@@ -124,7 +131,8 @@ void TestVariableWaits(TestResults& results) {
     for (std::uint32_t n = 0; n < 20; n++) {
         counts.push_back(n);
     }
-    for (std::uint32_t n : {31u, 255u, 256u, 257u, 1000u, 0xABCDu}) {
+    const std::uint32_t min = tisple::kVarWaitMin;
+    for (std::uint32_t n : {31u, min - 1, min, min + 1, 255u, 256u, 257u, 1000u, 0xABCDu, 65535u}) {
         counts.push_back(n);
     }
     int failures = 0;
@@ -141,11 +149,11 @@ void TestVariableWaits(TestResults& results) {
             run.m->mem[kCount] = static_cast<std::uint8_t>(n & 0xFF);
             run.m->mem[kCount + 1] = static_cast<std::uint8_t>(n >> 8);
             std::int64_t cycles = RunWait(run, address, code, tisple::kFlagU | tisple::kFlagC);
-            bool ok = cycles == n + tisple::kVarWaitOverhead && run.m->mem[kCount] == (n & 0xFF) &&
+            bool ok = cycles == VarCycles(n) && run.m->mem[kCount] == (n & 0xFF) &&
                       run.m->mem[kCount + 1] == (n >> 8);
             if (!ok && failures++ < 10) {
                 std::fprintf(stderr, "variable wait %u at $%04X: %lld cycles, want %u\n", n,
-                             address, static_cast<long long>(cycles), n + tisple::kVarWaitOverhead);
+                             address, static_cast<long long>(cycles), VarCycles(n));
             }
             CHECK(results, ok);
         }
@@ -157,7 +165,7 @@ void TestVariableWaits(TestResults& results) {
         run.m->mem[kCount] = static_cast<std::uint8_t>(n & 0xFF);
         run.m->mem[kCount + 1] = static_cast<std::uint8_t>(n >> 8);
         std::int64_t cycles = RunWait(run, 0x60F5, code, tisple::kFlagU);
-        CHECK(results, cycles == n + tisple::kVarWaitOverhead);
+        CHECK(results, cycles == VarCycles(n));
     }
 }
 

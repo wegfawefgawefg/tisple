@@ -229,18 +229,23 @@ void EmitLoop(const Plan& plan, std::vector<std::uint8_t>& out) {
 // ---- variable waits
 
 // before the filler goes in; branches are data-dependent, so none may cross a page
-//  0 PHA / LDA high / STA s / BEQ f0 (hi = 0) / NOP
-//  9 O: LDA #49 / SEC / I: SBC #1 / BNE I / DEC s / BNE O   (256 cycles a round)
-// 20 f0: LDA low / LSR A / BCS +0 / LSR A / BCC a1 / BIT $00
-// 31 a1: LSR A / BCC a2 / BIT $00 / NOP
-// 37 a2: SEC / L: BIT $00 / SBC #1 / BCS L / PLA          ((low >> 3) + 1 rounds of 8)
-constexpr int kVarBodyBytes = 45;
+//  0 PHA / SEC / LDA low / SBC #MIN / STA s / LDA high / SBC #0      (m = n - MIN)
+// 14 BCS ok / LDA #0 / STA s / BCC join / ok: PHP PLP             (m = 0 below MIN)
+// 24 join: STA s+1 / BEQ f0 / NOP
+// 29 O: LDA #49 / SEC / I: SBC #1 / BNE I / DEC s+1 / BNE O        (256 cycles a round)
+// 40 f0: LDA s / LSR A / BCS +0 / LSR A / BCC a1 / BIT $00
+// 50 a1: LSR A / BCC a2 / BIT $00 / NOP
+// 56 a2: SEC / L: BIT $00 / SBC #1 / BCS L / PLA                   ((m & 255) / 8 + 1 rounds)
+constexpr int kVarBodyBytes = 64;
+// where each instruction starts
+constexpr int kVarStarts[] = {0,  1,  2,  5,  7,  9,  12, 14, 16, 18, 20, 22, 23,
+                              24, 26, 28, 29, 31, 32, 34, 36, 38, 40, 42, 43, 45,
+                              46, 48, 50, 51, 53, 55, 56, 57, 59, 61, 63, 64};
 // a branch's offset in the body and its target's
-constexpr int kVarBranches[][2] = {{6, 20},  {14, 12}, {18, 9}, {24, 26},
-                                   {27, 31}, {32, 37}, {42, 38}};
-// where a JMP over the filler can go without changing any branch's offset
-constexpr int kVarCuts[] = {45, 44, 38, 37, 32, 31, 27, 26, 24, 23, 20, 6, 4, 1, 0};
-// the shortest filler that some cut makes work at every address (tests check it)
+constexpr int kVarBranches[][2] = {{14, 22}, {20, 24}, {26, 40}, {34, 32}, {38, 29},
+                                   {43, 45}, {46, 50}, {51, 56}, {61, 57}};
+// the shortest filler that a JMP over it at some cut makes work at every address (tests check
+// every address)
 constexpr int kVarFiller = 9;
 
 void VarBody(std::uint16_t low, std::uint8_t s, std::vector<std::uint8_t>& out) {
@@ -249,10 +254,26 @@ void VarBody(std::uint16_t low, std::uint8_t s, std::vector<std::uint8_t>& out) 
     std::uint16_t high = static_cast<std::uint16_t>(low + 1);
     std::uint8_t h_lo = static_cast<std::uint8_t>(high & 0xFF);
     std::uint8_t h_hi = static_cast<std::uint8_t>(high >> 8);
-    out = {0x48, 0xAD, h_lo, h_hi, 0x85, s,    0xF0, 0x0C, 0xEA, 0xA9, 0x31, 0x38,
-           0xE9, 0x01, 0xD0, 0xFC, 0xC6, s,    0xD0, 0xF5, 0xAD, lo,   hi,   0x4A,
-           0xB0, 0x00, 0x4A, 0x90, 0x02, 0x24, 0x00, 0x4A, 0x90, 0x03, 0x24, 0x00,
-           0xEA, 0x38, 0x24, 0x00, 0xE9, 0x01, 0xB0, 0xFA, 0x68};
+    std::uint8_t s1 = static_cast<std::uint8_t>(s + 1);
+    std::uint8_t min = static_cast<std::uint8_t>(kVarWaitMin);
+    out = {0x48, 0x38, 0xAD, lo,   hi,   0xE9, min,  0x85, s,    0xAD, h_lo, h_hi, 0xE9,
+           0x00, 0xB0, 0x06, 0xA9, 0x00, 0x85, s,    0x90, 0x02, 0x08, 0x28, 0x85, s1,
+           0xF0, 0x0C, 0xEA, 0xA9, 0x31, 0x38, 0xE9, 0x01, 0xD0, 0xFC, 0xC6, s1,   0xD0,
+           0xF5, 0xA5, s,    0x4A, 0xB0, 0x00, 0x4A, 0x90, 0x02, 0x24, 0x00, 0x4A, 0x90,
+           0x03, 0x24, 0x00, 0xEA, 0x38, 0x24, 0x00, 0xE9, 0x01, 0xB0, 0xFA, 0x68};
+}
+
+// a JMP over the filler can go in at cut without changing any branch's offset: no branch
+// jumps across it, though one may land on it
+bool CutKeepsBranches(int cut) {
+    for (const auto& branch : kVarBranches) {
+        int low = branch[0] < branch[1] ? branch[0] : branch[1];
+        int high = branch[0] + 2 > branch[1] ? branch[0] + 2 : branch[1];
+        if (cut > low && cut < high) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // no branch crosses a page with the JMP and filler at cut
@@ -313,9 +334,11 @@ void VarWaitBytes(std::uint16_t address, std::uint16_t low, std::uint8_t scratch
                   std::vector<std::uint8_t>& out) {
     std::vector<std::uint8_t> body;
     VarBody(low, scratch, body);
-    int cut = kVarCuts[0];
-    for (int c : kVarCuts) {
-        if (CutWorks(address, c, kVarFiller)) {
+    // the last cut that works, so the JMP is at the end when nothing crosses
+    int cut = kVarBodyBytes;
+    for (int i = static_cast<int>(std::size(kVarStarts)); i-- > 0;) {
+        int c = kVarStarts[i];
+        if (CutKeepsBranches(c) && CutWorks(address, c, kVarFiller)) {
             cut = c;
             break;
         }
