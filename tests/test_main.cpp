@@ -79,6 +79,7 @@ int main() {
     tisple_tests::RunBackendPlaceSumTests(results);
     tisple_tests::RunBackendNumberCmpTests(results);
     tisple_tests::RunBackendRtArgsTests(results);
+    tisple_tests::RunBackendZeroCmpTests(results);
     tisple_tests::RunBackendFoldTests(results);
     tisple_tests::RunBackendTableTests(results);
     tisple_tests::RunBackendJsrTests(results);

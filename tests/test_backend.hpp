@@ -106,6 +106,8 @@ void RunBackendPlaceSumTests(TestResults& results);
 void RunBackendNumberCmpTests(TestResults& results);
 // division operands straight into rt_a and rt_b (test_backend_rt_args.cpp)
 void RunBackendRtArgsTests(TestResults& results);
+// compares with 0 the flags already make (test_backend_zero_cmp.cpp)
+void RunBackendZeroCmpTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
