@@ -85,7 +85,10 @@ void TestUnitSteps(TestResults& results) {
         "    (let v u8 (as u8 x)) (let n u8 (as u8 y))\n"
         "    (while (!= n 0) (set v (+ v s)) (set n (- n 1))) (+ (as u16 v) (as u16 s)))\n";
     CheckPairs(results, text, {"u0", "u1", "u2", "u3", "u4", "u5"});
-    Compiled c = CompileText(text);
+    // the loops as loops: collapse would add the steps up at once
+    tisple::OptOptions loops;
+    loops.disabled = {"collapse"};
+    Compiled c = CompileText(text, loops);
     CHECK(results, CountMn(c, "t.u0", tisple::Mn::ADC) == 0);
     CHECK(results, CountMn(c, "t.u4", tisple::Mn::ADC) > 0);
 }

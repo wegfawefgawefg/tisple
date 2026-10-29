@@ -1,6 +1,6 @@
 // The values an expression may hold (ranges.cpp decides compares with them): from literals,
-// masks, remainders and quotients, shifts, sums and products (a sum that wraps once wholly,
-// as v - 23469 does for v in 11902..12071, lands in 53969..54138), widenings, const tables,
+// masks, remainders and quotients, shifts, sums and products (one that wraps as a whole, as
+// v - 23469 does for v in 11902..12071, lands in 53969..54138), widenings, const tables,
 // elements no store reaches, the loop counters and sets around it, and the ranges of
 // variables (ranges_vars.cpp).
 
@@ -34,16 +34,15 @@ Range Meet(Range a, Range b) {
     return Range{std::max(a.lo, b.lo), std::min(a.hi, b.hi)};
 }
 
-// a sum or difference: in the type, or wrapped once as a whole (all of it below or above)
+// a sum, difference, product or shift left: in the type, or wrapped as a whole (all of it in
+// one span of the type's size, the same number of spans below or above)
 Range Wrapped(Range r, Range type) {
     std::int64_t span = type.hi - type.lo + 1;
-    for (std::int64_t shift : {std::int64_t(0), span, -span}) {
-        Range moved{r.lo + shift, r.hi + shift};
-        if (Within(moved, type)) {
-            return moved;
-        }
-    }
-    return type;
+    // how many spans below lo lies the type's range (rounding down)
+    std::int64_t over = r.lo - type.lo;
+    std::int64_t m = over >= 0 ? over / span : -((-over + span - 1) / span);
+    Range moved{r.lo - m * span, r.hi - m * span};
+    return moved.hi <= type.hi ? moved : type;
 }
 
 // a signed quotient or remainder by a divisor that is never zero or negative: the
@@ -122,11 +121,10 @@ Range BinaryRange(const Pass& p, const Counters& counters, const Expr& e, Range 
         return Wrapped(Range{a.lo + b.lo, a.hi + b.hi}, type);
     case Op::Sub:
         return Wrapped(Range{a.lo - b.hi, a.hi - b.lo}, type);
-    case Op::Mul:
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{a.lo * b.lo, a.hi * b.hi};
-        }
-        break;
+    case Op::Mul: {
+        std::int64_t c[4] = {a.lo * b.lo, a.lo * b.hi, a.hi * b.lo, a.hi * b.hi};
+        return Wrapped(Range{*std::min_element(c, c + 4), *std::max_element(c, c + 4)}, type);
+    }
     case Op::Div:
         // by zero: all ones, outside these ranges
         if (a.lo >= 0 && b.lo > 0) {
@@ -150,9 +148,13 @@ Range BinaryRange(const Pass& p, const Counters& counters, const Expr& e, Range 
         break;
     case Op::Shl:
         // by the width or more: 0, as the target shifts
-        if (a.lo >= 0 && b.lo >= 0 && b.lo == b.hi) {
+        // a product by 2^b, wrapped like one
+        if (b.lo >= 0 && b.lo == b.hi) {
             bool out = b.lo >= static_cast<std::int64_t>(KindBits(KindOf(*p.program, e.type)));
-            r = out ? Range{0, 0} : Range{a.lo << b.lo, a.hi << b.lo};
+            return out ? Range{0, 0}
+                       : Wrapped(Range{a.lo * (std::int64_t(1) << b.lo),
+                                       a.hi * (std::int64_t(1) << b.lo)},
+                                 type);
         }
         break;
     default:

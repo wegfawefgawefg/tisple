@@ -105,6 +105,10 @@ ExprId Copy(Pass& p, ExprId body, std::int32_t var, std::uint32_t bits) {
 
 } // namespace
 
+ExprId CloneExpr(Pass& p, ExprId id) {
+    return Clone(p, id, -1, 0);
+}
+
 bool UnrollLoop(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out) {
     Expr e = At(p, loop);
     bool is_for = e.kind == ExprKind::For;

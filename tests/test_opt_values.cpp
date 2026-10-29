@@ -114,6 +114,11 @@ void Decided(TestResults& results) {
          "    (if (!= v 18) (set h 1)))\n"
          "(fn main () void (f))",
          0},
+        // passes not known: b - a of them, worked out before the loop (no guard: -4 is below
+        // whatever (& h 7) is)
+        {"(fn f () void (for i i8 -4 (as i8 (& h 7)) (set gw (+ gw 3)) (set g (- g 1))))\n"
+         "(fn main () void (set h scr) (f))",
+         0},
         {"(fn f () void (let v i8 (as i8 scr)) (for i i8 -3 4 (set v (| i v)))\n"
          "    (if (!= v -1) (set h 1)))\n"
          "(fn main () void (f))",
@@ -175,6 +180,14 @@ void Kept(TestResults& results) {
         {"(fn f () void (set g (+ h (~ g))) (if (!= g 255) (set h 1)))\n(fn main () void (f))", 1},
         // a bool tested true is not known to be 1
         {"(fn f () u8 (if flag (if flag (set g 1))) 0)\n(fn main () void (set flag true) (f))", 2},
+        // passes not known, and the bound read after the loop writes it, or ^ that must know
+        // whether they are odd
+        {"(fn f () void (for i i8 -4 (as i8 (& h 7)) (set gw (+ gw 3)) (set h 1)))\n"
+         "(fn main () void (set h scr) (f))",
+         1},
+        {"(fn f () void (for i i8 -4 (as i8 (& h 7)) (set g (^ g 5))))\n(fn main () void (set h "
+         "scr) (f))",
+         1},
         // loops not unrolled: nine passes; a call, I/O or a break in the body
         {"(fn f () void (let v u8 1) (for i u8 0 9 (set v (+ (* v 2) i))) (set h v))\n"
          "(fn main () void (f))",

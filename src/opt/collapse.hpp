@@ -39,14 +39,6 @@ bool MemoryClash(const Pass& p, MemoryFacts& m, const MemoryUse& use);
 // may a store through a pointer in function (its callees included) reach var
 bool StoresMayReach(const Pass& p, MemoryFacts& m, std::int32_t function, std::int32_t var);
 
-// a loop body's (if c (continue)) items: the rest of the pass becomes their else
-// (collapse_continue.cpp); returns the changes made
-std::uint64_t ContinuesToElse(Pass& p, ExprId loop);
-
-// a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
-// nobody yet; false when it stays. before: the item before it, for a counting while
-bool UnrollLoop(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
-
 // ---- what a loop body reads and writes (collapse_scan.cpp)
 
 // bytes [lo, hi) of a variable, in its packed layout
@@ -124,5 +116,26 @@ void PassStatements(const Pass& p, ExprId body, std::vector<ExprId>& out);
 // rest of the body may neither read nor write (a for's variable, a while's counter), or -1;
 // skip: a statement among the items left out (the while counter's step), or -1
 BodyPlan PlanBody(const Pass& p, MemoryFacts& m, ExprId body, std::int32_t counter, ExprId skip);
+
+// ---- around collapse: continues, counts at run time, unrolling
+
+// a loop body's (if c (continue)) items: the rest of the pass becomes their else
+// (collapse_continue.cpp); returns the changes made
+std::uint64_t ContinuesToElse(Pass& p, ExprId loop);
+
+// a copy of the tree at id, named by nobody yet (unroll.cpp)
+ExprId CloneExpr(Pass& p, ExprId id);
+// accumulators that must know how many passes there are (not | and &), and whether a count
+// worked out at run time does for them all (not ^, which needs to know it is odd)
+bool NeedsCount(const BodyPlan& plan);
+bool CountWillDo(const BodyPlan& plan);
+// a for whose pass count b - a may be worked out from copies of its bounds before it, and
+// the let that does, of a new u16 local var of function (collapse_count.cpp)
+bool CountableBounds(const Pass& p, ExprId loop);
+ExprId CountLet(Pass& p, std::int32_t function, ExprId loop, std::int32_t& var);
+
+// a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
+// nobody yet; false when it stays. before: the item before it, for a counting while
+bool UnrollLoop(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
 
 } // namespace tisple::opt
