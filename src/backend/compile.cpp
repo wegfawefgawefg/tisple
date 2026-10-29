@@ -196,22 +196,20 @@ void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added)
 }
 
 // the quarter-square routines (1 KB of tables, about half the cycles) for every multiply when
-// one multiply of the kept code may run more than once in a run of the program (all its
-// copies counted: inlined, unrolled), the shift-and-add ones otherwise
+// the multiplies of the kept code together may run more than once in a run of the program
+// (every copy counted: inlined, unrolled; the tables serve them all), the shift-and-add ones
+// otherwise
 void UpgradeMultiplies(Backend& be) {
     const Runtime pairs[3][2] = {{Runtime::Mul8, Runtime::Mul8Q},
                                  {Runtime::Mul16, Runtime::Mul16Q},
                                  {Runtime::Mul8x8, Runtime::Mul8x8Q}};
-    std::vector<std::uint64_t> runs(be.program->exprs.size(), 0);
-    bool tables = false;
+    std::uint64_t total = 0;
     for (const auto& sites : be.multiplies) {
         for (const auto& [id, n] : sites) {
-            std::uint64_t& total = runs[static_cast<std::size_t>(id)];
             total = std::min<std::uint64_t>(total + n, std::uint64_t(1) << 32);
-            tables = tables || total >= 2;
         }
     }
-    if (!tables) {
+    if (total < 2) {
         return;
     }
     for (std::vector<AsmItem>& code : be.code) {
