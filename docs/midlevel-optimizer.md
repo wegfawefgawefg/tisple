@@ -87,6 +87,33 @@ Passes 1 to 3, in `src/opt` (`opt.hpp` has the order and the rules), run by
 - Flags `-O0`, `-O1` (default), `--opt-bisect N` (prints "N of M" and the
   last transformation), `--no-pass dead|loops`. Results: dogfood.md 39.
 
+Passes 4 and 5 (2026-10-29), run after dead and loops in each round, then
+constant folding (`fold.cpp`) again so new literals join their chains:
+
+- `consts*.cpp`: a forward walk per function over its tracked integer, bool
+  and enum variables (live.cpp's set), following only the arms of an if,
+  match, and/or or while it can decide; loops to a fixed point, breaks and
+  continues carry their values. Calls forget the globals their summary
+  writes; jsr, io_write and unknown nodes forget all. Rewrites: a pure value
+  with one known value becomes a literal (const array reads, division by
+  zero's defined result, `x * 0`, shifts by the width, `(- x x)`, `(% x x)`,
+  `(= x x)` on steady operands), `(& x x)` and `(| x x)` become x, known
+  branches their arm, a while whose test is false at every look nothing.
+- `licm*.cpp`: outer loops first; a pure expression whose inputs the loop
+  (and its calls' summaries) never write moves into a new local's let before
+  it: from a while's condition always, from the body only what runs whenever
+  the body does (not arms, not after an early exit, not in an inner loop that
+  may not run), behind a guard (`(if (< start end) ...)` or the condition
+  again) when the loop may run zero times. Never loads, :address or aux
+  reads, bools, widened bytes, `(+ p i)` under a load or store, or work worth
+  less than ~12 cycles; nothing out of a loop of one pass, no quarter-square
+  multiply out of every loop from a loop of two.
+- Dead locals keep their frame bytes: the interpreter runs the program as
+  written on the compiled layout (`InitInterp(..., compiled.layout)`, also
+  `tisple interp`), so every source local needs bytes of its own; giving them
+  none would need a separate interpreter layout for frames.
+- `--no-pass consts|licm`. Results: dogfood.md 40.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`
