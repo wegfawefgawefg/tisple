@@ -7,9 +7,10 @@
 //
 // - Only when it saves cycles: k later readings save k times the value's estimate (licm_cost.cpp)
 //   less the let's store and k + 1 reads.
-// - (/ a b) and (% a b) of the same operands: both lets go together, so the backend works
-//   both out from one division. Not when they already sit in the same or the next item of one
-//   do: the backend shares that division as it is.
+// - (/ a b) and (% a b) of the same operands: the second's let goes right after the first's,
+//   so the backend works both out from one division. Not when only straight code (no branch,
+//   loop, call or routine) sits between them in one do: the backend shares that division as
+//   it is, and the second is a value like any other.
 // - Never in nodes more than one parent names (constant folding leaves some).
 
 #include "opt/cse.hpp"
@@ -44,60 +45,151 @@ bool Saves(const Pass& p, ExprId value, std::size_t k) {
     return n * cost - 3 * Word(p, value) * (n + 2) >= kMinSaving;
 }
 
-// a partner the backend already works out from the same division: in the item of the first,
-// or the next one, of the same do
-bool SharedAlready(const CseEntry& e, const CseAt& at) {
-    return at.block == e.at.block && at.stmt <= e.at.stmt + 1;
+// code the backend keeps a division's results across: sets and lets of plain arithmetic, with
+// no branch, loop, call or routine (each leaves a label or a jsr between)
+bool Straight(const Pass& p, ExprId id) {
+    if (id < 0) {
+        return true;
+    }
+    const Expr& e = At(p, id);
+    switch (e.kind) {
+    case ExprKind::Literal:
+    case ExprKind::VarRef:
+        return true;
+    case ExprKind::Binary: {
+        std::uint16_t c = 0;
+        bool routine = e.op == Op::Mul || e.op == Op::Div || e.op == Op::Mod;
+        bool shift = e.op == Op::Shl || e.op == Op::Shr;
+        bool compare = KindOf(*p.program, e.type) == TypeKind::Bool;
+        if (routine || compare || (shift && !ConstValue(*p.program, e.b, c))) {
+            return false;
+        }
+        break;
+    }
+    case ExprKind::Do:
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (!Straight(p, Item(p, e, i))) {
+                return false;
+            }
+        }
+        return true;
+    case ExprKind::Set:
+    case ExprKind::Let:
+    case ExprKind::Index:
+    case ExprKind::Field:
+    case ExprKind::Load:
+    case ExprKind::LoadField:
+    case ExprKind::Store:
+    case ExprKind::StoreField:
+    case ExprKind::AddrOf:
+    case ExprKind::PtrAdd:
+    case ExprKind::PtrSub:
+    case ExprKind::Unary:
+    case ExprKind::Convert:
+    case ExprKind::Reinterpret:
+        break;
+    default:
+        return false;
+    }
+    return Straight(p, e.a) && Straight(p, e.b);
+}
+
+// a partner the backend already works out from the same division: in the same do as the
+// first, with only straight items between
+bool SharedAlready(const Pass& p, const CseFound& found, const CseEntry& e, const CseAt& at) {
+    if (at.block < 0 || at.block != e.at.block) {
+        return false;
+    }
+    const CseBlock& b = found.blocks[static_cast<std::size_t>(at.block)];
+    if (b.slot) {
+        return true; // one item
+    }
+    const Expr& d = At(p, b.id);
+    for (std::uint32_t i = e.at.stmt + 1; i < at.stmt; i++) {
+        if (!Straight(p, Item(p, d, i))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 struct Rewriter {
     Pass* p = nullptr;
     std::int32_t function = -1;
+    const CseFound* found = nullptr;
     std::vector<std::vector<Insert>> inserts; // by block
+    std::vector<bool> joins;                  // by entry: its let goes next to its partner's
+    std::vector<bool> joined;                 // by entry: a partner's let goes next to its own
+    std::vector<ExprId> lets;                 // by entry: its let, or -1
     std::uint64_t changes = 0;
 };
 
-// the partners worth a let of their own, and whether they are
-std::vector<ExprId> UsefulPartners(const Pass& p, const CseEntry& e) {
-    std::vector<ExprId> out;
-    for (std::size_t i = 0; i < e.partners.size(); i++) {
-        if (!SharedAlready(e, e.partners_at[i])) {
-            out.push_back(e.partners[i]);
+// which divisions' lets go next to their partners': where the backend does not share the
+// division already, and working out the second (and its later readings) from the first's
+// division saves enough
+void PairDivisions(Rewriter& r) {
+    const Pass& p = *r.p;
+    const std::vector<CseEntry>& entries = r.found->entries;
+    r.joins.assign(entries.size(), false);
+    r.joined.assign(entries.size(), false);
+    for (std::size_t i = 0; i < entries.size(); i++) {
+        const CseEntry& e = entries[i];
+        if (e.partner < 0) {
+            continue;
         }
+        const CseEntry& first = entries[static_cast<std::size_t>(e.partner)];
+        if (SharedAlready(p, *r.found, first, e.at) || !Saves(p, e.first, e.later.size() + 1)) {
+            continue;
+        }
+        r.joins[i] = true;
+        r.joined[static_cast<std::size_t>(e.partner)] = true;
     }
-    // the first partner is worked out once (from the division the first already does), the
-    // rest are read
-    if (!out.empty() && !Saves(p, out[0], out.size())) {
-        out.clear();
-    }
-    return out;
 }
 
-void Rewrite(Rewriter& r, const CseEntry& e) {
+// a let of e's value goes before the item at (after the let `after` when it is one), and e's
+// first and later workings out read it
+void MakeLet(Rewriter& r, std::size_t entry, const CseAt& at, ExprId after) {
     Pass& p = *r.p;
-    bool later = Saves(p, e.first, e.later.size());
-    std::vector<ExprId> partners = UsefulPartners(p, e);
-    if (!later && partners.empty()) {
-        return;
-    }
-    if (!Allow(p, later ? "common subexpression" : "division pair", e.first, -1)) {
-        return;
-    }
-    Loc loc = At(p, e.first).loc;
-    std::vector<Insert>& at = r.inserts[static_cast<std::size_t>(e.at.block)];
+    const CseEntry& e = r.found->entries[entry];
     std::int32_t var = -1;
-    at.push_back(Insert{e.at.stmt, MoveToLet(p, r.function, e.first, loc, var)});
-    r.changes++;
-    for (std::size_t i = 0; later && i < e.later.size(); i++) {
-        BecomeRead(p, e.later[i], var);
+    ExprId let = MoveToLet(p, r.function, e.first, At(p, e.first).loc, var);
+    std::vector<Insert>& lets = r.inserts[static_cast<std::size_t>(at.block)];
+    auto pos = lets.end();
+    for (auto it = lets.begin(); it != lets.end(); ++it) {
+        if (it->let == after) {
+            pos = it + 1;
+        }
     }
-    if (partners.empty() || (later && !Allow(p, "division pair", partners[0], -1))) {
+    lets.insert(pos, Insert{at.stmt, let});
+    for (ExprId later : e.later) {
+        BecomeRead(p, later, var);
+    }
+    r.lets[entry] = let;
+    r.changes++;
+}
+
+// a part of e's value has a let of its own, before e's item: e's let cannot go earlier
+bool PartsKept(const Rewriter& r, std::size_t i) {
+    for (std::size_t k = r.found->entries[i].parts_from; k < i; k++) {
+        if (r.lets[k] >= 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Rewrite(Rewriter& r, std::size_t i) {
+    Pass& p = *r.p;
+    const CseEntry& e = r.found->entries[i];
+    if (r.joins[i] && r.lets[static_cast<std::size_t>(e.partner)] >= 0 && !PartsKept(r, i) &&
+        Allow(p, "division pair", e.first, -1)) {
+        const CseEntry& first = r.found->entries[static_cast<std::size_t>(e.partner)];
+        MakeLet(r, i, first.at, r.lets[static_cast<std::size_t>(e.partner)]);
         return;
     }
-    std::int32_t rest = -1;
-    at.push_back(Insert{e.at.stmt, MoveToLet(p, r.function, partners[0], loc, rest)});
-    for (std::size_t i = 1; i < partners.size(); i++) {
-        BecomeRead(p, partners[i], rest);
+    bool worth = r.joined[i] || Saves(p, e.first, e.later.size());
+    if (e.own && worth && Allow(p, "common subexpression", e.first, -1)) {
+        MakeLet(r, i, e.at, -1);
     }
 }
 
@@ -148,10 +240,13 @@ std::uint64_t CommonSubexpressions(Pass& p, std::int32_t function) {
     Rewriter r;
     r.p = &p;
     r.function = function;
+    r.found = &found;
     r.inserts.resize(found.blocks.size());
+    r.lets.assign(found.entries.size(), -1);
+    PairDivisions(r);
     // parts before wholes: a let of a part comes before the let of a value made from it
-    for (const CseEntry& e : found.entries) {
-        Rewrite(r, e);
+    for (std::size_t i = 0; i < found.entries.size(); i++) {
+        Rewrite(r, i);
     }
     for (std::size_t b = 0; b < found.blocks.size(); b++) {
         const std::vector<Insert>& lets = r.inserts[b];

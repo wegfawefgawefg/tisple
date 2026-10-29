@@ -239,9 +239,11 @@ std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
     std::vector<bool> dropped(program.vars.size(), false);
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const Var& var = program.vars[v];
-        bool source = in.source_tables != nullptr && (*in.source_tables)[v];
-        dropped[v] = var.kind == VarKind::ConstArray && !var.placement.has_address && !named[v] &&
-                     !source;
+        // by the program as written: the vars the mid-level passes add come after its own
+        bool source =
+            in.source_tables != nullptr && v < in.source_tables->size() && (*in.source_tables)[v];
+        dropped[v] =
+            var.kind == VarKind::ConstArray && !var.placement.has_address && !named[v] && !source;
     }
     return dropped;
 }

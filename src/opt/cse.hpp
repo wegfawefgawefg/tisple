@@ -28,12 +28,15 @@ struct CseAt {
 struct CseEntry {
     ExprId first = -1;
     CseAt at;                        // where its let goes: before this item
+    bool own = true;                 // a let may go there (else only next to its partner's)
     std::vector<std::int32_t> reads; // vars its value reads, those of pure calls in it too
     bool pointed = false;            // reads an address-taken var a pointer store may change
     std::vector<ExprId> later;       // the same value again
-    // for a division, the remainder of the same operands (or the other way round)
-    std::vector<ExprId> partners;
-    std::vector<CseAt> partners_at;
+    // a division whose remainder (or the other way round) an earlier entry that still held
+    // works out: that entry, whose let this one's may join
+    std::int32_t partner = -1;
+    // the entries made from this index up to this one's are parts of its value
+    std::size_t parts_from = 0;
 };
 
 // what a statement (or an effect inside one) may change, logged in walk order

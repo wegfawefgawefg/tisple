@@ -265,7 +265,7 @@ void BecomeRead(Pass& p, ExprId id, std::int32_t var) {
     EachChild(p, old, [&](ExprId child) { Release(p, child); });
 }
 
-ExprId MoveToLet(Pass& p, std::int32_t function, ExprId id, const Loc& loc, std::int32_t& var) {
+ExprId MoveToLet(Pass& p, std::int32_t function, ExprId id, Loc loc, std::int32_t& var) {
     Expr value = At(p, id);
     var = NewLocal(p, function, value.type, value.loc);
     ExprId kept = NewExpr(p, value);

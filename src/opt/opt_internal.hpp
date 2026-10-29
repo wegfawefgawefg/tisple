@@ -155,7 +155,8 @@ std::int32_t NewLocal(Pass& p, std::int32_t function, TypeId type, const Loc& lo
 void BecomeRead(Pass& p, ExprId id, std::int32_t var);
 // (let var value) for an expression moved out of its place, which now reads var, a new local
 // of function; the let is named by nobody yet
-ExprId MoveToLet(Pass& p, std::int32_t function, ExprId id, const Loc& loc, std::int32_t& var);
+// (loc is a copy: the new nodes may move every expression)
+ExprId MoveToLet(Pass& p, std::int32_t function, ExprId id, Loc loc, std::int32_t& var);
 
 // what a pass does with one statement (a form whose value is unused)
 struct Action {

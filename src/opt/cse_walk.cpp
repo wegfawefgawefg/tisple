@@ -14,8 +14,12 @@
 //   before that item, when nothing earlier in the item changes what it reads. It holds for
 //   the rest of the do, arms and loops in it included; values first worked out in an arm or a
 //   loop's body hold only there. A void arm that is not a do is a place for lets too.
+// - Not a value first worked out in a loop that never changes its inputs: code motion moves
+//   that out of the loop when it runs on every pass, and the backend hoists byte work from
+//   arms too, which a let in the loop would hide.
 // - (/ a b) and (% a b) of the same operands share one division (the backend works out both
-//   from one when they sit next to each other): the second is noted as a partner.
+//   from one when they sit next to each other): the second is a value of its own that knows
+//   the first, its partner.
 
 #include "opt/cse.hpp"
 #include "opt/licm.hpp"
@@ -32,6 +36,7 @@ struct Walker {
     std::vector<std::int32_t> live; // entries whose value still holds
     std::vector<std::int32_t> open; // blocks around the walk, innermost last; -1: no lets here
     std::vector<CseKill> log;       // what may have changed, in walk order
+    std::vector<LoopWrites> loops;  // what the loops around the walk change, innermost last
 };
 
 bool ReadsVar(const CseEntry& e, std::int32_t var) {
@@ -103,26 +108,31 @@ bool HasIoRead(const Pass& p, ExprId id) {
     return found;
 }
 
+// may the loop change what e reads
+bool LoopHits(const LoopWrites& lw, const CseEntry& e) {
+    bool hit = lw.all || (e.pointed && lw.stores);
+    for (std::int32_t var : e.reads) {
+        hit = hit || lw.vars[static_cast<std::size_t>(var)];
+    }
+    return hit;
+}
+
 // a loop changes, from its start, what it changes anywhere in it (its body logs those as the
-// walk goes through it)
-void KillLoop(Walker& w, ExprId loop) {
+// walk goes through it); the walk inside it knows what it changes
+void EnterLoop(Walker& w, ExprId loop) {
     LoopWrites lw = FindLoopWrites(*w.p, loop);
-    if (lw.all || HasIoRead(*w.p, loop)) {
+    lw.all = lw.all || HasIoRead(*w.p, loop);
+    if (lw.all) {
         KillAll(w);
-        return;
     }
     std::vector<std::int32_t> kept;
     for (std::int32_t i : w.live) {
-        const CseEntry& e = w.out->entries[static_cast<std::size_t>(i)];
-        bool hit = e.pointed && lw.stores;
-        for (std::int32_t var : e.reads) {
-            hit = hit || lw.vars[static_cast<std::size_t>(var)];
-        }
-        if (!hit) {
+        if (!LoopHits(lw, w.out->entries[static_cast<std::size_t>(i)])) {
             kept.push_back(i);
         }
     }
     w.live = kept;
+    w.loops.push_back(lw);
 }
 
 CseAt Here(const Walker& w) {
@@ -150,8 +160,9 @@ bool CanStart(const Walker& w, const CseEntry& e) {
 
 void Walk(Walker& w, ExprId id, bool shared);
 
-// a value worth keeping: the same as one that holds, a partner of one, or a new one (its
-// parts first, so a let of a part comes before a let of the whole). False: not one
+// a value worth keeping: the same as one that holds, or a new one (its parts first, so a let
+// of a part comes before a let of the whole), maybe the partner of a division that holds.
+// False: not one
 bool Value(Walker& w, ExprId id) {
     const Pass& p = *w.p;
     CseEntry entry;
@@ -167,17 +178,21 @@ bool Value(Walker& w, ExprId id) {
         }
     }
     for (std::int32_t i : w.live) {
-        CseEntry& other = entries[static_cast<std::size_t>(i)];
-        if (DivisionPartners(p, other.first, id)) {
-            other.partners.push_back(id);
-            other.partners_at.push_back(Here(w));
-            return true;
+        if (entry.partner < 0 &&
+            DivisionPartners(p, entries[static_cast<std::size_t>(i)].first, id)) {
+            entry.partner = i;
         }
     }
     Expr e = At(p, id);
+    entry.parts_from = entries.size();
     EachChild(p, e, [&](ExprId child) { Walk(w, child, false); });
     entry.at = Here(w);
-    if (CanStart(w, entry)) {
+    // work the loop around never changes the inputs of is code motion's to move out of it, or
+    // the backend's (a let in the loop would hide that it holds); it may still join its
+    // partner's let
+    bool invariant = !w.loops.empty() && !LoopHits(w.loops.back(), entry);
+    entry.own = !invariant && CanStart(w, entry);
+    if (entry.own || entry.partner >= 0) {
         w.live.push_back(static_cast<std::int32_t>(entries.size()));
         entries.push_back(entry);
     }
@@ -357,16 +372,18 @@ void Walk(Walker& w, ExprId id, bool shared) {
         WalkShortCircuit(w, e, shared);
         return;
     case ExprKind::While:
-        KillLoop(w, id);
+        EnterLoop(w, id);
         WalkMaybe(w, e.a, shared, -1, 0, false);
         WalkMaybe(w, e.b, shared, -1, 0, false);
+        w.loops.pop_back();
         return;
     case ExprKind::For:
         Walk(w, e.a, shared);
         Walk(w, e.b, shared);
         KillVar(w, e.ref);
-        KillLoop(w, id);
+        EnterLoop(w, id);
         WalkMaybe(w, e.c, shared, -1, 0, false);
+        w.loops.pop_back();
         return;
     case ExprKind::Let:
         Walk(w, e.a, shared);

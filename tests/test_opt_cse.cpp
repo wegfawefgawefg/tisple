@@ -115,6 +115,15 @@ void Partners(TestResults& results) {
     CHECK(results, c.ok && CountMn(c, "t.f", tisple::Mn::JSR) == 1);
     CheckProgram(results, text, "t.f", {1000, 7});
     CheckProgram(results, text, "t.f", {5, 0});
+    // a pair side by side the backend shares already, and the quotient again far away: read
+    // from a local, one division, no lets of copies made round after round
+    std::string both = With("(fn f ((x u16) (y u16)) u16 (set g (/ x y)) (set h (% x y))\n"
+                            "    (if (> x 9) (set gb 1) (set gb 2)) (set gw (+ (/ x y) 1)) g)");
+    Compiled c2 = CompileText(both);
+    CHECK(results, c2.ok && CountMn(c2, "t.f", tisple::Mn::JSR) == 1);
+    Opted o = Optimize(both);
+    CHECK(results, o.ok && CountKind(o, "t.f", ExprKind::Let) <= 2 && o.report.applied <= 3);
+    CheckProgram(results, both, "t.f", {1000, 7});
     // signed, byte-wide, and a divisor of zero
     std::string small = With("(fn f ((x i8) (y i8)) u16 (set gb (as u8 (/ x y)))\n"
                              "    (if (> x 9) (set gw 1)) (set gw (+ gw 1))\n"
@@ -152,6 +161,9 @@ void Stays(TestResults& results) {
         "(fn f ((x u16) (y u16)) u16 (set g (* scr y)) (set h (* scr y)) (+ g h))",
         "(fn f ((x u16) (y u16)) u16 (if (> x 5) (set g (* x y))) (set h (* x y)) (+ g h))",
         "(fn f ((x u16) (y u16)) u16 (set g (+ x y)) (set h (+ x y)) (+ g h))",
+        // work a loop never changes the inputs of, in an arm: code motion's or the backend's
+        "(fn f ((x u16) (y u16)) u16\n"
+        "    (for i u8 0 5 (if (= (& i 1) 0) (set g (+ g (+ (* x y) (* x y)))))) g)",
         "(fn f ((x u16) (y u16)) u16 (set g (at aw (as u8 (& x 7)))) (set h (at aw (as u8 (& x "
         "7)))) (+ g h))",
     };
