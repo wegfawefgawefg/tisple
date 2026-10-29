@@ -69,6 +69,8 @@ int main() {
     tisple_tests::RunBackendBuildTests(results);
     tisple_tests::RunBackendInlineTests(results);
     tisple_tests::RunBackendMatchTests(results);
+    tisple_tests::RunBackendShiftTests(results);
+    tisple_tests::RunBackendSub8Tests(results);
     tisple_tests::RunBackendFoldTests(results);
     tisple_tests::RunBackendTableTests(results);
     tisple_tests::RunBackendJsrTests(results);

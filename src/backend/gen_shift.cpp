@@ -2,9 +2,6 @@
 
 namespace tisple {
 
-namespace {
-
-// a free index register for a counter; X unless pinned
 int CounterReg(const Gen& g) {
     if (g.pin[0] < 0) {
         return 0;
@@ -25,14 +22,12 @@ void ShiftA(Gen& g, Op op, bool is_signed) {
     Emit(g, Mn::LSR, Mode::Acc);
 }
 
-// a count LDX/LDY can load directly
 bool CountReady(const Opnd& count) {
     ByteKind kind = count.b[0].kind;
     return count.size != 0 && !count.in_a &&
            (kind == ByteKind::Imm || kind == ByteKind::Mem || kind == ByteKind::Reg);
 }
 
-// the count operand into register r (without touching A); flags show the count
 void LoadCount(Gen& g, int r, const Opnd& count) {
     const ByteRef& b = count.b[0];
     if (b.kind == ByteKind::Reg && b.reg != r) {
@@ -49,19 +44,15 @@ void LoadCount(Gen& g, int r, const Opnd& count) {
     Emit(g, r == 0 ? Mn::LDX : Mn::LDY, mode, b.value);
 }
 
-// 8-bit shift with A holding the value; count in an operand
-void ShiftLoop8(Gen& g, Op op, bool is_signed, const Opnd& count) {
-    int r = CounterReg(g);
-    std::int32_t loop = NewLabel(g);
-    std::int32_t done = NewLabel(g);
-    LoadCount(g, r, count);
-    Branch(g, Mn::BEQ, done);
-    PlaceLabel(g, loop);
-    ShiftA(g, op, is_signed);
-    Emit(g, r == 0 ? Mn::DEX : Mn::DEY, Mode::Imp);
-    Branch(g, Mn::BNE, loop);
-    PlaceLabel(g, done);
+void SignByteA(Gen& g) {
+    // A's bit 7 into C, then 0 + $FF + C is $00 or $FF; flip it
+    Emit(g, Mn::ASL, Mode::Acc);
+    Emit(g, Mn::LDA, Mode::Imm, Num(0));
+    Emit(g, Mn::ADC, Mode::Imm, Num(0xFF));
+    Emit(g, Mn::EOR, Mode::Imm, Num(0xFF));
 }
+
+namespace {
 
 // value into a 16-bit dst that RMW instructions can work on (else a temporary)
 Opnd ShiftTarget(Gen& g, const Opnd* dst) {
@@ -69,14 +60,6 @@ Opnd ShiftTarget(Gen& g, const Opnd* dst) {
         return *dst;
     }
     return NewTemp(g, 2);
-}
-
-void SignByteA(Gen& g) {
-    // A's bit 7 into C, then 0 + $FF + C is $00 or $FF; flip it
-    Emit(g, Mn::ASL, Mode::Acc);
-    Emit(g, Mn::LDA, Mode::Imm, Num(0));
-    Emit(g, Mn::ADC, Mode::Imm, Num(0xFF));
-    Emit(g, Mn::EOR, Mode::Imm, Num(0xFF));
 }
 
 // a and d are the same two plain memory bytes
@@ -97,9 +80,42 @@ bool SameMemory(const Opnd& a, const Opnd& d) {
     return true;
 }
 
-// 16-bit shift of a into d (plain memory); a constant count c, or the count operand
+// a count of 8 or more in register r, with d's low byte in memory and its high byte in A,
+// at the top of the loop: one byte moved and 8 off the count, then on to loop, or to done
+// when that leaves 0. Below 8 it goes to loop as it is
+void ByteFirst(Gen& g, Op op, bool is_signed, const Opnd& d, int r, std::int32_t loop,
+               std::int32_t done) {
+    Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(8));
+    Branch(g, Mn::BCC, loop);
+    if (op == Op::Shl) {
+        LoadA(g, d, 0);
+        Emit(g, Mn::PHA, Mode::Imp);
+    } else {
+        StoreA(g, d, 0);
+    }
+    // the carry is set: count - 8
+    Emit(g, r == 0 ? Mn::TXA : Mn::TYA, Mode::Imp);
+    Emit(g, Mn::SBC, Mode::Imm, Num(8));
+    Emit(g, r == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
+    if (op == Op::Shl) {
+        Emit(g, Mn::LDA, Mode::Imm, Num(0));
+        StoreA(g, d, 0);
+        Emit(g, Mn::PLA, Mode::Imp);
+    } else if (is_signed) {
+        LoadA(g, d, 0);
+        SignByteA(g);
+    } else {
+        Emit(g, Mn::LDA, Mode::Imm, Num(0));
+    }
+    Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(0));
+    Branch(g, Mn::BNE, loop);
+    Branch(g, Mn::BEQ, done);
+}
+
+// 16-bit shift of a into d (plain memory); a constant count c, or the count operand and the
+// largest it can be
 void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool fixed,
-             std::uint16_t c, const Opnd& count) {
+             std::uint16_t c, const Opnd& count, std::uint32_t count_max) {
     bool left = op == Op::Shl;
     if (fixed && c >= 8) {
         int n = c >= 16 ? 15 : c;
@@ -208,6 +224,9 @@ void Shift16(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& d, bool f
         loop = NewLabel(g);
         LoadCount(g, r, count);
         Branch(g, Mn::BEQ, done);
+        if (count_max >= 8) {
+            ByteFirst(g, op, is_signed, d, r, loop, done);
+        }
         PlaceLabel(g, loop);
     }
     for (int i = 0; i < steps; i++) {
@@ -299,43 +318,7 @@ bool ShiftKnown(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint32_t a_ma
     return false;
 }
 
-void Shift8(Gen& g, const Expr& e);
-
-void Shift8(Gen& g, const Expr& e) {
-    bool is_signed = IsSignedKind(ExprKindOf(*g.program, e.a));
-    std::uint16_t c = 0;
-    if (ConstValue(*g.program, e.b, c)) {
-        EvalA(g, e.a);
-        int n = c;
-        if (n >= 8 && (e.op == Op::Shl || !is_signed)) {
-            Emit(g, Mn::LDA, Mode::Imm, Num(0));
-            return;
-        }
-        n = n > 7 ? 7 : n;
-        for (int i = 0; i < n; i++) {
-            ShiftA(g, e.op, is_signed);
-        }
-        return;
-    }
-    Opnd count = TrySimple(g, e.b);
-    if (CountReady(count)) {
-        EvalA(g, e.a);
-        ShiftLoop8(g, e.op, is_signed, count);
-        return;
-    }
-    EvalA(g, e.a);
-    Opnd value = SpillA(g);
-    EvalA(g, e.b);
-    count = SpillA(g);
-    LoadA(g, value, 0);
-    ShiftLoop8(g, e.op, is_signed, count);
-}
-
 } // namespace
-
-void EvalShift8(Gen& g, const Expr& e) {
-    Shift8(g, e);
-}
 
 Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t count,
                   const Opnd* dst) {
@@ -347,7 +330,7 @@ Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t co
     if (ShiftKnown(g, op, is_signed, a, 0xFFFF, count, d, known)) {
         return known;
     }
-    Shift16(g, op, is_signed, a, d, true, count, Opnd());
+    Shift16(g, op, is_signed, a, d, true, count, Opnd(), 0);
     return d;
 }
 
@@ -378,7 +361,7 @@ Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst) {
     if (fixed && !in_place && ShiftKnown(g, op, is_signed, a, MaxOf(g, e.a), c, d, known)) {
         return known;
     }
-    Shift16(g, op, is_signed, a, d, fixed, c, count);
+    Shift16(g, op, is_signed, a, d, fixed, c, count, fixed ? 0 : MaxOf(g, e.b));
     return d;
 }
 

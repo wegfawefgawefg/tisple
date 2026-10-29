@@ -575,8 +575,18 @@ void ForgetDivision(Gen& g, ExprId stmt);
 std::vector<bool> FindDivPairs(const Program& program);
 // the division routines the code calls, each a label and its items
 void EmitDivRoutines(Backend& be, std::vector<AsmItem>& out);
-// shifts (gen_shift.cpp): 8-bit into A, 16-bit into dst or a temporary
+// shifts: 8-bit into A (gen_shift8.cpp), 16-bit into dst or a temporary (gen_shift.cpp)
 void EvalShift8(Gen& g, const Expr& e);
+// a free index register for a shift's counter: X unless pinned
+int CounterReg(const Gen& g);
+// A shifted one bit; a signed right shift keeps the sign
+void ShiftA(Gen& g, Op op, bool is_signed);
+// a count LDX/LDY can load directly
+bool CountReady(const Opnd& count);
+// the count operand into register r (without touching A); flags show the count
+void LoadCount(Gen& g, int r, const Opnd& count);
+// A = $FF when A's top bit is set, else 0
+void SignByteA(Gen& g);
 Opnd EvalShift16(Gen& g, const Expr& e, const Opnd* dst);
 Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t count,
                   const Opnd* dst);

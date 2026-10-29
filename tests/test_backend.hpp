@@ -86,6 +86,10 @@ void RunBackendBuildTests(TestResults& results);
 void RunBackendInlineTests(TestResults& results);
 // match dispatch (test_backend_match.cpp)
 void RunBackendMatchTests(TestResults& results);
+// shifts (test_backend_shift.cpp)
+void RunBackendShiftTests(TestResults& results);
+// 8-bit subtractions (test_backend_sub8.cpp)
+void RunBackendSub8Tests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

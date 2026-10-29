@@ -212,6 +212,22 @@ void EvalArith8(Gen& g, const Expr& e) {
             (Commutes(op) && IndexedSecond(g, op, e.b, e.a, fits))) {
             return;
         }
+        if (op == Op::Sub && a.size != 0 && !MayWriteOpnd(g, e.b, a)) {
+            // a - b as ~b + 1 + a: b in A first, a read where it is
+            EvalA(g, e.b);
+            Emit(g, Mn::EOR, Mode::Imm, Num(0xFF));
+            Emit(g, Mn::SEC, Mode::Imp);
+            AluByte(g, Op::Add, a, 0);
+            return;
+        }
+        if (op == Op::Sub && !HasEffects(*g.program, e.a) && !HasEffects(*g.program, e.b)) {
+            // neither has effects, so b may go first: only b needs a temporary
+            EvalA(g, e.b);
+            Opnd tb = SpillA(g);
+            EvalA(g, e.a);
+            Alu8(g, op, tb);
+            return;
+        }
         EvalA(g, e.a);
         Opnd ta = SpillA(g);
         EvalA(g, e.b);
