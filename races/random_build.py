@@ -8,6 +8,7 @@ for counting bytes and the listing.
 
 import os
 import subprocess
+import sys
 
 import toolchains
 from toolchains import BuildError
@@ -186,7 +187,10 @@ def host_check(program_dir, cc):
     outdir = os.path.join(program_dir, "host")
     os.makedirs(outdir, exist_ok=True)
     exe = os.path.join(outdir, "t")
-    cmd = [cc, "-std=c99", "-O1", "-g", "-fsanitize=address,undefined",
+    # macOS's AddressSanitizer runtime takes minutes to start (its shadow setup walks the
+    # dyld shared cache), so there the check uses UBSan alone
+    sanitizers = "undefined" if sys.platform == "darwin" else "address,undefined"
+    cmd = [cc, "-std=c99", "-O1", "-g", "-fsanitize=" + sanitizers,
            "-fno-sanitize-recover=all", "-DRACE_HOST", "-I", toolchains.INCLUDE, "-w",
            "-o", exe, os.path.join(program_dir, "t.c")]
     try:
