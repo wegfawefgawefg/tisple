@@ -8,7 +8,8 @@
 // inside or a let in another do spoils; (% g k) then (/ g k) with a set, call, loop or arm
 // between; helpers called with the same constants nearly everywhere; an array whose elements
 // only some literal and masked indexes store, read at others, now and then through a
-// pointer; (if c (continue)) items; (+ x (~ x)) and its kin; a bool tested false.
+// pointer; (if c (continue)) items; (+ x (~ x)) and its kin; a bool tested false; fors that
+// branch on a global they may or may not write.
 
 namespace tisple_tests::fuzz {
 
@@ -327,7 +328,72 @@ std::string Gen::Complements() {
     }
 }
 
+// a for whose body branches on a global: one the loop never writes, now and then one it
+// does, or one the counter decides; arms that store by the counter, at one place, or nothing
+std::string Gen::SwitchLoop(int depth) {
+    std::string n = Fresh("n");
+    std::string bound = values_rng.Chance(50) ? std::to_string(values_rng.Below(20))
+                                              : "(& " + ValuesVar(T::U8) + " 7)";
+    scopes.emplace_back();
+    scopes.back().push_back(VarInfo{n, T::U8, true});
+    loops++;
+    std::string e = ValuesVar(T::Enum);
+    std::string arms[3];
+    for (std::string& arm : arms) {
+        switch (values_rng.Below(4)) {
+        case 0:
+            arm = "(set (at vt (& " + n + " 15)) " + Expr(T::U8, 1) + ")";
+            break;
+        case 1:
+            arm = "(set " + ValuesVar(T::U8) + " " + Expr(T::U8, 1) + ")";
+            break;
+        case 2:
+            // its lets end with the arm
+            scopes.emplace_back();
+            arm = depth > 0 ? "(do " + Stmt(depth - 1) + ")" : "(do)";
+            scopes.pop_back();
+            DropPointers();
+            break;
+        default:
+            arm = "(do)";
+            break;
+        }
+    }
+    std::string branch;
+    switch (values_rng.Below(4)) {
+    case 0:
+        branch =
+            "(match " + e + " (E.e0 " + arms[0] + ") (E.e1 " + arms[1] + ") (_ " + arms[2] + "))";
+        break;
+    case 1:
+        branch = "(match (& " + ValuesVar(T::U8) + " 3) (1 " + arms[0] + ") (3 " + arms[1] +
+                 ") (_ " + arms[2] + "))";
+        break;
+    case 2:
+        branch = "(if " + BoolExpr(1) + " " + arms[0] + " " + arms[1] + ")";
+        break;
+    default:
+        branch = "(if (> " + n + " " + ValuesVar(T::U8) + ") " + arms[0] + " " + arms[1] + ")";
+        break;
+    }
+    std::string body = branch;
+    if (values_rng.Chance(40)) {
+        body = "(set " + ValuesVar(T::U16) + " (+ " + ValuesVar(T::U16) + " 1)) " + body;
+    }
+    if (values_rng.Chance(20)) {
+        // the loop writes what the branch reads
+        body += " (set " + e + " E.e" + std::to_string(values_rng.Below(kEnumMembers)) + ")";
+    }
+    loops--;
+    scopes.pop_back();
+    DropPointers();
+    return "(for " + n + " u8 0 " + bound + " " + body + ")";
+}
+
 std::string Gen::ValuesShape(int depth) {
+    if (values_rng.Chance(12)) {
+        return SwitchLoop(depth);
+    }
     switch (values_rng.Below(10)) {
     case 0:
     case 1:

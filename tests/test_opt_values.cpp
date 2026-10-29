@@ -2,15 +2,18 @@
 // collapse_continue.cpp, consts_eval.cpp): what each variable may ever hold (arguments every
 // call passes, steps that wrap), what a set gives the items after it, elements no store
 // reaches, (if c (continue)) items, (+ x (~ x)), a bool tested false, short loops unrolled
-// (src/opt/unroll.cpp); what they must not
+// (src/opt/unroll.cpp) and unswitched (unswitch.cpp); what they must not
 // decide. Every program has a main (with none, any function may be called from outside) and
 // also runs from it on the 6502 against the interpreter, which runs it as written
 
 #include "test_backend.hpp"
 #include "test_opt.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <iterator>
 #include <string>
+#include <vector>
 
 namespace tisple_tests {
 
@@ -208,11 +211,53 @@ void Kept(TestResults& results) {
     }
 }
 
+// a for's branch on what it never changes moves out (unswitch.cpp) when a copy of the loop
+// then collapses: the branch is then in no loop
+void Unswitched(TestResults& results) {
+    const char* moved[] = {
+        // e1's copy has nothing to do
+        "(fn f () void (for i u8 0 6 (match e (E.e0 (set (at t i) 1)) (E.e1 (do)) (E.e2 (do)))))\n"
+        "(fn main () void (set e (if (> scr 3) E.e1 E.e0)) (f))",
+        // the copy where h is 3 or less stores one place on every pass, and the loop may not
+        // run (the test is cheap)
+        "(fn f () void (for i u8 0 (& g 7) (if (> h 3) (set (at t i) i) (set (at t 1) 9))))\n"
+        "(fn main () void (set h scr) (set g scr) (f))",
+    };
+    const char* kept[] = {
+        // the loop writes what the branch reads
+        "(fn f () void (for i u8 0 20 (match e (E.e0 (set (at t (& i 7)) 1) (set e E.e1)) (E.e1 (do)) "
+        "(E.e2 (do)))))\n"
+        "(fn main () void (set e (if (> scr 3) E.e1 E.e0)) (f))",
+        // the branch reads the counter
+        "(fn f () void (for i u8 0 20 (if (> i h) (set (at t (& i 7)) i))))\n"
+        "(fn main () void (set h scr) (f))",
+        // no copy collapses
+        "(fn f () void (for i u8 0 7 (if (> h 3) (set (at t i) i) (set (at t (+ i 1)) 9))))\n"
+        "(fn main () void (set h scr) (f))",
+    };
+    for (int pass = 0; pass < 2; pass++) {
+        for (const char* text : pass == 0
+                                    ? std::vector<const char*>(std::begin(moved), std::end(moved))
+                                    : std::vector<const char*>(std::begin(kept), std::end(kept))) {
+            Opted o = Optimize(With(text));
+            int depth =
+                std::max(LoopDepth(o, "t.f", ExprKind::If), LoopDepth(o, "t.f", ExprKind::Match));
+            bool fits = pass == 0 ? depth == 0 : depth >= 1;
+            if (!fits) {
+                std::fprintf(stderr, "the branch is %d loops deep:\n%s\n", depth, text);
+            }
+            CHECK(results, o.ok && fits);
+            CheckProgram(results, With(text), "t.main", {});
+        }
+    }
+}
+
 } // namespace
 
 void RunOptValuesTests(TestResults& results) {
     Decided(results);
     Kept(results);
+    Unswitched(results);
 }
 
 } // namespace tisple_tests

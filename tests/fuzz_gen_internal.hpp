@@ -315,6 +315,7 @@ struct Gen {
     std::string ElementShape();
     std::string ContinueLoop(int depth);
     std::string Complements();
+    std::string SwitchLoop(int depth);
     std::string ValuesShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
