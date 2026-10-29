@@ -63,10 +63,13 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool collapse = !Disabled(options, "collapse");
     bool ranges = !Disabled(options, "ranges");
     bool args = !Disabled(options, "args");
+    bool vars = !Disabled(options, "vars");
+    bool elements = !Disabled(options, "elements");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
         opt::CountRefs(p);
         opt::ComputeSummaries(p);
+        opt::ComputeVarRanges(p, vars, elements);
         std::uint64_t changes = 0;
         for (std::size_t f = 0; f < fn_count && dead; f++) {
             changes += opt::EditStatements(p, static_cast<std::int32_t>(f), opt::DecideDead);
@@ -119,8 +122,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 } // namespace
 
 const std::vector<std::string>& OptPassNames() {
-    static const std::vector<std::string> names = {"dead",   "loops", "args", "collapse", "consts",
-                                                   "ranges", "licm",  "cse",  "eval"};
+    static const std::vector<std::string> names = {"dead",   "loops",  "args", "collapse",
+                                                   "consts", "ranges", "vars", "elements",
+                                                   "licm",   "cse",    "eval"};
     return names;
 }
 

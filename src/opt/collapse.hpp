@@ -36,6 +36,8 @@ struct MemoryUse {
 // may a store reach what the body reads or loads, or a load what it writes; memory no
 // variable uses (hardware may be behind it) loaded or stored counts as a clash
 bool MemoryClash(const Pass& p, MemoryFacts& m, const MemoryUse& use);
+// may a store through a pointer in function (its callees included) reach var
+bool StoresMayReach(const Pass& p, MemoryFacts& m, std::int32_t function, std::int32_t var);
 
 // ---- what a loop body reads and writes (collapse_scan.cpp)
 
