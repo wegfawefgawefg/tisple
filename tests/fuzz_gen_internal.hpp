@@ -132,6 +132,7 @@ struct Gen {
     std::string values_a;
     std::string values_b;
     std::string values_m;
+    bool values_vr_read = false; // whether ValuesCall reads vr's value
     int values_stored[2] = {0, 0};
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;

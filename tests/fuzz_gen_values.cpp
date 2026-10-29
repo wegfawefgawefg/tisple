@@ -67,6 +67,7 @@ std::string Gen::ValuesHelpers() {
     values_a = EdgeLiteral(T::U16);
     values_b = EdgeLiteral(T::I8);
     values_m = EdgeLiteral(T::U8);
+    values_vr_read = values_rng.Chance(30);
     std::string text = "(let vg u16 " + EdgeLiteral(T::U16) + ")\n(let vt (array u8 16)";
     if (values_rng.Chance(60)) {
         text += " (make (array u8 16)";
@@ -82,7 +83,10 @@ std::string Gen::ValuesHelpers() {
     return text + "(fn vk ((a u16) (b i8)) u16 (let r u16 (+ vg a))\n"
                   "    (if (>= a 65535) (set r (- r 1))) (if (< b 0) (set r (^ r 255)))\n"
                   "    (if (> (as i16 b) 100) (set r (+ r (as u16 b)))) r)\n"
-                  "(fn vm ((x u8)) u8 (if (> vg 1000) (set x (+ x 1))) (if (= x 255) 7 (* x 3)))\n";
+                  "(fn vm ((x u8)) u8 (if (> vg 1000) (set x (+ x 1))) (if (= x 255) 7 (* x 3)))\n"
+                  // called as a statement, its value read only in some programs
+                  "(fn vr ((x u8)) u16 (set vg (+ vg (as u16 x))) (if (> x 9) (return (* vg vg)))\n"
+                  "    (/ vg (| (as u16 x) 1)))\n";
 }
 
 std::string Gen::ValuesCall() {
@@ -93,6 +97,10 @@ std::string Gen::ValuesCall() {
     if (values_rng.Chance(30)) {
         std::string x = values_rng.Chance(80) ? values_m : EdgeLiteral(T::U8);
         return "(set " + ValuesVar(T::U8) + " (vm " + x + "))";
+    }
+    if (values_rng.Chance(40)) {
+        std::string call = "(vr " + EdgeLiteral(T::U8) + ")";
+        return values_vr_read ? "(set " + g + " (+ " + g + " " + call + "))" : call;
     }
     return "(set " + g + " (^ " + g + " (vk " + a + " " + b + ")))";
 }
