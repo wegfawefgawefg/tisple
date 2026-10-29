@@ -462,7 +462,7 @@ void GenFor(Gen& g, ExprId id) {
     f.end_label = NewLabel(g);
     std::uint16_t cs = 0;
     std::uint16_t ce = 0;
-    bool fixed = e.b >= 0 && ConstValue(program, e.a, cs) && ConstValue(program, e.b, ce);
+    bool fixed = e.b >= 0 && ConstOf(g, e.a, cs) && ConstOf(g, e.b, ce);
     if (fixed && SignedValue(kind, cs) >= SignedValue(kind, ce)) {
         return;
     }
