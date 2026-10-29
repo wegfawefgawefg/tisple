@@ -280,6 +280,10 @@ bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, Ty
         out.cursor.address = static_cast<std::uint16_t>((offset + c * pe.value) & 0xFFFF);
         return true;
     }
+    if (plain && pe.kind == ExprKind::PtrAdd && emit && offset == 0 &&
+        ArrayPlusByte(g, pointer, type, out)) {
+        return true;
+    }
     if (plain && pe.kind == ExprKind::PtrAdd) {
         if (!PointerBase(g, pe.a, later, emit, out)) {
             return false;

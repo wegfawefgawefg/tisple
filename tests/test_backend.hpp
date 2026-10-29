@@ -100,6 +100,8 @@ void RunBackendUnrollTests(TestResults& results);
 void RunBackendSpineTests(TestResults& results);
 // store indices into their registers early (test_backend_preload.cpp)
 void RunBackendPreloadTests(TestResults& results);
+// byte arrays indexed by a sum (test_backend_place_sum.cpp)
+void RunBackendPlaceSumTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

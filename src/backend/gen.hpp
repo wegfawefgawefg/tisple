@@ -471,6 +471,9 @@ struct PlaceRef {
 bool ResolvePlace(Gen& g, ExprId id, ExprId later, PlaceRef& out);
 // the place a store or store-field writes
 bool ResolveStore(Gen& g, const Expr& store, ExprId later, PlaceRef& out);
+// (+ (addr_of (at a i)) k) for a byte array a and i + k below 256: a indexed by that sum,
+// worked out now (gen_place_sum.cpp); false (nothing emitted) when it is not one
+bool ArrayPlusByte(Gen& g, ExprId pointer, TypeId type, PlaceRef& out);
 // emits pointer arithmetic so every byte of a value of type `type` is directly reachable
 void NormalizePlace(Gen& g, PlaceRef& place, TypeId type);
 // a store of a value of this type to the place writes its bytes one by one: keep the index
