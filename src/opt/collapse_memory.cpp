@@ -301,4 +301,9 @@ bool MemoryClash(const Pass& p, MemoryFacts& m, const MemoryUse& use) {
     return false;
 }
 
+bool StoresMayReach(const Pass& p, MemoryFacts& m, std::int32_t function, std::int32_t var) {
+    Gather(p, m, function);
+    return Reaches(p, m.stores[static_cast<std::size_t>(function)], var);
+}
+
 } // namespace tisple::opt

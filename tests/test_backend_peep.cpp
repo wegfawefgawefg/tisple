@@ -111,6 +111,8 @@ void TestDeadGlobalStores(TestResults& results) {
         "(let ag u8 0) (let pa (ptr u8))\n"
         "(let screen u8 :address 0x0400)\n"
         "(fn reader () u8 (+ g (at arr (& t 7))))\n"
+        // arr is stored somewhere, so its reads are not its initial zeros
+        "(fn fill ((x u8)) void (set (at arr (& x 7)) x))\n"
         "(fn big ((x u8)) u8 (let a u8 (+ x 1)) (let b u8 (+ a x)) (let c u8 (+ b a))\n"
         "    (let d u8 (+ c b)) (let e u8 (+ d c)) (let h u8 (+ e d)) (let i u8 (+ h e))\n"
         "    (let j u8 (+ i h)) (+ j (+ i (+ g (at arr (& x 7))))))\n";

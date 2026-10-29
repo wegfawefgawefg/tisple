@@ -49,6 +49,30 @@ struct Summary {
     bool pure = false;        // none of the effects above, and it ends: see PureFunction
 };
 
+// ---- value ranges of variables (ranges_vars.cpp)
+
+// mathematical values, lo to hi
+struct Range {
+    std::int64_t lo = 0;
+    std::int64_t hi = 0;
+};
+
+// what one round knows of variables before its passes run: every value each variable ever
+// holds, and which bytes of arrays and structs any store may write
+struct VarRanges {
+    bool vars = false; // natural and other below hold (--no-pass vars clears it)
+    // by var: a range every value of it lies in, in its type's terms (u16 0..65535), and the
+    // same in the other signedness (a u16 of 65535 or 1 is -1..1 there); the type's range
+    // when nothing is known. Variables made later in the round are not in them
+    std::vector<Range> natural;
+    std::vector<Range> other;
+    bool elements = false; // stored below holds (--no-pass elements clears it)
+    // by var: the byte ranges (packed offsets) a store may write, for arrays and structs that
+    // only sets reach; unstored[var] false for the others
+    std::vector<std::vector<Range>> stored;
+    std::vector<bool> unstored;
+};
+
 // ---- the pass state
 
 struct Pass {
@@ -57,6 +81,19 @@ struct Pass {
     OptReport* report = nullptr;
     std::vector<std::uint32_t> refs; // by expr: how many nodes (or function bodies) name it
     std::vector<Summary> summaries;  // by function
+    VarRanges ranges;                // worked out at the start of each round
+    // the ranges pass's memo of ValueRange by expr, good while the counters and facts around
+    // the walk are those of stamp now (ranges.cpp bumps it at each change)
+    struct RangeMemo {
+        bool on = false;
+        std::uint32_t now = 1;
+        std::vector<std::uint32_t> stamp;
+        std::vector<Range> range;
+    };
+    mutable RangeMemo memo;
+    // collapse's walk only unrolls short loops and unswitches loops (once the passes settle)
+    bool unroll = false;
+    bool unswitch = false;
     // compile-time evaluation (eval.cpp), over every round: the interpreter steps spent, and
     // each call tried (the function, then its arguments' bits) with its value, -1 when it
     // could not be worked out
@@ -182,11 +219,16 @@ std::uint64_t PropagateConstants(Pass& p);
 // arguments for parameters their function never reads become 0 (args.cpp); returns the
 // changes made
 std::uint64_t DropUnreadArgs(Pass& p);
+// pure return values of functions whose call values nothing uses become 0 (args.cpp);
+// returns the changes made
+std::uint64_t DropUnusedReturns(Pass& p);
 // loops whose passes all do the same run their body once (collapse.cpp); returns the
 // changes made
 std::uint64_t CollapseLoops(Pass& p);
 // compares and match clauses decided by value ranges (ranges.cpp); returns the changes made
 std::uint64_t FoldRanges(Pass& p);
+// the ranges of variables and the stored bytes of arrays (ranges_vars.cpp), into p.ranges
+void ComputeVarRanges(Pass& p, bool vars, bool elements);
 // the mathematical values id may hold from its shape alone (ranges.cpp): literals, masks,
 // remainders, shifts, sums that cannot wrap, widenings; the type's range when it says nothing
 void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi);

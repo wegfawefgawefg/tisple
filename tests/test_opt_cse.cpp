@@ -58,7 +58,7 @@ int CountOp(const Opted& o, const std::string& function, Op op) {
 
 void ExpectOps(TestResults& results, const std::string& text, Op op, int want,
                const std::vector<std::uint16_t>& args) {
-    Opted o = Optimize(text);
+    Opted o = Optimize(text, NoUnroll());
     int got = CountOp(o, "t.f", op);
     if (got != want) {
         std::fprintf(stderr, "t.f has %d of op %d, not %d:\n%s\n", got, static_cast<int>(op), want,
@@ -168,9 +168,9 @@ void Stays(TestResults& results) {
         "7)))) (+ g h))",
     };
     tisple::OptOptions no_cse;
-    no_cse.disabled = {"cse"};
+    no_cse.disabled = {"cse", "unroll"};
     for (const char* text : kept) {
-        Opted o = Optimize(With(text));
+        Opted o = Optimize(With(text), NoUnroll());
         int lets = CountKind(o, "t.f", ExprKind::Let);
         int without = CountKind(Optimize(With(text), no_cse), "t.f", ExprKind::Let);
         if (lets != without) {

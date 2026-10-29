@@ -41,19 +41,32 @@ void EditSlot(Editor& ed, ExprId& slot) {
     ed.changes++;
 }
 
-// the items of a do whose values are unused; the last item of a do with a value stays
+// a return, break or continue: nothing after it in its do runs
+bool Exits(const Pass& p, ExprId id) {
+    ExprKind kind = At(p, id).kind;
+    return kind == ExprKind::Return || kind == ExprKind::Break || kind == ExprKind::Continue;
+}
+
+// the items of a do whose values are unused; the last item of a do with a value stays. For
+// the dead code pass, the items after an exit go too (so what they would do no longer counts
+// in the function's summary)
 void EditDo(Editor& ed, ExprId id) {
     Pass& p = *ed.p;
     Expr d = At(p, id);
     std::vector<ExprId> items;
     bool changed = false;
+    bool exited = false;
     for (std::uint32_t i = 0; i < d.count; i++) {
         ExprId item = Item(p, d, i);
         bool value = i + 1 == d.count && d.type != kVoidType;
         Action a;
-        if (!value) {
+        if (exited && !value) {
+            a.kind = Action::Drop;
+            a.what = "statement after an exit";
+        } else if (!value) {
             a = ed.decide(p, *ed.live, item);
         }
+        exited = exited || (ed.decide == DecideDead && Exits(p, item));
         if (a.kind == Action::Keep || !Allow(p, a.what, item, a.var)) {
             items.push_back(item);
             continue;

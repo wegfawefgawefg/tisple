@@ -195,6 +195,60 @@ ranges, licm, cse:
   digits, byte products always inline, 16-bit ones inline up to four digits.
 - `--no-pass args|collapse|ranges`. Results: dogfood.md 46.
 
+Slice 5 (2026-10-29), from the worst race losses after slice 4. Each round now starts by
+working out what every variable may hold (ranges_vars.cpp) and runs dead, loops, args,
+returns, collapse, eval, consts, ranges, licm, cse; once a round changes nothing, collapse's
+walk unrolls and unswitches, and the rounds go on:
+
+- `ranges_vars.cpp` (`vars`): what each scalar with no address taken ever holds, from every
+  write: a global's initial value and its sets, a local's let and sets, a parameter what
+  every call passes (a function nothing calls: anything). A local stepped once a pass,
+  (let v a) in a do and a later loop of at most n passes whose body (not a loop inside)
+  holds its only other writes (set v (+ v s)), lies in a + n * s, in the type or wrapped
+  once as a whole; a step's range in the other signedness is taken when narrower (a u16 of
+  65535 or 1 steps by -1..1). Three walks from the types' ranges; each holds. Only functions
+  main reaches; off with jsr or nodes not known; with no main only locals (anything may be
+  called from outside, memory written between calls). A range of one value is a literal: 741's
+  `a24`, which every call passes 65535.
+- `ranges_elements.cpp` (`elements`): the packed bytes each set rooted at an array or struct
+  global may write, from its index ranges; a read of bytes none reaches is the initial value
+  ((at pt 12) is 0 in most race programs). Not for globals a pointer store may reach
+  (collapse_memory.cpp's provenance), hardware ones, or when a set's index may fall outside
+  its array (a neighbour's bytes would change).
+- `ranges.cpp`: after (set x v) or (let x v) among a do's items, x has v's range in the items
+  after it until something may write it (sets, calls by their summaries, io_write and jsr for
+  globals, a loop from its start for what it writes anywhere). (set g (% g 9)) (set g (/ g
+  9)) leaves g 0. Integer and enum values whose range is one value become literals; enum
+  compares and matches are decided. Shapes: shifts left, products, and sums that wrap as a
+  whole keep a range; signed quotients and remainders; (| x k) is at most x + k; an if's value
+  either arm's. ValueRange is memoised while what is around a node stays.
+- `collapse_continue.cpp`: (if c (continue)) items of a loop body make the rest of the pass
+  their else, so the body ends each pass at its end (seed 76).
+- `collapse_count.cpp`: accumulators of a for whose passes are not known add (b - a) times,
+  worked out behind its guard from copies of the bounds (pure, no hardware, nothing the loop
+  writes). A for of no passes goes whatever its body does.
+- `unroll.cpp` (`unroll`): once the passes settle, a loop of at most 8 passes whose copies
+  come to at most 96 nodes, with no calls (copies stop the backend inlining) or hardware
+  (timing), and no early exit, becomes a copy of its body per pass, the for's counter a
+  literal in each; the rounds after fold the copies ((| i v) over -3..3 is -1). Not waiting
+  for the passes to settle unrolled bodies they would have shortened enough to collapse.
+- `unswitch.cpp` (`unswitch`): once the passes settle, a for whose body's first if or match
+  item tests what the loop never changes (pure, quiet, nothing the loop writes; cheap when the
+  loop may make no pass) becomes that branch with a copy of the loop per arm, when at least
+  one copy then collapses (without that, the copies cost bytes and sometimes cycles: an
+  address the loop no longer changes is still worked out every pass).
+- `args.cpp` (`returns`): a function something calls whose call values nothing uses returns
+  literal 0 from its pure return values (585's (* g6 59719) per call). Only with a main.
+- consts: (+ x (~ x)), (| x (~ x)), (^ x (~ x)) are all ones, (& x (~ x)) is 0; a bool
+  variable tested is false in the else arm (after (if flag (return))); not true in the then
+  arm, which a byte loaded as bool need not hold as 1. dead: statements after a return, break
+  or continue go, so they leave the function's summary. The counting-while rules
+  (KnownTrips' let before) look past lets of other variables.
+- Closed world: with a main, only main is called from outside; tests that call other
+  functions by address must call them only with what main's calls would pass, and must not
+  poke globals between calls.
+- `--no-pass vars|elements|unroll|unswitch|returns`. Results: dogfood.md 48.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`

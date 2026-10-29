@@ -42,7 +42,8 @@ bool ConstType(const Program& program, TypeId type);
 // var holds the value of other where a condition came out as it did
 struct Equality {
     std::int32_t var = -1;
-    ExprId other = -1;
+    ExprId other = -1; // -1: var is the bool truth
+    bool truth = false;
 };
 
 // what cond coming out truth says: (= x k) true, (!= x k) false, through not, and and or

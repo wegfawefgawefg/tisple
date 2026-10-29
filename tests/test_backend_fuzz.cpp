@@ -4,8 +4,9 @@
 // A seed in four also runs a second program, with loops entered by a jump ("(entries)"), one
 // in four a third, with dead work for the mid-level passes ("(dead)"), one in four a
 // fourth, with loop-invariant work and constants ("(motion)"), one in four a fifth, with
-// work done twice, branches on equalities and calls with constant arguments ("(common)"), and
-// one in four a sixth, with loops that collapse and compares ranges decide ("(collapse)").
+// work done twice, branches on equalities and calls with constant arguments ("(common)"), one
+// in four a sixth, with loops that collapse and compares ranges decide ("(collapse)"), and one
+// in four a seventh, with steps, sets and elements the round's ranges decide ("(values)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -220,6 +221,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string collapse = GenerateCollapseProgram(seed);
         if (!collapse.empty()) {
             FuzzOne(seed, " (collapse)", collapse, stats);
+        }
+        std::string values = GenerateValuesProgram(seed);
+        if (!values.empty()) {
+            FuzzOne(seed, " (values)", values, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

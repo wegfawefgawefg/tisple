@@ -110,6 +110,10 @@ void Learn(Walker& w, ExprId cond, bool truth, Env& env) {
     std::vector<Equality> found;
     FindEqualities(*w.p, cond, truth, found);
     for (const Equality& eq : found) {
+        if (eq.other < 0) {
+            Learned(w, env, eq.var, ConstOf(*w.p, kBoolType, eq.truth ? 1 : 0));
+            continue;
+        }
         const Expr& other = At(*w.p, eq.other);
         Val k;
         if (other.kind == ExprKind::Literal && ConstType(*w.p->program, other.type)) {

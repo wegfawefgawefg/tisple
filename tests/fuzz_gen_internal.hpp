@@ -123,6 +123,17 @@ struct Gen {
     // stream of its own (fuzz_gen_collapse.cpp); only in GenerateCollapseProgram's programs
     Rng collapse_rng;
     bool collapse_shapes = false;
+    // what variable ranges, sets' ranges, elements no store reaches and slice 5's identities
+    // change or must keep, from a stream of its own (fuzz_gen_values.cpp); only in
+    // GenerateValuesProgram's programs. The constants vk is called with nearly always, and two
+    // indexes of vt that are stored
+    Rng values_rng;
+    bool values_shapes = false;
+    std::string values_a;
+    std::string values_b;
+    std::string values_m;
+    bool values_vr_read = false; // whether ValuesCall reads vr's value
+    int values_stored[2] = {0, 0};
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -293,6 +304,20 @@ struct Gen {
     std::string RangeTest();
     std::string CounterMatch();
     std::string CollapseShape(int depth);
+    // ---- variable ranges, sets' ranges, unstored elements (fuzz_gen_values.cpp)
+    T ValuesInt();
+    std::string ValuesVar(T t);
+    std::string EdgeLiteral(T t);
+    // vg, vt, vq and the helpers vk and vm, before the generated functions
+    std::string ValuesHelpers();
+    std::string ValuesCall();
+    std::string StepLoop(int depth);
+    std::string SetFacts(int depth);
+    std::string ElementShape();
+    std::string ContinueLoop(int depth);
+    std::string Complements();
+    std::string SwitchLoop(int depth);
+    std::string ValuesShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

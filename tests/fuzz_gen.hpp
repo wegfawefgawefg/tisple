@@ -48,6 +48,14 @@ std::string GenerateCommonProgram(std::uint64_t seed);
 constexpr int kCollapsePercent = 25;
 std::string GenerateCollapseProgram(std::uint64_t seed);
 
+// for one seed in kValuesPercent hundred, the seed's program with locals stepped by variables
+// that hold one of two constants, sets whose ranges decide what follows, helpers called with
+// the same constants, elements only some indexes store, (if c (continue)) items and
+// (+ x (~ x)) (fuzz_gen_values.cpp) among its statements, for slice 5's ranges; "" for the
+// others
+constexpr int kValuesPercent = 25;
+std::string GenerateValuesProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

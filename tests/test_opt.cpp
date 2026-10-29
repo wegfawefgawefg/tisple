@@ -95,9 +95,15 @@ int CountKind(const Opted& o, const std::string& function, tisple::ExprKind kind
     return CountIn(o.program, o.program.functions[static_cast<std::size_t>(f)].body, kind);
 }
 
+tisple::OptOptions NoUnroll() {
+    tisple::OptOptions options;
+    options.disabled = {"unroll"};
+    return options;
+}
+
 void ExpectCount(TestResults& results, const std::string& text, const std::string& function,
-                 tisple::ExprKind kind, int want) {
-    Opted o = Optimize(text);
+                 tisple::ExprKind kind, int want, const tisple::OptOptions& options) {
+    Opted o = Optimize(text, options);
     int got = CountKind(o, function, kind);
     if (got != want) {
         std::fprintf(stderr, "after the passes, %s has %d nodes of kind %d, not %d:\n%s\n",
@@ -181,12 +187,12 @@ void DeadStores(TestResults& results) {
     // what goes round a loop is read on the next pass
     std::string carried = With("(fn f () u8 (let x u8 0) (let s u8 0) (let c u8 0)\n"
                                "    (while (< c 5) (set c (+ c 1)) (set s (+ s x)) (set x c)) s)");
-    ExpectCount(results, carried, "t.f", ExprKind::Set, 3);
+    ExpectCount(results, carried, "t.f", ExprKind::Set, 3, NoUnroll());
     CheckProgram(results, carried, "t.f", {});
     // a store at the end of a pass that the next pass's let overwrites
     std::string relet = With("(fn f () u8 (let s u8 0) (for i u8 0 4 (let x u8 i)\n"
                              "    (set s (+ s x)) (set x 9)) s)");
-    ExpectCount(results, relet, "t.f", ExprKind::Set, 1);
+    ExpectCount(results, relet, "t.f", ExprKind::Set, 1, NoUnroll());
     CheckProgram(results, relet, "t.f", {});
     // a store before a loop that may never end stays: memory can be looked at meanwhile
     ExpectCount(results,
@@ -349,6 +355,7 @@ void RunOptTests(TestResults& results) {
     RunOptEvalTests(results);
     RunOptCollapseTests(results);
     RunOptRangesTests(results);
+    RunOptValuesTests(results);
     RunOptFlagTests(results);
 }
 

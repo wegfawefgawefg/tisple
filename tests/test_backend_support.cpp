@@ -36,6 +36,10 @@ Compiled CompileText(const std::string& text, const std::vector<tisple::VirtualF
     return Finish(BuildText(text, extra), true);
 }
 
+Compiled CompileText(const std::string& text, const tisple::OptOptions& opt) {
+    return Finish(BuildText(text, {}), true, opt);
+}
+
 Compiled CompileMainText(const std::string& text) {
     return Finish(BuildText(text, {}), false);
 }
