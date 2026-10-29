@@ -298,8 +298,8 @@ bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& 
     // the round after the passes settled only unrolls and unswitches (unroll.cpp,
     // unswitch.cpp): collapse found nothing in the round before, and nothing changed since
     if (c.p->unroll || c.p->unswitch) {
-        return (c.p->unroll && UnrollLoop(*c.p, loop, before, out)) ||
-               (c.p->unswitch && UnswitchLoop(*c.p, c.memory, loop, out));
+        return (c.p->unroll && UnrollLoop(*c.p, c.function, loop, before, out)) ||
+               (c.p->unswitch && UnswitchLoop(*c.p, c.memory, c.function, loop, out));
     }
     // (if x (continue)) items first become elses (collapse_continue.cpp)
     c.changes += ContinuesToElse(*c.p, loop);

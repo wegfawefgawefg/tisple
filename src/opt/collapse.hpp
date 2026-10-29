@@ -123,8 +123,14 @@ BodyPlan PlanBody(const Pass& p, MemoryFacts& m, ExprId body, std::int32_t count
 // (collapse_continue.cpp); returns the changes made
 std::uint64_t ContinuesToElse(Pass& p, ExprId loop);
 
-// a copy of the tree at id, named by nobody yet (unroll.cpp)
+// a copy of the tree at id, named by nobody yet (unroll.cpp); with a function, the variables
+// its lets and fors declare get new locals of it (names maps the old to the new, and may
+// come with some already)
 ExprId CloneExpr(Pass& p, ExprId id);
+ExprId CloneExpr(Pass& p, ExprId id, std::int32_t function,
+                 std::unordered_map<std::int32_t, std::int32_t>& names);
+// a new local of function like var (its type and flags), for a copy's own let or for
+std::int32_t CopyLocal(Pass& p, std::int32_t function, std::int32_t var);
 // accumulators that must know how many passes there are (not | and &), and whether a count
 // worked out at run time does for them all (not ^, which needs to know it is odd)
 bool NeedsCount(const BodyPlan& plan);
@@ -136,9 +142,11 @@ ExprId CountLet(Pass& p, std::int32_t function, ExprId loop, std::int32_t& var);
 
 // a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
 // nobody yet; false when it stays. before: the item before it, for a counting while
-bool UnrollLoop(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
+bool UnrollLoop(Pass& p, std::int32_t function, ExprId loop, ExprId before,
+                std::vector<ExprId>& out);
 // a for whose body branches on what the loop never changes, as that branch with a copy of the
 // loop in each arm (unswitch.cpp); false when it stays
-bool UnswitchLoop(Pass& p, MemoryFacts& m, ExprId loop, std::vector<ExprId>& out);
+bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
+                  std::vector<ExprId>& out);
 
 } // namespace tisple::opt

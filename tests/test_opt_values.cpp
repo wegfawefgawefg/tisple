@@ -262,12 +262,29 @@ void Unswitched(TestResults& results) {
     }
 }
 
+// fuzz seed 25017543 (entries): unswitching copied the loop over n40 into both arms with the
+// same counter variable, and the backend, which binds a variable to what sets it, mixed the
+// copies up; copies now declare new variables (unroll.cpp's Clone)
+void Regressions(TestResults& results) {
+    const char* text =
+        "(struct S ((a u8) (b i16) (d u8)))\n(let g0 u8 255)\n(let g4 i16)\n(let g5 bool)\n"
+        "(let arr10 (array i16 8))\n(let wb (array u8 1024))\n(let sa (array S 8))\n"
+        "(let gs S)\n"
+        "(fn poke2 ((p (ptr u8)) (k u8) (v u8)) void (store (+ p k) v))\n"
+        "(fn main () i16 (let p36 (ptr u8) (addr_of (at wb 2)))\n"
+        "    (for n37 u16 250 262 (for n38 i16 -3 0 (if g5 (set (at sa g0 b) gs.b) (set g4 n38))\n"
+        "        (for n40 u8 1 g0 (poke2 p36 (+ n40 (at sa g0 d)) g0)\n"
+        "            (set (at arr10 (/ g0 g0)) g4))) (set g0 0)) 0)";
+    CheckProgram(results, text, "t.main", {});
+}
+
 } // namespace
 
 void RunOptValuesTests(TestResults& results) {
     Decided(results);
     Kept(results);
     Unswitched(results);
+    Regressions(results);
 }
 
 } // namespace tisple_tests

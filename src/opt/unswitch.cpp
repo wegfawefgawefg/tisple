@@ -79,28 +79,34 @@ std::int32_t FindSwitch(const Pass& p, ExprId loop, ExprId body) {
     return -1;
 }
 
-// a copy of the loop whose body has arm (copied, or nothing when -1) in place of item at
-std::int32_t NewCopy(Pass& p, ExprId loop, std::uint32_t at, ExprId arm) {
+// a copy of the loop whose body has arm (copied, or nothing when -1) in place of item at; its
+// counter and the variables its lets declare are new locals of function
+std::int32_t NewCopy(Pass& p, std::int32_t function, ExprId loop, std::uint32_t at, ExprId arm) {
     Expr e = At(p, loop);
+    std::unordered_map<std::int32_t, std::int32_t> names;
+    e.a = CloneExpr(p, e.a);
+    e.b = e.b >= 0 ? CloneExpr(p, e.b) : -1;
+    // the counter first: the bounds cannot read it, the body does
+    names[e.ref] = CopyLocal(p, function, e.ref);
     const Expr& d = At(p, e.c);
     std::vector<ExprId> items;
     for (std::uint32_t i = 0; i < d.count; i++) {
         ExprId item = Item(p, d, i);
         if (i != at) {
-            items.push_back(CloneExpr(p, item));
+            items.push_back(CloneExpr(p, item, function, names));
         } else if (arm >= 0) {
-            items.push_back(CloneExpr(p, arm));
+            items.push_back(CloneExpr(p, arm, function, names));
         }
     }
-    e.a = CloneExpr(p, e.a);
-    e.b = e.b >= 0 ? CloneExpr(p, e.b) : -1;
+    e.ref = names[e.ref];
     e.c = NewList(p, ExprKind::Do, kVoidType, items, d.loc);
     return NewExpr(p, e);
 }
 
 } // namespace
 
-bool UnswitchLoop(Pass& p, MemoryFacts& m, ExprId loop, std::vector<ExprId>& out) {
+bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
+                  std::vector<ExprId>& out) {
     const Expr& e = At(p, loop);
     if (e.kind != ExprKind::For || Size(p, loop, kMaxNodes + 1) > kMaxNodes) {
         return false;
@@ -120,12 +126,13 @@ bool UnswitchLoop(Pass& p, MemoryFacts& m, ExprId loop, std::vector<ExprId>& out
     std::vector<ExprId> made;
     std::vector<Clause> clauses;
     if (branch.kind == ExprKind::If) {
-        made = {NewCopy(p, loop, index, branch.b), NewCopy(p, loop, index, branch.c)};
+        made = {NewCopy(p, function, loop, index, branch.b),
+                NewCopy(p, function, loop, index, branch.c)};
     } else {
         bool wildcard = false;
         for (std::uint32_t i = 0; i < branch.count; i++) {
             Clause clause = p.program->clauses[branch.first + i];
-            clause.body = NewCopy(p, loop, index, clause.body);
+            clause.body = NewCopy(p, function, loop, index, clause.body);
             wildcard = wildcard || clause.wildcard;
             clauses.push_back(clause);
             made.push_back(clause.body);
@@ -133,7 +140,7 @@ bool UnswitchLoop(Pass& p, MemoryFacts& m, ExprId loop, std::vector<ExprId>& out
         if (!wildcard) {
             Clause rest;
             rest.wildcard = true;
-            rest.body = NewCopy(p, loop, index, -1);
+            rest.body = NewCopy(p, function, loop, index, -1);
             rest.loc = branch.loc;
             clauses.push_back(rest);
             made.push_back(rest.body);
