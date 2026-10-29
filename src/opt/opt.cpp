@@ -68,6 +68,7 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     // unrolling (in collapse's walk) waits for the other passes to settle: a body they shorten
     // may collapse, and its copies would not
     bool unroll = collapse && !Disabled(options, "unroll");
+    bool unswitch = collapse && !Disabled(options, "unswitch");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
         opt::CountRefs(p);
@@ -105,12 +106,14 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && cse; f++) {
             changes += opt::CommonSubexpressions(p, static_cast<std::int32_t>(f));
         }
-        if (changes == 0 && unroll) {
-            // settled: what this round worked out still holds, and only unrolling is left to
-            // change anything; the rounds after it fold the copies
-            p.unroll = true;
+        if (changes == 0 && (unroll || unswitch)) {
+            // settled: what this round worked out still holds, and only unrolling and
+            // unswitching are left to change anything; the rounds after them fold the copies
+            p.unroll = unroll;
+            p.unswitch = unswitch;
             changes = opt::CollapseLoops(p);
             p.unroll = false;
+            p.unswitch = false;
         }
         if (changes == 0) {
             break;
@@ -132,9 +135,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 } // namespace
 
 const std::vector<std::string>& OptPassNames() {
-    static const std::vector<std::string> names = {"dead",     "loops",  "args",   "collapse",
-                                                   "unroll",   "consts", "ranges", "vars",
-                                                   "elements", "licm",   "cse",    "eval"};
+    static const std::vector<std::string> names = {
+        "dead",   "loops", "args",     "collapse", "unroll", "unswitch", "consts",
+        "ranges", "vars",  "elements", "licm",     "cse",    "eval"};
     return names;
 }
 

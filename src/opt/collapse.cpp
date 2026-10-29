@@ -182,14 +182,7 @@ ExprId Guard(Pass& p, ExprId test, const std::vector<ExprId>& stmts, const Loc& 
 bool CollapseFor(Collapser& c, ExprId loop, std::vector<ExprId>& out) {
     Pass& p = *c.p;
     Expr e = At(p, loop);
-    BodyPlan plan = PlanBody(p, c.memory, e.c, e.ref, -1);
-    if (!plan.same) {
-        return false;
-    }
     std::int64_t trips = KnownTrips(p, loop, -1);
-    if (plan.last && trips < 1) {
-        return false;
-    }
     std::int32_t a_lo = 0;
     std::int32_t a_hi = 0;
     std::int32_t b_lo = 0;
@@ -200,11 +193,13 @@ bool CollapseFor(Collapser& c, ExprId loop, std::vector<ExprId>& out) {
     }
     bool runs = trips > 0 || e.b < 0 || b_lo > a_hi;
     bool never = trips == 0 || (e.b >= 0 && b_hi <= a_lo);
+    // no pass: whatever the body would do
     if (never) {
-        if (!IsPure(p, e.a) || !IsPure(p, e.b) || !Allow(p, "empty for", loop, e.ref)) {
-            return false;
-        }
-        return true;
+        return IsPure(p, e.a) && IsPure(p, e.b) && Allow(p, "empty for", loop, e.ref);
+    }
+    BodyPlan plan = PlanBody(p, c.memory, e.c, e.ref, -1);
+    if (!plan.same || (plan.last && trips < 1)) {
+        return false;
     }
     // passes not known: b - a of them, worked out before the loop (collapse_count.cpp)
     bool counted = NeedsCount(plan) && trips < 0;
@@ -300,10 +295,11 @@ bool Collapsible(const Pass& p, ExprId id) {
 }
 
 bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& out) {
-    // the round after the passes settled only unrolls (unroll.cpp): collapse found nothing
-    // in the round before, and nothing changed since
-    if (c.p->unroll) {
-        return UnrollLoop(*c.p, loop, before, out);
+    // the round after the passes settled only unrolls and unswitches (unroll.cpp,
+    // unswitch.cpp): collapse found nothing in the round before, and nothing changed since
+    if (c.p->unroll || c.p->unswitch) {
+        return (c.p->unroll && UnrollLoop(*c.p, loop, before, out)) ||
+               (c.p->unswitch && UnswitchLoop(*c.p, c.memory, loop, out));
     }
     // (if x (continue)) items first become elses (collapse_continue.cpp)
     c.changes += ContinuesToElse(*c.p, loop);

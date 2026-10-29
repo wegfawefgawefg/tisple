@@ -137,5 +137,8 @@ ExprId CountLet(Pass& p, std::int32_t function, ExprId loop, std::int32_t& var);
 // a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
 // nobody yet; false when it stays. before: the item before it, for a counting while
 bool UnrollLoop(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
+// a for whose body branches on what the loop never changes, as that branch with a copy of the
+// loop in each arm (unswitch.cpp); false when it stays
+bool UnswitchLoop(Pass& p, MemoryFacts& m, ExprId loop, std::vector<ExprId>& out);
 
 } // namespace tisple::opt

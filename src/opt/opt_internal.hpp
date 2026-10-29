@@ -91,7 +91,9 @@ struct Pass {
         std::vector<Range> range;
     };
     mutable RangeMemo memo;
-    bool unroll = false; // collapse's walk only unrolls short loops (once the passes settle)
+    // collapse's walk only unrolls short loops and unswitches loops (once the passes settle)
+    bool unroll = false;
+    bool unswitch = false;
     // compile-time evaluation (eval.cpp), over every round: the interpreter steps spent, and
     // each call tried (the function, then its arguments' bits) with its value, -1 when it
     // could not be worked out
