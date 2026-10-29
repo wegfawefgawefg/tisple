@@ -98,8 +98,8 @@ void DivideByteAlone(Gen& g, Op op, std::uint32_t c) {
 }
 
 // the 16-bit dividend at rt_a divided by c, as a routine: quotient in rt_a, remainder in A.
-// Below 256 it is a byte division, one compare when below c; else the high byte goes
-// first, and when it is below c it is the remainder so far and the quotient's high byte 0.
+// Below c it is one compare; else the high byte goes first, and when it is below c it is the
+// remainder so far and the quotient's high byte 0.
 void DivideWordRoutine(Gen& g, std::uint32_t c) {
     AsmValue q = SymValue(g.be->rt_a);
     AsmValue q_high = SymValue(g.be->rt_a, 1);
@@ -113,8 +113,7 @@ void DivideWordRoutine(Gen& g, std::uint32_t c) {
     Emit(g, Mn::CMP, Mode::Imm, Num(static_cast<std::int32_t>(c)));
     Branch(g, Mn::BCC, below);
     Emit(g, Mn::LDA, Mode::Imm, Num(0));
-    DivideByte(g, q, c, BitLength(c) - 1);
-    Emit(g, Mn::RTS, Mode::Imp);
+    Branch(g, Mn::BEQ, low_half);
     PlaceLocalLabel(g, below);
     Emit(g, Mn::LDX, Mode::Imm, Num(0));
     Emit(g, Mn::STX, Mode::Abs, q);
