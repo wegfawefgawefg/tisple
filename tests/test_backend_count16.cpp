@@ -88,9 +88,26 @@ void TestByteEnds(TestResults& results) {
     }
 }
 
+// ends at the type's top (no end expression): counted from a constant start as well
+void TestTopEnds(TestResults& results) {
+    const char* heads[] = {"(for n u8 250 256", "(for n i8 120 128", "(for n i16 32700 32768",
+                           "(for n u16 65000 65536", "(for n i8 -3 128"};
+    for (const char* head : heads) {
+        CheckRun(results,
+                 std::string("(let g u16 0)\n(fn f ((x u8)) u16 (set g (as u16 x))\n    ") + head +
+                     " (set g (+ g (>> g 2))))\n    g)",
+                 0x35);
+    }
+    Compiled c =
+        CompileText("(let a (array u8 8))\n"
+                    "(fn f ((x u8)) void (for i i8 120 128 (set (at a (& (as u8 i) 7)) x)))");
+    CHECK(results, CountMn(c, "t.f", tisple::Mn::STA) == 8);
+}
+
 } // namespace
 
 void RunBackendCount16Tests(TestResults& results) {
+    TestTopEnds(results);
     TestCountedWordLoops(results);
     TestByteEnds(results);
 }

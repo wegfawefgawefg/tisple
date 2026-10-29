@@ -40,9 +40,12 @@ const std::vector<std::uint16_t> kXs = {0, 1, 2, 3, 7, 0x40, 0x7F, 0x80, 0xFE, 0
 
 void TestCountedCopies(TestResults& results) {
     // u8, i8 and u16 counters, 2 to 16 trips and 17 (a loop), across 0 and the top
-    const char* loops[] = {"(for i u8 0 4",      "(for i u8 250 255",     "(for i u8 3 19",
-                           "(for i u8 3 20",     "(for i i8 -3 2",        "(for i i8 120 127",
-                           "(for i u16 254 258", "(for i u16 65530 65535"};
+    // (ends at the type's top: 256, 128, 65536 and 32768 run through the largest value)
+    const char* loops[] = {"(for i u8 250 256",      "(for i i8 120 128", "(for i u16 65530 65536",
+                           "(for i i16 32765 32768", "(for i u8 230 256", "(for i u8 0 4",
+                           "(for i u8 250 255",      "(for i u8 3 19",    "(for i u8 3 20",
+                           "(for i i8 -3 2",         "(for i i8 120 127", "(for i u16 254 258",
+                           "(for i u16 65530 65535"};
     for (const char* head : loops) {
         std::string h = head;
         bool wide = h.find("u16") != std::string::npos;

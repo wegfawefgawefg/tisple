@@ -467,6 +467,11 @@ void GenFor(Gen& g, ExprId id) {
         return;
     }
     std::int32_t trips = fixed ? SignedValue(kind, ce) - SignedValue(kind, cs) : 0;
+    if (e.b < 0 && ConstOf(g, e.a, cs)) {
+        // through the type's largest value, from a constant start (no guard either way)
+        std::int32_t past = f.size == 1 ? 0x100 : 0x10000;
+        trips = (is_signed ? past / 2 : past) - SignedValue(kind, cs);
+    }
     if (trips >= 1 && trips <= 256 && !ReadsVar(program, f.body, f.var)) {
         // nothing reads the counter: it counts the trips down in a byte, a u16 one too (in
         // its low byte, when in memory)
@@ -503,7 +508,7 @@ void GenFor(Gen& g, ExprId id) {
         // each copy runs once
         g.loop_factors.back() = 1;
         UnrolledLoop(g, f);
-    } else if (fixed && CountedCopies(g, f)) {
+    } else if ((fixed || e.b < 0) && CountedCopies(g, f)) {
     } else if (f.size == 1) {
         g.ranges.push_back(CounterRangeOf(program, e, kind));
         ByteLoop(g, f, pin);

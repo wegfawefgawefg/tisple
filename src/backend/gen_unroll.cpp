@@ -21,11 +21,15 @@ constexpr std::uint32_t kMaxCountedExprs = 160;
 std::int32_t ConstTrips(const Program& program, const Expr& e) {
     std::uint16_t cs = 0;
     std::uint16_t ce = 0;
-    if (e.b < 0 || !ConstValue(program, e.a, cs) || !ConstValue(program, e.b, ce)) {
+    if (!ConstValue(program, e.a, cs) || (e.b >= 0 && !ConstValue(program, e.b, ce))) {
         return 0;
     }
-    TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(e.ref)].type);
-    std::int32_t trips = SignedValue(kind, ce) - SignedValue(kind, cs);
+    TypeId type = program.vars[static_cast<std::size_t>(e.ref)].type;
+    TypeKind kind = KindOf(program, type);
+    // no end: through the type's largest value
+    std::int32_t past = TypeOf(program, type).size == 1 ? 0x100 : 0x10000;
+    std::int32_t end = e.b >= 0 ? SignedValue(kind, ce) : IsSignedKind(kind) ? past / 2 : past;
+    std::int32_t trips = end - SignedValue(kind, cs);
     return trips > 0 ? trips : 0;
 }
 
