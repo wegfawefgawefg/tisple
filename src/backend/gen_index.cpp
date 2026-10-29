@@ -222,9 +222,12 @@ bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
         PagePointer p;
         p.site = place.site;
         p.base = base;
+        // its low byte is set once at the function's start: above every byte a loop before
+        // may have used and given back (GenStmt)
+        std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
+        g.lptr_top = std::max(g.lptr_top, max);
         std::uint32_t at = g.lptr_top;
         g.lptr_top += 2;
-        std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
         max = g.lptr_top > max ? g.lptr_top : max;
         p.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
                          static_cast<std::int32_t>(at));

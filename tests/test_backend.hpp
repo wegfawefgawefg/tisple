@@ -110,6 +110,8 @@ void RunBackendNumberCmpTests(TestResults& results);
 void RunBackendRtArgsTests(TestResults& results);
 // compares with 0 the flags already make (test_backend_zero_cmp.cpp)
 void RunBackendZeroCmpTests(TestResults& results);
+// loop pointers given back after their loops (test_backend_loop_ptrs.cpp)
+void RunBackendLoopPtrsTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

@@ -283,11 +283,24 @@ void GenStmt(Gen& g, ExprId id) {
         }
         break;
     case ExprKind::While:
-        GenWhile(g, id);
+    case ExprKind::For: {
+        // the loop pointers a loop outside every other loop hands out are free again after it:
+        // each is set before the loop and read only in it (a page pointer's low byte is set at
+        // the function's start, so it goes above every byte handed out before, gen_index.cpp).
+        // Inside another loop they stay taken: that loop's own pointers, made later, are set
+        // before it starts, so before this one too.
+        bool outermost = g.loops.empty();
+        std::uint32_t top = g.lptr_top;
+        if (e.kind == ExprKind::While) {
+            GenWhile(g, id);
+        } else {
+            GenFor(g, id);
+        }
+        if (outermost) {
+            g.lptr_top = top;
+        }
         break;
-    case ExprKind::For:
-        GenFor(g, id);
-        break;
+    }
     case ExprKind::Match:
         GenMatch(g, e, nullptr, false);
         break;
