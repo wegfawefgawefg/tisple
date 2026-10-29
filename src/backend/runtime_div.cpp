@@ -167,11 +167,11 @@ namespace {
 // divisor while it stays at most a / 2 (kept in rt_r), then a trial subtract per bit
 void DivU16Wide(Writer& w) {
     Backend& be = *w.be;
-    std::int32_t one = w.Label("divu16.one");
     std::int32_t align = w.Label("divu16.align");
     std::int32_t go = w.Label("divu16.go");
     std::int32_t step = w.Label("divu16.step");
     std::int32_t keep = w.Label("divu16.keep");
+    std::int32_t one = w.Label("divu16.one");
     w.Br(Mn::BMI, one);
     w.Mem(Mn::LDA, be.rt_a, 1);
     w.Op(Mn::LSR, Mode::Acc);
@@ -215,7 +215,7 @@ void DivU16Wide(Writer& w) {
     w.Op(Mn::DEX);
     w.Br(Mn::BPL, step);
     w.Op(Mn::RTS);
-    // 32768 or more: the quotient is 1
+    // 32768 or more (N from loading its high byte): the quotient is 1
     w.Place(one);
     w.Mem(Mn::LDA, be.rt_a);
     w.Op(Mn::SEC);
@@ -240,10 +240,10 @@ void DivU16(Writer& w) {
     std::int32_t at_least = w.Label("divu16.atleast");
     std::int32_t wide = w.Label("divu16.wide");
     std::int32_t tiny = w.Label("divu16.tiny");
-    std::int32_t by_zero = w.Label("divu16.zero");
+    std::int32_t copy = w.Label("divu16.copy");
     std::int32_t big = w.Label("divu16.big");
-    std::int32_t low_only = w.Label("divu16.low");
-    std::int32_t low = w.Label("divu16.lowsteps");
+    std::int32_t high = w.Label("divu16.high");
+    std::int32_t low = w.Label("divu16.low");
     w.Mem(Mn::LDA, be.rt_a, 1);
     w.Mem(Mn::CMP, be.rt_b, 1);
     w.Br(Mn::BCC, below);
@@ -268,13 +268,13 @@ void DivU16(Writer& w) {
     // the high byte first, unless it is below the divisor: then it is the remainder so far
     w.Place(big);
     w.Mem(Mn::CMP, be.rt_b);
-    w.Br(Mn::BCC, low_only);
-    w.Imm(Mn::LDA, 0);
-    ByteSteps(w, SymValue(be.rt_a, 1), "divu16.high");
-    w.Jmp(low);
-    w.Place(low_only);
+    w.Br(Mn::BCS, high);
     w.Imm(Mn::LDY, 0);
     w.Mem(Mn::STY, be.rt_a, 1);
+    w.Br(Mn::BCC, low);
+    w.Place(high);
+    w.Imm(Mn::LDA, 0);
+    ByteSteps(w, SymValue(be.rt_a, 1), "divu16.high");
     w.Place(low);
     ByteSteps(w, SymValue(be.rt_a), "divu16.low");
     w.Mem(Mn::STA, be.rt_r);
@@ -283,29 +283,22 @@ void DivU16(Writer& w) {
     w.Op(Mn::RTS);
     w.Place(wide);
     DivU16Wide(w);
-    // by 1: the quotient is a; by 0: all ones, the remainder a
+    // by 1: the quotient is a; by 0: all ones (X), the remainder a
     w.Place(tiny);
     w.Op(Mn::DEX);
-    w.Br(Mn::BNE, by_zero);
+    w.Br(Mn::BNE, copy);
     w.Mem(Mn::STX, be.rt_r);
     w.Mem(Mn::STX, be.rt_r, 1);
     w.Op(Mn::RTS);
-    w.Place(by_zero);
+    w.Place(below);
+    w.Imm(Mn::LDX, 0);
+    w.Place(copy);
     w.Mem(Mn::LDA, be.rt_a);
     w.Mem(Mn::STA, be.rt_r);
     w.Mem(Mn::LDA, be.rt_a, 1);
     w.Mem(Mn::STA, be.rt_r, 1);
     w.Mem(Mn::STX, be.rt_a);
     w.Mem(Mn::STX, be.rt_a, 1);
-    w.Op(Mn::RTS);
-    w.Place(below);
-    w.Mem(Mn::LDA, be.rt_a);
-    w.Mem(Mn::STA, be.rt_r);
-    w.Mem(Mn::LDA, be.rt_a, 1);
-    w.Mem(Mn::STA, be.rt_r, 1);
-    w.Imm(Mn::LDA, 0);
-    w.Mem(Mn::STA, be.rt_a);
-    w.Mem(Mn::STA, be.rt_a, 1);
     w.Op(Mn::RTS);
 }
 
