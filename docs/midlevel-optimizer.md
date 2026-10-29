@@ -64,6 +64,29 @@ by the existing differential tests and the fuzz farm.
 9. **Division by variables.** A u8 / u8 fast path; hoisting loop-invariant
    divisors' reciprocal tables when a divisor repeats.
 
+## Landed (2026-10-29)
+
+Passes 1 to 3, in `src/opt` (`opt.hpp` has the order and the rules), run by
+`CompileProgram` on its copy of the program after constant folding:
+
+- `summary.cpp`: per function, globals read and written, pointer loads and
+  stores, I/O, jsr, and whether every loop provably ends (`terminate.cpp`).
+- `live.cpp`: liveness of each function's locals, params and plain globals
+  (no address taken, no `:address`, not in aux). Every global is live when a
+  function returns; a call reads what its summary says; I/O, jsr, a loop that
+  may never end and a call that may not return read every global (memory can
+  be looked at while the program runs, as `--peek` does).
+- `dead.cpp`: lets and stores nobody reads (an effectful value stays as a
+  statement), `(set x x)` outside `:address` lets, pure statements, calls to
+  pure functions that end.
+- `loops.cpp`: a while or for whose writes are all dead after it and that
+  provably ends: every for; a while whose counter's one write is an unwrapping
+  step towards its bound on every pass (`(< i K)` with `(+ i c)` and
+  `K - 1 + c` within the type, `>` down likewise, `!=` with an odd step).
+- Nodes the passes do not know count as every effect (wait_cycles is safe).
+- Flags `-O0`, `-O1` (default), `--opt-bisect N` (prints "N of M" and the
+  last transformation), `--no-pass dead|loops`. Results: dogfood.md 39.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`

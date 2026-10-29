@@ -68,3 +68,4 @@ variable's name); zero-page allocation moves them.
 | 2026-10-27 | (race item 3: invariant loads out of loops) | plasma | frames in 10 s | 243 (24.3 fps) |
 | 2026-10-29 | (fuzz farm run 6: loops entered by a jump) | life | generations in 10 s | 56 |
 | 2026-10-29 | (fuzz farm run 6: loops entered by a jump) | plasma | frames in 10 s | 243 (24.3 fps) |
+| 2026-10-29 | (mid-level passes 1-3: dead code, loop deletion) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |

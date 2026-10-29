@@ -1026,6 +1026,19 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | programs/ and examples/ binaries | 13 | the same, byte for byte |
     | 20000 fuzz programs (seeds 1-20000, the plain generator) | 166379613 cycles | 166379631 |
 
+39. Mid-level passes 1 to 3 (2026-10-29, docs/midlevel-optimizer.md, src/opt):
+    effect summaries, dead lets, stores and statements, and deletion of loops
+    that provably end with no effect outside them. Race seed 21258: 264845
+    cycles to 50 (Oscar64 19). Random race, seeds 1-2000: geomean against the
+    fastest C compiler 3.087 to 2.420, wins 6.1% to 9.0%, worst 1427x to 312x;
+    1421 programs faster, 66 slower by at most 1.5% (data placed elsewhere once
+    code shrinks). Kernels, Life 56, plasma 243 and the tisple_tests cycle lines
+    the same; every program and example byte for byte except snake and
+    examples/speaker, whose empty delay loops (lib/speaker `buzz`, `tone`) are
+    now deleted: they need `(wait_cycles n)` (docs/language.md). 20000 fuzz
+    seeds: 208691712 cycles to 177542577. Tests: tests/test_opt*.cpp; fuzz
+    shape tests/fuzz_gen_dead.cpp (`seed N (dead)`, one seed in four).
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
