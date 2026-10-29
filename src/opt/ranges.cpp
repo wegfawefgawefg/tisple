@@ -12,202 +12,20 @@
 //   Only when the operands are pure and read no hardware (:address, aux, loads), which may
 //   answer differently or change when read.
 
+#include "opt/ranges.hpp"
+
 #include "check/arith.hpp"
 #include "opt/licm.hpp"
-#include "opt/opt_internal.hpp"
 
 namespace tisple::opt {
 
 namespace {
-
-struct Range {
-    std::int64_t lo = 0;
-    std::int64_t hi = 0;
-};
-
-struct Counter {
-    std::int32_t var = -1;
-    Range range;
-};
-
-using Counters = std::vector<Counter>; // the loops around a node, innermost last
 
 struct Ranger {
     Pass* p = nullptr;
     Counters counters;
     std::uint64_t changes = 0;
 };
-
-Range TypeRange(const Pass& p, TypeId type) {
-    TypeKind kind = KindOf(*p.program, type);
-    if (kind == TypeKind::Bool) {
-        return Range{0, 1};
-    }
-    std::int32_t span = KindBits(kind) == 8 ? 256 : 65536;
-    if (IsSignedKind(kind)) {
-        return Range{-span / 2, span / 2 - 1};
-    }
-    return Range{0, span - 1};
-}
-
-bool Within(const Range& r, const Range& of) {
-    return r.lo >= of.lo && r.hi <= of.hi;
-}
-
-Range Of(const Pass& p, const Counters& counters, ExprId id);
-
-// the smallest all-ones value at or above v (v not negative)
-std::int64_t OnesAbove(std::int64_t v) {
-    std::int64_t ones = 0;
-    while (ones < v) {
-        ones = ones * 2 + 1;
-    }
-    return ones;
-}
-
-// the values of a const table's integer elements
-Range TableRange(const Pass& p, const Expr& index, Range type) {
-    const Expr& base = At(p, index.a);
-    if (base.kind != ExprKind::VarRef || VarOf(p, base.ref).kind != VarKind::ConstArray) {
-        return type;
-    }
-    const Var& var = VarOf(p, base.ref);
-    const Type& array = TypeOf(*p.program, var.type);
-    std::uint32_t size = TypeOf(*p.program, array.elem).size;
-    TypeKind kind = KindOf(*p.program, array.elem);
-    if (!IsIntegerKind(kind) || var.init.size() < array.count * size || array.count == 0) {
-        return type;
-    }
-    Range r{type.hi, type.lo};
-    for (std::uint32_t i = 0; i < array.count; i++) {
-        std::uint32_t bits = 0;
-        for (std::uint32_t b = 0; b < size; b++) {
-            bits |= static_cast<std::uint32_t>(var.init[i * size + b]) << (8 * b);
-        }
-        std::int64_t v = SignedValue(kind, static_cast<std::uint16_t>(bits));
-        r.lo = std::min(r.lo, v);
-        r.hi = std::max(r.hi, v);
-    }
-    return r;
-}
-
-Range BinaryRange(const Pass& p, const Counters& counters, const Expr& e, Range type) {
-    Range a = Of(p, counters, e.a);
-    Range b = Of(p, counters, e.b);
-    Range r = type;
-    switch (e.op) {
-    case Op::And:
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{0, std::min(a.hi, b.hi)};
-        } else if (a.lo >= 0 || b.lo >= 0) {
-            r = Range{0, a.lo >= 0 ? a.hi : b.hi};
-        }
-        return r;
-    case Op::Or:
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{std::max(a.lo, b.lo), OnesAbove(std::max(a.hi, b.hi))};
-        }
-        break;
-    case Op::Xor:
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{0, OnesAbove(std::max(a.hi, b.hi))};
-        }
-        break;
-    case Op::Add:
-        r = Range{a.lo + b.lo, a.hi + b.hi};
-        break;
-    case Op::Sub:
-        r = Range{a.lo - b.hi, a.hi - b.lo};
-        break;
-    case Op::Mul:
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{a.lo * b.lo, a.hi * b.hi};
-        }
-        break;
-    case Op::Div:
-        // by zero: all ones, outside these ranges
-        if (a.lo >= 0 && b.lo > 0) {
-            r = Range{a.lo / b.hi, a.hi / b.lo};
-        }
-        break;
-    case Op::Mod:
-        // by zero: the dividend
-        if (a.lo >= 0 && b.lo >= 0) {
-            r = Range{0, b.lo > 0 ? std::min(a.hi, b.hi - 1) : a.hi};
-        }
-        break;
-    case Op::Shr:
-        if (a.lo >= 0 && b.lo >= 0 && b.hi < 16) {
-            r = Range{a.lo >> b.hi, a.hi >> b.lo};
-        }
-        break;
-    default:
-        break;
-    }
-    return Within(r, type) ? r : type;
-}
-
-Range Of(const Pass& p, const Counters& counters, ExprId id) {
-    const Expr& e = At(p, id);
-    Range type = TypeRange(p, e.type);
-    TypeKind kind = KindOf(*p.program, e.type);
-    if (!IsIntegerKind(kind) && kind != TypeKind::Bool) {
-        return type;
-    }
-    std::uint16_t c = 0;
-    if (ConstValue(*p.program, id, c)) {
-        std::int64_t v = SignedValue(kind, c);
-        return Range{v, v};
-    }
-    switch (e.kind) {
-    case ExprKind::VarRef:
-        for (const Counter& counter : counters) {
-            if (counter.var == e.ref) {
-                return counter.range;
-            }
-        }
-        return type;
-    case ExprKind::Convert: {
-        Range inner = Of(p, counters, e.a);
-        return Within(inner, type) ? inner : type;
-    }
-    case ExprKind::Index:
-        return TableRange(p, e, type);
-    case ExprKind::Binary:
-        return IsIntegerKind(kind) ? BinaryRange(p, counters, e, type) : type;
-    default:
-        return type;
-    }
-}
-
-// pure, and reads no hardware: safe to work out never
-bool Quiet(const Pass& p, ExprId id) {
-    if (id < 0) {
-        return true;
-    }
-    const Expr& e = At(p, id);
-    switch (e.kind) {
-    case ExprKind::Literal:
-        return true;
-    case ExprKind::VarRef: {
-        const Var& v = VarOf(p, e.ref);
-        return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve;
-    }
-    case ExprKind::Index:
-    case ExprKind::Field:
-    case ExprKind::Unary:
-    case ExprKind::Binary:
-    case ExprKind::Convert:
-    case ExprKind::Reinterpret:
-    case ExprKind::And:
-    case ExprKind::Or:
-        return Quiet(p, e.a) && Quiet(p, e.b);
-    case ExprKind::If:
-        return Quiet(p, e.a) && Quiet(p, e.b) && Quiet(p, e.c);
-    default:
-        return false;
-    }
-}
 
 // 1 or 0 when the ranges decide the compare, -1 when they do not
 int Decide(Op op, Range a, Range b) {
@@ -236,7 +54,7 @@ void FoldCompare(Ranger& g, ExprId id) {
     if (!IsIntegerKind(operand) || !Quiet(p, e.a) || !Quiet(p, e.b)) {
         return;
     }
-    int known = Decide(e.op, Of(p, g.counters, e.a), Of(p, g.counters, e.b));
+    int known = Decide(e.op, ValueRange(p, g.counters, e.a), ValueRange(p, g.counters, e.b));
     if (known < 0 || !Allow(p, "compare decided by ranges", id, -1)) {
         return;
     }
@@ -277,7 +95,7 @@ bool CutClauses(Ranger& g, ExprId id) {
     if (!IsIntegerKind(kind) || !Quiet(p, e.a)) {
         return false;
     }
-    Range r = Of(p, g.counters, e.a);
+    Range r = ValueRange(p, g.counters, e.a);
     std::vector<Clause> kept;
     bool wildcard = false;
     for (std::uint32_t i = 0; i < e.count; i++) {
@@ -361,8 +179,8 @@ void VisitLoop(Ranger& g, ExprId id, bool shared, ExprId before) {
     if (e.kind == ExprKind::For) {
         Visit(g, e.a, shared, -1);
         Visit(g, e.b, shared, -1);
-        Range start = Of(p, g.counters, e.a);
-        Range end = e.b >= 0 ? Of(p, g.counters, e.b) : TypeRange(p, VarOf(p, e.ref).type);
+        Range start = ValueRange(p, g.counters, e.a);
+        Range end = e.b >= 0 ? ValueRange(p, g.counters, e.b) : TypeRange(p, VarOf(p, e.ref).type);
         counter.var = e.ref;
         counter.range = Range{start.lo, e.b >= 0 ? end.hi - 1 : end.hi};
         counted = counter.range.lo <= counter.range.hi && !VarOf(p, e.ref).address_taken;
@@ -457,12 +275,6 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
 }
 
 } // namespace
-
-void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi) {
-    Range r = Of(p, Counters(), id);
-    lo = static_cast<std::int32_t>(r.lo);
-    hi = static_cast<std::int32_t>(r.hi);
-}
 
 std::uint64_t FoldRanges(Pass& p) {
     Ranger g;

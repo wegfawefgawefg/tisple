@@ -117,6 +117,22 @@ void LastPass(TestResults& results) {
     for (const char* text : collapsed) {
         ExpectCollapsed(results, text, {3, 200});
     }
+    // a for inside whose range is the same on every pass makes the same passes: the loop around
+    // it runs its last pass, the inner one stays
+    std::string inner = With("(fn f ((x u8)) u8\n"
+                             "    (for i u8 0 4 (for j u8 0 3 (set (at a j) (+ i j)))) (at a 2))");
+    CHECK(results, Loops(Optimize(inner)) == 1);
+    CheckProgram(results, inner, "t.f", {3});
+    // one whose range the counter changes, or that may end early: both stay
+    const char* ranged[] = {
+        "(fn f ((x u8)) u8 (for i u8 0 4 (for j u8 0 i (set (at a j) i))) (at a 2))",
+        ("(fn f ((x u8)) u8 (for i u8 0 4 (for j u8 0 3 (if (= i j) (break)) (set (at a j) i)))\n"
+         "    (at a 2))"),
+    };
+    for (const char* text : ranged) {
+        CHECK(results, Loops(Optimize(With(text))) == 2);
+        CheckProgram(results, With(text), "t.f", {3});
+    }
 }
 
 void Kept(TestResults& results) {

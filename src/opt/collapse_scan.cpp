@@ -1,7 +1,6 @@
-// Which loop bodies do the same on every pass (collapse.cpp runs them once). A pass does what
-// the one before did when nothing it reads was written by an earlier pass: the reads and
-// writes are cells (a variable's bytes, or one element or field of it at a constant index),
-// and a body is the same on every pass when no cell it writes overlaps one it reads.
+// What a loop body reads and writes, for loop collapse (collapse_plan.cpp decides): cells (a
+// variable's bytes, or one element or field of it at a constant index), loads and stores
+// through pointers, calls.
 //
 // - Variables a let or for inside the body declares are its own: set afresh on every pass.
 // - Calls read and write what their summaries say, whole variables.
@@ -9,47 +8,22 @@
 //   no store may reach a cell the body reads or loads, no load a cell it writes. Memory no
 //   variable uses (hardware may be behind it) is never loaded or stored in a collapsed loop.
 // - io_read, io_write, jsr, wait_cycles, :address, aux and :reserve variables (hardware may
-//   be behind them) and nodes not known here count as every effect: never collapsed.
-// - Accumulators (collapse.hpp) are taken out first; their steps are read like the rest.
-// - A body that reads its counter (the last pass decides, collapse.hpp) also needs its writes
-//   to land in the same places on every pass: not under a branch on the counter or the
-//   body's own variables, not in a loop inside, at places that do not depend on them, and no
-//   store through a pointer or call that writes there.
+//   be behind them) and nodes not known here count as every effect: never collapsed; nor
+//   is a body of more than kMaxScan nodes.
+// - For a body that reads its counter (collapse_plan.cpp): which writes land in the same place
+//   on every pass: not under a branch on the counter or the body's own variables, not in a
+//   loop inside that may make different passes, at places that do not depend on them.
 
-#include "check/arith.hpp"
 #include "opt/collapse.hpp"
 #include "opt/licm.hpp"
 
 namespace tisple::opt {
 
-namespace {
-
-// bytes [lo, hi) of a variable, in its packed layout
-struct Cell {
-    std::int32_t var = -1;
-    std::uint32_t lo = 0;
-    std::uint32_t hi = 0;
-    bool steady = true; // a write every pass makes to the same place (see Access)
-};
-
-struct Access {
-    std::vector<Cell> reads;
-    std::vector<Cell> writes;
-    std::vector<bool> own; // by var: let or looped over inside the body
-    MemoryUse memory;      // through pointers
-    bool all = false;      // I/O, jsr, wait_cycles, hardware variables, nodes not known here
-    // for a body that reads its loop's counter: what may differ from pass to pass is the
-    // counter and the body's own variables; varying is set under a branch on them and in loops
-    // inside, where a write may not happen on every pass; unsteady: a store or a call's write
-    // that may not land in the same place on every pass
-    std::int32_t counter = -1;
-    bool varying = false;
-    bool unsteady = false;
-};
-
 bool Hardware(const Var& v) {
     return v.placement.has_address || v.placement.in_aux || v.placement.reserve;
 }
+
+namespace {
 
 Cell WholeVar(const Pass& p, std::int32_t var) {
     Cell c;
@@ -96,7 +70,7 @@ bool PlaceCell(const Pass& p, ExprId place, Cell& cell, bool& exact) {
     }
 }
 
-void Scan(const Pass& p, Access& a, ExprId id);
+} // namespace
 
 bool Own(const Access& a, std::int32_t var) {
     return a.own[static_cast<std::size_t>(var)];
@@ -108,13 +82,16 @@ bool Varies(const Pass& p, const Access& a, ExprId id) {
         return false;
     }
     const Expr& e = At(p, id);
-    if (e.kind == ExprKind::VarRef && (e.ref == a.counter || Own(a, e.ref))) {
+    if (e.kind == ExprKind::VarRef &&
+        (e.ref == a.counter || (Own(a, e.ref) && !a.steady[static_cast<std::size_t>(e.ref)]))) {
         return true;
     }
     bool varies = false;
     EachChild(p, e, [&](ExprId child) { varies = varies || Varies(p, a, child); });
     return varies;
 }
+
+namespace {
 
 // scans the parts of id that may not run on every pass, under varying when the test does (a
 // loop as the test: always)
@@ -199,8 +176,14 @@ void ScanCall(const Pass& p, Access& a, const Expr& e) {
     }
 }
 
+} // namespace
+
 void Scan(const Pass& p, Access& a, ExprId id) {
     if (id < 0 || a.all) {
+        return;
+    }
+    if (--a.budget < 0) {
+        a.all = true;
         return;
     }
     const Expr& e = At(p, id);
@@ -234,15 +217,26 @@ void Scan(const Pass& p, Access& a, ExprId id) {
         Scan(p, a, e.b);
         return;
     case ExprKind::Let:
+        a.steady[static_cast<std::size_t>(e.ref)] =
+            !a.varying && !Varies(p, a, e.a) && CountSets(p, a.body, e.ref) == 1;
         a.own[static_cast<std::size_t>(e.ref)] = true;
         break;
-    case ExprKind::For:
-        // an inner loop may make a different number of passes each time
+    case ExprKind::For: {
+        // a for inside makes the same passes on every pass of the loop when its range is the
+        // same and nothing ends it early
+        bool same = !a.varying && !Varies(p, a, e.a) && !Varies(p, a, e.b) &&
+                    !MayLeave(p, e.c, 0) && !VarOf(p, e.ref).address_taken;
+        a.steady[static_cast<std::size_t>(e.ref)] = same;
         a.own[static_cast<std::size_t>(e.ref)] = true;
         Scan(p, a, e.a);
         Scan(p, a, e.b);
-        ScanUnder(p, a, id, e.c);
+        if (same) {
+            Scan(p, a, e.c);
+        } else {
+            ScanUnder(p, a, id, e.c);
+        }
         return;
+    }
     case ExprKind::While:
         ScanUnder(p, a, id, e.a);
         ScanUnder(p, a, id, e.b);
@@ -282,175 +276,6 @@ void Scan(const Pass& p, Access& a, ExprId id) {
         return;
     }
     EachChild(p, e, [&](ExprId child) { Scan(p, a, child); });
-}
-
-bool Overlap(const Cell& x, const Cell& y) {
-    return x.var == y.var && x.lo < y.hi && y.lo < x.hi;
-}
-
-// does a pass read a cell some pass writes (the body's own variables aside)
-bool Conflict(const Pass& p, MemoryFacts& m, const Access& a) {
-    if (a.all) {
-        return true;
-    }
-    for (const Cell& w : a.writes) {
-        for (const Cell& r : a.reads) {
-            if (!Own(a, w.var) && Overlap(w, r)) {
-                return true;
-            }
-        }
-    }
-    if (a.memory.load_ptrs.empty() && a.memory.store_ptrs.empty() && a.memory.calls.empty()) {
-        return false;
-    }
-    MemoryUse use = a.memory;
-    for (const Cell& w : a.writes) {
-        if (!Own(a, w.var)) {
-            use.written.push_back(w.var);
-        }
-    }
-    for (const Cell& r : a.reads) {
-        if (!Own(a, r.var)) {
-            use.read.push_back(r.var);
-        }
-    }
-    return MemoryClash(p, m, use);
-}
-
-bool Mentions(const std::vector<Cell>& cells, std::int32_t var) {
-    for (const Cell& c : cells) {
-        if (c.var == var) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool IsVar(const Pass& p, ExprId id, std::int32_t var) {
-    const Expr& e = At(p, id);
-    return e.kind == ExprKind::VarRef && e.ref == var;
-}
-
-// (set x (op x k)), or (op k x) for an op that commutes; false for anything else
-bool AsAccumulator(const Pass& p, ExprId stmt, Accumulator& acc) {
-    const Expr& set = At(p, stmt);
-    if (set.kind != ExprKind::Set || At(p, set.a).kind != ExprKind::VarRef) {
-        return false;
-    }
-    std::int32_t x = At(p, set.a).ref;
-    const Var& v = VarOf(p, x);
-    const Expr& value = At(p, set.b);
-    if (!IsIntegerKind(KindOf(*p.program, v.type)) || Hardware(v) || v.address_taken ||
-        value.kind != ExprKind::Binary) {
-        return false;
-    }
-    bool commutes = value.op != Op::Sub;
-    ExprId step = -1;
-    if (IsVar(p, value.a, x)) {
-        step = value.b;
-    } else if (commutes && IsVar(p, value.b, x)) {
-        step = value.a;
-    }
-    switch (value.op) {
-    case Op::Add:
-    case Op::Sub:
-    case Op::Xor:
-    case Op::Or:
-    case Op::And:
-        break;
-    default:
-        return false;
-    }
-    if (step < 0 || !IsPure(p, step)) {
-        return false;
-    }
-    acc.stmt = stmt;
-    acc.var = x;
-    acc.op = value.op;
-    acc.step = step;
-    return true;
-}
-
-// every write outside the body's own variables lands in the same place on every pass, and
-// each accumulator's step is the same
-bool LastPassDecides(const Pass& p, const Access& a, const BodyPlan& plan) {
-    if (a.unsteady) {
-        return false;
-    }
-    for (const Cell& w : a.writes) {
-        if (!w.steady && !Own(a, w.var)) {
-            return false;
-        }
-    }
-    for (const Accumulator& acc : plan.accumulators) {
-        if (Varies(p, a, acc.step)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-} // namespace
-
-void PassStatements(const Pass& p, ExprId body, std::vector<ExprId>& out) {
-    const Expr& e = At(p, body);
-    if (e.kind != ExprKind::Do || e.type != kVoidType || Shared(p, body)) {
-        out.push_back(body);
-        return;
-    }
-    for (std::uint32_t i = 0; i < e.count; i++) {
-        PassStatements(p, Item(p, e, i), out);
-    }
-}
-
-BodyPlan PlanBody(const Pass& p, MemoryFacts& m, ExprId body, std::int32_t counter, ExprId skip) {
-    BodyPlan plan;
-    if (MayLeave(p, body, 0)) {
-        return plan;
-    }
-    Access a;
-    a.own.assign(p.program->vars.size(), false);
-    a.counter = counter;
-    std::vector<ExprId> items;
-    PassStatements(p, body, items);
-    for (ExprId item : items) {
-        Accumulator acc;
-        if (item == skip) {
-            continue;
-        }
-        if (AsAccumulator(p, item, acc) && acc.var != counter && !Own(a, acc.var)) {
-            plan.accumulators.push_back(acc);
-            Scan(p, a, acc.step);
-            continue;
-        }
-        Scan(p, a, item);
-    }
-    if (Conflict(p, m, a)) {
-        return plan;
-    }
-    if (counter >= 0 &&
-        (Mentions(a.writes, counter) || Own(a, counter) || VarOf(p, counter).address_taken)) {
-        return plan;
-    }
-    // a body that reads the counter: the last pass decides, when every pass writes the same
-    // places and the accumulators add the same each pass
-    plan.last = counter >= 0 && Mentions(a.reads, counter);
-    if (plan.last && !LastPassDecides(p, a, plan)) {
-        return plan;
-    }
-    for (std::size_t i = 0; i < plan.accumulators.size(); i++) {
-        std::int32_t x = plan.accumulators[i].var;
-        if (Mentions(a.reads, x) || Mentions(a.writes, x) || Own(a, x)) {
-            return plan;
-        }
-        for (std::size_t j = i + 1; j < plan.accumulators.size(); j++) {
-            if (plan.accumulators[j].var == x) {
-                return plan;
-            }
-        }
-    }
-    plan.same = true;
-    return plan;
 }
 
 } // namespace tisple::opt
