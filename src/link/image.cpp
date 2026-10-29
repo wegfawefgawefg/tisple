@@ -33,7 +33,8 @@ void WriteValue(const Program& program, const Layout& layout, Cursor dst, std::i
 void WriteVarInit(const Program& program, const Layout& layout, std::int32_t var,
                   std::vector<std::uint8_t>& memory) {
     const Var& v = program.vars[static_cast<std::size_t>(var)];
-    if (v.init.empty() || v.type == kErrorType) {
+    if (v.init.empty() || v.type == kErrorType ||
+        layout.vars[static_cast<std::size_t>(var)].dropped) {
         return;
     }
     WriteValue(program, layout, VarCursor(layout, var), var, v.type, v.init, 0, memory);

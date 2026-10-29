@@ -369,7 +369,7 @@ Value ReadTypedConst(MacroRun& run, Frame& frame, std::int32_t const_module,
         if (kind == TypeKind::Bool) {
             return BoolValue(info.value != 0, frame.module);
         }
-        if (kind == TypeKind::Ptr) {
+        if (kind == TypeKind::Ptr && !info.string) {
             return IntValue(info.value, frame.module);
         }
         if (IsIntegerKind(kind)) {

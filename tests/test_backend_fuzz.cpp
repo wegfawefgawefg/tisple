@@ -157,6 +157,10 @@ void RunBackendFuzzTests(TestResults& results) {
         if (!entries.empty()) {
             FuzzOne(seed, " (entries)", entries, stats);
         }
+        std::string late = GenerateLateProgram(seed);
+        if (!late.empty()) {
+            FuzzOne(seed, " (late)", late, stats);
+        }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "
                 "%llu invalid, %llu unsupported, %llu mismatches\n",

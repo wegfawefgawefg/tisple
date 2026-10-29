@@ -47,9 +47,9 @@
     "Turn the page for how it all fits."
     "")
 
-(const BUILT_LINES u16 44)
+(const BUILT_LINES u16 50)
 
-(book.chapter built 44
+(book.chapter built 50
     ()
     "# How the program is put together"
     ""
@@ -90,6 +90,12 @@
     "aux memory and its language card, 80-column text in its own font at half"
     "width, double hi-res and double lo-res, and MouseText drawn for it. Zellyn"
     "Hunter's a2audit finds 128K and passes its aux memory tests."
+    ""
+    "Text. A string in code is a (ptr u8) to its ASCII bytes and a 0: one const"
+    "table for each different text, left out when no kept code reaches it. The"
+    "title and status lines print theirs with (text80.put_str \"...\"), one loop over"
+    "the bytes, where text80.print unrolls a call for every character; that took"
+    "about 1.2 KB of code off this program."
     ""
     "Sizes, from tisple build --disk: the main file from $6000, a segment below it,"
     "one in the language card and one in aux memory. Together they are far past"

@@ -554,6 +554,9 @@ std::string Gen::Expr(T t, int depth) {
         }
         return Leaf(t);
     }
+    if (late_shapes && t == T::U8 && late_rng.Chance(10)) {
+        return StringRead(depth);
+    }
     return IntExpr(t, depth);
 }
 

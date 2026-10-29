@@ -274,9 +274,9 @@ void ResolveTests(TestResults& results) {
                 "arguments: (macro m (a & more) ...)");
     ExpectError(results, "(macro m (list) list)",
                 "t.tsp:1:11: list already means something in macro code; rename the parameter");
-    // strings exist at compile time only: one that reaches code is the checker's error
+    // a string a macro gives to code is a string literal there, a (ptr u8)
     ExpectError(results, "(macro m () \"hi\")\n(fn f () void (let s u8 (m)))",
-                "t.tsp:2:25: strings are not in this subset yet (in macro m)");
+                "t.tsp:2:25: let s needs a u8 but \"hi\" is (ptr u8) (in macro m)");
 }
 
 // plasma's tables come from macros, and its unrolled draw runs the same on the 6502

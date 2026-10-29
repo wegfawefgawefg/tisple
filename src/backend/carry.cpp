@@ -171,6 +171,10 @@ bool Sweep(CarryFlow& f) {
             state = CarryState::None;
             continue;
         }
+        if (item.kind == ItemKind::Wait) {
+            state = CarryState::Any;
+            continue;
+        }
         if (IsFlowJump(item)) {
             std::int32_t target = item.value.sym;
             if (f.labels.count(target)) {

@@ -1,5 +1,7 @@
 #include "asm/asm.hpp"
 
+#include "asm/wait.hpp"
+
 #include <cstdio>
 
 namespace tisple {
@@ -57,9 +59,39 @@ int ItemSize(const Assembly& as, const AsmItem& item) {
         return ModeSize(EncodedMode(as, item));
     case ItemKind::Byte:
         return 1;
+    case ItemKind::Wait:
+        if (item.mode == Mode::Abs) {
+            return VarWaitSize();
+        }
+        return WaitSize(static_cast<std::uint32_t>(item.value.offset));
     default:
         return 0;
     }
+}
+
+// a wait's bytes at its address; false with a message if a symbol is missing
+bool EncodeWait(const Assembly& as, const AsmItem& item, std::vector<std::uint8_t>& out,
+                std::string& error) {
+    std::vector<std::uint8_t> bytes;
+    if (item.mode != Mode::Abs) {
+        WaitBytes(static_cast<std::uint32_t>(item.value.offset), item.size, item.address, bytes);
+    } else {
+        std::uint32_t low = 0;
+        std::uint32_t scratch = 0;
+        if (!Resolve(as, item.value, low) || !Resolve(as, item.scratch, scratch) ||
+            scratch > 0xFF) {
+            error = "a variable wait's count or scratch byte has no address";
+            return false;
+        }
+        VarWaitBytes(item.address, static_cast<std::uint16_t>(low),
+                     static_cast<std::uint8_t>(scratch), bytes);
+    }
+    if (bytes.size() != item.size) {
+        error = "a wait's code is not the size it was laid out with";
+        return false;
+    }
+    out.insert(out.end(), bytes.begin(), bytes.end());
+    return true;
 }
 
 std::string SymbolText(const Assembly& as, const AsmValue& value) {
@@ -150,6 +182,22 @@ AsmItem MakeByte(AsmValue value) {
     return item;
 }
 
+AsmItem MakeWait(std::uint32_t cycles) {
+    AsmItem item;
+    item.kind = ItemKind::Wait;
+    item.value = Num(static_cast<std::int32_t>(cycles));
+    return item;
+}
+
+AsmItem MakeVarWait(AsmValue low, AsmValue scratch) {
+    AsmItem item;
+    item.kind = ItemKind::Wait;
+    item.mode = Mode::Abs;
+    item.value = low;
+    item.scratch = scratch;
+    return item;
+}
+
 AsmValue Num(std::int32_t number) {
     AsmValue value;
     value.offset = number;
@@ -216,6 +264,12 @@ bool EncodeCode(const Assembly& as, std::vector<std::uint8_t>& out, std::string&
         if (item.kind == ItemKind::Label || item.kind == ItemKind::Note) {
             continue;
         }
+        if (item.kind == ItemKind::Wait) {
+            if (!EncodeWait(as, item, out, error)) {
+                return false;
+            }
+            continue;
+        }
         std::uint32_t v = 0;
         bool has_operand =
             item.kind == ItemKind::Byte || (item.mode != Mode::Imp && item.mode != Mode::Acc);
@@ -271,6 +325,13 @@ std::string ItemText(const Assembly& as, const AsmItem& item) {
     if (item.kind == ItemKind::Byte) {
         return ".byte " + Hex2(v) + (sym.empty() ? "" : "  ; " + sym);
     }
+    if (item.kind == ItemKind::Wait && item.mode == Mode::Abs) {
+        return "WAIT (" + (known ? Hex4(v) : std::string("?")) + ") + " +
+               std::to_string(kVarWaitOverhead) + " cycles" + (sym.empty() ? "" : "  ; " + sym);
+    }
+    if (item.kind == ItemKind::Wait) {
+        return "WAIT " + std::to_string(item.value.offset) + " cycles";
+    }
     if (item.kind != ItemKind::Ins) {
         return "";
     }
@@ -288,6 +349,9 @@ std::string ItemText(const Assembly& as, const AsmItem& item) {
 }
 
 int ItemCycles(const Assembly& as, const AsmItem& item) {
+    if (item.kind == ItemKind::Wait) {
+        return item.mode == Mode::Abs ? static_cast<int>(kVarWaitOverhead) : item.value.offset;
+    }
     if (item.kind != ItemKind::Ins) {
         return 0;
     }

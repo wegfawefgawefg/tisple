@@ -41,6 +41,22 @@ bool FoldConstArray(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
     return ok;
 }
 
+// (const GREETING (ptr u8) "HELLO"): the string's table, read as a pointer to it
+bool FoldConstString(Checker& ck, ConstDecl& cd, const Node& value, TypeId type) {
+    if (type == kErrorType) {
+        return false;
+    }
+    if (type != PtrType(ck, kU8Type)) {
+        Err(ck, value,
+            "a string is a (ptr u8); write (const " + cd.name + " (ptr u8) " + Show(value) + ")");
+        return false;
+    }
+    cd.var = StringTable(ck, value);
+    cd.type = type;
+    cd.string = true;
+    return cd.var >= 0;
+}
+
 // (const T (array u8 3) 1 2 3): the old table spelling, values straight after the type
 std::string OldTableFix(const ConstDecl& cd, const Node& form) {
     std::string type = Show(form.items[2]);
@@ -99,6 +115,9 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
     }
     if (is_array) {
         return FoldConstArray(ck, cd, form, type);
+    }
+    if (items[3].kind == NodeKind::String) {
+        return FoldConstString(ck, cd, items[3], type);
     }
     value = CheckExpr(ck, items[3], type);
     if (!RequireType(ck, items[3], value, type, "const " + cd.name)) {

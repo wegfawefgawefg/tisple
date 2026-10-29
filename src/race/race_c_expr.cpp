@@ -388,6 +388,9 @@ CValue Writer::Expr(ExprId id) {
     case ExprKind::JsrRegs:
         Fail("jsr has no C form in the race");
         return out;
+    case ExprKind::WaitCycles:
+        Fail("wait_cycles has no C form in the race");
+        return out;
     case ExprKind::StructLit:
         Fail("a struct value outside a let, set or store");
         return out;

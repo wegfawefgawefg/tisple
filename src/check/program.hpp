@@ -165,6 +165,7 @@ enum class ExprKind : std::uint8_t {
     IoWrite,     // a: address, b: value, value: bytes (1 or 2)
     Jsr,         // a: u16 address, b: A's value or -1, c: JsrRegs or -1; type u8 (A after)
     JsrRegs,     // only as a Jsr's c: a: X's value or -1, b: Y's value or -1; type void
+    WaitCycles,  // a: u16 count; value: its cycles (2 or more) when constant, else 0; void
     StructLit,   // list: one value per field, in order
     If,          // a: cond, b: then, c: else or -1
     Do,          // list: forms; value is the last

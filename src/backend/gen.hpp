@@ -566,6 +566,8 @@ bool GenShiftedIf(Gen& g, const Expr& e);
 void GenIo(Gen& g, ExprId id);
 // (jsr ...): the registers set, the call, A after it (gen_jsr.cpp)
 Opnd EvalJsr(Gen& g, ExprId id);
+// (wait_cycles n): the exact delay (gen_wait.cpp)
+void GenWait(Gen& g, ExprId id);
 
 // ---- conditions (gen_cond.cpp)
 

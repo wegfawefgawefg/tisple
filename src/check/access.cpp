@@ -264,6 +264,37 @@ ExprId CheckIoWrite(Checker& ck, const Node& node) {
     return id;
 }
 
+ExprId CheckWaitCycles(Checker& ck, const Node& node) {
+    if (node.items.size() != 2) {
+        return Fail(ck, node, "wait_cycles takes one count of cycles; write (wait_cycles 100)");
+    }
+    const Node& count = node.items[1];
+    ExprId n = CheckExpr(ck, count, kU16Type);
+    if (!RequireType(ck, count, n, kU16Type, "the wait_cycles count")) {
+        return ErrorExpr(ck, node);
+    }
+    if (ExprType(ck, n) == kErrorType) {
+        return ErrorExpr(ck, node);
+    }
+    ExprId id = AddExpr(ck, ExprKind::WaitCycles, kVoidType, node);
+    ExprAt(ck, id).a = n;
+    std::uint16_t cycles = 0;
+    std::size_t before = ck.errors->size();
+    if (!FoldExpr(ck, n, cycles)) {
+        return ck.errors->size() == before ? id : ErrorExpr(ck, node);
+    }
+    if (cycles == 0) {
+        return Fail(ck, node, Show(node) + " waits for nothing; remove it");
+    }
+    if (cycles == 1) {
+        return Fail(ck, node,
+                    Show(node) + ": no 6502 instruction takes 1 cycle, so a wait is 2 or more; "
+                                 "write (wait_cycles 2) or leave it out");
+    }
+    ExprAt(ck, id).value = cycles;
+    return id;
+}
+
 namespace {
 
 const char* const kJsrShape = "write (jsr addr (a v) (x v) (y v)), each register at most once, in "

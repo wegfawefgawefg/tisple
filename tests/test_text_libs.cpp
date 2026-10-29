@@ -1,5 +1,5 @@
 // lib/text80, lib/text40 and lib/auxmem on the built-in machine: what lands in which memory,
-// and what the screen shows
+// and what the screen shows, text from print and from put_str alike
 
 #include "machine/font.hpp"
 #include "test_backend.hpp"
@@ -57,9 +57,10 @@ void TestText80(TestResults& results) {
                                  "    (text80.inverse false)\n"
                                  "    (text80.put_code 0x40)\n"
                                  "    (text80.move 79 1)\n"
-                                 "    (text80.print \"qr\")\n"
+                                 "    (text80.put_str \"qr\")\n"
                                  "    (text80.put 13)\n"
-                                 "    (text80.print \"next\"))");
+                                 "    (text80.put_str \"\")\n"
+                                 "    (text80.put_str \"next\"))");
     if (a == nullptr) {
         return;
     }
@@ -110,10 +111,10 @@ void TestText40(TestResults& results) {
                                  "    (text40.move 0 1)\n"
                                  "    (text40.print \"OK\")\n"
                                  "    (text40.inverse true)\n"
-                                 "    (text40.print \"GO!\")\n"
+                                 "    (text40.put_str \"GO!\")\n"
                                  "    (text40.move 39 23)\n"
                                  "    (text40.inverse false)\n"
-                                 "    (text40.print \"st\"))");
+                                 "    (text40.put_str \"st\"))");
     if (a == nullptr) {
         return;
     }

@@ -64,7 +64,9 @@ ExprId CheckName(Checker& ck, const Node& node) {
         if (cd.state != Progress::Done) {
             return ErrorExpr(ck, node);
         }
-        if (cd.var >= 0) {
+        if (cd.string) {
+            value = StringPointer(ck, node, cd.var);
+        } else if (cd.var >= 0) {
             value = AddExpr(ck, ExprKind::VarRef, cd.type, node);
             ExprAt(ck, value).ref = cd.var;
         } else {
@@ -187,6 +189,9 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint, bool used) {
     if (head == "jsr") {
         return CheckJsr(ck, node);
     }
+    if (head == "wait_cycles") {
+        return CheckWaitCycles(ck, node);
+    }
     if (head == "fn" || head == "struct" || head == "enum" || head == "const" || head == "import" ||
         head == "macro") {
         std::string fix = head == "const" ? "; use let here" : "; move it out of this function";
@@ -283,7 +288,7 @@ ExprId CheckExpr(Checker& ck, const Node& node, TypeId hint) {
         return Fail(ck, node,
                     node.text + ": keywords only name fields in struct literals and let options");
     case NodeKind::String:
-        return Fail(ck, node, "strings are not in this subset yet");
+        return CheckString(ck, node);
     case NodeKind::List:
         return CheckList(ck, node, hint, true);
     }
@@ -291,7 +296,7 @@ ExprId CheckExpr(Checker& ck, const Node& node, TypeId hint) {
 }
 
 ExprId CheckStatement(Checker& ck, const Node& node) {
-    if (IsBareLiteral(node)) {
+    if (IsBareLiteral(node) || node.kind == NodeKind::String) {
         return Fail(ck, node, node.text + " on its own does nothing; remove it");
     }
     if (node.kind == NodeKind::List) {

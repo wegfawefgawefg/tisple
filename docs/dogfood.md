@@ -1026,6 +1026,9 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | programs/ and examples/ binaries | 13 | the same, byte for byte |
     | 20000 fuzz programs (seeds 1-20000, the plain generator) | 166379613 cycles | 166379631 |
 
+39. Exact delays and string literals (2026-10-29, docs/language.md): text_demo
+    prints its names and status with `text80.put_str`, 1179 bytes less code.
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

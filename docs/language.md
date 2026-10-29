@@ -92,8 +92,9 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 ### lib/text80, lib/text40 and lib/auxmem
 
 - `lib/text80`: 80-column text on the extended 80-column card. `(text80.on)`,
-  `(text80.print "Hello")` (a macro: strings exist only while compiling),
-  `(text80.put c)` for one ASCII character, `(text80.put_code c)` for a screen
+  `(text80.print "Hello")` (a macro: a `put` call a character),
+  `(text80.put_str s)` for a zero-terminated string up to 255 long (a loop over
+  it), `(text80.put c)` for one ASCII character, `(text80.put_code c)` for a screen
   code as it is (MouseText is `$40`-`$5F`), `(text80.move col row)`,
   `(text80.inverse true)`, `(text80.clear)`, `(text80.put_row r p)` for 80 codes
   at once, `(text80.off)`. Even columns are in aux memory: it writes them with
@@ -190,6 +191,8 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(addr_of place)` | address of a variable, element or field |
 | `(io_read t addr)` / `(io_write t addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
 | `(jsr addr (a v) (x v) (y v))` | call machine code (ROM, card firmware) with registers set; gives A after; see Machine code |
+| `(wait_cycles n)` | exactly n cycles for a constant n, n + 47 for a `u16` one; see Exact delays |
+| `"text"` | a `(ptr u8)` to the text's ASCII bytes and a 0; see Strings |
 
 The parameter list is always written, `()` when empty, and the return type is
 always the third item, `void` when nothing is returned:
@@ -368,8 +371,8 @@ Values:
   float literals: write `(/ 1 (float 2))`.
 - `true` and `false` paste as themselves; symbols, keywords and lists paste as
   forms.
-- Strings exist only at compile time, as arguments and values (ASCII art,
-  text); a string that reaches code is an error from the checker.
+- Strings are values (ASCII art, text); one that reaches code is a string
+  literal there (see Strings).
 - `=` and `!=` compare any two values, lists item by item; `< <= > >=` compare
   numbers.
 
@@ -655,13 +658,44 @@ The pointer `addr_of` gives holds an aux address; `load` through it would read
 main memory, so pass it only to `lib/auxmem`. Aux lets never go in zero page,
 and the interpreter does not model aux memory (its `jsr` needs the machine).
 
-## Planned: exact delays (owner, 2026-10-29)
+## Strings
 
-`(wait_cycles n)` burns exactly n cycles. With a constant n (2 or more; the
-6502 has no 1-cycle instruction) it compiles to an exact sequence of NOPs,
-`BIT zp` and a counted loop for long waits; with a variable `u16` n it waits n
-plus a fixed, documented overhead. It is an effect like `io_read`: never deleted,
-merged or moved. It keeps registers and memory, and may change flags.
+A string literal in code, `"HELLO"`, is a `(ptr u8)` to its bytes and a 0
+after them (2026-10-29). The bytes are plain ASCII, 0 to 127; libraries apply
+the screen encoding. Each different text is one const table, shared by every
+use and placed with the other const tables; `(const GREETING (ptr u8)
+"HELLO")` names one, and `GREETING` reads like the literal. The escapes are the
+reader's, `\n \t \r \0 \\ \" \xHH`: `\r` is RETURN, which lib/text40 and
+lib/text80 take as a new line, and a `\0` ends the string early. Nothing writes
+a string; a store through one is undefined. A string cannot start a top-level
+`let` or fill a const table, since its address is known only once the program
+is laid out.
+
+A const table, a string's or any other, that no kept function reads is left
+out of the binary.
+
+## Exact delays
+
+`(wait_cycles n)` takes exactly n cycles wherever the code lands (owner,
+2026-10-29; src/asm/wait.hpp).
+
+- A constant n is 2 to 65535; 0 and 1 are errors that say what to write, since
+  no 6502 instruction takes 1 cycle. A constant is whatever the checker folds:
+  literals, consts and operators on them. The code is NOPs, `BIT $00` and
+  `PHP`/`PLP` pairs around a counted loop when that is shorter (A counts, kept
+  with `PHA`/`PLA`, and X too for long waits): the fewest bytes, at most 11 up
+  to 1300 cycles and 23 up to 65535. A taken branch costs a cycle more when it
+  crosses a page, so the loop's counts are worked out for the address it lands
+  at, in a size that is the same at every address.
+- A variable `u16` n takes n + 47 cycles, for every n from 0. The wait reads n
+  itself, with absolute loads wherever n lives, then counts 256-cycle rounds
+  for the high byte and takes the low byte bit by bit; a `JMP` over a filler
+  keeps every branch inside its page (57 bytes). When n is more than a variable
+  or field (a sum, an element at a computed index), the code working it out
+  into a temporary comes first and is not part of the 47.
+- Either keeps A, X, Y and memory (a variable wait counts in the compiler's
+  zero-page scratch) and may change N, V, Z and C. It is an effect like
+  `io_read`: never dropped, merged or moved. The interpreter does nothing for it.
 
 This is how a program asks for timing. The optimiser may delete an effect-free
 loop when the loop provably terminates (every `for`; a `while` whose counter moves
@@ -696,6 +730,5 @@ computing macro can generate the stack if it gets repetitive (owner,
 
 ## Out of the first subset
 
-Strings (they exist only in macro code), general recursion, inline assembly.
-All planned; none needed to prove the backend. `jsr` (Machine code) calls code
+General recursion, inline assembly. Both planned; none needed to prove the backend. `jsr` (Machine code) calls code
 that already exists; it is not an inline assembler.

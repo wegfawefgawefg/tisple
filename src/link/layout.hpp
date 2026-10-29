@@ -48,6 +48,8 @@ struct LayoutOptions {
     std::vector<std::int32_t> preset;
     // more ranges automatic and fixed placement must stay out of (code, frames)
     std::vector<AddressRange> reserved;
+    // by var id: left out, no address and no bytes (const tables no kept code reaches)
+    std::vector<bool> dropped;
 };
 
 struct VarPlace {
@@ -55,6 +57,7 @@ struct VarPlace {
     std::uint32_t size = 0; // bytes spanned, padding between planes included
     bool split = false;
     std::uint32_t plane_stride = 0; // split arrays: distance between planes
+    bool dropped = false;           // LayoutOptions::dropped: not in memory at all
 };
 
 struct Layout {

@@ -128,7 +128,8 @@ void LiteralTests(TestResults& results) {
                 "t.tsp:1:19: a pointer is not a number; write (as (ptr u8) 0x2000)");
     ExpectError(results, "(enum A (one))\n(fn f () A 0)",
                 "t.tsp:2:12: 0 is not a A; name a member, as in A.one");
-    ExpectError(results, "(fn f () void \"hi\")", "t.tsp:1:15: strings are not in this subset yet");
+    ExpectError(results, "(fn f () void \"hi\")",
+                "t.tsp:1:15: \"hi\" on its own does nothing; remove it");
 }
 
 void ConversionTests(TestResults& results) {

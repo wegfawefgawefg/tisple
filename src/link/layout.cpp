@@ -359,6 +359,10 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
         bool plane = false;
         Shape(pl, static_cast<std::int32_t>(i), out.vars[i], plane);
         per_plane[i] = plane;
+        if (i < options.dropped.size() && options.dropped[i]) {
+            out.vars[i] = VarPlace();
+            out.vars[i].dropped = true;
+        }
     }
     // backend choices first; they are not Used, so frames may share bytes
     for (std::size_t i = 0; i < program.vars.size(); i++) {

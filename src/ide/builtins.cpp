@@ -59,6 +59,8 @@ const BuiltinInfo kBuiltinInfo[] = {
      "hardware write; never dropped, merged or reordered"},
     {"jsr", SymbolKind::Builtin, "(jsr addr (a v) (x v) (y v))",
      "calls machine code with registers set; gives A after; never dropped, merged or moved"},
+    {"wait_cycles", SymbolKind::Builtin, "(wait_cycles n)",
+     "exactly n cycles for a constant n; n + 47 for a u16 one; never dropped, merged or moved"},
     {"not", SymbolKind::Builtin, "(not b)", "bool negation"},
     {"+", SymbolKind::Builtin, "(+ a b)", "add; wraps; a pointer moves by elements"},
     {"-", SymbolKind::Builtin, "(- a b)", "subtract; wraps"},

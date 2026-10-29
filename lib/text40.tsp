@@ -1,6 +1,7 @@
 ; 40-column text on text page 1. (import text40) then
 ;   (text40.on)                   text, page 1, cleared
-;   (text40.print "Hello")        text at the cursor; a string is a macro argument only
+;   (text40.print "Hello")        text at the cursor, a put call a character
+;   (text40.put_str "Hello")      the same from a zero-terminated string, in a loop
 ;   (text40.put c)                one ASCII character; RETURN starts the next line
 ;   (text40.put_code c)           one screen code as it is
 ;   (text40.move col row)         the cursor; text40.col and text40.row read it
@@ -94,3 +95,10 @@
             (fn (c)
                 `(put ,c))
             (chars text))))
+
+; the characters of a string literal, or any zero-terminated ASCII text up to 255 long
+(fn put_str ((s (ptr u8))) void
+    (let i u8 0)
+    (while (!= (load (+ s i)) 0)
+        (put (load (+ s i)))
+        (set i (+ i 1))))

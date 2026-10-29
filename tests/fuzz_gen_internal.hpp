@@ -102,6 +102,10 @@ struct Gen {
     // GenerateEntryProgram's programs, so GenerateProgram's stay what they were
     Rng entry_rng;
     bool entry_shapes = false;
+    // waits and string reads, from a stream of their own (fuzz_gen_late.cpp); only in
+    // GenerateLateProgram's programs
+    Rng late_rng;
+    bool late_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -225,6 +229,11 @@ struct Gen {
     std::string EntryFirst(int depth, const std::string& g, const std::string& k);
     // a loop whose body starts with an if on a test that never holds
     std::string EntryLoop(int depth);
+    // ---- waits and strings (fuzz_gen_late.cpp)
+    // a constant or variable (wait_cycles n)
+    std::string LateWait();
+    // a byte of a string literal
+    std::string StringRead(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

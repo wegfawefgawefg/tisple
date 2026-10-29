@@ -44,7 +44,8 @@ struct ConstInfo {
     bool ok = false;
     TypeId type = kErrorType;
     std::uint16_t value = 0; // scalars
-    std::int32_t var = -1;   // tables
+    std::int32_t var = -1;   // tables, and a string's
+    bool string = false;     // a (ptr u8) to the string table var
 };
 
 struct MacroInfo {

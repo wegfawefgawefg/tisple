@@ -292,6 +292,9 @@ void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
             std::uint8_t in = out;
             if (items[i].kind == ItemKind::Ins) {
                 in = static_cast<std::uint8_t>(e.uses | (out & ~e.defs));
+            } else if (items[i].kind == ItemKind::Wait) {
+                // the registers pass through, the flags are its own
+                in = static_cast<std::uint8_t>(out & ~(kN | kZ | kC | kV));
             }
             if (in != live_in[i]) {
                 live_in[i] = in;

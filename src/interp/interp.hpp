@@ -16,7 +16,7 @@
 // - io_read and io_write go only to IoHooks, never to memory; a u16 access is the low byte
 //   at addr, then the high byte at addr + 1.
 // - jsr stops the run with an Error ("jsr needs the machine"): machine code runs only on
-//   the 6502.
+//   the 6502. wait_cycles only works out its count: time passes only there too.
 // - Every evaluated expression is one step; past max_steps the run stops with StepLimit.
 //   Division by zero gives what the backend's routine gives (check/arith.hpp) and goes on.
 // - A global with :address and no value is never written at the start: it holds whatever

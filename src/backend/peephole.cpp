@@ -674,6 +674,17 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
             falls = true;
             continue;
         }
+        if (item.kind == ItemKind::Wait) {
+            // the registers and memory stay, but for a variable wait's counter; the flags go
+            t.nz_a = false;
+            t.nz_known = false;
+            t.c_known = false;
+            if (item.mode == Mode::Abs) {
+                t.ForgetByte(item.scratch);
+            }
+            falls = true;
+            continue;
+        }
         if (item.kind != ItemKind::Ins) {
             t.ForgetAll();
             falls = item.kind == ItemKind::Label;

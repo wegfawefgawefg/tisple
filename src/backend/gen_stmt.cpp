@@ -307,6 +307,9 @@ void GenStmt(Gen& g, ExprId id) {
     case ExprKind::Jsr:
         EvalJsr(g, id);
         break;
+    case ExprKind::WaitCycles:
+        GenWait(g, id);
+        break;
     default:
         // a value nobody uses: only its effects matter
         if (HasEffects(*g.program, id)) {

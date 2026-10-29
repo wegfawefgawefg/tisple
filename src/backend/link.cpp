@@ -218,6 +218,31 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
     return true;
 }
 
+// by var: a const table (string literals among them) that no kept code names, so it takes
+// no memory; one with an :address stays where it was put
+std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
+    const Program& program = *be.program;
+    std::vector<bool> named(program.vars.size(), false);
+    for (std::size_t f = 0; f < be.code.size(); f++) {
+        if (!(*in.kept)[f]) {
+            continue;
+        }
+        for (const AsmItem& item : be.code[f]) {
+            std::int32_t sym = item.value.sym;
+            if (sym >= 0 && be.info[static_cast<std::size_t>(sym)].role == SymRole::Var) {
+                named[static_cast<std::size_t>(be.info[static_cast<std::size_t>(sym)].owner)] =
+                    true;
+            }
+        }
+    }
+    std::vector<bool> dropped(program.vars.size(), false);
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        const Var& var = program.vars[v];
+        dropped[v] = var.kind == VarKind::ConstArray && !var.placement.has_address && !named[v];
+    }
+    return dropped;
+}
+
 // a segment's extent grows to cover [start, end)
 void Cover(std::uint32_t& low, std::uint32_t& high, std::uint32_t start, std::uint32_t end) {
     low = std::min(low, start);
@@ -354,6 +379,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             lo.preset[v] = static_cast<std::int32_t>(sym.value);
         }
     }
+    lo.dropped = UnreachedTables(be, in);
     lo.reserved = runs;
     lo.reserved.push_back(AddressRange{frames_at, frames_end});
     lo.reserved.push_back(AddressRange{data_end, options.limit});

@@ -351,6 +351,7 @@ void CopyConsts(Checker& ck) {
         info.type = cd.type;
         info.value = cd.value;
         info.var = cd.var;
+        info.string = cd.string;
         ck.names->consts.push_back(info);
     }
 }

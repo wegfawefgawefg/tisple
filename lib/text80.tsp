@@ -1,7 +1,8 @@
 ; 80-column text on an extended 80-column card: 80 x 24 characters, the even columns in aux
 ; memory. (import text80) then
 ;   (text80.on)                   80 columns, the alternate set (MouseText), cleared
-;   (text80.print "Hello")        text at the cursor; a string is a macro argument only
+;   (text80.print "Hello")        text at the cursor, a put call a character
+;   (text80.put_str "Hello")      the same from a zero-terminated string, in a loop
 ;   (text80.put c)                one ASCII character; RETURN starts the next line
 ;   (text80.put_code c)           one screen code as it is, MouseText ($40-$5F) included
 ;   (text80.move col row)         the cursor; text80.col and text80.row read it
@@ -128,13 +129,20 @@
     (if (= col COLUMNS)
         (newline)))
 
-; the text's characters one after another; strings exist only while compiling
+; the text's characters one after another, unrolled: a call a character
 (macro print (text)
     `(do
         ,@(map
             (fn (c)
                 `(put ,c))
             (chars text))))
+
+; the characters of a string literal, or any zero-terminated ASCII text up to 255 long
+(fn put_str ((s (ptr u8))) void
+    (let i u8 0)
+    (while (!= (load (+ s i)) 0)
+        (put (load (+ s i)))
+        (set i (+ i 1))))
 
 ; 80 screen codes from p across row r: the 40 even ones into aux memory, then the odd ones
 (fn put_row ((r u8) (p (ptr u8))) void

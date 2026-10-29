@@ -1,4 +1,5 @@
-; frame timing on a IIe: (import timing) then (timing.frame), (timing.frames n)
+; frame timing on a IIe: (import timing) then (timing.frame), (timing.frames n); for exact
+; delays in cycles, write (wait_cycles n)
 
 (import apple2 a2)
 

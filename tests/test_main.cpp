@@ -54,6 +54,7 @@ int main() {
     tisple_tests::RunInterpTests(results);
     tisple_tests::RunInterpArithTests(results);
     tisple_tests::RunAsmTests(results);
+    tisple_tests::RunWaitTests(results);
     tisple_tests::RunBackendTests(results);
     tisple_tests::RunBackendOpTests(results);
     tisple_tests::RunBackendIndexTests(results);
@@ -67,6 +68,8 @@ int main() {
     tisple_tests::RunBackendFoldTests(results);
     tisple_tests::RunBackendTableTests(results);
     tisple_tests::RunBackendJsrTests(results);
+    tisple_tests::RunBackendWaitTests(results);
+    tisple_tests::RunBackendStringTests(results);
     tisple_tests::RunBackendWhileTests(results);
     tisple_tests::RunBackendMulTests(results);
     tisple_tests::RunBackendBytewiseTests(results);

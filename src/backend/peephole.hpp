@@ -14,7 +14,9 @@
 //   needs moves before the loop (carry.cpp)
 // - a load or ALU result whose registers and flags nothing reads goes (dead_regs.cpp)
 // Values are only tracked for symbols (never for numbers, which is where I/O lives), and
-// any label, call or indexed store forgets what memory holds.
+// any label, call or indexed store forgets what memory holds. A wait item (gen_wait.cpp) is
+// never dropped or moved; it keeps the registers and memory (but a variable wait's scratch
+// byte) and changes the flags.
 
 #include "backend/gen.hpp"
 

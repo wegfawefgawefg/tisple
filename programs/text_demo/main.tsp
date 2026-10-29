@@ -87,24 +87,24 @@
         (text80.put (at digit_buf count))))
 
 (fn print_name ((c u8)) void
-    (match c
-        (0 (text80.print "Tisple ][ text viewer"))
-        (1 (text80.print "How it is put together"))
-        (2 (text80.print "The character set"))
-        (3 (text80.print "A sine wave"))
-        (4 (text80.print "Primes"))
-        (_ (text80.print "Numbers"))))
+    (text80.put_str (match c
+        (0 "Tisple ][ text viewer")
+        (1 "How it is put together")
+        (2 "The character set")
+        (3 "A sine wave")
+        (4 "Primes")
+        (_ "Numbers"))))
 
 ; where chapter c's bytes are
 (fn print_place ((c u8)) void
     (let address u16 (as u16 (at chapter_start c)))
-    (if (at chapter_aux c)
-        (text80.print "aux memory")
+    (text80.put_str (if (at chapter_aux c)
+        "aux memory"
         (if (>= address 0xD000)
-            (text80.print "the language card")
+            "the language card"
             (if (< address 0x6000)
-                (text80.print "main memory below $6000")
-                (text80.print "main memory from $6000")))))
+                "main memory below $6000"
+                "main memory from $6000")))))
 
 ; inverse spaces to just before column end, on the cursor's row
 (fn fill_to ((end u8)) void
@@ -129,12 +129,12 @@
 (fn status () void
     (text80.move 0 STATUS_ROW)
     (text80.inverse true)
-    (text80.print " chapter ")
+    (text80.put_str " chapter ")
     (print_number (as u16 (+ top_chapter 1)))
-    (text80.print " is in ")
+    (text80.put_str " is in ")
     (print_place top_chapter)
     (fill_to 46)
-    (text80.print "arrows, RETURN, T, ESC to leave")
+    (text80.put_str "arrows, RETURN, T, ESC to leave")
     (fill_to 79)
     (text80.poke 79 STATUS_ROW INVERSE_SPACE)
     (text80.inverse false))

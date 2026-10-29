@@ -10,6 +10,8 @@
 //   number below $100. Indexed modes are never shrunk, since zp,X wraps inside page zero
 //   while abs,X does not.
 // - A branch whose target is out of range becomes the inverted branch over a JMP.
+// - A wait (asm/wait.hpp) is one item whose bytes depend on its address and whose size does
+//   not: an exact delay that keeps the registers and memory and may change the flags.
 
 #include "asm/opcodes.hpp"
 
@@ -36,6 +38,9 @@ enum class ItemKind : std::uint8_t {
     Label, // value.sym is the label
     Byte,  // one data byte: the value's low byte (or the part asked for)
     Note,  // listing text in Assembly::notes[note]
+    // an exact delay: mode Imp, value the cycles (a number); or mode Abs, a variable wait of
+    // the u16 at value plus kVarWaitOverhead, counting in the zero-page byte `scratch`
+    Wait,
 };
 
 // what code generation knows about the carry an instruction leaves, beyond what the
@@ -53,6 +58,7 @@ struct AsmItem {
     AsmValue value;
     std::int32_t note = -1;
     Carry carry = Carry::Unknown; // for a branch: when taken; else after it
+    AsmValue scratch;             // a variable wait's counter
     // set by LayoutCode
     std::uint16_t address = 0;
     std::uint8_t size = 0;
@@ -78,6 +84,8 @@ void DefineSymbol(Assembly& as, std::int32_t sym, std::uint32_t value);
 AsmItem MakeIns(Mn mn, Mode mode, AsmValue value = AsmValue());
 AsmItem MakeLabel(std::int32_t sym);
 AsmItem MakeByte(AsmValue value);
+AsmItem MakeWait(std::uint32_t cycles);
+AsmItem MakeVarWait(AsmValue low, AsmValue scratch);
 AsmValue Num(std::int32_t number);
 AsmValue SymValue(std::int32_t sym, std::int32_t offset = 0, Part part = Part::Whole);
 
@@ -94,7 +102,8 @@ bool EncodeCode(const Assembly& as, std::vector<std::uint8_t>& out, std::string&
 
 // one item as listing text, "LDA $80" (with "  ; name+1" for symbols); bytes from EncodeCode
 std::string ItemText(const Assembly& as, const AsmItem& item);
-// cycles of an instruction, not counting page crossings or taken branches
+// cycles of an instruction, not counting page crossings or taken branches; a wait's exact
+// count (a variable one's overhead)
 int ItemCycles(const Assembly& as, const AsmItem& item);
 
 } // namespace tisple

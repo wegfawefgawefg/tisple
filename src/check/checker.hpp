@@ -48,7 +48,8 @@ struct ConstDecl {
     Progress state = Progress::Pending;
     TypeId type = kErrorType;
     std::uint16_t value = 0; // scalars
-    std::int32_t var = -1;   // arrays
+    std::int32_t var = -1;   // arrays, and a string's table
+    bool string = false;     // a (ptr u8) to the string table var
 };
 
 struct ScopeEntry {
@@ -101,6 +102,7 @@ struct Checker {
     std::vector<const Node*> function_forms; // by function id
     std::vector<std::size_t> body_starts;    // by function id
     std::map<std::tuple<int, int, std::uint32_t, int>, TypeId> interned;
+    std::map<std::string, std::int32_t> string_tables; // a string's bytes -> its table var
     Context at;
     NameIndex* names = nullptr; // editor tools only: what each written name is
 };
@@ -233,6 +235,13 @@ ExprId CheckIoRead(Checker& ck, const Node& node);
 ExprId CheckIoWrite(Checker& ck, const Node& node);
 // (jsr addr (a v) (x v) (y v)): a machine-code call; its value is A afterwards
 ExprId CheckJsr(Checker& ck, const Node& node);
+// string literals (strings.cpp): the const table holding the bytes and a 0, shared by equal
+// strings (-1, with an error, when a byte is not ASCII); the (ptr u8) to it
+std::int32_t StringTable(Checker& ck, const Node& node);
+ExprId StringPointer(Checker& ck, const Node& node, std::int32_t table);
+ExprId CheckString(Checker& ck, const Node& node);
+// (wait_cycles n): an exact delay; a constant n of 2 or more, or a u16 waited plus an overhead
+ExprId CheckWaitCycles(Checker& ck, const Node& node);
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function);
 // (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);

@@ -64,6 +64,8 @@ void RunTextLibTests(TestResults& results);
 void RunTextDemoTests(TestResults& results);
 
 void RunAsmTests(TestResults& results);
+// exact delays on the simulator (test_wait.cpp)
+void RunWaitTests(TestResults& results);
 void RunBackendTests(TestResults& results);
 void RunBackendOpTests(TestResults& results);
 void RunBackendProgramTests(TestResults& results);
@@ -79,6 +81,8 @@ void RunBackendBuildTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
+void RunBackendWaitTests(TestResults& results);
+void RunBackendStringTests(TestResults& results);
 void RunBackendWhileTests(TestResults& results);
 void RunBackendMulTests(TestResults& results);
 void RunBackendBytewiseTests(TestResults& results);

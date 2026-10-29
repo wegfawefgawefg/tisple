@@ -94,6 +94,7 @@ bool HasEffects(const Program& program, ExprId id) {
         case ExprKind::IoRead:
         case ExprKind::IoWrite:
         case ExprKind::Jsr:
+        case ExprKind::WaitCycles:
         case ExprKind::Return:
         case ExprKind::Break:
         case ExprKind::Continue:
