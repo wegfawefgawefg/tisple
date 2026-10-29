@@ -201,9 +201,12 @@ void FindUsedRoutines(Backend& be) {
 
 bool CompileProgram(const Program& source, const BuildOptions& options, Compiled& out,
                     std::vector<Diagnostic>& errors) {
-    // the same program with its constant arithmetic folded: what the code is made from
+    // the same program with its constant arithmetic folded and the mid-level passes run on
+    // it: what the code is made from. The interpreter keeps running the program as written
     Program program = source;
     FoldConstants(program);
+    OptReport report;
+    OptimizeProgram(program, options.opt, report);
     out = Compiled();
     out.origin = options.origin;
     out.main = program.main;
@@ -272,6 +275,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
         return false;
     }
     out.as = std::move(be.as);
+    out.opt = report;
     return true;
 }
 

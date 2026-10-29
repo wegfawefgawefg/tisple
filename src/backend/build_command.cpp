@@ -52,6 +52,14 @@ bool ParseArgs(int argc, char** argv, bool run, BuildArgs& args) {
     for (int i = 2; i < argc; i++) {
         const char* arg = argv[i];
         bool has_value = i + 1 < argc;
+        std::string opt_error;
+        if (ParseOptFlag(argc, argv, i, args.options.opt, opt_error)) {
+            if (!opt_error.empty()) {
+                std::fprintf(stderr, "tisple: %s\n", opt_error.c_str());
+                return false;
+            }
+            continue;
+        }
         std::uint64_t number = 0;
         if (!run && std::strcmp(arg, "--asm") == 0) {
             args.listing = true;
@@ -91,6 +99,9 @@ bool Compile(const BuildArgs& args, Program& program, Compiled& compiled) {
         std::fputs(FormatDiagnostics(program.sources, errors).c_str(), stderr);
         return false;
     }
+    if (args.options.opt.bisect >= 0) {
+        std::fputs(DescribeOptReport(compiled.opt).c_str(), stderr);
+    }
     return true;
 }
 
@@ -114,6 +125,7 @@ int RunBuildCommand(int argc, char** argv) {
     BuildArgs args;
     if (!ParseArgs(argc, argv, false, args)) {
         std::fprintf(stderr, "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm]\n"
+                             "  [-O0|-O1] [--opt-bisect N] [--no-pass dead|loops]\n"
                              "addresses take $hex, 0xhex or decimal\n");
         return 1;
     }

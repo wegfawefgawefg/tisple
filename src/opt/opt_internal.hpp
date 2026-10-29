@@ -1,0 +1,129 @@
+#pragma once
+
+// Shared by the mid-level passes: the pass state, effect summaries, liveness and tree edits.
+
+#include "opt/opt.hpp"
+
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace tisple::opt {
+
+// ---- sets of variables, one bit each
+
+using Bits = std::vector<std::uint64_t>;
+
+inline bool HasBit(const Bits& bits, std::int32_t bit) {
+    std::size_t b = static_cast<std::size_t>(bit);
+    return (bits[b / 64] >> (b % 64)) & 1;
+}
+inline void SetBit(Bits& bits, std::int32_t bit) {
+    std::size_t b = static_cast<std::size_t>(bit);
+    bits[b / 64] |= std::uint64_t(1) << (b % 64);
+}
+inline void ClearBit(Bits& bits, std::int32_t bit) {
+    std::size_t b = static_cast<std::size_t>(bit);
+    bits[b / 64] &= ~(std::uint64_t(1) << (b % 64));
+}
+inline void OrBits(Bits& into, const Bits& from) {
+    for (std::size_t i = 0; i < into.size(); i++) {
+        into[i] |= from[i];
+    }
+}
+
+// ---- effect summaries (summary.cpp)
+
+// what running a function may do, its callees included
+struct Summary {
+    std::vector<bool> reads;  // by var: globals it reads
+    std::vector<bool> writes; // by var: globals it sets
+    bool loads = false;       // reads through a pointer: address-taken vars, undeclared memory
+    bool stores = false;      // writes through a pointer
+    bool io = false;          // io_read or io_write
+    bool jsr = false;         // machine code: may read and write any global
+    bool unknown = false;     // a node this analysis does not know: every effect
+    bool terminates = true;   // every loop in it provably ends
+    bool pure = false;        // none of the effects above, and it ends: see PureFunction
+};
+
+// ---- the pass state
+
+struct Pass {
+    Program* program = nullptr;
+    const OptOptions* options = nullptr;
+    OptReport* report = nullptr;
+    std::vector<std::uint32_t> refs; // by expr: how many nodes (or function bodies) name it
+    std::vector<Summary> summaries;  // by function
+    // the last transformation made, for --opt-bisect
+    const char* last_what = "";
+    ExprId last_at = -1;
+    std::int32_t last_var = -1;
+};
+
+const Expr& At(const Pass& p, ExprId id);
+ExprId Item(const Pass& p, const Expr& e, std::uint32_t i);
+const Var& VarOf(const Pass& p, std::int32_t var);
+
+// may this transformation be made? Counts it; false once --opt-bisect's budget is spent
+bool Allow(Pass& p, const char* what, ExprId at, std::int32_t var);
+
+void ComputeSummaries(Pass& p);
+// a call that can be dropped when its value is unused: writes no global, no memory through a
+// pointer, no I/O or jsr, and ends
+bool PureFunction(const Pass& p, std::int32_t function);
+// no effect at all, and ends: dropped when its value is unused
+bool IsPure(const Pass& p, ExprId id);
+// the place's index expressions (its root var is written, not read) have no effect
+bool PurePlace(const Pass& p, ExprId place);
+// the var a set's place is rooted at
+std::int32_t PlaceRoot(const Pass& p, ExprId place);
+
+// ---- termination (terminate.cpp)
+
+// every loop and call inside id provably ends: every for does, a while when a counter moves
+// monotonically towards its bound each pass
+bool CodeTerminates(const Pass& p, ExprId id);
+// this while's condition alone ends it (loops and calls inside are not looked at)
+bool WhileEnds(const Pass& p, ExprId loop);
+
+// ---- liveness (live.cpp)
+
+// one function's variables whose every read and write the tree shows: its own locals and
+// params and the plain globals (no address taken, no :address, not in aux)
+struct Liveness {
+    std::vector<std::int32_t> bit; // by var: its bit, or -1 when not tracked
+    std::int32_t count = 0;
+    // live right after each set and let, and after each loop
+    std::unordered_map<ExprId, Bits> after;
+};
+
+Liveness ComputeLiveness(const Pass& p, std::int32_t function);
+// may var be read after id runs? True for untracked vars and nodes liveness never reached
+bool LiveAfter(const Liveness& live, ExprId id, std::int32_t var);
+
+// ---- tree edits (edit.cpp)
+
+void CountRefs(Pass& p);
+
+// what a pass does with one statement (a form whose value is unused)
+struct Action {
+    enum Kind : std::uint8_t { Keep, Drop, Replace } kind = Keep;
+    ExprId with = -1;      // Replace: the sub-expression to run instead
+    const char* what = ""; // for --opt-bisect: "dead let", "dead loop", ...
+    std::int32_t var = -1; // the variable it is about, or -1
+};
+
+using Decide = Action (*)(const Pass& p, const Liveness& live, ExprId stmt);
+
+// every statement of function's body (do items whose value is unused, arms of an if or match
+// whose value is unused) offered to decide, outermost first; returns the changes made
+std::uint64_t EditStatements(Pass& p, std::int32_t function, Decide decide);
+
+// ---- passes
+
+Action DecideDead(const Pass& p, const Liveness& live, ExprId stmt); // dead.cpp
+Action DecideLoop(const Pass& p, const Liveness& live, ExprId stmt); // loops.cpp
+
+} // namespace tisple::opt
