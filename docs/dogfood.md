@@ -1093,6 +1093,13 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     fuzz shape tests/fuzz_gen_common.cpp (`seed N (common)`, one seed in four).
     Found on the way: the link read its list of the tables the program as
     written names past its end once the passes add variables (ASan).
+43. Unrolled nests (2026-10-29, gen_loop.cpp): each for checked its own
+    copies against the unroll budget and counted a loop inside it once, so a
+    nest of short loops unrolled level by level; with the dead work around
+    them gone, a 3 KB fuzz farm program (run 10, seed 7000731954 dead) took
+    47 KB. A loop now counts the copies the unrolled loops around it make.
+    That program: 1576 bytes of code (1818 at -O0). Every program, example,
+    kernel and race program is unchanged. Test in test_backend_while.cpp.
 
 ## Gap finder (2026-10-26)
 

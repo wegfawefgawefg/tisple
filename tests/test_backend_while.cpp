@@ -436,6 +436,13 @@ void TestLoopControl(TestResults& results) {
     CHECK(results, CountMn(c, "t.f", tisple::Mn::DEX) + CountMn(c, "t.f", tisple::Mn::DEY) +
                            CountMn(c, "t.f", tisple::Mn::DEC) ==
                        1);
+    // a nest of loops small enough to unroll one by one: the copies of the outer ones count,
+    // so the nest stays within one loop's budget instead of 6 * 7 * 7 reads (a fuzz farm
+    // program that took 47 KB)
+    Compiled nest = CompileText(std::string(kData) +
+                                "(fn f () void (for a u8 0 6 (for b i8 -4 3 (for c i8 -4 3 "
+                                "(io_read u8 49189)))))");
+    CHECK(results, CountMn(nest, "t.f", tisple::Mn::LDA) < 80);
 }
 
 // compares of a while test against a byte variable the loop never sets, done against it plus

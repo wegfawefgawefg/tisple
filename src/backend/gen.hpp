@@ -329,6 +329,9 @@ struct Gen {
     bool violation = false; // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
+    // copies of the code being made that unrolled loops around it make: a loop inside counts
+    // them, so unrolled nests stay within one loop's budget
+    std::uint32_t unrolled_copies = 1;
     std::vector<LoopCtx> loops;
     std::vector<InlineCtx> inlines;
     std::uint32_t temp_top = 0;
