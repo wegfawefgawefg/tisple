@@ -210,6 +210,14 @@ void Loops(TestResults& results) {
         "(fn f ((x u8)) u8 (for i u8 0 4 (if (= i x) (return 1))) 0)",
         "(fn f ((x u8)) u8 (for i u8 0 4 (set (at a i) x)) 0)",
     };
+    // a break in a loop's range leaves the loop around it
+    std::string exits = With("(fn f ((x u8)) u8 (let s u8 0) (let i u8 0)\n"
+                             "    (while (< i 5) (set i (+ i 1))\n"
+                             "        (for j u8 0 (do (if (= i x) (break)) 2) (let t u8 j))\n"
+                             "        (set s (+ s 1)))\n"
+                             "    s)");
+    ExpectCount(results, exits, "t.f", ExprKind::For, 1);
+    CheckProgram(results, exits, "t.f", {3});
     for (const char* text : kept) {
         ExpectCount(results, With(text), "t.f", ExprKind::For, 1);
         CheckProgram(results, With(text), "t.f", {2});
