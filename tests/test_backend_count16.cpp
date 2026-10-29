@@ -48,9 +48,10 @@ void TestCountedWordLoops(TestResults& results) {
                      head + " (for m u16 300 303 (set g (+ g (>> g 3)))))\n    g)",
                  9);
     }
-    // a byte counter instead of the word one
-    Compiled c =
-        CompileText("(let g u8 0)\n(fn f ((x u8)) void (for n u16 1000 1100 (set g (+ g x))))");
+    // a byte counter instead of the word one (the body reads the keyboard, so the loop
+    // does not collapse)
+    Compiled c = CompileText(
+        "(let g u8 0)\n(fn f () void (for n u16 1000 1100 (set g (+ g (io_read u8 49152)))))");
     CHECK(results, CountMn(c, "t.f", tisple::Mn::DEX) + CountMn(c, "t.f", tisple::Mn::DEY) +
                            CountMn(c, "t.f", tisple::Mn::DEC) ==
                        1);
