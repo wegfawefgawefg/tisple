@@ -567,6 +567,9 @@ void Combine16(Gen& g, Op op, const Opnd& a, const Opnd& b, const Opnd& dst);
 // a + b, 16-bit, with bytes known before running needing no code (gen_wide.cpp); the
 // result is in dst (or a temporary) except for bytes that are numbers or one operand's byte
 Opnd Add16(Gen& g, const Opnd& a, const Opnd& b, const Opnd* dst);
+// a 16-bit run of + - & | ^ with operands read where they are and one add at most, a byte at
+// a time through A (gen_spine.cpp); false (nothing emitted) when it is not one
+bool EvalSpine16(Gen& g, ExprId id, const Opnd* dst, Opnd& out);
 // multiply by a constant (gen_mulconst.cpp): A = A * c; a 16-bit operand into dst; whether a
 // 16-bit multiply by c is inline rather than the routine
 void MulConst8A(Gen& g, std::uint32_t c);

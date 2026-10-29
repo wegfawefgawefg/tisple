@@ -386,6 +386,11 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         MulConst16(g, b, c, d);
         return d;
     }
+    Opnd spine;
+    if (op != Op::Mul &&
+        EvalSpine16(g, static_cast<ExprId>(&e - g.program->exprs.data()), dst, spine)) {
+        return spine;
+    }
     Opnd a = Eval(g, e.a, nullptr);
     if (MayWriteOpnd(g, e.b, a)) {
         a = Snapshot(g, a);

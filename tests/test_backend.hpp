@@ -96,6 +96,8 @@ void RunBackendSignedCmpTests(TestResults& results);
 void RunBackendCount16Tests(TestResults& results);
 // short loops copied with the counter a number (test_backend_unroll.cpp)
 void RunBackendUnrollTests(TestResults& results);
+// 16-bit runs a byte at a time (test_backend_spine.cpp)
+void RunBackendSpineTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
