@@ -620,7 +620,7 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
     KnownLabels known = FindKnownLabels(p);
     auto is_mergeable = [&](std::int32_t sym) { return Contains(known.mergeable, sym); };
     auto is_loop = [&](std::int32_t sym) { return Contains(known.loop, sym); };
-    // what holds on the jumps seen so far into each mergeable label
+    // what holds on the jumps seen so far into each mergeable or loop label ahead
     std::map<std::int32_t, Tracker> arriving;
     std::map<std::int32_t, std::size_t> labels;
     for (std::size_t i = 0; i < p.items->size(); i++) {
@@ -706,7 +706,11 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
                 p.changed = true;
             }
         }
-        if (IsJumpTo(item) && is_mergeable(item.value.sym)) {
+        // what a jump brings to a label ahead: a mergeable one, or a loop label, which meets
+        // it with the fall and the jumps back
+        auto label = labels.find(item.value.sym);
+        bool ahead = IsJumpTo(item) && label != labels.end() && label->second > i;
+        if (ahead && (is_mergeable(item.value.sym) || is_loop(item.value.sym))) {
             auto found = arriving.find(item.value.sym);
             if (found == arriving.end()) {
                 arriving.emplace(item.value.sym, t);

@@ -1,0 +1,227 @@
+10000031332 t.g3 byte 0 at $001A: interpreter 94, 6502 0
+1000021449 t.gs byte 3 at $0034: interpreter 0, 6502 1
+10000388673 t.g0 byte 0 at $003F: interpreter 48, 6502 39
+10000501067 t.gs byte 3 at $0025: interpreter 0, 6502 1
+10000543605 t.g8 byte 0 at $003F: interpreter 0, 6502 48
+10000571096 t.wb byte 1 at $6801: interpreter 128, 6502 0
+10001028032 t.sp byte 0 at $6BE9: interpreter 0, 6502 255
+10001098158 t.wb byte 0 at $636F: interpreter 12, 6502 111
+10001165555 t.g14 byte 0 at $0023: interpreter 1, 6502 2
+10001186111 t.g1 byte 0 at $0015: interpreter 6, 6502 150
+10001197913 t.g11 byte 0 at $0024: interpreter 4, 6502 0
+10001289661 6502 stopped: illegal opcode
+10001372819 t.wb byte 39 at $6C27: interpreter 24, 6502 132
+10001417447 t.g0 byte 0 at $0038: interpreter 7, 6502 0
+10001530620 t.g3 byte 0 at $005F: interpreter 134, 6502 124
+10001684172 t.g11 byte 0 at $0013: interpreter 1, 6502 0
+10002007626 t.g1 byte 0 at $002E: interpreter 14, 6502 106
+10002140348 I/O: 90 accesses in the interpreter, 108 on the 6502
+10002377629 t.g4 byte 0 at $002B: interpreter 225, 6502 166
+10002648518 I/O: 123 accesses in the interpreter, 1878 on the 6502
+10002708895 t.wb byte 228 at $6528: interpreter 16, 6502 0
+1000375191 t.g2 byte 0 at $001F: interpreter 0, 6502 253
+1000493712 t.wb byte 0 at $6320: interpreter 12, 6502 111
+1000697022 t.gs byte 1 at $0022: interpreter 0, 6502 176
+1001038605 t.g4 byte 0 at $0035: interpreter 2, 6502 0
+1001063888 t.g0 byte 0 at $002A: interpreter 7, 6502 4
+1001152238 t.gs byte 1 at $003B: interpreter 255, 6502 189
+1001429818 t.wb byte 647 at $6729: interpreter 24, 6502 0
+1001604019 t.g5 byte 0 at $002A: interpreter 0, 6502 211
+1001656735 t.g3 byte 0 at $001E: interpreter 255, 6502 0
+1002143727 t.g0 byte 0 at $001F: interpreter 4, 6502 0
+1002418326 t.g15 byte 0 at $003A: interpreter 1, 6502 4
+1002499218 t.g10 byte 0 at $0030: interpreter 148, 6502 174
+1002542238 t.g4 byte 0 at $002E: interpreter 18, 6502 11
+11000046823 t.g6 byte 0 at $002E: interpreter 0, 6502 1
+11000076308 6502 stopped: cycle limit
+11000640185 t.g1 byte 0 at $0038: interpreter 255, 6502 0
+11000642695 t.g0 byte 0 at $0075: interpreter 126, 6502 6
+11000667347 t.wb byte 767 at $69FF: interpreter 6, 6502 0
+11000829743 t.gs byte 1 at $001F: interpreter 127, 6502 155
+11000972604 t.g6 byte 0 at $004B: interpreter 10, 6502 9
+11001001137 t.gs byte 3 at $0029: interpreter 0, 6502 1
+11001114748 t.arr13 byte 195 at $63C3: interpreter 47, 6502 0
+11001165450 I/O: 3 accesses in the interpreter, 0 on the 6502
+11001189799 t.main returned 108 on the 6502, 0 in the interpreter
+11001272404 t.wb byte 2 at $6200: interpreter 0, 6502 2
+11001752179 t.wb byte 0 at $6E00: interpreter 3, 6502 0
+11001790850 t.g2 byte 0 at $002D: interpreter 0, 6502 1
+11002198837 t.g2 byte 0 at $0055: interpreter 24, 6502 113
+11002229203 t.wb byte 37 at $6609: interpreter 1, 6502 0
+11002241008 t.g3 byte 0 at $001F: interpreter 9, 6502 47
+11002431788 t.arr15 byte 67 at $6C43: interpreter 0, 6502 67
+11002443085 t.main returned 6 on the 6502, 0 in the interpreter
+11002485083 t.main returned 1 on the 6502, 0 in the interpreter
+11002568280 t.gs byte 0 at $0045: interpreter 4, 6502 0
+12000047647 t.g5 byte 0 at $0039: interpreter 86, 6502 32
+12000249801 t.g5 byte 0 at $0056: interpreter 243, 6502 58
+12000269880 t.ww byte 1 at $7101: interpreter 229, 6502 0
+12000278727 t.main returned 44889 on the 6502, 76 in the interpreter
+12000662296 t.wb byte 1 at $6A01: interpreter 128, 6502 138
+12000726425 t.ww byte 762 at $6A0A: interpreter 0, 6502 253
+12000958604 t.gs byte 1 at $002E: interpreter 19, 6502 169
+12001092867 t.g2 byte 0 at $002B: interpreter 249, 6502 82
+12001152990 t.gs byte 3 at $004A: interpreter 0, 6502 1
+12001934041 t.g1 byte 0 at $0025: interpreter 128, 6502 111
+12001934647 t.wb byte 45 at $633D: interpreter 0, 6502 254
+12002065368 t.g0 byte 0 at $001B: interpreter 255, 6502 128
+12002071899 t.main returned 27 on the 6502, 136 in the interpreter
+12002437763 t.g4 byte 0 at $0050: interpreter 0, 6502 116
+12002445799 t.wb byte 4 at $6314: interpreter 30, 6502 129
+12002472030 t.wb byte 2 at $65EA: interpreter 0, 6502 255
+12002693220 6502 stopped: cycle limit
+2000505113 I/O access 0: interpreter $C081 write 128, 6502 $C081 write 0
+2000508137 t.g8 byte 0 at $002D: interpreter 0, 6502 1
+2000522301 t.g9 byte 0 at $0055: interpreter 0, 6502 1
+2000593235 t.sm byte 1 at $627E: interpreter 1, 6502 0
+2000669521 t.wb byte 0 at $6544: interpreter 21, 6502 0
+2000737052 t.g10 byte 0 at $002B: interpreter 0, 6502 1
+2000882447 t.wb byte 0 at $6410: interpreter 14, 6502 0
+2000896685 t.wb byte 36 at $6A64: interpreter 0, 6502 118
+2001256642 t.g7 byte 0 at $0016: interpreter 0, 6502 1
+2001658406 t.g8 byte 0 at $0037: interpreter 0, 6502 2
+2001660828 t.wb byte 512 at $6800: interpreter 24, 6502 99
+2001678729 t.g8 byte 0 at $004B: interpreter 34, 6502 0
+2001999631 t.g1 byte 0 at $0038: interpreter 46, 6502 6
+2002161140 t.g7 byte 0 at $003A: interpreter 3, 6502 255
+2002200723 t.g7 byte 0 at $002E: interpreter 0, 6502 1
+2002343535 t.wb byte 0 at $6600: interpreter 24, 6502 0
+2002403732 t.sm byte 0 at $7110: interpreter 2, 6502 1
+2002442014 t.wb byte 255 at $6540: interpreter 0, 6502 254
+2002555835 t.wb byte 0 at $6650: interpreter 46, 6502 32
+2002646532 t.main returned 0 on the 6502, 35927 in the interpreter
+2002672044 t.g2 byte 0 at $001F: interpreter 7, 6502 0
+3000009085 t.g13 byte 0 at $0029: interpreter 0, 6502 4
+3000013211 t.g3 byte 0 at $003E: interpreter 211, 6502 224
+3000438787 t.gs byte 1 at $0038: interpreter 255, 6502 182
+3000530910 t.ww byte 323 at $6943: interpreter 0, 6502 7
+3000879698 t.sm byte 26 at $744A: interpreter 0, 6502 2
+3001076813 t.g7 byte 0 at $001A: interpreter 147, 6502 255
+3001232700 t.main returned 21788 on the 6502, 21849 in the interpreter
+3001247153 t.g6 byte 0 at $002C: interpreter 233, 6502 124
+3001380225 t.g1 byte 0 at $0010: interpreter 210, 6502 0
+3001428896 t.g9 byte 0 at $0046: interpreter 0, 6502 1
+3001636007 t.g9 byte 0 at $003C: interpreter 0, 6502 1
+3001700443 t.g3 byte 0 at $0032: interpreter 0, 6502 255
+3001739269 t.wb byte 0 at $6BC2: interpreter 30, 6502 137
+3002015387 t.g0 byte 0 at $004F: interpreter 14, 6502 104
+3002176775 t.g10 byte 0 at $002C: interpreter 0, 6502 1
+3002226457 t.gs byte 0 at $0040: interpreter 170, 6502 115
+3002348713 t.wb byte 0 at $68D6: interpreter 48, 6502 0
+3002644090 t.wb byte 53 at $6E35: interpreter 52, 6502 0
+4000130434 t.g15 byte 0 at $002C: interpreter 1, 6502 2
+4000216160 t.gs byte 1 at $005E: interpreter 0, 6502 128
+4000274456 t.g0 byte 0 at $0024: interpreter 133, 6502 114
+4000278592 t.g9 byte 0 at $0036: interpreter 0, 6502 1
+4000398093 t.g3 byte 0 at $0017: interpreter 93, 6502 255
+4000407247 t.arr10 byte 4 at $67CA: interpreter 66, 6502 0
+4000915278 t.wb byte 512 at $6755: interpreter 12, 6502 115
+4001126178 t.main returned 30513 on the 6502, 31281 in the interpreter
+4001147174 t.gs byte 4 at $002F: interpreter 0, 6502 3
+4001241138 t.wb byte 512 at $6600: interpreter 14, 6502 0
+4001244585 t.g12 byte 0 at $002F: interpreter 0, 6502 1
+4001921721 t.ww byte 250 at $679A: interpreter 22, 6502 0
+4001964752 t.wb byte 44 at $662C: interpreter 0, 6502 240
+4002258040 t.g3 byte 0 at $001F: interpreter 215, 6502 4
+4002277363 t.g11 byte 0 at $0045: interpreter 2, 6502 1
+4002402497 t.wb byte 15 at $6B1F: interpreter 128, 6502 107
+4002517689 t.wb byte 0 at $6900: interpreter 24, 6502 0
+4002563539 t.wb byte 555 at $6BED: interpreter 14, 6502 121
+4002566562 t.wb byte 0 at $6B40: interpreter 150, 6502 137
+4002640342 t.wb byte 550 at $6B26: interpreter 80, 6502 0
+5000200503 t.g10 byte 0 at $003A: interpreter 0, 6502 1
+5000291801 t.pt byte 0 at $62A0: interpreter 255, 6502 223
+5000311957 t.g0 byte 0 at $002D: interpreter 0, 6502 255
+5000646426 t.g7 byte 0 at $0023: interpreter 171, 6502 40
+5001044472 t.wb byte 268 at $66F8: interpreter 0, 6502 240
+5001097100 t.g4 byte 0 at $0016: interpreter 0, 6502 255
+5001269498 t.g0 byte 0 at $002E: interpreter 0, 6502 7
+5001390213 t.g11 byte 0 at $0042: interpreter 0, 6502 1
+5001435490 t.main returned 228 on the 6502, 22 in the interpreter
+5001693203 t.sa byte 4 at $61A2: interpreter 4, 6502 0
+5001725188 t.g6 byte 0 at $0075: interpreter 156, 6502 153
+5001811611 t.wb byte 128 at $6E80: interpreter 24, 6502 134
+5002099532 t.g6 byte 1 at $0017: interpreter 0, 6502 163
+5002112740 t.wb byte 0 at $6800: interpreter 255, 6502 0
+5002282357 t.arr13 byte 1 at $6288: interpreter 1, 6502 0
+5002353488 t.g13 byte 0 at $003F: interpreter 0, 6502 4
+5002653143 t.g1 byte 0 at $0018: interpreter 220, 6502 1
+5002724480 t.main returned 3 on the 6502, 0 in the interpreter
+6000289279 t.g12 byte 0 at $0026: interpreter 0, 6502 1
+6000385716 t.g1 byte 0 at $0026: interpreter 114, 6502 53
+6000547325 t.sm byte 6 at $6B16: interpreter 3, 6502 0
+6000740951 t.g2 byte 0 at $001F: interpreter 0, 6502 2
+6000788108 t.g1 byte 0 at $000E: interpreter 128, 6502 0
+6000950311 t.arr14 byte 118 at $6976: interpreter 93, 6502 0
+6001104888 t.wb byte 18 at $6712: interpreter 24, 6502 0
+6001140188 t.arr11 byte 1 at $6453: interpreter 128, 6502 0
+6001384545 t.g2 byte 0 at $001F: interpreter 128, 6502 0
+6001472548 t.g1 byte 0 at $004E: interpreter 130, 6502 75
+6001511958 t.g10 byte 0 at $002F: interpreter 8, 6502 187
+6001566550 t.g6 byte 0 at $0045: interpreter 0, 6502 190
+6001907359 t.g0 byte 0 at $0039: interpreter 24, 6502 4
+6002084164 t.wb byte 55 at $66CE: interpreter 22, 6502 0
+6002102070 t.wb byte 713 at $6A90: interpreter 28, 6502 134
+6002178703 t.main returned 250 on the 6502, 0 in the interpreter
+6002460671 t.wb byte 3 at $6A03: interpreter 32, 6502 138
+6002602130 t.g9 byte 0 at $0058: interpreter 1, 6502 0
+6002687418 t.g5 byte 0 at $003F: interpreter 0, 6502 1
+7000111984 t.g10 byte 0 at $001F: interpreter 209, 6502 255
+7000142370 t.g1 byte 0 at $0035: interpreter 149, 6502 217
+7000147045 t.wb byte 0 at $6391: interpreter 32, 6502 131
+7000168072 t.gs byte 3 at $0042: interpreter 0, 6502 1
+7000396123 t.ww byte 262 at $6C9B: interpreter 0, 6502 254
+7000526595 t.g3 byte 0 at $002C: interpreter 113, 6502 0
+7000548942 t.g8 byte 0 at $0033: interpreter 0, 6502 1
+7000690140 t.g9 byte 1 at $002B: interpreter 0, 6502 136
+7000836049 t.wb byte 255 at $63E4: interpreter 0, 6502 246
+7001319500 t.g7 byte 0 at $001B: interpreter 255, 6502 157
+7001446550 t.wb byte 288 at $6420: interpreter 128, 6502 55
+7001590777 t.wb byte 128 at $67B8: interpreter 28, 6502 131
+7001713991 t.wb byte 159 at $6E9F: interpreter 128, 6502 112
+7001898807 t.arr12 byte 0 at $6200: interpreter 0, 6502 249
+7002163842 t.g9 byte 0 at $0061: interpreter 0, 6502 255
+7002266727 t.g1 byte 0 at $0022: interpreter 0, 6502 4
+7002304467 t.g10 byte 0 at $001F: interpreter 0, 6502 1
+7002590636 t.g13 byte 0 at $0030: interpreter 0, 6502 1
+7002618156 t.wb byte 221 at $6477: interpreter 0, 6502 221
+7002717020 t.g7 byte 0 at $0027: interpreter 0, 6502 1
+8000151654 t.wb byte 265 at $6C09: interpreter 3, 6502 0
+8000431519 t.wb byte 250 at $6EFA: interpreter 3, 6502 110
+8000474287 t.g4 byte 1 at $003A: interpreter 5, 6502 17
+8000849049 t.g9 byte 0 at $004B: interpreter 1, 6502 0
+8001096657 t.wb byte 127 at $68CF: interpreter 0, 6502 255
+8001177172 t.main returned 65150 on the 6502, 15020 in the interpreter
+8001185196 t.main returned 0 on the 6502, 1 in the interpreter
+8001220673 t.arr14 byte 0 at $6700: interpreter 0, 6502 239
+8001565535 t.main returned 65226 on the 6502, 20297 in the interpreter
+8001669321 t.g7 byte 0 at $0024: interpreter 0, 6502 58
+8001944396 t.g8 byte 0 at $0021: interpreter 0, 6502 1
+8001996292 t.g9 byte 0 at $0013: interpreter 1, 6502 0
+8002281338 t.sp byte 19 at $6F13: interpreter 246, 6502 0
+8002545487 t.sp byte 15 at $7757: interpreter 0, 6502 251
+9000215304 t.g9 byte 0 at $003B: interpreter 0, 6502 4
+9000253210 t.wb byte 512 at $7430: interpreter 18, 6502 134
+9000259207 t.wb byte 16 at $6610: interpreter 22, 6502 0
+9000266617 t.g6 byte 0 at $0022: interpreter 57, 6502 8
+9000400559 t.wb byte 512 at $6C00: interpreter 28, 6502 136
+9000486120 t.main returned 132 on the 6502, 24 in the interpreter
+9000510864 t.g6 byte 0 at $0026: interpreter 216, 6502 0
+9000527542 t.g11 byte 0 at $0061: interpreter 4, 6502 0
+9000672961 t.wb byte 4 at $698C: interpreter 6, 6502 105
+9000817593 t.wb byte 512 at $6CC0: interpreter 7, 6502 0
+9000908751 t.pt byte 0 at $6B99: interpreter 255, 6502 0
+9001163128 t.arr14 byte 40 at $619E: interpreter 0, 6502 34
+9001167122 t.g13 byte 0 at $0024: interpreter 0, 6502 3
+9001569947 t.g2 byte 0 at $0024: interpreter 255, 6502 0
+9001692697 t.g4 byte 0 at $0016: interpreter 244, 6502 199
+9001710065 t.main returned 0 on the 6502, 255 in the interpreter
+9001744934 t.g6 byte 0 at $0041: interpreter 231, 6502 129
+9001871325 t.wb byte 100 at $6A5B: interpreter 20, 6502 126
+9002113230 t.ww byte 0 at $6C00: interpreter 222, 6502 0
+9002167207 t.g2 byte 0 at $003D: interpreter 75, 6502 11
+9002284942 t.g4 byte 0 at $002B: interpreter 61, 6502 229
+9002306442 t.g0 byte 0 at $001B: interpreter 0, 6502 128
+9002450031 t.arr11 byte 0 at $636D: interpreter 0, 6502 255
+9002605292 t.wb byte 52 at $6F15: interpreter 4, 6502 2
+9002732271 t.wb byte 90 at $6C5A: interpreter 30, 6502 138

@@ -169,6 +169,32 @@ void TestLabelMerges(TestResults& results) {
     }
 }
 
+// a loop label holds what the fall, the jumps back and the jumps ahead into it all agree on.
+// A jump ahead into a loop: the JMP over a continue that never runs, which the branch back
+// then takes too (fuzz farm run 6, 227 programs)
+void TestLoopEntries(TestResults& results) {
+    const char* globals = "(let g u8 0) (let h u8 0) (let wb (array u8 1024))\n";
+    const char* bodies[] = {
+        // the store of 94 is not yet done on the way in
+        "(fn f ((x u8)) u8 (for i u8 0 x (if (> g 255) (continue)) (set g 94)) g)",
+        // the loads at the inner loop's top are not moved before its label, where only a fall
+        // nothing reaches would run them
+        ("(fn f ((x u8)) u8 (let k u16 0)\n"
+         "    (for i u8 0 7 (if (> h 255) (set k (+ k 40))) (set g g)\n"
+         "        (for m u8 0 2 (set (at wb k) (at wb k))))\n"
+         "    (at wb (+ (as u16 x) 1)))"),
+        // the branch back goes past the test A decides, to a label the branch in reaches
+        ("(fn run ((x u8)) u8 (for i u8 0 x (set g (if (= g 2) 1 1))) (>> x x))\n"
+         "(fn f ((x u8)) u8 (run x))"),
+    };
+    for (const char* body : bodies) {
+        for (int x : {0, 1, 2, 3, 200}) {
+            CheckProgram(results, std::string(globals) + body, "t.f",
+                         {static_cast<std::uint16_t>(x)});
+        }
+    }
+}
+
 // a register still holds the indexed byte it was stored to or loaded from, until the index,
 // that array, or (for (p),Y) any memory or the pointer changes
 void TestIndexedReuse(TestResults& results) {
@@ -238,6 +264,7 @@ void RunBackendPeepTests(TestResults& results) {
     TestDeadValues(results);
     TestIndexedReuse(results);
     TestLabelMerges(results);
+    TestLoopEntries(results);
     TestDeadGlobalStores(results);
     TestFlagReloads(results);
     TestIndexedStores(results);

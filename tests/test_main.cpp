@@ -11,6 +11,7 @@
 #include "test_reader.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 
 namespace tisple_tests {
 
@@ -25,6 +26,13 @@ void RunSourceFileTests(TestResults& results) {
 
 int main() {
     tisple_tests::TestResults results;
+
+    // TISPLE_FUZZ_FILE diffs one program and runs nothing else, so a reducer can call it often
+    const char* fuzz_file = std::getenv("TISPLE_FUZZ_FILE");
+    if (fuzz_file && *fuzz_file) {
+        tisple_tests::RunBackendFuzzTests(results);
+        return results.failed == 0 ? 0 : 1;
+    }
 
     // one line per test group
     tisple_tests::RunSourceFileTests(results);

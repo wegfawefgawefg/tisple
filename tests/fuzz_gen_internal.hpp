@@ -98,6 +98,10 @@ struct Gen {
     // stream of their own (fuzz_gen_loops.cpp)
     Rng loops_rng;
     bool loop_shapes = false;
+    // loops entered by a jump, from a stream of their own (fuzz_gen_entries.cpp); only in
+    // GenerateEntryProgram's programs, so GenerateProgram's stay what they were
+    Rng entry_rng;
+    bool entry_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -212,6 +216,15 @@ struct Gen {
     // a CRC's bit steps on a u8 or u16 local, and masks of its bits tested
     std::string BitSteps(int depth);
     std::string LoopShape(int depth);
+    // ---- loops entered by a jump (fuzz_gen_entries.cpp)
+    // a test that can never hold, on a variable in scope
+    std::string NeverTrue();
+    // a statement whose value goes round a loop: into the u8 g, or at wb's index k
+    std::string EntryCarried(int depth, const std::string& g, const std::string& k);
+    // the loop's first statement: an if on a test that never holds, as a statement or value
+    std::string EntryFirst(int depth, const std::string& g, const std::string& k);
+    // a loop whose body starts with an if on a test that never holds
+    std::string EntryLoop(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

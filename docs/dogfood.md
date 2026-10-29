@@ -973,6 +973,59 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     | other race kernels, Life generations, plasma | (as after 36) | the same |
     | programs/ sizes | snake 1024 code bytes, multi 205 | snake 1021, multi 203 |
 
+38. Fuzz farm run 6: loops entered by a jump (2026-10-29). The farm found 227
+    miscompiled programs in about 33 million (1 in 150,000). All 227 have one
+    cause, in the peephole's register pass: what holds at a loop label (32)
+    met the fall and the jumps back, but not the jumps from before the label
+    into it, which it never noted (`arriving` only kept mergeable labels).
+    Such a jump comes from a loop body that starts with an if on a test the
+    code generator decides, `(if (> g 255) (continue))` or `(<= g3 127)` on an
+    i8: the test is a JMP over the arm, the flow pass sends the branch back
+    through that JMP, and so the JMP, reached from the loop's entry, is a way
+    into the loop's label. The scan, falling there from nothing, took only
+    what the jumps back brought: `(set g 94)` in the loop was dropped as a
+    store of what g held. 168 of the programs fail from 18d16cf (32) on; the
+    other 59 from 61cd7f2 (37), whose hoist checked that no jump from before
+    the label had arrived, but none ever had, so a load moved before the
+    label ran only on a fall nothing reached, not on the jump in.
+    Now (src/backend/peephole.cpp) a jump to a loop label from before it is
+    noted like one to a mergeable label, and the label meets it too; the
+    hoist then sees it and stays put. The stopped attempt (005af54) also kept
+    jump threading to targets after the jump, but threading back is sound:
+    the target's state already met the way in from the compare's branch,
+    whose label met the jump being threaded, and the farm's programs, 12
+    million new ones from the generator and 2 million with the new shape
+    below pass with it (at the farm's rate, 80 would have failed before). Tests: in tests/test_backend_peep.cpp, a
+    loop starting with a continue that never runs and storing a constant, the
+    farm's hoisted load, and a branch back threaded past a test to a label
+    the branch in reaches; the 227 programs as they were written are in
+    tests/programs/fuzz_farm/run6 (seeds.txt lists each seed and how it
+    failed). Leaving out the jumps ahead fails all 227, the 3 tests, and 1636
+    of 80000 seeds' programs with the new shape; the hoist without its
+    check, 51 of them, the hoist test and 19.
+    Why local fuzzing missed it: the plain generator writes such a loop only
+    by chance (a compare of a variable with its type's own bound, at the start
+    of a loop body, with something carried round the loop), about 1 in 150,000
+    programs, and local runs are 300 to 20000; mutation checks for 32 and 37
+    were run on those programs, where no loop was entered by a jump. The
+    generator now writes that shape (tests/fuzz_gen_entries.cpp, EntryLoop:
+    for loops of each counter type and range and a while, whose body starts
+    with an if on a test that never holds, as a statement or a value, then
+    constant stores, stores back, loads and stores at an index the loop
+    never moves, inner loops, ifs with equal arms) from a stream of its own,
+    in a second program for one seed in four (`seed N (entries)`), so
+    GenerateProgram's programs stay what they were (the seeds 1-300 hash
+    holds). Without the fix 8% of those programs fail. The fuzz report now
+    prints a line for every failing seed, not only the first three.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | race kernels | mul8 29331, mul16 31296, fill 43022, memcpy 38151, sieve 1086425, strlen 31642, search 128734, sort 356260, crc16 188348, mandel 4177022, life 160648, line 507296, sprites 65957 | the same |
+    | kernels (tisple_tests) | fill 156409, hgr rows 40138, sprites 878, multiply 419/537, life 138894/42920, line 65513 | the same |
+    | Life generations, plasma frames in 10 s | 56, 243 | the same |
+    | programs/ and examples/ binaries | 13 | the same, byte for byte |
+    | 20000 fuzz programs (seeds 1-20000, the plain generator) | 166379613 cycles | 166379631 |
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

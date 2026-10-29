@@ -55,7 +55,7 @@ set_source_files_properties(${TISPLE_FAST_SOURCES} PROPERTIES COMPILE_OPTIONS "-
 
 # the fuzz generator lives with the tests; `tisple gaps --fuzz` uses it too
 add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp
-               tests/fuzz_gen_loops.cpp tests/fuzz_gen_race.cpp)
+               tests/fuzz_gen_loops.cpp tests/fuzz_gen_race.cpp tests/fuzz_gen_entries.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
 target_include_directories(tisple PRIVATE tests)
 tisple_warnings(tisple)
