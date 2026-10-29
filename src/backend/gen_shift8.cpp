@@ -8,7 +8,8 @@
 //   is the sign in every bit; a signed >> 4 to 6 is the unsigned shift with its sign bit
 //   extended (EOR m / SEC / SBC m, m the shifted sign bit).
 // - By a variable: a loop of the count in X (Y when X is pinned), none for 0. When the count
-//   may be 8 or more, one compare first: those give 0, or the sign in every bit.
+//   may be 8 or more, one compare first: those give 0, or the sign in every bit. A count with
+//   code goes straight into its register when the value is read where it is.
 
 namespace tisple {
 
@@ -70,12 +71,18 @@ void ShiftConst8(Gen& g, Op op, bool is_signed, std::uint16_t c) {
     UnsignedShift(g, op, n);
 }
 
-// A shifted by the count operand; count_max: no count is larger
-void ShiftLoop8(Gen& g, Op op, bool is_signed, const Opnd& count, std::uint32_t count_max) {
+// A shifted by the count operand, or (in_reg) by the count already in the counter register;
+// count_max: no count is larger
+void ShiftLoop8(Gen& g, Op op, bool is_signed, const Opnd& count, std::uint32_t count_max,
+                bool in_reg) {
     int r = CounterReg(g);
     std::int32_t loop = NewLabel(g);
     std::int32_t done = NewLabel(g);
-    LoadCount(g, r, count);
+    if (in_reg) {
+        Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(0));
+    } else {
+        LoadCount(g, r, count);
+    }
     Branch(g, Mn::BEQ, done);
     if (count_max >= 8) {
         // 8 or more: every bit is out
@@ -110,15 +117,26 @@ void EvalShift8(Gen& g, const Expr& e) {
     Opnd count = TrySimple(g, e.b);
     if (CountReady(count)) {
         EvalA(g, e.a);
-        ShiftLoop8(g, e.op, is_signed, count, count_max);
+        ShiftLoop8(g, e.op, is_signed, count, count_max, false);
+        return;
+    }
+    Opnd value = TrySimple(g, e.a);
+    bool plain = value.size == 1 && !value.in_a &&
+                 (value.b[0].kind == ByteKind::Imm || value.b[0].kind == ByteKind::Mem);
+    if (plain && !MayWriteOpnd(g, e.b, value)) {
+        // the count first, straight into its register, then the value read where it is
+        EvalA(g, e.b);
+        Emit(g, CounterReg(g) == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
+        LoadA(g, value, 0);
+        ShiftLoop8(g, e.op, is_signed, Opnd(), count_max, true);
         return;
     }
     EvalA(g, e.a);
-    Opnd value = SpillA(g);
+    value = SpillA(g);
     EvalA(g, e.b);
     count = SpillA(g);
     LoadA(g, value, 0);
-    ShiftLoop8(g, e.op, is_signed, count, count_max);
+    ShiftLoop8(g, e.op, is_signed, count, count_max, false);
 }
 
 } // namespace tisple

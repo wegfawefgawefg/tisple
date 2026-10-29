@@ -79,10 +79,19 @@ void TestCountShifts(TestResults& results) {
         // the count's range below 8: no compare
         CheckPairs(results, "(fn f ((x " + t + ") (n u8)) " + t + " (>> x (& n 7)))", xs, ns);
     }
+    // the count with code first, into X; the value read where it is
     Compiled small = CompileText("(fn f ((x u8) (n u8)) u8 (>> x (& n 7)))");
-    CHECK(results, CountMn(small, "t.f", tisple::Mn::CPX) == 0);
+    CHECK(results, CountMn(small, "t.f", tisple::Mn::TAX) == 1);
+    CHECK(results, CountMn(small, "t.f", tisple::Mn::STA) == 0);
+    // ... in a loop whose counter is in X: into Y
+    CheckPairs(results,
+               "(let acc u8 0)\n"
+               "(fn f ((x u8) (n u8)) u8 (set acc 0)\n"
+               "    (for i u8 0 (& n 7) (set acc (^ acc (<< x (& (+ i n) 15)))))\n    acc)",
+               xs, ns);
     Compiled big = CompileText("(fn f ((x u8) (n u8)) u8 (>> x (& n 15)))");
-    CHECK(results, CountMn(big, "t.f", tisple::Mn::CPX) == 1);
+    // against 0 (the count came in A) and against 8
+    CHECK(results, CountMn(big, "t.f", tisple::Mn::CPX) == 2);
     // 16 bits: a byte moved first for 8 or more
     std::vector<std::uint16_t> words = {0,      1,      0x00FF, 0x0100, 0x7FFF,
                                         0x8000, 0x8001, 0xA5C3, 0xFFFF};
