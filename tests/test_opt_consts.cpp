@@ -86,9 +86,12 @@ void Branches(TestResults& results) {
 }
 
 void Loops(TestResults& results) {
-    // a value set on every pass is not known after it, nor inside
+    // a value set on every pass is not known after it, nor inside (collapse would add the
+    // passes up)
     std::string carried = With("(fn f () u8 (let s u8 0) (for i u8 0 4 (set s (+ s 1))) s)");
-    ExpectCount(results, carried, "t.f", ExprKind::Binary, 1);
+    tisple::OptOptions no_collapse;
+    no_collapse.disabled = {"collapse"};
+    CHECK(results, CountKind(Optimize(carried, no_collapse), "t.f", ExprKind::Binary) == 1);
     CheckProgram(results, carried, "t.f", {});
     // one the loop never changes is known inside it
     std::string held = With("(fn f () u8 (let k u8 3) (for i u8 0 4 (set g (+ g k))) g)");

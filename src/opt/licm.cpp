@@ -5,8 +5,7 @@
 // leaves alone moves on the way down.
 //
 // - From a while's condition: always, since the condition runs whenever the loop is reached.
-// - Not out of a loop that makes one pass. Not a multiply the backend does faster in a loop
-//   (quarter squares) out of every loop, from a loop of two passes.
+// - Not out of a loop that makes one pass.
 // - From the body: when the body surely runs (BodyRuns, KnownTrips), else behind a guard that
 //   tests the loop's condition once more, so a loop that runs zero times does not pay:
 //     (if (< start end) (do (let t work) (for i T start end ...t...)))
@@ -32,7 +31,6 @@ struct Hoister {
     Pass* p = nullptr;
     std::int32_t function = -1;
     std::uint64_t changes = 0;
-    int depth = 0; // loops around the statement being looked at
 };
 
 // (let var value) for an expression moved out of its place, which now reads var
@@ -162,18 +160,6 @@ ExprId GuardTest(Hoister& h, ExprId loop, std::vector<ExprId>& before) {
     return NewExpr(p, test);
 }
 
-// work the backend does faster in a loop, moved out of every loop by a loop that makes two
-// passes, costs more than it saves
-void DropFasterInLoops(const Pass& p, std::vector<ExprId>& found) {
-    std::vector<ExprId> kept;
-    for (ExprId id : found) {
-        if (!FasterInLoops(p, id)) {
-            kept.push_back(id);
-        }
-    }
-    found = kept;
-}
-
 // what stands where the loop stood: lets, then the loop (maybe in a guard); empty when
 // nothing moved. before: the statement just before the loop, or -1
 std::vector<ExprId> Hoist(Hoister& h, ExprId loop, ExprId before) {
@@ -187,10 +173,6 @@ std::vector<ExprId> Hoist(Hoister& h, ExprId loop, ExprId before) {
     }
     Invariants found;
     FindInvariants(p, loop, w, found);
-    if (h.depth == 0 && trips == 2) {
-        DropFasterInLoops(p, found.head);
-        DropFasterInLoops(p, found.body);
-    }
     std::vector<Moved> moved;
     MoveAll(h, loop, found.head, moved, out);
     bool guard = !found.body.empty() && trips < 0 && !BodyRuns(p, loop);
@@ -229,9 +211,7 @@ void Visit(Hoister& h, ExprId id, bool shared);
 // the loops inside a loop just looked at, which keeps its id wherever it now stands
 void VisitInside(Hoister& h, ExprId loop) {
     Expr e = At(*h.p, loop);
-    h.depth++;
     EachChild(*h.p, e, [&](ExprId child) { Visit(h, child, false); });
-    h.depth--;
 }
 
 // a loop that is an if's arm or a clause's body: what stands for it in a new do in that slot
@@ -346,13 +326,9 @@ void Visit(Hoister& h, ExprId id, bool shared) {
     case ExprKind::Return:
     case ExprKind::Let:
     case ExprKind::Set:
-        EachChild(p, e, [&](ExprId child) { Visit(h, child, shared); });
-        return;
     case ExprKind::While:
     case ExprKind::For:
-        h.depth++;
         EachChild(p, e, [&](ExprId child) { Visit(h, child, shared); });
-        h.depth--;
         return;
     default:
         return; // not known here

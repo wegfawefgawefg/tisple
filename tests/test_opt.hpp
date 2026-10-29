@@ -32,6 +32,9 @@ void RunOptLicmTests(TestResults& results);
 // common subexpressions (test_opt_cse.cpp) and compile-time evaluation (test_opt_eval.cpp)
 void RunOptCseTests(TestResults& results);
 void RunOptEvalTests(TestResults& results);
+// loop collapse and unread arguments (test_opt_collapse.cpp), value ranges (test_opt_ranges.cpp)
+void RunOptCollapseTests(TestResults& results);
+void RunOptRangesTests(TestResults& results);
 // -O0, --opt-bisect and --no-pass (test_opt_flags.cpp)
 void RunOptFlagTests(TestResults& results);
 

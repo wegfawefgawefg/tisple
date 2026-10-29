@@ -89,7 +89,8 @@ void Flags(TestResults& results) {
     CHECK(results, Parses({"--no-pass", "loops"}, o, error) && error.empty());
     CHECK(results, o.disabled.size() == 1 && o.disabled[0] == "loops");
     CHECK(results, Parses({"--no-pass", "fold"}, o, error) &&
-                       error.find("dead loops consts licm cse eval") != std::string::npos);
+                       error.find("dead loops args collapse consts ranges licm cse eval") !=
+                           std::string::npos);
     error.clear();
     CHECK(results, Parses({"--opt-bisect", "-3"}, o, error) && !error.empty());
     error.clear();
@@ -154,8 +155,9 @@ void PassesOff(TestResults& results) {
     CHECK(results, CountKind(o0, "t.f", ExprKind::While) == 1);
     CHECK(results, CountKind(o0, "t.f", ExprKind::Let) == 4);
 
+    // (collapse would run the for's body once)
     tisple::OptOptions no_loops;
-    no_loops.disabled = {"loops"};
+    no_loops.disabled = {"loops", "collapse"};
     Opted dead = Optimize(kProgram, no_loops);
     CHECK(results, CountKind(dead, "t.f", ExprKind::While) == 1);
     CHECK(results, CountKind(dead, "t.f", ExprKind::For) == 1);
@@ -180,8 +182,9 @@ void PassesOff(TestResults& results) {
     Opted kept = Optimize(kMotion, no_consts);
     CHECK(results, CountKind(kept, "t.f", ExprKind::Match) == 1);
     CHECK(results, CountKind(Optimize(kMotion), "t.f", ExprKind::Match) == 0);
+    // (collapse would add the loops' products up at once)
     tisple::OptOptions no_licm;
-    no_licm.disabled = {"licm"};
+    no_licm.disabled = {"licm", "collapse"};
     int division = static_cast<int>(tisple::Op::Div);
     CHECK(results, LoopDepth(Optimize(kMotion, no_licm), "t.k", ExprKind::Binary, division) == 1);
     CHECK(results, LoopDepth(Optimize(kMotion), "t.k", ExprKind::Binary, division) == 0);

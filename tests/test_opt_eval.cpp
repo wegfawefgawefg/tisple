@@ -72,7 +72,7 @@ void Stays(TestResults& results) {
         "(fn pause ((v u8)) u8 (wait_cycles 100) v)\n(fn f ((x u8)) u8 (+ (pause 4) x))",
         "(fn spin ((v u8)) u8 (let c u8 v) (while (!= c 0) (set c (- c 2))) c)\n"
         "(fn f ((x u8)) u8 (+ (spin 4) x))",
-        "(fn long ((v u16)) u16 (let s u16 0) (for i u16 0 60000 (set s (+ s v))) s)\n"
+        "(fn long ((v u16)) u16 (let s u16 0) (for i u16 0 60000 (set s (+ s (^ v i)))) s)\n"
         "(fn f ((x u8)) u16 (+ (long 3) (as u16 x)))",
     };
     for (const char* text : kept) {

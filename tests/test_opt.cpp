@@ -253,10 +253,14 @@ void Loops(TestResults& results) {
                              "        (for j u8 0 (do (if (= i x) (break)) 2) (let t u8 j))\n"
                              "        (set s (+ s 1)))\n"
                              "    s)");
-    ExpectCount(results, exits, "t.f", ExprKind::For, 1);
+    // (loop collapse runs the first two kept below once, on their last pass, and this empty for
+    // as a test of its range, break and all)
+    tisple::OptOptions no_collapse;
+    no_collapse.disabled = {"collapse"};
+    CHECK(results, CountKind(Optimize(exits, no_collapse), "t.f", ExprKind::For) == 1);
     CheckProgram(results, exits, "t.f", {3});
     for (const char* text : kept) {
-        ExpectCount(results, With(text), "t.f", ExprKind::For, 1);
+        CHECK(results, CountKind(Optimize(With(text), no_collapse), "t.f", ExprKind::For) == 1);
         CheckProgram(results, With(text), "t.f", {2});
     }
 }
@@ -343,6 +347,8 @@ void RunOptTests(TestResults& results) {
     RunOptLicmTests(results);
     RunOptCseTests(results);
     RunOptEvalTests(results);
+    RunOptCollapseTests(results);
+    RunOptRangesTests(results);
     RunOptFlagTests(results);
 }
 

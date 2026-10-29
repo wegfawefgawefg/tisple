@@ -196,8 +196,8 @@ bool Invariant(const Pass& p, ExprId id, const LoopWrites& w) {
     }
 }
 
-// may running id end the pass early: a return, a break or continue not inside a loop of its
-// own (depth counts the loops entered), or a node not known here
+} // namespace
+
 bool MayLeave(const Pass& p, ExprId id, int depth) {
     if (id < 0) {
         return false;
@@ -249,6 +249,8 @@ bool MayLeave(const Pass& p, ExprId id, int depth) {
         return true; // not known here
     }
 }
+
+namespace {
 
 struct Finder {
     const Pass* p = nullptr;

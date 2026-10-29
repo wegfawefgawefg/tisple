@@ -60,6 +60,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool licm = !Disabled(options, "licm");
     bool cse = !Disabled(options, "cse");
     bool eval = !Disabled(options, "eval");
+    bool collapse = !Disabled(options, "collapse");
+    bool ranges = !Disabled(options, "ranges");
+    bool args = !Disabled(options, "args");
     std::size_t fn_count = program.functions.size();
     for (int round = 0; round < kMaxRounds; round++) {
         opt::CountRefs(p);
@@ -71,12 +74,21 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && loops; f++) {
             changes += opt::EditStatements(p, static_cast<std::int32_t>(f), opt::DecideLoop);
         }
+        if (args) {
+            changes += opt::DropUnreadArgs(p);
+        }
+        if (collapse) {
+            changes += opt::CollapseLoops(p);
+        }
         // before constant propagation, which carries the values on
         if (eval) {
             changes += opt::EvaluateCalls(p);
         }
         if (consts) {
             changes += opt::PropagateConstants(p);
+        }
+        if (ranges) {
+            changes += opt::FoldRanges(p);
         }
         // last: they add variables the summaries of this round do not know (locals only, so
         // what the summaries say of globals still holds). Common subexpressions after code
@@ -107,8 +119,8 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 } // namespace
 
 const std::vector<std::string>& OptPassNames() {
-    static const std::vector<std::string> names = {"dead", "loops", "consts",
-                                                   "licm", "cse",   "eval"};
+    static const std::vector<std::string> names = {"dead",   "loops", "args", "collapse", "consts",
+                                                   "ranges", "licm",  "cse",  "eval"};
     return names;
 }
 

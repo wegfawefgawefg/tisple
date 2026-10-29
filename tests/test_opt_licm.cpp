@@ -22,6 +22,13 @@ std::string With(const std::string& text) {
     return std::string(kGlobals) + text;
 }
 
+// the passes but loop collapse, which would run most of these loops' bodies once
+tisple::OptOptions NoCollapse() {
+    tisple::OptOptions options;
+    options.disabled = {"collapse"};
+    return options;
+}
+
 constexpr int kDiv = static_cast<int>(tisple::Op::Div);
 constexpr int kMod = static_cast<int>(tisple::Op::Mod);
 constexpr int kMul = static_cast<int>(tisple::Op::Mul);
@@ -29,7 +36,7 @@ constexpr int kAdd = static_cast<int>(tisple::Op::Add);
 
 // t.f's deepest binary of this op ends up this deep in loops
 void ExpectDepth(TestResults& results, const std::string& text, int op, int want) {
-    Opted o = Optimize(text);
+    Opted o = Optimize(text, NoCollapse());
     int got = LoopDepth(o, "t.f", ExprKind::Binary, op);
     if (got != want) {
         std::fprintf(stderr, "op %d of t.f is %d loops in, not %d:\n%s\n", op, got, want,
@@ -121,7 +128,7 @@ void Stays(TestResults& results) {
         "(fn f ((y u8)) u8 (for i u8 1 5 (set h (+ h (rd y))) (set g (+ g i))) h)",
     };
     for (const char* text : kept) {
-        Opted o = Optimize(With(text));
+        Opted o = Optimize(With(text), NoCollapse());
         int division = LoopDepth(o, "t.f", ExprKind::Binary, kDiv);
         int call = LoopDepth(o, "t.f", ExprKind::Call);
         bool stayed = (division == 1 || call == 1) && division != 0 && call != 0;
