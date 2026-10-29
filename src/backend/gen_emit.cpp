@@ -291,29 +291,7 @@ bool AHoldsByte(const Gen& g, const Opnd& o, int k) {
 }
 
 std::uint32_t LoopFactor(const Gen& g, ExprId loop) {
-    const Program& program = *g.program;
-    const Expr& e = ExprOf(program, loop);
-    if (e.kind == ExprKind::While) {
-        return 8;
-    }
-    std::uint16_t start = 0;
-    std::uint16_t end = 0;
-    if (e.kind != ExprKind::For || !ConstValue(program, e.a, start)) {
-        return 4;
-    }
-    TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(e.ref)].type);
-    std::int32_t from = SignedValue(kind, start);
-    std::int32_t to = 0;
-    if (e.b < 0) {
-        std::uint32_t bits = KindBits(kind);
-        to = IsSignedKind(kind) ? (1 << (bits - 1)) : (1 << bits);
-    } else if (ConstValue(program, e.b, end)) {
-        to = SignedValue(kind, end);
-    } else {
-        return 4;
-    }
-    std::int32_t trips = to - from;
-    return static_cast<std::uint32_t>(trips < 2 ? 2 : trips > 64 ? 64 : trips);
+    return LoopTrips(*g.program, loop);
 }
 
 std::uint32_t MaxOf(const Gen& g, ExprId id) {

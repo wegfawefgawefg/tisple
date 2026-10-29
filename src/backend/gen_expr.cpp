@@ -4,8 +4,8 @@ namespace tisple {
 
 namespace {
 
-// functions this small (in expressions) are inlined at every call, this many deep at most
-constexpr std::uint32_t kMaxInlineExprs = 24;
+// functions of at most kMaxInlineExprs expressions (analysis.hpp) are inlined at every
+// call, this many deep at most
 constexpr std::size_t kMaxInlineDepth = 4;
 
 const Expr& At(const Gen& g, ExprId id) {

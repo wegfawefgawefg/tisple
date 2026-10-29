@@ -167,6 +167,7 @@ std::vector<bool> KeptFunctions(const Backend& be, const BuildOptions& options) 
 void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added) {
     std::size_t f = static_cast<std::size_t>(function);
     be.code[f].clear();
+    be.multiplies[f].clear();
     be.temp_size[f] = 0;
     be.ptemp_size[f] = 0;
     be.lptr_size[f] = 0;
@@ -175,8 +176,40 @@ void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added)
     }
 }
 
+// the quarter-square routines (1 KB of tables, about half the cycles) for every multiply when
+// one multiply of the kept code may run more than once in a run of the program (all its
+// copies counted: inlined, unrolled), the shift-and-add ones otherwise
+void UpgradeMultiplies(Backend& be) {
+    const Runtime pairs[3][2] = {{Runtime::Mul8, Runtime::Mul8Q},
+                                 {Runtime::Mul16, Runtime::Mul16Q},
+                                 {Runtime::Mul8x8, Runtime::Mul8x8Q}};
+    std::vector<std::uint64_t> runs(be.program->exprs.size(), 0);
+    bool tables = false;
+    for (const auto& sites : be.multiplies) {
+        for (const auto& [id, n] : sites) {
+            std::uint64_t& total = runs[static_cast<std::size_t>(id)];
+            total = std::min<std::uint64_t>(total + n, std::uint64_t(1) << 32);
+            tables = tables || total >= 2;
+        }
+    }
+    if (!tables) {
+        return;
+    }
+    for (std::vector<AsmItem>& code : be.code) {
+        for (AsmItem& item : code) {
+            for (const auto& pair : pairs) {
+                if (item.kind == ItemKind::Ins &&
+                    item.value.sym == be.rt_sym[static_cast<int>(pair[0])]) {
+                    item.value.sym = be.rt_sym[static_cast<int>(pair[1])];
+                }
+            }
+        }
+    }
+}
+
 // the runtime and division routines the kept code calls
 void FindUsedRoutines(Backend& be) {
+    UpgradeMultiplies(be);
     std::vector<bool> named(be.info.size(), false);
     for (const std::vector<AsmItem>& code : be.code) {
         for (const AsmItem& item : code) {
@@ -187,6 +220,11 @@ void FindUsedRoutines(Backend& be) {
     }
     for (int r = 0; r < kRuntimeCount; r++) {
         be.rt_used[r] = named[static_cast<std::size_t>(be.rt_sym[r])];
+    }
+    for (const DivRoutine& r : be.div_routines) {
+        if (r.needs >= 0 && named[static_cast<std::size_t>(r.sym)]) {
+            named[static_cast<std::size_t>(r.needs)] = true;
+        }
     }
     std::vector<DivRoutine> used;
     for (const DivRoutine& r : be.div_routines) {
@@ -223,6 +261,8 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     be.effects = ComputeEffects(program);
     be.div_pairs = FindDivPairs(program);
     be.ranges = FindValueRanges(program);
+    be.fn_runs = FindRunCounts(program);
+    be.multiplies.assign(program.functions.size(), {});
     be.fn_exprs.assign(program.functions.size(), 0);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         be.fn_exprs[f] = CountExprs(program, program.functions[f].body);

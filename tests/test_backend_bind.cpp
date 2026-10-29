@@ -55,10 +55,56 @@ void TestBinding(TestResults& results) {
                  "t.main", {});
 }
 
+// a pointer only inlined calls dereference, through a parameter bound to it, two levels deep:
+// it lives in zero page and the loads and stores go through it, never through a copy
+void TestBoundPointers(TestResults& results) {
+    std::string text =
+        "(let arr (array u8 16) (make (array u8 16) 9 8 7 6 5 4 3 2 1 0 1 2 3 4 "
+        "5 6))\n"
+        "(let out u8 0)\n"
+        "(fn peek ((p (ptr u8)) (k u8)) u8 (load (+ p (as u16 (& k 3)))))\n"
+        "(fn poke ((p (ptr u8)) (k u8) (v u8)) void (store (+ p (as u16 (& k 3))) v))\n"
+        "(fn twice ((p (ptr u8)) (k u8)) u8 (+ (peek p k) (peek p (+ k 1))))\n"
+        "(fn f ((i u8)) u8\n"
+        "    (let p (ptr u8) (addr_of (at arr (& i 7))))\n"
+        "    (poke p i (twice p 2))\n"
+        "    (set out (+ out (peek p 1)))\n"
+        "    out)\n";
+    Compiled c = CompileText(text);
+    Diff d;
+    CHECK(results, StartDiff(d, c));
+    for (std::uint16_t i = 0; i < 12; i++) {
+        CheckDiff(results, d, "t.f", {i});
+    }
+    if (!c.ok) {
+        return;
+    }
+    int through = 0;
+    bool copies = false;
+    for (const tisple::FunctionSpan& span : c.code.spans) {
+        if (span.name != "t.f") {
+            continue;
+        }
+        for (std::size_t k = span.first; k < span.end; k++) {
+            const tisple::AsmItem& item = c.code.as.items[k];
+            if (item.kind != tisple::ItemKind::Ins || item.value.sym < 0) {
+                continue;
+            }
+            const std::string& name =
+                c.code.as.symbols[static_cast<std::size_t>(item.value.sym)].name;
+            through += item.mode == tisple::Mode::IndY && name == "t.f.p" ? 1 : 0;
+            copies = copies || name == "t.f.ptrs";
+        }
+    }
+    CHECK(results, through == 4);
+    CHECK(results, !copies);
+}
+
 } // namespace
 
 void RunBackendBindTests(TestResults& results) {
     TestBinding(results);
+    TestBoundPointers(results);
 }
 
 } // namespace tisple_tests

@@ -68,10 +68,11 @@ void TestDroppedFunctions(TestResults& results) {
     CHECK(results, !HasSpan(built, "t.dead"));
     CHECK(results, !HasSpan(built, "t.dead2"));
     CHECK(results, built.function_address[static_cast<std::size_t>(FunctionId(c, "t.dead"))] == 0);
-    // the multiply and the division by 13 were only dead code's
-    CHECK(results, !HasSymbol(built, "rt.mul16"));
+    // the multiply and the division by 13 were only dead code's (dead2's multiply runs twice
+    // there, inlined twice, so it takes the quarter squares)
+    CHECK(results, !HasSymbol(built, "rt.mul16") && !HasSymbol(built, "rt.mul16q"));
     CHECK(results, !HasSymbol(built, "rt.divu16_13"));
-    CHECK(results, HasSymbol(c.code, "rt.mul16") && HasSymbol(c.code, "rt.divu16_13"));
+    CHECK(results, HasSymbol(c.code, "rt.mul16q") && HasSymbol(c.code, "rt.divu16_13"));
     CHECK(results, built.code_bytes < c.code.code_bytes);
     // what is left gives what the whole program gives, and that is the interpreter's
     tisple::SimRunner run;

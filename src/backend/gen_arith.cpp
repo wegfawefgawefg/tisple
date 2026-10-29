@@ -54,41 +54,6 @@ bool SumFits(const Gen& g, ExprId a, ExprId b) {
     return MaxOf(g, a) + MaxOf(g, b) <= 0xFF;
 }
 
-// multiplying by a constant with at most this many set bits is inlined as shifts and adds
-constexpr int kMaxInlineMulBits = 4;
-
-int Popcount(std::uint32_t v) {
-    int n = 0;
-    for (; v != 0; v &= v - 1) {
-        n++;
-    }
-    return n;
-}
-
-// A = A * c, top-down shift and add with the multiplicand in a temporary
-void MulConst8A(Gen& g, std::uint32_t c) {
-    c &= 0xFF;
-    if (c == 0) {
-        Emit(g, Mn::LDA, Mode::Imm, Num(0));
-        return;
-    }
-    Opnd x;
-    if (Popcount(c) > 1) {
-        x = SpillA(g);
-    }
-    int top = 7;
-    while (((c >> top) & 1) == 0) {
-        top--;
-    }
-    for (int bit = top - 1; bit >= 0; bit--) {
-        Emit(g, Mn::ASL, Mode::Acc);
-        if ((c >> bit) & 1) {
-            Emit(g, Mn::CLC, Mode::Imp);
-            OpA(g, Mn::ADC, x, 0);
-        }
-    }
-}
-
 // operands for a two-operand routine: both readable after any later code
 void Operands8(Gen& g, ExprId a, ExprId b, Opnd& oa, Opnd& ob) {
     oa = TrySimple(g, a);
@@ -154,59 +119,6 @@ bool EvalChain8(Gen& g, const Expr& e) {
     return true;
 }
 
-// every byte a number or a plain memory byte, which only a write to it changes
-bool IsPlainMemory(const Opnd& o) {
-    if (o.in_a || o.size == 0) {
-        return false;
-    }
-    for (int k = 0; k < o.size; k++) {
-        if (o.b[k].kind != ByteKind::Imm && o.b[k].kind != ByteKind::Mem) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// a byte (a's high byte a known 0) times a constant, mod 65536: the low byte shifts in A,
-// the high byte in memory, and each set bit adds the byte with a carry into the high byte
-bool MulByteConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
-    if (KnownImm(g, a, 1) != 0 || !IsPlainMemory(a) || KnownImm(g, a, 0) >= 0) {
-        return false;
-    }
-    Opnd high = dst;
-    high.size = 1;
-    high.b[0] = dst.b[1];
-    if (dst.b[1].kind != ByteKind::Mem || Overlaps(g, a, dst)) {
-        high = NewTemp(g, 1);
-    }
-    Emit(g, Mn::LDA, Mode::Imm, Num(0));
-    StoreA(g, high, 0);
-    LoadA(g, a, 0);
-    int top = 15;
-    while (((factor >> top) & 1) == 0) {
-        top--;
-    }
-    for (int bit = top - 1; bit >= 0; bit--) {
-        Emit(g, Mn::ASL, Mode::Acc);
-        RmwByte(g, Mn::ROL, high, 0);
-        if ((factor >> bit) & 1) {
-            std::int32_t skip = NewLabel(g);
-            Emit(g, Mn::CLC, Mode::Imp);
-            OpA(g, Mn::ADC, a, 0);
-            Branch(g, Mn::BCC, skip);
-            RmwByte(g, Mn::INC, high, 0);
-            PlaceLabel(g, skip);
-        }
-    }
-    StoreA(g, dst, 0);
-    if (high.b[0].kind != dst.b[1].kind || high.b[0].value.sym != dst.b[1].value.sym ||
-        high.b[0].value.offset != dst.b[1].value.offset) {
-        LoadA(g, high, 0);
-        StoreA(g, dst, 1);
-    }
-    return true;
-}
-
 // (op first (at table i)) with i computed: i into X, then first into A while X keeps i, then
 // OP table,X, instead of first into a temporary and OP temporary. i now runs before first, so
 // neither may have effects; when first's code needs X, nothing is kept and this is false
@@ -239,7 +151,33 @@ bool IndexedSecond(Gen& g, Op op, ExprId first, ExprId second, bool fits) {
     return true;
 }
 
+// a multiply by a routine: the shift-and-add one for now, with how often this copy of it may
+// run (its loops' weights times its function's runs); the link switches every multiply to the
+// quarter-square routines when one of them runs more than once (UpgradeMultiplies)
+void CallMultiply(Gen& g, const Expr& e, Runtime routine) {
+    std::size_t id = static_cast<std::size_t>(&e - g.program->exprs.data());
+    std::uint64_t fn_runs = g.be->fn_runs[static_cast<std::size_t>(g.function)];
+    // both at most 2^32: the product fits
+    std::uint64_t runs =
+        LoopWeight(g) *
+        std::min<std::uint64_t>(std::max<std::uint64_t>(fn_runs, 1), std::uint64_t(1) << 31);
+    g.multiplies.push_back({static_cast<ExprId>(id), runs});
+    CallRuntime(g, routine);
+}
+
 } // namespace
+
+bool IsPlainMemory(const Opnd& o) {
+    if (o.in_a || o.size == 0) {
+        return false;
+    }
+    for (int k = 0; k < o.size; k++) {
+        if (o.b[k].kind != ByteKind::Imm && o.b[k].kind != ByteKind::Mem) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void CallRuntime(Gen& g, Runtime routine) {
     g.be->rt_used[static_cast<int>(routine)] = true;
@@ -292,12 +230,12 @@ void EvalArith8(Gen& g, const Expr& e) {
         return;
     case Op::Mul: {
         std::uint16_t c = 0;
-        if (ConstValue(*g.program, e.b, c) && Popcount(c & 0xFF) <= kMaxInlineMulBits) {
+        if (ConstValue(*g.program, e.b, c)) {
             EvalA(g, e.a);
             MulConst8A(g, c);
             return;
         }
-        if (ConstValue(*g.program, e.a, c) && Popcount(c & 0xFF) <= kMaxInlineMulBits) {
+        if (ConstValue(*g.program, e.a, c)) {
             EvalA(g, e.b);
             MulConst8A(g, c);
             return;
@@ -308,7 +246,7 @@ void EvalArith8(Gen& g, const Expr& e) {
         LoadA(g, b, 0);
         Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
         LoadA(g, a, 0);
-        CallRuntime(g, g.loop_depth > 0 ? Runtime::Mul8Q : Runtime::Mul8);
+        CallMultiply(g, e, Runtime::Mul8);
         return;
     }
     default:
@@ -385,41 +323,6 @@ void Combine16(Gen& g, Op op, const Opnd& a_in, const Opnd& b_in, const Opnd& ds
     }
 }
 
-void MulConst16(Gen& g, const Opnd& a, std::uint32_t factor, const Opnd& dst) {
-    factor &= 0xFFFF;
-    if (factor == 0) {
-        CopyOpnd(g, ImmOpnd(0, 2), dst);
-        return;
-    }
-    if (MulByteConst16(g, a, factor, dst)) {
-        return;
-    }
-    // the product builds up in r, which shifts in place; x is read once per set bit
-    bool plain = dst.b[0].kind == ByteKind::Mem && dst.b[1].kind == ByteKind::Mem;
-    Opnd r = plain ? dst : NewTemp(g, 2);
-    Opnd x = a;
-    bool stable = IsPlainMemory(a) && !Overlaps(g, a, r);
-    if (Popcount(factor) > 1 && !a.temp && !IsImm(a) && !stable) {
-        x = NewTemp(g, 2);
-        CopyOpnd(g, a, x);
-    }
-    CopyOpnd(g, x, r);
-    int top = 15;
-    while (((factor >> top) & 1) == 0) {
-        top--;
-    }
-    for (int bit = top - 1; bit >= 0; bit--) {
-        RmwByte(g, Mn::ASL, r, 0);
-        RmwByte(g, Mn::ROL, r, 1);
-        if ((factor >> bit) & 1) {
-            Combine16(g, Op::Add, r, x, r);
-        }
-    }
-    if (!plain) {
-        CopyOpnd(g, r, dst);
-    }
-}
-
 Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
     if (e.kind == ExprKind::PtrAdd || e.kind == ExprKind::PtrSub) {
         Opnd a = Eval(g, e.a, nullptr);
@@ -455,13 +358,13 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
         t.b[1].value = Num(0);
         return t;
     }
-    if (op == Op::Mul && b_const && Popcount(c) <= kMaxInlineMulBits) {
+    if (op == Op::Mul && b_const && InlineMulConst16(c)) {
         Opnd a = Eval(g, e.a, nullptr);
         Opnd d = dst ? *dst : NewTemp(g, 2);
         MulConst16(g, a, c, d);
         return d;
     }
-    if (op == Op::Mul && ConstValue(*g.program, e.a, c) && Popcount(c) <= kMaxInlineMulBits) {
+    if (op == Op::Mul && ConstValue(*g.program, e.a, c) && InlineMulConst16(c)) {
         Opnd b = Eval(g, e.b, nullptr);
         Opnd d = dst ? *dst : NewTemp(g, 2);
         MulConst16(g, b, c, d);
@@ -486,13 +389,13 @@ Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst) {
             LoadA(g, b, 0);
             Emit(g, Mn::STA, Mode::Abs, SymValue(g.be->rt_b));
             LoadA(g, a, 0);
-            CallRuntime(g, g.loop_depth > 0 ? Runtime::Mul8x8Q : Runtime::Mul8x8);
+            CallMultiply(g, e, Runtime::Mul8x8);
             StoreAX(g, d);
             return d;
         }
         CopyOpnd(g, a, MemOpnd(SymValue(g.be->rt_a), 2, 1));
         CopyOpnd(g, b, MemOpnd(SymValue(g.be->rt_b), 2, 1));
-        CallRuntime(g, g.loop_depth > 0 ? Runtime::Mul16Q : Runtime::Mul16);
+        CallMultiply(g, e, Runtime::Mul16);
         StoreAX(g, d);
         return d;
     }
