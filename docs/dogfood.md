@@ -1221,6 +1221,61 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     test_backend_inline, _match, _shift, _sub8, _signed_cmp, _count16,
     _unroll, _spine, _preload, _place_sum.
 
+48. Mid-level slice 5 (2026-10-29, docs/midlevel-optimizer.md): what each variable
+    may hold (src/opt/ranges_vars.cpp), elements no store reaches
+    (ranges_elements.cpp), what a set gives the items after it (ranges_facts.cpp),
+    unrolling (unroll.cpp) and unswitching (unswitch.cpp) once the passes settle,
+    accumulators over a count worked out at run time (collapse_count.cpp),
+    (if c (continue)) items as elses (collapse_continue.cpp), unused return values
+    (args.cpp), (+ x (~ x)), a bool tested false, statements after an exit. The
+    worst losses after slice 4 were not mostly loops that need unrolling: 741
+    passes 65535 for a parameter and steps a local by it 170 times (-1 each, so
+    v - 23469 stays in 53969..54138 and (>= v 65535) is false); 744, 745, 1922
+    and 1728 read (at pt 6), (at pt 12), (at arr13 24) that nothing but t.init's
+    element 0 store writes; 285 and 745 do (set g (% g 9)) (set g (/ g 9)), g
+    then 0, as 120 of 2000 programs do; 1278 and 442 compare an enum global with
+    a member it never holds; 76's g1 is (- K (+ g1 (~ g1))) behind a continue;
+    511's function returns before code that set its globals. Random race, seeds
+    1-2000, against the fastest C compiler, on top of the backend round (main
+    a53327f): geomean 1.181 to 0.919, median 1.04 to 0.88, wins 46.0% to
+    61.2%, p99 15.59 to 6.16, max 90.53 to 44.51 (seed 1241); against llvm-mos
+    1.058 to 0.823, Oscar64 0.742 to 0.578. On its own (base b76b03e, before the
+    backend round) 1.433 to 1.082. One pass off at a time (before unused
+    returns, all on 0.923): elements 1.073, vars 0.962, unswitch 0.944, unroll
+    0.933; ranges 1.126 and collapse 1.097 with their slice 5 parts. 1483
+    programs faster than main, 130 slower (median 1%; the worst: 1280 101 to
+    201 and 362 433 to 710, where a loop gone leaves a multiply that runs once
+    and the backend's run counts pick the shift-and-add routine; 308 1520 to
+    2236, where unrolling an inner loop leaves an outer one the backend no
+    longer unrolls). Seed 741 25166 to 489 cycles, 1728 1081 to 30, 745 15479 to
+    1210, 1511 2474 to 185, 285 1439 to 41, 1922 1361 to 59, 585 6400 to 2449.
+    Unrolling at first went before the other passes had shortened bodies enough
+    to collapse, and copied calls (the backend then no longer inlines them): it
+    waits now for a round that changes nothing, and skips calls and hardware.
+    Unswitching every invariant branch made 75 programs slower: it now needs a
+    copy that collapses. Kernels, Life 56 and plasma 243, every program and
+    example byte for byte as main. Pass time on text_demo 0.72 to 0.87 ms
+    (plasma 0.09 to 0.19). Fuzz: before the backend round 620,000 programs, 0
+    mismatches. After it, 1,485,000 programs found 17: one ours (seed 25017543,
+    entries: unswitched copies of a loop shared their counter variable, which
+    the backend binds to what sets it; copies now declare new variables; test
+    in test_opt_values.cpp), one zero page full (seed 23013202), and 15 one
+    backend bug: a page pointer that follows a u16 variable stepped in a loop is
+    set up before the loop, and a let of the variable inside the loop does not
+    set it again (gen_follow.cpp ScanSets counts sets, not lets). On main at -O0
+    (let t u16 (+ (as u16 g0) 300)) (let n u8 0) (while (< n 2) (let v u16 t)
+    (set v (+ v 1)) (set (at wb v) 1) (set n (+ n 1))) writes wb[45], not
+    wb[301]; slice 5 makes the shape common (a hoisted let copied into a loop,
+    steps unrolled out of an inner one). With ScanSets taking a let as a set
+    that is not a step, 990,000 more ran with one mismatch, another backend bug
+    on main at -O0 (seed 42013970: an inlined call's unread u16 argument stored
+    over a pointer the next copy of a backend-unrolled loop still reads, which
+    then reads $C043). ASan/UBSan: 11,555 programs, clean after two fixes of
+    ours (references into the expression vector held across clones;
+    CounterBefore reading the condition of an item that is no while). Tests:
+    tests/test_opt_values.cpp; fuzz shape tests/fuzz_gen_values.cpp (`seed N
+    (values)`, one seed in four).
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,
