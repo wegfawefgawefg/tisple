@@ -217,6 +217,15 @@ Range ValueRange(const Pass& p, const Counters& counters, ExprId id) {
         return ElementRange(p, counters, e, type);
     case ExprKind::Binary:
         return IsIntegerKind(kind) ? BinaryRange(p, counters, e, type) : type;
+    case ExprKind::If: {
+        // either arm's: (if (= opaque 0) E.e0 E.e1) is e0 or e1
+        if (e.c < 0) {
+            return type;
+        }
+        Range a = ValueRange(p, counters, e.b);
+        Range b = ValueRange(p, counters, e.c);
+        return Range{std::min(a.lo, b.lo), std::max(a.hi, b.hi)};
+    }
     default:
         return type;
     }

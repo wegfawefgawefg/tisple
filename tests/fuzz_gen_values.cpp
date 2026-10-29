@@ -205,7 +205,11 @@ std::string Gen::SetFacts(int depth) {
         between = " (if " + BoolExpr(1) + " (set " + g + " " + EdgeLiteral(t) + "))";
         break;
     case 4:
+        // its lets end with the do
+        scopes.emplace_back();
         between = depth > 0 ? " " + Stmt(depth - 1) : "";
+        scopes.pop_back();
+        DropPointers();
         break;
     default:
         break;
