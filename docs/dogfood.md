@@ -1028,6 +1028,18 @@ From a scan of Life, Snake, dot, the other examples and the libraries
 
 39. Exact delays and string literals (2026-10-29, docs/language.md): text_demo
     prints its names and status with `text80.put_str`, 1179 bytes less code.
+40. Mid-level passes 1 to 3 (2026-10-29, docs/midlevel-optimizer.md, src/opt):
+    effect summaries, dead lets, stores and statements, and deletion of loops
+    that provably end with no effect outside them. Race seed 21258: 264845
+    cycles to 50 (Oscar64 19). Random race, seeds 1-2000: geomean against the
+    fastest C compiler 3.087 to 2.420, wins 6.1% to 9.0%, worst 1427x to 312x;
+    1421 programs faster, 66 slower by at most 1.5% (data placed elsewhere once
+    code shrinks). Kernels, Life 56, plasma 243 and the tisple_tests cycle lines
+    the same; every program and example byte for byte except snake and
+    examples/speaker, whose empty delay loops (lib/speaker `buzz`, `tone`) are
+    now deleted: they need `(wait_cycles n)` (docs/language.md). 20000 fuzz
+    seeds: 208691712 cycles to 177542577. Tests: tests/test_opt*.cpp; fuzz
+    shape tests/fuzz_gen_dead.cpp (`seed N (dead)`, one seed in four).
 
 ## Gap finder (2026-10-26)
 

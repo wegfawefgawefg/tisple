@@ -26,6 +26,7 @@
 #include "check/program.hpp"
 #include "link/layout.hpp"
 #include "link/segment.hpp"
+#include "opt/opt.hpp"
 
 #include <string>
 #include <vector>
@@ -39,6 +40,7 @@ struct BuildOptions {
     bool use_card = true;             // the language card's ram, when needed and allowed
     // keep the code of functions main never calls (tests call them by address)
     bool keep_all_functions = false;
+    OptOptions opt; // the mid-level passes (opt/opt.hpp)
 };
 
 // where one function's code is in Compiled::as.items
@@ -68,6 +70,7 @@ struct Compiled {
     std::uint32_t zp_bytes = 0;   // zero-page bytes the program uses
     std::uint32_t zp_frames = 0;  // of those, the overlapped frames
     std::uint32_t mem_frames = 0; // overlapped frame bytes outside zero page
+    OptReport opt;                // what the mid-level passes did
 };
 
 bool CompileProgram(const Program& program, const BuildOptions& options, Compiled& out,

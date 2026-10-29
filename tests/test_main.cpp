@@ -7,6 +7,7 @@
 #include "test_gaps.hpp"
 #include "test_ide.hpp"
 #include "test_machine.hpp"
+#include "test_opt.hpp"
 #include "test_race.hpp"
 #include "test_reader.hpp"
 
@@ -75,6 +76,7 @@ int main() {
     tisple_tests::RunBackendBytewiseTests(results);
     tisple_tests::RunBackendStepsTests(results);
     tisple_tests::RunBackendProgramTests(results);
+    tisple_tests::RunOptTests(results);
     tisple_tests::RunLinkRegionTests(results);
     tisple_tests::RunTextLibTests(results);
     tisple_tests::RunTextDemoTests(results);

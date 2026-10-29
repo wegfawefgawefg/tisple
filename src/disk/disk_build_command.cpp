@@ -61,6 +61,14 @@ bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
     for (int i = 2; i < argc; i++) {
         const char* arg = argv[i];
         bool has_value = i + 1 < argc;
+        std::string opt_error;
+        if (ParseOptFlag(argc, argv, i, args.options.opt, opt_error)) {
+            if (!opt_error.empty()) {
+                std::fprintf(stderr, "tisple: %s\n", opt_error.c_str());
+                return false;
+            }
+            continue;
+        }
         uint64_t number = 0;
         if (std::strcmp(arg, "--disk") == 0) {
             if (has_value && IsImageName(argv[i + 1])) {
@@ -96,6 +104,9 @@ bool CompileFor(const DiskBuildArgs& args, Compiled& compiled) {
         !CompileProgram(program, args.options, compiled, errors)) {
         std::fputs(FormatDiagnostics(program.sources, errors).c_str(), stderr);
         return false;
+    }
+    if (args.options.opt.bisect >= 0) {
+        std::fputs(DescribeOptReport(compiled.opt).c_str(), stderr);
     }
     return true;
 }

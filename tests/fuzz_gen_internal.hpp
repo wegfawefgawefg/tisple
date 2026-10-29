@@ -106,6 +106,10 @@ struct Gen {
     // GenerateLateProgram's programs
     Rng late_rng;
     bool late_shapes = false;
+    // what the mid-level passes delete or must keep, from a stream of its own
+    // (fuzz_gen_dead.cpp); only in GenerateDeadProgram's programs
+    Rng dead_rng;
+    bool dead_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -234,6 +238,15 @@ struct Gen {
     std::string LateWait();
     // a byte of a string literal
     std::string StringRead(int depth);
+    // ---- dead work and work that only looks dead (fuzz_gen_dead.cpp)
+    T DeadInt();
+    std::string DeadTarget(T t);
+    // a counting while over a fresh counter, ending in ways the passes can follow or not
+    std::string CountingWhile(int depth);
+    std::string DeadLoopItem(int depth);
+    std::string DeadFor(int depth);
+    // a dead let, store, statement or loop, or a loop whose result is read after it
+    std::string DeadShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();
