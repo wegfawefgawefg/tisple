@@ -102,6 +102,8 @@ void RunBackendSpineTests(TestResults& results);
 void RunBackendPreloadTests(TestResults& results);
 // byte arrays indexed by a sum (test_backend_place_sum.cpp)
 void RunBackendPlaceSumTests(TestResults& results);
+// compares with a number on the left (test_backend_number_cmp.cpp)
+void RunBackendNumberCmpTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

@@ -209,10 +209,51 @@ void HighFirstCompare(Gen& g, bool lt, bool is_signed, const Opnd& a, const Opnd
     PlaceLabel(g, done);
 }
 
+namespace {
+
+// an operand that is a plain number, its value
+bool PlainNumber(const Opnd& o, std::uint32_t& v) {
+    if (o.in_a || o.size == 0) {
+        return false;
+    }
+    v = 0;
+    for (int k = 0; k < o.size; k++) {
+        const ByteRef& b = o.b[k];
+        if (b.kind != ByteKind::Imm || b.value.sym >= 0) {
+            return false;
+        }
+        v |= static_cast<std::uint32_t>(b.value.offset & 0xFF) << (8 * k);
+    }
+    return true;
+}
+
+} // namespace
+
 void CompareJump(Gen& g, Op op, bool is_signed, Opnd a, Opnd b, std::int32_t label) {
     if (op == Op::Gt || op == Op::Le) {
         std::swap(a, b);
         op = Swapped(op);
+    }
+    // a number on the left goes right, so A can hold the other side and the compares with
+    // numbers below apply: k < b is b >= k + 1 and k >= b is b < k + 1; at the type's top
+    // k < b never holds and k >= b always does
+    std::uint32_t k = 0;
+    std::uint32_t other = 0;
+    if (PlainNumber(a, k) && !PlainNumber(b, other) && a.size == b.size) {
+        if (op == Op::Lt || op == Op::Ge) {
+            std::uint32_t bits = 8u * a.size;
+            std::uint32_t top = is_signed ? (1u << (bits - 1)) - 1 : (1u << bits) - 1;
+            if (k == top) {
+                if (op == Op::Ge) {
+                    Jump(g, label);
+                }
+                return;
+            }
+            k = (k + 1) & ((1u << bits) - 1);
+            op = op == Op::Lt ? Op::Ge : Op::Lt;
+        }
+        a = b;
+        b = ImmOpnd(static_cast<std::uint16_t>(k), a.size);
     }
     if (b.in_a) {
         b = SpillA(g);
