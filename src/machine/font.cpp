@@ -109,7 +109,77 @@ const char* const kGlyphs[96][7] = {
     {"#.#.#", ".#.#.", "#.#.#", ".#.#.", "#.#.#", ".#.#.", "#.#.#"}, // delete
 };
 
+// MouseText, the enhanced iie's 32 alternate-set glyphs at $40-$5F, drawn for Tisple ][ from
+// what each one is for (not from Apple's rom): full 7-dot cells, 8 rows, so frames join up
+const char* const kMouseText[32][8] = {
+    {"...#...", "..#....", ".##.##.", "#######", "######.", "#######", ".#####.",
+     "..#.#.."}, // closed apple
+    {"...#...", "..#....", ".##.##.", "#..#..#", "#.....#", "#.....#", ".#...#.",
+     "..###.."}, // open apple
+    {"#......", "##.....", "###....", "####...", "#####..", "##.....", "#.#....",
+     "...#..."}, // pointer
+    {"#######", ".#...#.", "..#.#..", "...#...", "..#.#..", ".#.#.#.", "#######",
+     "......."}, // hourglass
+    {".......", "......#", ".....#.", "#...#..", ".#.#...", "..#....", ".......",
+     "......."}, // check
+    {"#######", "######.", "#####.#", ".###.##", "#.#.###", "##.####", "#######",
+     "#######"}, // inverse check
+    {"####.##", "###...#", "####.##", "##...##", "#.#.#.#", "###.###", "##.#.##",
+     "#.###.#"}, // inverse runner
+    {"....#..", "...###.", "....#..", "..###..", ".#.#.#.", "...#...", "..#.#..",
+     ".#...#."}, // runner
+    {"...#...", "..#....", ".#.....", "#######", ".#.....", "..#....", "...#...",
+     "......."}, // left arrow
+    {".......", ".......", ".......", ".......", ".......", ".......", "#..#..#",
+     "......."}, // ellipsis
+    {"...#...", "...#...", "...#...", "...#...", "#..#..#", ".#.#.#.", "..###..",
+     "...#..."}, // down arrow
+    {"...#...", "..###..", ".#.#.#.", "#..#..#", "...#...", "...#...", "...#...",
+     "...#..."}, // up arrow
+    {"#######", ".......", ".......", ".......", ".......", ".......", ".......",
+     "......."}, // top bar
+    {"......#", "......#", "..#...#", ".##...#", "#######", ".##....", "..#....",
+     "......."}, // return
+    {"#######", "#######", "#######", "#######", "#######", "#######", "#######",
+     "#######"}, // block
+    {"#######", "#......", "#..#...", "#.##...", "#######", "#.##...", "#..#...",
+     "#######"}, // scroll left
+    {"#######", "......#", "...#..#", "...##.#", "#######", "...##.#", "...#..#",
+     "#######"}, // scroll right
+    {"#.....#", "#.....#", "#.....#", "#.###.#", "#..#..#", "#.....#", "#.....#",
+     "#######"}, // scroll down
+    {"#######", "#.....#", "#..#..#", "#.###.#", "#.....#", "#.....#", "#.....#",
+     "#.....#"}, // scroll up
+    {".......", ".......", ".......", "#######", ".......", ".......", ".......",
+     "......."}, // middle line
+    {"#......", "#......", "#......", "#......", "#......", "#......", "#......",
+     "#######"}, // corner
+    {"...#...", "....#..", ".....#.", "#######", ".....#.", "....#..", "...#...",
+     "......."}, // right arrow
+    {"#.#.#.#", ".#.#.#.", "#.#.#.#", ".#.#.#.", "#.#.#.#", ".#.#.#.", "#.#.#.#",
+     ".#.#.#."}, // checker
+    {".#.#.#.", "#.#.#.#", ".#.#.#.", "#.#.#.#", ".#.#.#.", "#.#.#.#", ".#.#.#.",
+     "#.#.#.#"}, // checker 2
+    {".......", ".####..", "#....##", "#......", "#......", "#......", "#######",
+     "......."}, // folder left
+    {".......", ".......", "######.", "......#", "......#", "......#", "######.",
+     "......."}, // folder right
+    {"......#", "......#", "......#", "......#", "......#", "......#", "......#",
+     "......#"}, // right bar
+    {"...#...", "..###..", ".#####.", "#######", ".#####.", "..###..", "...#...",
+     "......."}, // diamond
+    {"#######", ".......", ".......", ".......", ".......", ".......", ".......",
+     "#######"}, // top and bottom
+    {".......", "...#...", "...#...", "#######", "...#...", "...#...", ".......",
+     "......."}, // plus
+    {"#######", "#......", "#......", "#......", "#......", "#......", "#......",
+     "#......"}, // top left corner
+    {"#......", "#......", "#......", "#......", "#......", "#......", "#......",
+     "#......"}, // left bar
+};
+
 using GlyphTable = std::array<std::array<uint8_t, 8>, 96>;
+using MouseTextTable = std::array<std::array<uint8_t, 8>, 32>;
 
 GlyphTable BuildGlyphTable() {
     GlyphTable table = {};
@@ -129,6 +199,24 @@ GlyphTable BuildGlyphTable() {
 
 const GlyphTable kGlyphTable = BuildGlyphTable();
 
+MouseTextTable BuildMouseTextTable() {
+    MouseTextTable table = {};
+    for (int g = 0; g < 32; g++) {
+        for (int row = 0; row < 8; row++) {
+            uint8_t bits = 0;
+            for (int dot = 0; dot < 7; dot++) {
+                if (kMouseText[g][row][dot] == '#') {
+                    bits = static_cast<uint8_t>(bits | (1 << dot));
+                }
+            }
+            table[g][row] = bits;
+        }
+    }
+    return table;
+}
+
+const MouseTextTable kMouseTextTable = BuildMouseTextTable();
+
 } // namespace
 
 uint8_t GlyphRow(uint8_t ascii, int row) {
@@ -136,6 +224,14 @@ uint8_t GlyphRow(uint8_t ascii, int row) {
         return 0;
     }
     return kGlyphTable[ascii - 0x20][row & 7];
+}
+
+uint8_t MouseTextRow(uint8_t index, int row) {
+    return kMouseTextTable[index & 31][row & 7];
+}
+
+uint8_t CellRow(const TextCell& cell, int row) {
+    return cell.mousetext ? MouseTextRow(cell.ascii, row) : GlyphRow(cell.ascii, row);
 }
 
 TextCell DecodeTextByte(uint8_t code, bool altchar) {
@@ -153,8 +249,15 @@ TextCell DecodeTextByte(uint8_t code, bool altchar) {
         cell.style = TextStyle::kInverse;
         return cell;
     }
+    if (altchar && code < 0x60) {
+        // enhanced iie alternate set: MouseText at $40-$5F, shown as drawn
+        cell.ascii = static_cast<uint8_t>(code - 0x40);
+        cell.mousetext = true;
+        cell.style = TextStyle::kNormal;
+        return cell;
+    }
     if (altchar) {
-        // unenhanced iie alternate set: inverse upper case, then inverse lower case
+        // then inverse lower case, which the primary set flashes as upper case
         cell.ascii = code;
         cell.style = TextStyle::kInverse;
         return cell;

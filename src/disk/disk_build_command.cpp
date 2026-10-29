@@ -54,8 +54,10 @@ bool IsHeadlessFlag(const char* arg) {
 }
 
 bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
-    // no DOS to keep clear of: the loader can fill memory up to $BFFF
+    // no DOS to keep clear of: the loader can fill memory up to $BFFF, and from $0B00 below
+    // the origin
     args.options.limit = 0xC000;
+    args.options.low_start = kBootLoadLow;
     for (int i = 2; i < argc; i++) {
         const char* arg = argv[i];
         bool has_value = i + 1 < argc;
@@ -67,7 +69,7 @@ bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
                 return false;
             }
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {
-            if (!ParseNumber(argv[++i], number) || number < 0x0A00 || number > 0xBFFF) {
+            if (!ParseNumber(argv[++i], number) || number < kBootLoadLow || number > 0xBFFF) {
                 return false;
             }
             args.options.origin = static_cast<uint16_t>(number);
@@ -115,20 +117,26 @@ int RunBuildDiskCommand(int argc, char** argv) {
         std::fprintf(stderr,
                      "usage: tisple build main.tsp --disk out.dsk [--origin A] [-o out.bin]\n"
                      "a disk that boots the program on its own (no DOS); the program\n"
-                     "loads in $0A00-$BFFF\n");
+                     "loads in $0B00-$BFFF, the language card and aux memory\n");
         return 1;
     }
     Compiled compiled;
     if (!CompileFor(args, compiled)) {
         return 1;
     }
+    if (!args.binary.empty() && !compiled.segments.empty()) {
+        std::fprintf(stderr, "tisple: the program does not fit one file, so -o has nothing to "
+                             "write; the disk holds every part\n");
+        return 1;
+    }
     if (!args.binary.empty() && !WriteWholeFile(args.binary, compiled.image)) {
         std::fprintf(stderr, "tisple: cannot write %s\n", args.binary.c_str());
         return 1;
     }
+    std::fputs(DescribeSegments(compiled).c_str(), stdout);
     BootDiskInfo info;
     std::string error;
-    if (!WriteBootDisk(args.disk, compiled.image, compiled.origin, info, error)) {
+    if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -155,7 +163,7 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     std::unique_ptr<DiskSectors> disk = std::make_unique<DiskSectors>();
     BootDiskInfo info;
     std::string error;
-    if (!MakeBootDisk(compiled.image, compiled.origin, *disk, info, error)) {
+    if (!MakeBootDisk(ProgramSegments(compiled), compiled.origin, *disk, info, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -163,8 +171,8 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
-    std::printf("%zu bytes at $%04X on a boot disk (%s)\n", compiled.image.size(), compiled.origin,
-                BootTracksText(info).c_str());
+    std::fputs(DescribeSegments(compiled).c_str(), stdout);
+    std::printf("on a boot disk (%s)\n", BootTracksText(info).c_str());
     static char window_flag[] = "--window";
     if (!args.headless && window != nullptr) {
         args.machine_args.push_back(window_flag);

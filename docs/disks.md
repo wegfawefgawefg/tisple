@@ -6,7 +6,7 @@ their own. Roadmap section 1, "Accurate and instant".
 ## Commands
 
 ```sh
-tisple build main.tsp --disk game.dsk [--origin A] [-o game.bin]
+tisple build main.tsp --disk game.dsk [--origin A] [-o game.bin]   # every segment
 tisple run main.tsp --disk [game.dsk] [machine flags]   # build, then boot the disk
 tisple disk boot game.dsk game.bin [--origin A]         # any raw binary
 tisple machine --disk a.dsk [--disk2 b.dsk] [--write-back]
@@ -29,27 +29,48 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
 
 ## The self-booting disk
 
-- Track 0, physical sectors 0-1: our loader (`src/disk/boot_loader.cpp`,
-  original, MIT under the runtime exception). Its first byte is 2, so the boot
-  ROM loads both sectors to `$0800-$09FF` and jumps to `$0801`.
-- Tracks 1 on: the program, 16 pages a track, from the page holding its
-  origin. The rest of the disk is an empty DOS 3.3 volume with the program's
-  tracks marked in use, so `tisple disk put` can add files.
-- Size: the program must load in `$0A00-$BFFF` (46.5 KB, tracks 1-12). The
-  loader runs in `$0800-$09FF`; no DOS sits at `$9600`, so the compile limit
-  for `--disk` builds is `$C000`. A default `$6000` origin leaves 24 KB.
-- The loader takes nothing from the boot ROM but the load of its two sectors
+- Track 0, physical sectors 0-2: our loader (`src/disk/boot_loader.cpp`,
+  original, MIT under the runtime exception). Its first byte is 3, so the boot
+  ROM loads the three sectors to `$0800-$0AFF` and jumps to `$0801` (Apple's
+  ROM reads sectors while their number is below that byte, as ours does).
+- Tracks 1 on: the program's segments (docs/language.md, Memory map), each from
+  the page holding its start and from a track of its own, 16 pages a track,
+  track 17 skipped. The loader's table gives each one's first page, pages and
+  memory: main memory, the language card's bank 2 (switched in for writes, two
+  reads of `$C083`), or aux memory (each sector read to text page 1, then copied
+  over with RAMWRT on). The rest of the disk is an empty DOS 3.3 volume with
+  the program's tracks marked in use, so `tisple disk put` can add files, and
+  its catalog on track 17 survives a program of any size.
+- Size limits (2026-10-29; the table for every build is in docs/language.md,
+  Memory map). Main memory `$0B00-$BFFF`: the loader runs in `$0800-$0AFF`, so
+  the compile limit for `--disk` builds is `$C000` and the memory below the
+  origin starts at `$0B00`. With the zero-page save buffer at `$BF00`, code and
+  data get `$0B00-$BEFF`, 45 KB, less any screen the program keeps with
+  `:reserve` (8 KB a hi-res page). The language card adds 12 KB at
+  `$D000-$FFFF`, aux memory 46 KB at `$0800-$BFFF`: about 103 KB in all. A disk
+  holds 528 pages (tracks 1-34 but 17), at most 10 segments, each rounded up to
+  whole tracks. A one-stretch program from `$6000` still has 24 KB, as before.
+  Plain builds for DOS (`tisple build -o`) are one file, code and data in
+  `$6000-$94FF` from the default origin (the save buffer at `$9500`);
+  `tisple run` without `--disk` lays out like them but loads every segment, so
+  there it is `$0800-$94FF`, the language card and aux memory.
+- The loader takes nothing from the boot ROM but the load of its three sectors
   and X = slot * 16. It turns the motor on, steps (2.5 ms per half-track each
   way, 25 ms settle) and reads with its own code, reading whichever wanted
   sector passes the head next: about two turns a track, 0.75 s for a one-track
-  program in the emulator.
+  program in the emulator; an aux track can take three, since the copy can
+  miss the next sector. programs/text_demo, 20 tracks, shows its first page
+  10.5 s after power on with our ROM, 12.2 s through Apple's (2026-10-29).
 - At the jump: stack `$FF` (then the JSR), A = X = Y = 0, interrupts off,
-  decimal off, language card `$C082` (as a direct load), motor off. It also
-  used `$0296-$0365` and zero page `$DF-$EF`.
+  decimal off, 80STORE off, RAMRD and RAMWRT off, language card `$C082` (as a
+  direct load), motor off. It also used `$0296-$0365`, `$0400-$04FF` (text page
+  1, for aux sectors) and zero page `$DB-$EF`. A program in the language card
+  switches its RAM in itself, in the startup.
 - If the program returns, the loader switches to text and enters the monitor
   (`$FF69`). The emulator stops there instead ("returned from the entry
-  point"), like a direct load. A signature at `$09F0` ("TISPLE BOOT", a
-  version, the return address) lets the machine find that address.
+  point"), like a direct load. A signature at `$0AF0` ("TISPLE BOOT", version
+  2, the return address) lets the machine find that address; version 1 disks,
+  two sectors with it at `$09F0`, are still found.
 
 ## Our boot ROM
 
@@ -92,10 +113,17 @@ sees what it would on a drive. Approximations are listed in
   `~/.local/share/tisple/roms/` lacks the files.
 - a2audit (Zellyn Hunter, MIT): `scripts/fetch_a2audit.sh` puts
   `audit/audit.dsk` in `tests/data/a2audit/`; the tests then boot it with
-  Apple's ROMs. Results (2026-10-26, version 1.07): language card tests and
-  soft switch tests pass; it reports "main and aux are same: pretend 64K" and
-  skips its aux memory test, since aux memory is not built yet. The video
-  tests after its prompt are visual: run it in a window and compare by eye.
+  Apple's ROMs. Results (2026-10-27, again 2026-10-29 from a fresh download,
+  version 1.07, with the extended 80-column card): "MEMORY:128K", and its
+  language card tests (on main and on aux), aux memory tests and soft switch
+  tests all succeed. The video tests after its
+  prompt are visual: run it in a window and compare by eye.
+- `tests/test_disk_segments.cpp` boots segments in every memory past track 17,
+  and a compiled program in four regions, which then runs as a direct load
+  does, with our ROM and through `Apple2e.rom` + `DISK2.rom`.
+- `tests/test_text_demo.cpp` boots programs/text_demo (72 KB in four places)
+  the same two ways, pages through every chapter and checks each is shown from
+  the memory its status line names, then leaves with ESC.
 
 ```sh
 tisple machine --disk tests/data/a2audit/audit.dsk \

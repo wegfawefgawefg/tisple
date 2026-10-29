@@ -161,7 +161,7 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
         bool small = !shape.split && KindOf(program, var.type) != TypeKind::Array &&
                      shape.size <= kMaxZpGlobal;
         if (var.function < 0 && var.kind == VarKind::Global && !var.placement.has_address &&
-            small) {
+            !var.placement.in_aux && small) {
             AddVarItem(be, items, static_cast<std::int32_t>(v), -1);
         }
     }

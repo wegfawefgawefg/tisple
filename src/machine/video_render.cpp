@@ -234,15 +234,93 @@ void PushColumn(LineState& s, uint16_t bits) {
     s.last_dot = (bits >> 13) & 1;
 }
 
-uint16_t TextBits(uint8_t byte, bool altchar, int glyph_row, bool flash_inverse) {
+// one character's 7 dots on a glyph row
+uint8_t TextDots(uint8_t byte, bool altchar, int glyph_row, bool flash_inverse) {
     TextCell cell = DecodeTextByte(byte, altchar);
-    uint8_t dots = GlyphRow(cell.ascii, glyph_row);
+    uint8_t dots = CellRow(cell, glyph_row);
     bool inverse =
         cell.style == TextStyle::kInverse || (cell.style == TextStyle::kFlash && flash_inverse);
     if (inverse) {
         dots ^= 0x7F;
     }
-    return kDouble[dots & 0x7F];
+    return static_cast<uint8_t>(dots & 0x7F);
+}
+
+uint16_t TextBits(uint8_t byte, bool altchar, int glyph_row, bool flash_inverse) {
+    return kDouble[TextDots(byte, altchar, glyph_row, flash_inverse)];
+}
+
+// the low nibble rotated right one bit
+uint8_t RotateRight4(int bits) {
+    bits &= 15;
+    return static_cast<uint8_t>(((bits >> 1) | (bits << 3)) & 15);
+}
+
+// a lo-res nibble's dots from absolute dot `start` on: dot p shows bit p mod 4
+uint16_t LoresDots(uint8_t nibble, int start) {
+    uint32_t pattern = static_cast<uint32_t>(nibble) * 0x11111;
+    return static_cast<uint16_t>(pattern >> (start & 3));
+}
+
+// the 14 dots of a column in 80 columns or double-res: 7 from the aux byte, then 7 from main.
+// double lo-res shows an aux nibble rotated right one bit
+uint16_t DoubleBits(const VideoFrame& frame, int line, int col) {
+    uint8_t main = frame.bytes[line][col];
+    uint8_t aux = frame.aux_bytes[line][col];
+    uint8_t mode = frame.modes[line][col];
+    uint16_t first = 0;
+    uint16_t second = 0;
+    switch (mode & 0x03) {
+    case kVideoText: {
+        bool alt = (mode & kVideoAltChar) != 0;
+        first = TextDots(aux, alt, line & 7, frame.flash_inverse);
+        second = TextDots(main, alt, line & 7, frame.flash_inverse);
+        break;
+    }
+    case kVideoLores: {
+        int shift = line & 4;
+        first = LoresDots(RotateRight4(aux >> shift), col * 14);
+        second = LoresDots(static_cast<uint8_t>((main >> shift) & 15), col * 14 + 7);
+        break;
+    }
+    default:
+        first = aux;
+        second = main;
+        break;
+    }
+    return static_cast<uint16_t>((first & 0x7F) | ((second & 0x7F) << 7));
+}
+
+// the flat look of a column in a double mode: text and no-burst lines as plain dots, lo-res
+// halves as blocks, double hi-res by 4-dot groups (the group's dots as a lo-res nibble)
+void FlatDoubleColumn(const VideoFrame& frame, int line, int col, const uint16_t* hires_groups,
+                      uint32_t* row) {
+    const NtscTables& t = Tables();
+    const uint32_t kBlack = 0xFF000000u;
+    const uint32_t kWhite = 0xFFFFFFFFu;
+    uint8_t mode = frame.modes[line][col];
+    bool color = frame.burst[line] && (mode & 0x03) != kVideoText;
+    uint16_t bits = DoubleBits(frame, line, col);
+    uint32_t* out = row + col * 14;
+    if (!color) {
+        for (int i = 0; i < 14; i++) {
+            out[i] = ((bits >> i) & 1) != 0 ? kWhite : kBlack;
+        }
+        return;
+    }
+    if ((mode & 0x03) == kVideoLores) {
+        int shift = line & 4;
+        uint32_t aux = t.lores[RotateRight4(frame.aux_bytes[line][col] >> shift)];
+        uint32_t main = t.lores[(frame.bytes[line][col] >> shift) & 15];
+        for (int i = 0; i < 14; i++) {
+            out[i] = i < 7 ? aux : main;
+        }
+        return;
+    }
+    for (int i = 0; i < 14; i++) {
+        int dot = col * 14 + i;
+        out[i] = t.lores[hires_groups[dot / 4]];
+    }
 }
 
 // the flat look: no signal, every dot set straight from the bytes
@@ -259,7 +337,7 @@ void RenderLineFlat(const VideoFrame& frame, int line, uint32_t* row) {
     bool on[282] = {};
     uint8_t palette[282] = {};
     for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
-        if ((frame.modes[line][col] & 0x03) != kVideoHires) {
+        if ((frame.modes[line][col] & (0x03 | kVideoDouble)) != kVideoHires) {
             continue;
         }
         uint8_t byte = frame.bytes[line][col];
@@ -268,10 +346,28 @@ void RenderLineFlat(const VideoFrame& frame, int line, uint32_t* row) {
             palette[1 + col * 7 + bit] = static_cast<uint8_t>(byte >> 7);
         }
     }
+    // double hi-res dots in 4-dot groups, as lo-res nibbles
+    uint16_t groups[kScreenWidth / 4] = {};
+    for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
+        uint8_t mode = frame.modes[line][col];
+        if ((mode & kVideoDouble) == 0 || (mode & 0x03) != kVideoHires) {
+            continue;
+        }
+        uint16_t bits = DoubleBits(frame, line, col);
+        for (int i = 0; i < 14; i++) {
+            int dot = col * 14 + i;
+            groups[dot / 4] =
+                static_cast<uint16_t>(groups[dot / 4] | (((bits >> i) & 1) << (dot & 3)));
+        }
+    }
     for (int col = 0; col < static_cast<int>(kVisibleColumns); col++) {
         uint8_t byte = frame.bytes[line][col];
         uint8_t mode = frame.modes[line][col];
         uint32_t* out = row + col * 14;
+        if ((mode & kVideoDouble) != 0) {
+            FlatDoubleColumn(frame, line, col, groups, row);
+            continue;
+        }
         if ((mode & 0x03) == kVideoText) {
             uint16_t bits =
                 TextBits(byte, (mode & kVideoAltChar) != 0, line & 7, frame.flash_inverse);
@@ -333,6 +429,10 @@ void RenderLine(const VideoFrame& frame, int line, VideoLook look, uint32_t* row
         uint8_t byte = frame.bytes[line][col];
         uint8_t mode = frame.modes[line][col];
         uint16_t bits = 0;
+        if ((mode & kVideoDouble) != 0) {
+            PushColumn(s, DoubleBits(frame, line, col));
+            continue;
+        }
         switch (mode & 0x03) {
         case kVideoText:
             bits = TextBits(byte, (mode & kVideoAltChar) != 0, line & 7, frame.flash_inverse);

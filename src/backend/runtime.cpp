@@ -456,6 +456,10 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
     std::int32_t save = w.Label("start.save");
     std::int32_t restore = w.Label("start.restore");
     w.Op(Mn::CLD);
+    if (plan.card_ram) {
+        w.Op(Mn::BIT, Mode::Abs, Num(0xC083)); // two reads: bank 2 ram, reads and writes
+        w.Op(Mn::BIT, Mode::Abs, Num(0xC083));
+    }
     w.Imm(Mn::LDX, 0);
     w.Place(save);
     w.Op(Mn::LDA, Mode::ZpX, Num(0));
@@ -486,6 +490,9 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
     w.Op(Mn::STA, Mode::ZpX, Num(0));
     w.Op(Mn::INX);
     w.Br(Mn::BNE, restore);
+    if (plan.card_ram) {
+        w.Op(Mn::BIT, Mode::Abs, Num(0xC082)); // the rom again, for whoever called us
+    }
     w.Op(Mn::RTS);
 }
 

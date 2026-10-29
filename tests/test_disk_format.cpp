@@ -323,6 +323,7 @@ void RunDiskTests(TestResults& results) {
     RunDiskFormatTests(results);
     RunDiskDriveTests(results);
     RunDiskBootTests(results);
+    RunDiskSegmentTests(results);
 }
 
 } // namespace tisple_tests

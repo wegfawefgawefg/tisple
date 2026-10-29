@@ -17,7 +17,7 @@ static_assert(std::is_trivially_copyable_v<Apple2>, "a snapshot is a struct copy
 namespace {
 
 constexpr uint32_t kSnapshotMagic = 0x32415054; // "TPA2"
-constexpr uint32_t kSnapshotVersion = 3;
+constexpr uint32_t kSnapshotVersion = 4;        // 4: auxiliary memory
 
 struct SnapshotHeader {
     uint32_t magic = kSnapshotMagic;
@@ -154,6 +154,47 @@ bool LoadProgram(Apple2& a, const uint8_t* bytes, size_t size, uint16_t origin,
     return true;
 }
 
+bool LoadSegment(Apple2& a, const MemorySegment& segment, std::string& error) {
+    uint32_t start = segment.address;
+    uint32_t end = start + static_cast<uint32_t>(segment.bytes.size());
+    bool card = segment.bank == MemoryBank::kCard;
+    uint32_t low = card ? 0xD000 : 0x0000;
+    uint32_t high = card ? 0x10000 : 0xC000;
+    if (start < low || end > high) {
+        char text[128];
+        std::snprintf(text, sizeof(text), "%zu bytes at $%04X do not fit %s memory",
+                      segment.bytes.size(), segment.address, MemoryBankName(segment.bank));
+        error = text;
+        return false;
+    }
+    for (uint32_t addr = start; addr < end; addr++) {
+        uint8_t value = segment.bytes[addr - start];
+        if (segment.bank == MemoryBank::kMain) {
+            a.cpu.mem[addr] = value;
+        } else if (segment.bank == MemoryBank::kAux) {
+            a.aux[addr] = value;
+        } else if (addr >= 0xE000) {
+            a.lc.e000[addr - 0xE000] = value;
+        } else {
+            a.lc.bank2_d000[addr - 0xD000] = value;
+        }
+    }
+    return true;
+}
+
+uint8_t PeekAux(const Apple2& a, uint16_t addr) {
+    if (addr < 0xC000) {
+        return a.aux[addr];
+    }
+    if (addr >= 0xE000) {
+        return a.lc.aux_e000[addr - 0xE000];
+    }
+    if (addr >= 0xD000) {
+        return a.lc.aux_bank2_d000[addr - 0xD000];
+    }
+    return a.lc.aux_bank1_d000[addr - 0xC000];
+}
+
 void ResetApple2(Apple2& a) {
     ResetSoftSwitches(a);
     ResetCards(a);
@@ -199,7 +240,8 @@ RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, voi
         }
         uint8_t opcode = 0;
         if (pc < 0xC000) {
-            opcode = m.mem[pc];
+            // with auxiliary memory switched in, the fetch goes through the switches
+            opcode = m.io.base == 0 ? PeekMemory(a, pc) : m.mem[pc];
         } else {
             if (CheckHighPc(a, pc)) {
                 break;
@@ -262,22 +304,6 @@ std::string DescribeStop(const Apple2& a) {
     default:
         return "running";
     }
-}
-
-std::string DescribeStubNotes(uint32_t notes) {
-    std::string text;
-    if ((notes & kNoteAuxMemory) != 0) {
-        text += "note: the program switched to auxiliary memory, which is not built yet; "
-                "main memory was used\n";
-    }
-    if ((notes & kNote80Columns) != 0) {
-        text += "note: the program turned on 80 columns, which is not built yet; showing "
-                "40 columns\n";
-    }
-    if ((notes & kNoteDoubleRes) != 0) {
-        text += "note: the program turned on double-res graphics, which is not built yet\n";
-    }
-    return text;
 }
 
 uint64_t Cycles(const Apple2& a) {

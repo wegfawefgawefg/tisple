@@ -9,6 +9,12 @@
 //   then:            256 bytes where the startup saves zero page (not in the file)
 // Everything up to the save buffer is the file; it all stays below `limit` ($9600).
 //
+// A program that does not fit goes on (link.cpp): functions that do not fit move, whole, to
+// the memory below the origin (from low_start, around text page 1 and every :address and
+// :reserve let), and data follows them; then the language card's 12 KB at $D000-$FFFF, when
+// no constant address there needs the rom (link.hpp; the startup switches its ram in).
+// Lets :in aux go in auxiliary memory. Each piece outside the main file is a segment.
+//
 // Zero page: the startup saves $00-$FF, the program owns all of it, and the exit restores
 // it. Every dereferenced pointer lives there, then the hottest scalars and frames.
 //
@@ -19,6 +25,7 @@
 #include "asm/asm.hpp"
 #include "check/program.hpp"
 #include "link/layout.hpp"
+#include "link/segment.hpp"
 
 #include <string>
 #include <vector>
@@ -27,7 +34,9 @@ namespace tisple {
 
 struct BuildOptions {
     std::uint16_t origin = 0x6000;
-    std::uint32_t limit = 0x9600; // one past the last byte code and data may use
+    std::uint32_t limit = 0x9600;     // one past the last byte code and data may use
+    std::uint32_t low_start = 0x0800; // the memory below the origin, from here, when needed
+    bool use_card = true;             // the language card's ram, when needed and allowed
     // keep the code of functions main never calls (tests call them by address)
     bool keep_all_functions = false;
 };
@@ -43,8 +52,11 @@ struct FunctionSpan {
 struct Compiled {
     std::uint16_t origin = 0x6000;
     std::vector<std::uint8_t> image; // the file: bytes from origin
-    Layout layout;                   // every var's address; run the interpreter on it too
-    Assembly as;                     // items with addresses, for listings
+    // the rest of a program that did not fit: below the origin, the language card, aux memory
+    std::vector<MemorySegment> segments;
+    bool card_ram = false; // the startup switches the language card's ram in
+    Layout layout;         // every var's address; run the interpreter on it too
+    Assembly as;           // items with addresses, for listings
     std::vector<FunctionSpan> spans;
     std::vector<std::uint16_t> function_address; // by function id; 0: dropped (never called)
     std::uint16_t entry_ready = 0; // zero page saved and initialised; next is JSR main
@@ -63,5 +75,15 @@ bool CompileProgram(const Program& program, const BuildOptions& options, Compile
 
 // every function's code under its source lines, with byte counts (tisple build --asm)
 std::string ListProgram(const Program& program, const Compiled& compiled);
+
+// a byte of the built program as the cpu sees it with the program's memory switched in:
+// the file or a main or language card segment; 0 outside them
+std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address);
+
+// every piece of the program: the file at its origin first, then the other segments
+std::vector<MemorySegment> ProgramSegments(const Compiled& compiled);
+
+// "4120 bytes at $6000 (code ..." for the file and a line for each other segment
+std::string DescribeSegments(const Compiled& compiled);
 
 } // namespace tisple

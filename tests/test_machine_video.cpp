@@ -102,7 +102,7 @@ void TestText(TestResults& results) {
     CHECK(results, CellIs(fb, 8, 25, 'A', true));
     CHECK(results, CellIs(fb, 9, 25, 'A', false));
 
-    // the alternate set of the unenhanced iie: inverse lower case instead of flashing
+    // the alternate set: inverse lower case instead of flashing (MouseText is below it)
     tisple::TextCell flash = tisple::DecodeTextByte(0x61, false);
     tisple::TextCell alt = tisple::DecodeTextByte(0x61, true);
     CHECK(results, flash.ascii == '!' && flash.style == tisple::TextStyle::kFlash);

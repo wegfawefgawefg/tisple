@@ -18,4 +18,12 @@ bool CanExecute(const Apple2& a, uint16_t addr);
 // language card and soft-switch reset states
 void ResetSoftSwitches(Apple2& a);
 
+// memory_map.cpp: whether a cpu access below $C000 reaches auxiliary ram, by the switches
+bool ReachesAux(const SoftSwitches& sw, uint16_t addr, bool is_write);
+// the byte such an access reaches
+uint8_t* RamByte(Apple2& a, uint16_t addr, bool is_write);
+// after a memory switch changes: with all of them off the cpu reaches main ram below $C000
+// straight; otherwise the bus sees every access
+void UpdateMemoryMap(Apple2& a);
+
 } // namespace tisple

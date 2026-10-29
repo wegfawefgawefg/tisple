@@ -129,85 +129,6 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
     return true;
 }
 
-bool FoldOption(Checker& ck, const Node& node, const std::string& label, std::uint32_t& out) {
-    ExprId value = CheckExpr(ck, node, kU16Type);
-    std::uint16_t raw = 0;
-    if (!RequireType(ck, node, value, kU16Type, label)) {
-        return false;
-    }
-    if (!FoldExpr(ck, value, raw)) {
-        Err(ck, node, label + " needs a constant number, like 0x6000 or 256");
-        return false;
-    }
-    out = raw;
-    return true;
-}
-
-void ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
-    const std::string& name = key.text;
-    if (name == ":in") {
-        Err(ck, key, ":in (named regions) is not in this subset yet; remove it");
-        return;
-    }
-    if (name != ":address" && name != ":align" && name != ":boundary") {
-        Err(ck, key, name + " is not a let option; use :address, :align or :boundary");
-        return;
-    }
-    if (!value) {
-        Err(ck, key, name + " needs a value; write " + name + " 256");
-        return;
-    }
-    std::uint32_t number = 0;
-    if (!FoldOption(ck, *value, name, number)) {
-        return;
-    }
-    Placement& place = var.placement;
-    bool repeated = (name == ":address" && place.has_address) ||
-                    (name == ":align" && place.align != 0) ||
-                    (name == ":boundary" && place.boundary != 0);
-    if (repeated) {
-        Err(ck, key, name + " is given twice; keep one");
-        return;
-    }
-    if (name == ":address") {
-        place.has_address = true;
-        place.address = static_cast<std::uint16_t>(number);
-        return;
-    }
-    if (number == 0) {
-        Err(ck, *value, name + " 0 means nothing; use 1 or more, like " + name + " 256");
-        return;
-    }
-    if (name == ":align") {
-        place.align = number;
-    } else {
-        place.boundary = number;
-    }
-}
-
-// placement options come last, as on let: (const T (array u8 3) (make ...) :align 256)
-const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& holder) {
-    std::size_t first = form.items.size();
-    for (std::size_t i = 2; i < form.items.size(); i++) {
-        if (form.items[i].kind == NodeKind::Keyword) {
-            first = i;
-            break;
-        }
-    }
-    trimmed = form;
-    trimmed.items.resize(first);
-    for (std::size_t i = first; i < form.items.size(); i += 2) {
-        const Node& key = form.items[i];
-        if (key.kind != NodeKind::Keyword) {
-            Err(ck, key, "placement options come last, after the value");
-            continue;
-        }
-        const Node* value = i + 1 < form.items.size() ? &form.items[i + 1] : nullptr;
-        ReadOption(ck, holder, key, value);
-    }
-    return first < form.items.size() ? &form.items[first] : nullptr;
-}
-
 } // namespace
 
 void EvalConst(Checker& ck, std::int32_t index) {
@@ -231,7 +152,12 @@ void EvalConst(Checker& ck, std::int32_t index) {
     const Node* option = SplitOptions(ck, *cd.form, trimmed, holder);
     bool ok = FoldConstForm(ck, cd, trimmed);
     ConstDecl& done = ck.consts[static_cast<std::size_t>(index)];
-    if (ok && done.var >= 0) {
+    if (ok && done.var >= 0 && (holder.placement.in_aux || holder.placement.reserve)) {
+        Err(ck, *option,
+            std::string(holder.placement.in_aux ? ":in aux" : ":reserve") +
+                " is for top-level lets; make " + done.name + " a let");
+        ok = false;
+    } else if (ok && done.var >= 0) {
         ck.out->vars[static_cast<std::size_t>(done.var)].placement = holder.placement;
     } else if (ok && option) {
         Err(ck, *option,
@@ -387,8 +313,7 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
             continue;
         }
         const Node* value = i + 1 < form.items.size() ? &form.items[i + 1] : nullptr;
-        ReadOption(ck, var, item, value);
-        i++;
+        i += static_cast<std::size_t>(ReadOption(ck, var, item, value)) - 1;
     }
 
     TypeId type = -1;
@@ -442,6 +367,7 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
         }
     }
     var.type = type < 0 ? kErrorType : type;
+    CheckRegionOptions(ck, form, var, value_node != nullptr);
     ck.out->vars[static_cast<std::size_t>(index)] = var;
     RestoreContext(ck, std::move(saved));
 }

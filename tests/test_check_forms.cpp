@@ -149,10 +149,49 @@ void DeclarationTests(TestResults& results) {
                 "t.tsp:1:1: only import, const, let, struct, enum, fn and macro go at top "
                 "level; put (+ ...) inside a fn");
     ExpectError(results, "(fn f () void (let x u8 0 :align 2))",
-                "t.tsp:1:27: placement options (:address, :align, :boundary) are for top-level "
-                "lets; move x out of the function");
+                "t.tsp:1:27: placement options (:address, :align, :boundary, :in, :reserve) are "
+                "for top-level lets; move x out of the function");
     ExpectError(results, "(let x u8 0 :in zero_page)",
-                "t.tsp:1:13: :in (named regions) is not in this subset yet; remove it");
+                "t.tsp:1:17: :in takes aux, the one named region; write :in aux");
+    ExpectError(results, "(let x u8 0 :in)",
+                "t.tsp:1:13: :in takes aux, the one named region; write :in aux");
+    ExpectError(results, "(let x u8 0 :in aux :in aux)",
+                "t.tsp:1:21: :in is given twice; keep one");
+    ExpectError(results, "(let x u8 0 :nearby 1)",
+                "t.tsp:1:13: :nearby is not a let option; use :address, :align, :boundary, :in "
+                "aux or :reserve");
+    // :reserve: room at a fixed address the program reaches with pointers
+    ExpectError(results, "(let page (array u8 8192) :reserve)",
+                "t.tsp:1:1: :reserve keeps memory at a fixed address; give it one: (let page "
+                "(array u8 8192) :address 0x2000 :reserve)");
+    ExpectError(results, "(let page u8 7 :address 0x2000 :reserve)",
+                "t.tsp:1:1: page is :reserve, memory the program reaches by address, so it has no "
+                "value; drop the value or :reserve");
+    ExpectError(results,
+                "(let page (array u8 8192) :address 0x2000 :reserve)\n"
+                "(fn f () u8 (at page 3))",
+                "t.tsp:2:17: page is :reserve memory, not a variable; reach it with a pointer, as "
+                "in (as (ptr u8) 0x2000)");
+    ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :reserve)",
+                "t.tsp:1:47: :reserve is for top-level lets; make T a let");
+    // :in aux: reached only through addr_of and lib/auxmem
+    ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :in aux)",
+                "t.tsp:1:47: :in aux is for top-level lets; make T a let");
+    ExpectError(results, "(let doc (array u8 100) :in aux)\n(fn f () u8 (at doc 3))",
+                "t.tsp:2:17: doc is in aux memory, which code reaches only through "
+                "lib/auxmem; copy it with (auxmem.read (addr_of buffer) (addr_of doc) count)");
+    ExpectError(results, "(let n u8 :in aux)\n(fn f () void (set n 3))",
+                "t.tsp:2:20: n is in aux memory, which code reaches only through lib/auxmem; "
+                "copy it with (auxmem.read (addr_of buffer) (addr_of n) count)");
+    ExpectError(results, "(let doc (array u8 16) :address 0x0100 :in aux)",
+                "t.tsp:1:1: doc is in aux memory at an :address outside $0200-$BFFF, which "
+                "lib/auxmem cannot reach; move it");
+    CHECK(results, BuildText("(let doc (array u8 100) :in aux)\n"
+                             "(fn f () u16 (as u16 (addr_of (at doc 7))))")
+                       .ok);
+    CHECK(results, BuildText("(let page (array u8 8192) :address 0x2000 :reserve)\n"
+                             "(fn f () u8 (load (as (ptr u8) 0x2005)))")
+                       .ok);
     ExpectError(results, "(let x u8 0 :align 0)",
                 "t.tsp:1:20: :align 0 means nothing; use 1 or more, like :align 256");
     ExpectError(results, "(let t (array u8 3) 1)",

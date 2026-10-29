@@ -61,8 +61,11 @@ drives, reads, writes, write-back), `.dsk`/`.do`/`.po`/`.nib`, our boot ROM,
 self-booting disks (`tisple build --disk`, `tisple run --disk`,
 `tisple disk boot`), DOS 3.3 file commands and snapshots with disks are in.
 Self-booting disks boot with Apple's `Apple2e.rom` and `DISK2.rom` in the
-emulator; a2audit's language card and soft switch tests pass. Still to do:
-ProDOS file commands, aux memory (a2audit skips its test), real hardware.
+emulator; a2audit's language card and soft switch tests pass. 2026-10-27: the
+extended 80-column card (aux memory, 80 columns, double-res, MouseText) is in,
+a2audit finds 128K and its aux memory tests pass, and disks boot programs in
+segments across main memory, the language card and aux memory. Still to do:
+ProDOS file commands, real hardware.
 
 ### Mouse (owner, 2026-10-26)
 

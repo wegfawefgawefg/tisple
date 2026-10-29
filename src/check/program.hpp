@@ -98,12 +98,14 @@ enum class VarKind : std::uint8_t {
     Local,
 };
 
-// :address, :align, :boundary on a top-level let; 0 means not given
+// :address, :align, :boundary, :in aux and :reserve on a top-level let; 0 means not given
 struct Placement {
     bool has_address = false;
     std::uint16_t address = 0;
     std::uint32_t align = 0;
     std::uint32_t boundary = 0;
+    bool in_aux = false;  // :in aux: in auxiliary memory, reached only through lib/auxmem
+    bool reserve = false; // :reserve: memory the program reaches by address; not a variable
 };
 
 struct Var {

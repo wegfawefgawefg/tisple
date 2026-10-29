@@ -28,10 +28,12 @@ struct StartupPlan {
     std::vector<std::pair<std::uint16_t, std::uint8_t>> stores;
     std::int32_t ready_sym = -1; // labels the startup defines
     std::int32_t after_sym = -1;
+    bool card_ram = false; // part of the program is in the language card: switch its ram in
 };
 
 // save zero page, write the zero-page image and other initial values, JSR main, restore
-// zero page, RTS
+// zero page, RTS. With card_ram, the language card's ram (bank 2) is switched in first, for
+// reads and writes, and the rom back in before the RTS
 void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out);
 
 } // namespace tisple

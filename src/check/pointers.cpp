@@ -1,5 +1,7 @@
 #include "check/checker.hpp"
 
+#include <cstdio>
+
 namespace tisple {
 
 namespace {
@@ -252,6 +254,47 @@ ExprId CheckAs(Checker& ck, const Node& node) {
     ExprId id = AddExpr(ck, ExprKind::Reinterpret, to, node);
     ExprAt(ck, id).a = value;
     return id;
+}
+
+void CheckRegionUses(Checker& ck) {
+    const Program& program = *ck.out;
+    std::vector<bool> under_addr_of(program.exprs.size(), false);
+    for (const Expr& e : program.exprs) {
+        if (e.kind != ExprKind::AddrOf) {
+            continue;
+        }
+        ExprId place = e.a;
+        while (place >= 0 && (ExprAt(ck, place).kind == ExprKind::Index ||
+                              ExprAt(ck, place).kind == ExprKind::Field)) {
+            place = ExprAt(ck, place).a;
+        }
+        if (place >= 0) {
+            under_addr_of[static_cast<std::size_t>(place)] = true;
+        }
+    }
+    for (std::size_t i = 0; i < program.exprs.size(); i++) {
+        const Expr& e = program.exprs[i];
+        if (e.kind != ExprKind::VarRef || e.ref < 0) {
+            continue;
+        }
+        const Var& var = program.vars[static_cast<std::size_t>(e.ref)];
+        std::string name = var.name.substr(var.name.rfind('.') + 1);
+        if (var.placement.reserve) {
+            char address[16];
+            std::snprintf(address, sizeof(address), "0x%04X", var.placement.address);
+            AddError(*ck.errors, e.loc,
+                     name +
+                         " is :reserve memory, not a variable; reach it with a pointer, as in "
+                         "(as (ptr u8) " +
+                         address + ")");
+        } else if (var.placement.in_aux && !under_addr_of[i]) {
+            AddError(*ck.errors, e.loc,
+                     name +
+                         " is in aux memory, which code reaches only through lib/auxmem; copy "
+                         "it with (auxmem.read (addr_of buffer) (addr_of " +
+                         name + ") count)");
+        }
+    }
 }
 
 } // namespace tisple

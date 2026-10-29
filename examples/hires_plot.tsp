@@ -4,6 +4,9 @@
 
 (const HGR_PAGE1 u16 0x2000)
 
+; the screen, kept out of the program's memory
+(let page1 (array u8 8192) :address HGR_PAGE1 :reserve)
+
 ; ROW_ADDR[y] = $2000 + (y mod 8) * $400 + ((y / 8) mod 8) * $80 + (y / 64) * $28
 ; stored as a low-byte and a high-byte table; :boundary keeps each inside one page
 (macro row_addr (y)

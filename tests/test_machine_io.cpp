@@ -69,13 +69,6 @@ void TestMemorySwitchesWriteOnly(TestResults& results) {
     CHECK(results, (a->cpu.mem[0x01] & 0x80) != 0);
     CHECK(results, (a->cpu.mem[0x02] & 0x80) != 0);
     CHECK(results, a->sw.store80 && a->sw.altchar);
-
-    // aux memory is a stub: tracked and noted, main memory still used
-    auto b = MachineWithBytes({0x8D, 0x05, 0xC0, 0xA9, 0x77, 0x85, 0x10, 0x00});
-    RunToStop(*b);
-    CHECK(results, b->sw.ramwrt);
-    CHECK(results, b->cpu.mem[0x10] == 0x77);
-    CHECK(results, (b->stub_notes & tisple::kNoteAuxMemory) != 0);
 }
 
 void TestKeyboardStrobe(TestResults& results) {

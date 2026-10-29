@@ -148,10 +148,12 @@ ExprId CheckLet(Checker& ck, const Node& node) {
     std::vector<const Node*> positional;
     for (std::size_t i = 2; i < node.items.size(); i++) {
         if (node.items[i].kind == NodeKind::Keyword) {
-            return Fail(ck, node.items[i],
-                        "placement options (:address, :align, :boundary) are for top-level lets; "
-                        "move " +
-                            name.text + " out of the function");
+            return Fail(
+                ck, node.items[i],
+                "placement options (:address, :align, :boundary, :in, :reserve) are for top-level "
+                "lets; "
+                "move " +
+                    name.text + " out of the function");
         }
         positional.push_back(&node.items[i]);
     }

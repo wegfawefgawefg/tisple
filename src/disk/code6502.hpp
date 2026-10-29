@@ -51,6 +51,10 @@ struct Code6502 {
     void MemLabel(Mn mn, std::int32_t label, int offset = 0) {
         as.items.push_back(MakeIns(mn, Mode::Abs, SymValue(label, offset)));
     }
+    // a table in the code, indexed by X
+    void MemLabelX(Mn mn, std::int32_t label, int offset = 0) {
+        as.items.push_back(MakeIns(mn, Mode::AbsX, SymValue(label, offset)));
+    }
     void Br(Mn mn, std::int32_t label) {
         as.items.push_back(MakeIns(mn, Mode::Rel, SymValue(label)));
     }

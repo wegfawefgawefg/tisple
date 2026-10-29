@@ -52,6 +52,17 @@ int CountMn(const Compiled& c, const std::string& function, tisple::Mn mn);
 // compares every global byte; false with a message
 bool SameGlobals(const Diff& d, std::string& message);
 
+// a program the backend refuses, with an error that has part in it (test_link_regions.cpp)
+void ExpectLinkError(TestResults& results, const std::string& text, const std::string& part);
+// every segment of c (its main file too) clear of zero page to text page 1, I/O, the other
+// segments in its memory and the :reserve lets (test_link_regions.cpp)
+void CheckSegmentsApart(TestResults& results, const Compiled& c);
+void RunLinkRegionTests(TestResults& results);
+// lib/text80, lib/text40 and lib/auxmem on the machine (test_text_libs.cpp)
+void RunTextLibTests(TestResults& results);
+// programs/text_demo run, then booted from its disk (test_text_demo.cpp)
+void RunTextDemoTests(TestResults& results);
+
 void RunAsmTests(TestResults& results);
 void RunBackendTests(TestResults& results);
 void RunBackendOpTests(TestResults& results);

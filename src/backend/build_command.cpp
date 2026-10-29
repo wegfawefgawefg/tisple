@@ -105,10 +105,7 @@ std::string DefaultOut(const char* path) {
 }
 
 void PrintSizes(const Compiled& c) {
-    std::printf("%u bytes at $%04X (code %u, data %u); zero page %u bytes (frames %u), "
-                "frames in memory %u bytes\n",
-                static_cast<unsigned>(c.image.size()), c.origin, c.code_bytes, c.data_bytes,
-                c.zp_bytes, c.zp_frames, c.mem_frames);
+    std::fputs(DescribeSegments(c).c_str(), stdout);
 }
 
 } // namespace
@@ -127,6 +124,15 @@ int RunBuildCommand(int argc, char** argv) {
     }
     if (args.listing) {
         std::fputs(ListProgram(program, compiled).c_str(), stdout);
+    }
+    if (!compiled.segments.empty()) {
+        // one BRUN file loads one stretch of main memory
+        std::fputs(DescribeSegments(compiled).c_str(), stderr);
+        std::fprintf(stderr,
+                     "%s: the program does not fit one file from $%04X; build a disk that loads "
+                     "every part with --disk game.dsk, or run it with tisple run\n",
+                     args.path, compiled.origin);
+        return 1;
     }
     std::string out = args.out.empty() ? DefaultOut(args.path) : args.out;
     std::FILE* file = std::fopen(out.c_str(), "wb");
@@ -170,7 +176,7 @@ int RunRunCommand(int argc, char** argv, MachineWindowFn window) {
         if (!args.headless && window != nullptr) {
             args.machine_args.push_back(window_flag);
         }
-        return RunMachineOnBinary(compiled.image, compiled.origin,
+        return RunMachineOnBinary(compiled.image, compiled.origin, compiled.segments,
                                   static_cast<int>(args.machine_args.size()),
                                   args.machine_args.data(), window);
     }

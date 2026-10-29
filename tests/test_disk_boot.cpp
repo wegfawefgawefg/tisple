@@ -127,7 +127,7 @@ void TestBootOurRom(TestResults& results) {
 
 // a program over many tracks, at a low origin, loads every page in place
 void TestBootBigProgram(TestResults& results) {
-    std::vector<uint8_t> program(0xB000 - 0x0A40);
+    std::vector<uint8_t> program(0xB000 - 0x0B40);
     uint32_t x = 12345;
     for (uint8_t& b : program) {
         x = x * 1103515245 + 12345;
@@ -137,20 +137,20 @@ void TestBootBigProgram(TestResults& results) {
     tisple::DiskSectors disk;
     tisple::BootDiskInfo info;
     std::string error;
-    CHECK(results, tisple::MakeBootDisk(program, 0x0A40, disk, info, error));
-    CHECK(results, info.first_page == 0x0A && info.last_track == 11);
+    CHECK(results, tisple::MakeBootDisk(program, 0x0B40, disk, info, error));
+    CHECK(results, info.first_page == 0x0B && info.last_track == 11);
     std::unique_ptr<tisple::Apple2> a = MachineWithDisk(disk);
     a->return_pc = info.return_pc;
     tisple::StartDiskBoot(*a);
     RunUntilStop(*a, kBootBudget);
     CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
-    CHECK(results, std::memcmp(a->cpu.mem + 0x0A40, program.data(), program.size()) == 0);
-    CHECK(results, a->cpu.mem[0x0A3F] == 0 && a->cpu.mem[0xB000] == 0);
+    CHECK(results, std::memcmp(a->cpu.mem + 0x0B40, program.data(), program.size()) == 0);
+    CHECK(results, a->cpu.mem[0x0B3F] == 0 && a->cpu.mem[0xB000] == 0);
 
     // too big or too low is refused
-    CHECK(results, !tisple::MakeBootDisk(program, 0x0900, disk, info, error));
-    std::vector<uint8_t> huge(0xC000 - 0x0A00 + 1, 0x60);
-    CHECK(results, !tisple::MakeBootDisk(huge, 0x0A00, disk, info, error));
+    CHECK(results, !tisple::MakeBootDisk(program, 0x0A00, disk, info, error));
+    std::vector<uint8_t> huge(0xC000 - 0x0B00 + 1, 0x60);
+    CHECK(results, !tisple::MakeBootDisk(huge, 0x0B00, disk, info, error));
 }
 
 // boot, snapshot halfway through the load, restore elsewhere: the same end
@@ -223,9 +223,9 @@ std::string ScreenText(const tisple::Apple2& a) {
     return text;
 }
 
-// Zellyn Hunter's a2audit (scripts/fetch_a2audit.sh) through Apple's roms: its language card
-// and soft switch tests pass. its aux memory test is skipped (no aux memory yet) and its
-// video tests need a person to look
+// Zellyn Hunter's a2audit (scripts/fetch_a2audit.sh) through Apple's roms: it finds 128K, and
+// its language card, aux memory and soft switch tests pass. its video tests need a person to
+// look
 void TestA2Audit(TestResults& results) {
     std::vector<uint8_t> main_rom = OwnerRom("Apple2e.rom");
     std::vector<uint8_t> disk_rom = OwnerRom("DISK2.rom");
@@ -245,9 +245,12 @@ void TestA2Audit(TestResults& results) {
     std::string screen = ScreenText(*a);
     bool lc = screen.find("LANGUAGE CARD TESTS SUCCEEDED") != std::string::npos;
     bool switches = screen.find("SOFTSWITCH TESTS SUCCEEDED") != std::string::npos;
+    bool aux = screen.find("MEMORY:128K") != std::string::npos &&
+               screen.find("AUXMEM TESTS SUCCEEDED") != std::string::npos;
     CHECK(results, lc);
     CHECK(results, switches);
-    if (!lc || !switches) {
+    CHECK(results, aux);
+    if (!lc || !switches || !aux) {
         std::fprintf(stderr, "a2audit screen:\n%s", screen.c_str());
     }
 }

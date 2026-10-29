@@ -94,6 +94,7 @@ every wasted cycle (`tisple gaps`).
 | Life | `tisple run programs/life/main.tsp` |
 | Snake | `tisple run programs/snake/main.tsp` |
 | Paint (mouse) | `tisple run programs/paint/main.tsp` |
+| Text viewer (80 columns, 72 KB) | `tisple run programs/text_demo/main.tsp` |
 
 ## Build
 

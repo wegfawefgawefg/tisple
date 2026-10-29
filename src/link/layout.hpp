@@ -24,16 +24,24 @@
 
 namespace tisple {
 
-// never chosen for automatic placement: zero page, stack, text page 1, hi-res page 1, I/O+ROM
+// never chosen for automatic placement: zero page, stack, text page 1, I/O. The other screens
+// are ordinary memory unless the program keeps them with :reserve
 struct AddressRange {
     std::uint32_t start = 0;
     std::uint32_t end = 0; // one past
 };
-extern const AddressRange kReservedRanges[5];
+extern const AddressRange kReservedRanges[4];
+
+// where :in aux data goes when it has no :address: auxiliary ram above its text page
+constexpr std::uint32_t kAuxDataStart = 0x0800;
+constexpr std::uint32_t kAuxDataEnd = 0xC000;
 
 struct LayoutOptions {
     std::uint32_t data_start = 0x0C00; // first address for data
     std::uint32_t data_end = 0xC000;   // one past the last
+    // more main memory for data once [data_start, data_end) is full, tried in order: the
+    // memory below the origin, the language card
+    std::vector<AddressRange> more_data;
     // addresses the backend already chose (zero page, overlapped frames), by var id; -1 or
     // missing: the layout places the var. Preset vars are not checked against each other,
     // since overlapping frames share bytes on purpose.
@@ -51,6 +59,7 @@ struct VarPlace {
 
 struct Layout {
     std::vector<VarPlace> vars; // by var id
+    bool no_room = false;       // automatic placement ran out of memory
 };
 
 // every Var's shape (size, split, plane stride) with address 0: what code generation needs
@@ -58,7 +67,9 @@ struct Layout {
 bool ShapeProgram(const Program& program, Layout& out, std::vector<Diagnostic>& errors);
 
 // globals and const arrays first (in declaration order), then every function's
-// parameters and locals in a static frame of its own; then CheckConstantPointers. An array
+// parameters and locals in a static frame of its own; then CheckConstantPointers. Lets
+// :in aux go in auxiliary ram, apart from everything else; :reserve lets hold their bytes
+// like any :address let. An array
 // with no :align or :boundary of its own keeps each byte table (up to 256 bytes) inside one
 // page when some free start allows it, so indexed reads never pay for a page crossing
 bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout& out,
