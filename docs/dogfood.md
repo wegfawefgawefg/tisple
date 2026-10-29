@@ -1184,7 +1184,7 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     card); macros, read_key and sprites byte for byte. Sound: snake's half
     waves are 172 and 977 cycles (were 180 and 980) and examples/speaker's 817
     (was 822), the loop around the wait being cheaper. Fuzz: 4 x 30000 seeds
-    at two commits (538,000 programs), 0 mismatches; ASan 3000 seeds, 0. The
+    at two commits (539,000 programs), 0 mismatches; ASan 3000 seeds twice, 0. The
     in-suite 693 programs 4030845 to 3824700 cycles. tisple race --profile
     writes each instruction's runs and cycles on the clock. Tests:
     test_backend_inline, _match, _shift, _sub8, _signed_cmp, _count16,
