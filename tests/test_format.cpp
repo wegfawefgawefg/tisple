@@ -208,6 +208,13 @@ void TestBlankLines(TestResults& results) {
 
 void TestQuoteMarks(TestResults& results) {
     CHECK(results, Canonical("(f 'x `(a ,b ,@c) (quote y))\n"));
+    // char literals stay as written, beside quote marks
+    CHECK(results, Canonical("(f 'A' ' ' '\\n' '(' ')' '\\'' '\\x41' 'x '('a b))\n"));
+    // a quoted list that starts with a char literal is written out: '(' ' x) would read as '('
+    CHECK(results, FormatsTo("'('a' x)", "(quote ('a' x))\n"));
+    CHECK(results, Canonical("(quote (' ' x))\n"));
+    CHECK(results,
+          FormatsTo("(match k ('q' (quit)) (_))", "(match k\n    ('q' (quit))\n    (_))\n"));
     CHECK(results, FormatsTo("(macro m (a) `(do ,a))", "(macro m (a)\n    `(do\n        ,a))\n"));
 }
 
@@ -297,7 +304,8 @@ std::string RandomProgram(std::mt19937& rng) {
                            "struct", "x",     "y",
                            "0x7F",   "12",    ":in",
                            ":align", "\"s\"", "a_rather_long_name_to_force_breaking_lines_sooner",
-                           "+",      "."};
+                           "+",      ".",     "'a'",
+                           "'('",    "'\\n'", "' '"};
     const char* marks[] = {"'", "`", ",", ",@"};
     auto pick = [&](int n) { return static_cast<int>(rng() % static_cast<unsigned>(n)); };
     std::string out;

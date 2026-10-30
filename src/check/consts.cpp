@@ -1,64 +1,62 @@
 #include "check/arith.hpp"
 #include "check/checker.hpp"
 
+#include <algorithm>
+
 namespace tisple {
 
 namespace {
-
-void PutBytes(std::vector<std::uint8_t>& bytes, std::uint32_t offset, std::uint32_t size,
-              std::uint16_t value) {
-    bytes[offset] = static_cast<std::uint8_t>(value & 0xFF);
-    if (size == 2) {
-        bytes[offset + 1] = static_cast<std::uint8_t>(value >> 8);
-    }
-}
 
 bool IsConstScalar(const Checker& ck, TypeId type) {
     return type != kErrorType && IsScalarKind(KindOf(*ck.out, type));
 }
 
-bool FoldConstArray(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
-    const Type& array = TypeOf(*ck.out, type);
-    TypeId elem = array.elem;
-    if (!IsConstScalar(ck, elem)) {
-        Err(ck, form.items[2],
-            "a const array holds numbers, bools, enum members or pointers; use a top-level let "
-            "for an array of " +
-                ShowType(ck, elem));
-        return false;
-    }
-    std::vector<std::uint8_t> bytes(array.size, 0);
-    std::vector<FnSlot> outer_slots = std::move(ck.pending_slots);
-    ck.pending_slots.clear();
-    bool ok = FoldArrayLiteral(ck, form.items[3], type, cd.name, bytes, 0);
-    Var var;
-    var.fn_slots = std::move(ck.pending_slots);
-    ck.pending_slots = std::move(outer_slots);
-    var.name = ck.out->modules[static_cast<std::size_t>(cd.module)].name + "." + cd.name;
-    var.kind = VarKind::ConstArray;
-    var.type = type;
-    var.module = cd.module;
-    var.loc = NodeLoc(ck, form.items[1]);
-    var.init = bytes;
-    cd.var = AddVar(ck, var);
+// a struct or array const: its Var comes first, so the value may hold its own address
+// (addr_of NODES 1), then the bytes and address slots
+bool FoldConstData(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
+    Var made;
+    made.name = ck.out->modules[static_cast<std::size_t>(cd.module)].name + "." + cd.name;
+    made.kind = VarKind::Const;
+    made.type = type;
+    made.module = cd.module;
+    made.loc = NodeLoc(ck, form.items[1]);
+    std::int32_t var = AddVar(ck, made);
+    cd.var = var;
     cd.type = type;
+    std::vector<std::uint8_t> bytes(TypeOf(*ck.out, type).size, 0);
+    std::vector<AddrSlot> outer_slots = std::move(ck.pending_slots);
+    ck.pending_slots.clear();
+    ck.folding.push_back(var);
+    bool ok = FoldValue(ck, form.items[3], type, cd.name, bytes, 0);
+    ck.folding.pop_back();
+    Var& done = ck.out->vars[static_cast<std::size_t>(var)];
+    done.init = bytes;
+    done.addr_slots = std::move(ck.pending_slots);
+    ck.pending_slots = std::move(outer_slots);
     return ok;
 }
 
-// (const GREETING (ptr u8) "HELLO"): the string's table, read as a pointer to it
-bool FoldConstString(Checker& ck, ConstDecl& cd, const Node& value, TypeId type) {
-    if (type == kErrorType) {
-        return false;
+// a pointer const: a number, or an address the link knows ("HELLO", (addr_of T 3)), kept as
+// the checked tree each use copies
+bool FoldConstPointer(Checker& ck, ConstDecl& cd, const Node& node, ExprId value) {
+    std::uint16_t raw = 0;
+    std::size_t before = ck.errors->size();
+    if (FoldExpr(ck, value, raw)) {
+        cd.value = raw;
+        return true;
     }
-    if (type != PtrType(ck, kU8Type)) {
-        Err(ck, value,
-            "a string is a (ptr u8); write (const " + cd.name + " (ptr u8) " + Show(value) + ")");
-        return false;
+    AddrSlot slot;
+    if (ck.errors->size() == before && FoldAddress(ck, value, slot)) {
+        cd.address = value;
+        return true;
     }
-    cd.var = StringTable(ck, value);
-    cd.type = type;
-    cd.string = true;
-    return cd.var >= 0;
+    if (ck.errors->size() == before) {
+        Err(ck, node,
+            "the value of const " + cd.name +
+                " is not constant; a pointer const is a number, a string or (addr_of x) of a "
+                "top-level let or a const");
+    }
+    return false;
 }
 
 // (const T (array u8 3) 1 2 3): the old table spelling, values straight after the type
@@ -110,38 +108,43 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
         return false;
     }
     type = ResolveType(ck, items[2]);
-    bool is_array = type != kErrorType && KindOf(*ck.out, type) == TypeKind::Array;
+    TypeKind kind = type == kErrorType ? TypeKind::Error : KindOf(*ck.out, type);
+    bool is_array = kind == TypeKind::Array;
     if (items.size() != 4) {
         Err(ck, form,
             is_array ? "a value is one form; " + OldTableFix(cd, form)
                      : "(const NAME type value) takes one value; " + fix);
         return false;
     }
-    if (is_array) {
-        return FoldConstArray(ck, cd, form, type);
+    if (type == kErrorType) {
+        return false;
     }
-    if (items[3].kind == NodeKind::String) {
-        return FoldConstString(ck, cd, items[3], type);
+    if (is_array || kind == TypeKind::Struct) {
+        return FoldConstData(ck, cd, form, type);
+    }
+    if (items[3].kind == NodeKind::String && type != PtrType(ck, kU8Type)) {
+        Err(ck, items[3],
+            "a string is a (ptr u8); write (const " + cd.name + " (ptr u8) " + Show(items[3]) +
+                ")");
+        return false;
+    }
+    if (kind == TypeKind::Fn) {
+        Err(ck, form,
+            "a function is named directly, not through a const; write " + Show(items[3]) +
+                " where " + cd.name + " is used");
+        return false;
     }
     value = CheckExpr(ck, items[3], type);
     if (!RequireType(ck, items[3], value, type, "const " + cd.name)) {
         return false;
     }
-    if (type == kErrorType) {
-        return false;
-    }
     if (!IsConstScalar(ck, type)) {
-        Err(ck, form,
-            "a const holds a number, bool, enum member or pointer, or an array of them; use a "
-            "top-level let for " +
-                ShowType(ck, type));
+        Err(ck, form, "a const of type " + ShowType(ck, type) + " is not data; use a scalar type");
         return false;
     }
-    if (KindOf(*ck.out, type) == TypeKind::Fn) {
-        Err(ck, form,
-            "a function is named directly, not through a const; write " + Show(items[3]) +
-                " where " + cd.name + " is used");
-        return false;
+    cd.type = type;
+    if (kind == TypeKind::Ptr) {
+        return FoldConstPointer(ck, cd, items[3], value);
     }
     std::size_t before = ck.errors->size();
     std::uint16_t raw = 0;
@@ -153,7 +156,6 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
         }
         return false;
     }
-    cd.type = type;
     cd.value = raw;
     return true;
 }
@@ -256,49 +258,25 @@ bool FoldExpr(Checker& ck, ExprId id, std::uint16_t& value) {
             return false;
         }
         return FoldExpr(ck, a != 0 ? e.b : e.c, value);
-    case ExprKind::Index: {
-        const Expr& base = ExprAt(ck, e.a);
-        if (base.kind != ExprKind::VarRef || !FoldExpr(ck, e.b, b)) {
+    case ExprKind::Index:
+    case ExprKind::Field: {
+        std::int32_t var = -1;
+        std::uint32_t offset = 0;
+        const Type& type = TypeOf(*ck.out, e.type);
+        if (!IsScalarKind(type.kind) || !ConstPlace(*ck.out, id, var, offset)) {
             return false;
         }
-        const Var& var = ck.out->vars[static_cast<std::size_t>(base.ref)];
-        std::uint32_t size = TypeOf(*ck.out, e.type).size;
-        std::uint32_t offset = static_cast<std::uint32_t>(b) * size;
-        if (var.kind != VarKind::ConstArray || offset + size > var.init.size()) {
+        if (std::find(ck.folding.begin(), ck.folding.end(), var) != ck.folding.end()) {
+            AddError(*ck.errors, e.loc,
+                     DataName(ck, var) + " reads its own value while it is being built; only "
+                                         "its address, (addr_of ...), may be used in it");
             return false;
         }
-        value = var.init[offset];
-        if (size == 2) {
-            value = static_cast<std::uint16_t>(value | (var.init[offset + 1] << 8));
-        }
-        return true;
+        return InitBits(ck.out->vars[static_cast<std::size_t>(var)], offset, type.size, value);
     }
     default:
         return false;
     }
-}
-
-bool FoldInit(Checker& ck, ExprId id, std::vector<std::uint8_t>& bytes, std::uint32_t offset) {
-    const Expr e = ExprAt(ck, id);
-    const Type& type = TypeOf(*ck.out, e.type);
-    if (e.kind == ExprKind::StructLit) {
-        const StructDecl& sd = ck.out->structs[static_cast<std::size_t>(type.decl)];
-        bool ok = true;
-        for (std::uint32_t i = 0; i < e.count && i < sd.fields.size(); i++) {
-            ExprId field = ck.out->lists[e.first + i];
-            ok = FoldInit(ck, field, bytes, offset + sd.fields[i].offset) && ok;
-        }
-        return ok;
-    }
-    if (!IsScalarKind(type.kind)) {
-        return false;
-    }
-    std::uint16_t raw = 0;
-    if (!FoldExpr(ck, id, raw)) {
-        return false;
-    }
-    PutBytes(bytes, offset, type.size, raw);
-    return true;
 }
 
 bool ConstCount(Checker& ck, const Node& node, std::uint32_t& count) {
@@ -329,7 +307,49 @@ bool ConstCount(Checker& ck, const Node& node, std::uint32_t& count) {
     return true;
 }
 
+namespace {
+
+// a top-level let's value into var's bytes and address slots; its type is already in the
+// program, so the value may hold the let's own address
+void FoldGlobalValue(Checker& ck, Var& var, const Node& value_node, const std::string& name) {
+    TypeId type = var.type;
+    std::vector<std::uint8_t> bytes(TypeOf(*ck.out, type).size, 0);
+    std::vector<AddrSlot> outer_slots = std::move(ck.pending_slots);
+    ck.pending_slots.clear();
+    bool folded = false;
+    TypeKind kind = KindOf(*ck.out, type);
+    if (kind == TypeKind::Array || kind == TypeKind::Struct) {
+        folded = FoldValue(ck, value_node, type, name, bytes, 0);
+    } else {
+        ExprId value = CheckExpr(ck, value_node, type);
+        std::size_t before = ck.errors->size();
+        folded = RequireType(ck, value_node, value, type, "let " + name) &&
+                 FoldScalarValue(ck, value, type, bytes, 0);
+        if (!folded && ck.errors->size() == before) {
+            Err(ck, value_node,
+                "a top-level let starts with a constant value; set " + name +
+                    " at the start of main instead");
+        }
+    }
+    if (folded) {
+        var.init = bytes;
+        var.addr_slots = std::move(ck.pending_slots);
+    }
+    ck.pending_slots = std::move(outer_slots);
+}
+
+} // namespace
+
+void EnsureGlobal(Checker& ck, std::int32_t index) {
+    std::size_t i = static_cast<std::size_t>(index);
+    if (i < ck.global_forms.size() && ck.global_forms[i] != nullptr &&
+        i < ck.global_states.size() && ck.global_states[i] == Progress::Pending) {
+        ResolveGlobal(ck, index);
+    }
+}
+
 void ResolveGlobal(Checker& ck, std::int32_t index) {
+    ck.global_states[static_cast<std::size_t>(index)] = Progress::Busy;
     const Node& form = *ck.global_forms[static_cast<std::size_t>(index)];
     Var var = ck.out->vars[static_cast<std::size_t>(index)];
     Context saved = SwitchContext(ck, var.module, -1);
@@ -376,37 +396,18 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
             type = kErrorType;
         }
     } else if (value_node && type > kErrorType) {
-        std::vector<std::uint8_t> bytes(TypeOf(*ck.out, type).size, 0);
-        bool folded = false;
-        if (KindOf(*ck.out, type) == TypeKind::Array) {
-            std::vector<FnSlot> outer_slots = std::move(ck.pending_slots);
-            ck.pending_slots.clear();
-            folded = FoldArrayLiteral(ck, *value_node, type, name, bytes, 0);
-            if (!ck.pending_slots.empty()) {
-                Err(ck, *value_node,
-                    "only a const table starts with functions; make " + name +
-                        " a const, or set its elements in code");
-                folded = false;
-            }
-            ck.pending_slots = std::move(outer_slots);
-        } else {
-            ExprId value = CheckExpr(ck, *value_node, type);
-            std::size_t before = ck.errors->size();
-            folded = RequireType(ck, *value_node, value, type, "let " + name) &&
-                     FoldInit(ck, value, bytes, 0);
-            if (!folded && ck.errors->size() == before) {
-                Err(ck, *value_node,
-                    "a top-level let starts with a constant value; set " + name +
-                        " at the start of main instead");
-            }
-        }
-        if (folded) {
-            var.init = bytes;
-        }
+        var.type = type;
+        ck.out->vars[static_cast<std::size_t>(index)].type = type;
+        FoldGlobalValue(ck, var, *value_node, name);
     }
     var.type = type < 0 ? kErrorType : type;
+    CheckCallableName(ck, form.items[1], var.type, "let");
     CheckRegionOptions(ck, form, var, value_node != nullptr);
+    // its value may have taken its own address
+    const Var& now = ck.out->vars[static_cast<std::size_t>(index)];
+    var.address_taken = var.address_taken || now.address_taken;
     ck.out->vars[static_cast<std::size_t>(index)] = var;
+    ck.global_states[static_cast<std::size_t>(index)] = Progress::Done;
     RestoreContext(ck, std::move(saved));
 }
 

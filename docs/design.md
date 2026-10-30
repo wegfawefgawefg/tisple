@@ -89,11 +89,15 @@ Reader: a symbol is any run of characters other than whitespace, parentheses,
 `;`, `"` and the quote marks (so `+`, `<=`, `&`, `|`, `.`, `hgr.plot` and
 `gfx/hgr` are all symbols); `#` may only end a name (`tmp#`). `:name` is a
 keyword atom. Integers are decimal, `0x` hex or `0b` binary, optionally
-negative. Strings are one line, with escapes
-`\n \t \r \0 \\ \" \xHH`. Quote marks read as lists (`'x` is `(quote x)`,
-`` `x `` quasiquote, `,x` unquote, `,@x` unquote_splicing), must touch their
-form, and print back as marks. Comments run from `;` to the end of the line;
-they live beside the tree, not in it.
+negative. A char literal, `'A'`, is an integer token (its text kept as written,
+its value 65): `'`, one character or one of the strings' escapes (and `\'`),
+`'`, then the end of the token (a space, `)`, `;` or the end). Strings are one
+line, with escapes `\n \t \r \0 \\ \" \xHH`. Quote marks read as lists (`'x`
+is `(quote x)`, `` `x `` quasiquote, `,x` unquote, `,@x` unquote_splicing), must
+touch their form, and print back as marks, except a quote of a list that starts
+with a char literal, which prints as `(quote (' ' x))`: `'(' ' x)` would read
+back as the char `'('`. Comments run from `;` to the end of the line; they live
+beside the tree, not in it.
 
 Formatter rules (`tisple fmt`, implemented in `src/reader/format.cpp`):
 
@@ -278,6 +282,40 @@ What the backend makes (src/backend/irq.cpp):
 - The handler runs over and over while main does: run counts (and so the size
   budget and the choice of multiply routine) count it as often as a while
   loop's body, 8 times a run of main, and its callees by their calls from it.
+
+### Static data (2026-10-30)
+
+docs/language.md, "Static data", is the language; this is how it is made.
+
+- One mechanism for every address in initial values: `AddrSlot` (was `FnSlot`,
+  which only const tables of functions had), beside a var's packed bytes: at a
+  byte offset, a function's value or byte `at` of a var. The checker folds a
+  value into bytes and slots (src/check/data.cpp, `FoldValue`, `FoldAddress`);
+  the layout fills the slots in (src/link/image.cpp, `SlotValue`), for the
+  binary and the interpreter alike. Only pointer and function pointer values
+  hold one, so every integer byte any pass reads from `Var::init` is the real
+  one.
+- A struct or array const is a `VarKind::Const` var (was `ConstArray`), made
+  before its value is folded so the value may name its address; reading its own
+  bytes while they are folded is an error. A top-level let is resolved on its
+  first use (`EnsureGlobal`), so a const may take its address before the lets
+  are gone through. A pointer const keeps its checked value and each use gets a
+  copy (`CloneExpr`), as a string const always did.
+- `ConstValue` reads const data at constant places (`ConstPlace`) and loads at
+  constant addresses into it (`ConstAddress`), unless a slot is there: the
+  backend's folds and the mid-level's see the same values, at -O0 too.
+- Pointer targets (backend/targets.cpp): a slot's var is in the heap's targets
+  (reads of elements and fields), and in a global pointer's own.
+- What the binary holds (backend/link_data.cpp): a const kept code names, with
+  an `:address`, or that a slot of a held var points into. The program as
+  written runs in the interpreter on the compiled layout, so a const whose
+  address it may take (an `addr_of` into it in code reached from main or the
+  handler, or a slot of what that code reads, `FindAddressedConsts`) and the
+  binary does not need gets an address inside the code: the interpreter never
+  reads or writes there, and the 6502 has code there. Every other const the
+  binary leaves out the interpreter reads from its bytes (`Interp::left_out`):
+  const data never changes, and a place in it on the layout has address 0 and
+  packed bytes, so the cursor's address is the byte offset.
 
 ### I/O bases (2026-10-30)
 

@@ -349,6 +349,22 @@ walk unrolls and unswitches; each round ends with known elements:
   and one byte, but into a local's two bytes by shifts of memory: the life kernel's rows).
 - `--no-pass inline|pointers|divisions|scans`. Results: dogfood.md 51.
 
+Const data (2026-10-30, with consts of any type; docs/language.md "Static data"):
+
+- consts: a read of const data at a place whose indexes the walk knows (fields, nested
+  arrays) is its value, and a load at a constant address into it (`(load (+ "HELLO" 1))`);
+  `ConstValue` folds the same at constant places, so the backend does at -O0 too. A pointer
+  or function pointer read at a constant place where the link fills in an address becomes
+  that address (`const_data.cpp`): `(at NAMES 2)` the string, `(at STEPS 1)` the function.
+- ranges: a read at indexes in their ranges lies between the least and the most of the
+  values there; with at most 16 of them, `(= read k)` and a match clause for k are decided
+  by whether k is one.
+- args: an unread parameter's argument that is a nonzero literal becomes 0 too.
+- licm: a loop known to make 8 or more passes moves out work saving 6 cycles a pass (12 for
+  the rest); a folded `(- K g)` in an unrolled loop of 12 had stayed in every copy (race seed
+  1739, 272 to 326 cycles).
+- Results: dogfood.md 56.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`

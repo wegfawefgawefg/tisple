@@ -184,6 +184,7 @@ ExprId CheckLet(Checker& ck, const Node& node) {
     if (type < 0) {
         type = kErrorType;
     }
+    name_ok = CheckCallableName(ck, name, type, "local") && name_ok;
     std::int32_t var = NewLocal(ck, name, type, false);
     if (name_ok) {
         ck.at.scopes.back().entries.push_back(ScopeEntry{name.text, var});
@@ -228,7 +229,7 @@ ExprId CheckSet(Checker& ck, const Node& node) {
                     "set needs a variable, s.x or (at ...); " + Show(place_node) + " is not one");
     }
     const Var& var = ck.out->vars[static_cast<std::size_t>(root)];
-    if (var.kind == VarKind::ConstArray) {
+    if (var.kind == VarKind::Const) {
         return Fail(ck, place_node, Show(place_node) + " is part of a constant; it cannot be set");
     }
     if (var.loop_var && expr.kind == ExprKind::VarRef) {

@@ -48,8 +48,10 @@ struct ConstDecl {
     Progress state = Progress::Pending;
     TypeId type = kErrorType;
     std::uint16_t value = 0; // scalars
-    std::int32_t var = -1;   // arrays, and a string's table
-    bool string = false;     // a (ptr u8) to the string table var
+    std::int32_t var = -1;   // structs and arrays: the Const var holding the bytes
+    // a pointer whose value is an address the link knows ("HELLO", (addr_of T ...)): the
+    // checked value, copied to every use (CloneExpr), else -1
+    ExprId address = -1;
 };
 
 struct ScopeEntry {
@@ -109,8 +111,13 @@ struct Checker {
     std::map<std::vector<TypeId>, std::int32_t> signature_index;
     std::vector<Progress> signature_states;
     std::vector<std::pair<std::int32_t, TypeId>> indirect_calls;
-    // the function slots of the const table being folded (FoldArrayLiteral)
-    std::vector<FnSlot> pending_slots;
+    // the address slots of the value being folded (FoldValue), for its var
+    std::vector<AddrSlot> pending_slots;
+    // the Const vars whose values are being folded, innermost last: their addresses may be
+    // used, their bytes not yet
+    std::vector<std::int32_t> folding;
+    // by var id: where each top-level let's resolution is (ResolveGlobal runs on first use)
+    std::vector<Progress> global_states;
     Context at;
     NameIndex* names = nullptr; // editor tools only: what each written name is
 };
@@ -158,7 +165,20 @@ enum class NameRule : std::uint8_t {
     Type,
     Constant,
 };
-bool CheckNewName(Checker& ck, const Node& name, NameRule rule, const char* what);
+// where the new name is used, which decides the built-in names it may take
+enum class NameSlot : std::uint8_t {
+    // functions, types, constants: a function's name heads its calls, so no built-in name
+    Declared,
+    // lets, parameters, loop variables: a built-in name only heads a form, so they may take
+    // one (at, load, make, ...), but not a type's, true, false or _
+    Variable,
+    // fields and enum members: always after a dot or a :keyword, so any name
+    Field,
+};
+bool CheckNewName(Checker& ck, const Node& name, NameRule rule, NameSlot slot, const char* what);
+// a variable holding a function pointer is called as (name args ...), so it may not take a
+// built-in name, which would head the built-in instead
+bool CheckCallableName(Checker& ck, const Node& name, TypeId type, const char* what);
 // also no repeat in the innermost scope; what is "local", "parameter", "loop variable"
 bool CheckLocalName(Checker& ck, const Node& name, const char* what);
 // the TypeId of struct or enum declaration `decl`
@@ -168,9 +188,11 @@ TypeId EnumType(Checker& ck, std::int32_t decl);
 // constants (consts.cpp)
 void EvalConst(Checker& ck, std::int32_t index);
 bool FoldExpr(Checker& ck, ExprId id, std::uint16_t& value);
-bool FoldInit(Checker& ck, ExprId id, std::vector<std::uint8_t>& bytes, std::uint32_t offset);
 bool ConstCount(Checker& ck, const Node& node, std::uint32_t& count);
 void ResolveGlobal(Checker& ck, std::int32_t var);
+// a top-level let's type and value, resolved on its first use (a const may take its address
+// before the lets are gone through in order)
+void EnsureGlobal(Checker& ck, std::int32_t var);
 
 // placement options (placement.cpp). ReadOption reads the option at key and gives how many
 // items it took; CheckRegionOptions checks :reserve and :in aux once the type is known;
@@ -236,9 +258,26 @@ ExprId CheckAddrOf(Checker& ck, const Node& node);
 ExprId CheckAs(Checker& ck, const Node& node);
 // (make Type ...): struct literals; array literals only as const and top-level let values
 ExprId CheckMake(Checker& ck, const Node& node);
-// a const or top-level let value of array type: (make (array t n) v ...) folded into bytes
-bool FoldArrayLiteral(Checker& ck, const Node& value, TypeId type, const std::string& name,
-                      std::vector<std::uint8_t>& bytes, std::uint32_t offset);
+// (make Sprite :x 1 ...): the value node of each field in declared order; false (with an
+// error) when a field is missing, repeated, unknown or out of order
+bool OrderStructFields(Checker& ck, const Node& node, TypeId type,
+                       std::vector<const Node*>& ordered);
+
+// static data (data.cpp): the value of a const or a top-level let, node of `type`, into
+// bytes at offset, its addresses into ck.pending_slots; false with an error. `what` names
+// the slot in errors
+bool FoldValue(Checker& ck, const Node& node, TypeId type, const std::string& what,
+               std::vector<std::uint8_t>& bytes, std::uint32_t offset);
+// a checked scalar value into bytes at offset: a constant, or an address slot for a pointer
+// or function pointer; false when it is neither (an error only when folding found one)
+bool FoldScalarValue(Checker& ck, ExprId value, TypeId type, std::vector<std::uint8_t>& bytes,
+                     std::uint32_t offset);
+// a pointer or function pointer whose value the link knows: the slot (its offset left 0)
+bool FoldAddress(Checker& ck, ExprId id, AddrSlot& slot);
+// a top-level let's or const's name as written (T for main.T), "the string" for a string's
+std::string DataName(const Checker& ck, std::int32_t var);
+// a copy of a checked expression tree (a constant pointer's value), its nodes at `at`
+ExprId CloneExpr(Checker& ck, ExprId id, const Node& at);
 ExprId CheckIoRead(Checker& ck, const Node& node);
 ExprId CheckIoWrite(Checker& ck, const Node& node);
 // (jsr addr (a v) (x v) (y v)): a machine-code call; its value is A afterwards

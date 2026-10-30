@@ -169,9 +169,105 @@ bool ConstValue(const Program& program, ExprId id, std::uint16_t& value) {
         value = static_cast<std::uint16_t>(sum & 0xFFFF);
         return true;
     }
+    case ExprKind::Index:
+    case ExprKind::Field: {
+        std::int32_t var = -1;
+        std::uint32_t offset = 0;
+        const Type& type = TypeOf(program, e.type);
+        if (!IsScalarKind(type.kind) || !ConstPlace(program, id, var, offset)) {
+            return false;
+        }
+        return InitBits(program.vars[static_cast<std::size_t>(var)], offset, type.size, value);
+    }
+    case ExprKind::Load:
+    case ExprKind::LoadField: {
+        std::int32_t var = -1;
+        std::uint32_t offset = 0;
+        const Type& type = TypeOf(program, e.type);
+        if (!IsScalarKind(type.kind) || !ConstAddress(program, e.a, var, offset)) {
+            return false;
+        }
+        const Var& v = program.vars[static_cast<std::size_t>(var)];
+        offset += e.value;
+        if (offset + type.size > TypeOf(program, v.type).size) {
+            return false;
+        }
+        return InitBits(v, offset, type.size, value);
+    }
     default:
         return false;
     }
+}
+
+bool ConstAddress(const Program& program, ExprId id, std::int32_t& var, std::uint32_t& offset) {
+    const Expr& e = program.exprs[static_cast<std::size_t>(id)];
+    if (e.kind == ExprKind::AddrOf) {
+        return ConstPlace(program, e.a, var, offset);
+    }
+    std::uint16_t count = 0;
+    if ((e.kind != ExprKind::PtrAdd && e.kind != ExprKind::PtrSub) ||
+        !ConstAddress(program, e.a, var, offset) || !ConstValue(program, e.b, count)) {
+        return false;
+    }
+    std::int64_t step = static_cast<std::int64_t>(count) * e.value;
+    std::int64_t at =
+        static_cast<std::int64_t>(offset) + (e.kind == ExprKind::PtrAdd ? step : -step);
+    std::int64_t size = TypeOf(program, program.vars[static_cast<std::size_t>(var)].type).size;
+    if (at < 0 || at > size) {
+        return false;
+    }
+    offset = static_cast<std::uint32_t>(at);
+    return true;
+}
+
+bool ConstPlace(const Program& program, ExprId place, std::int32_t& var, std::uint32_t& offset) {
+    const Expr& e = program.exprs[static_cast<std::size_t>(place)];
+    std::uint16_t index = 0;
+    switch (e.kind) {
+    case ExprKind::VarRef:
+        var = e.ref;
+        offset = 0;
+        return program.vars[static_cast<std::size_t>(e.ref)].kind == VarKind::Const;
+    case ExprKind::Field:
+        if (!ConstPlace(program, e.a, var, offset)) {
+            return false;
+        }
+        offset += e.value;
+        return true;
+    case ExprKind::Index: {
+        const Type& array = TypeOf(program, program.exprs[static_cast<std::size_t>(e.a)].type);
+        if (array.kind != TypeKind::Array || !ConstPlace(program, e.a, var, offset) ||
+            !ConstValue(program, e.b, index) || index >= array.count) {
+            return false;
+        }
+        offset += static_cast<std::uint32_t>(index) * TypeOf(program, array.elem).size;
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+const AddrSlot* SlotOverlapping(const Var& var, std::uint32_t offset, std::uint32_t size) {
+    for (const AddrSlot& slot : var.addr_slots) {
+        if (slot.offset < offset + size && offset < slot.offset + 2) {
+            return &slot;
+        }
+    }
+    return nullptr;
+}
+
+bool InitBits(const Var& var, std::uint32_t offset, std::uint32_t size, std::uint16_t& bits) {
+    if (SlotOverlapping(var, offset, size)) {
+        return false;
+    }
+    bits = 0;
+    for (std::uint32_t i = 0; i < size; i++) {
+        std::size_t at = static_cast<std::size_t>(offset + i);
+        std::uint16_t byte = at < var.init.size() ? var.init[at] : 0;
+        bits = static_cast<std::uint16_t>(bits | (byte << (8 * i)));
+    }
+    return true;
 }
 
 std::vector<std::int32_t> CallTargets(const Program& program, TypeId type) {

@@ -19,5 +19,8 @@ std::string ToConstantName(std::string_view name);
 
 // special forms, types, operators and true/false: none can name anything
 bool IsBuiltinName(std::string_view name);
+// what a variable may not be called: types, true, false, _ and . mean something wherever they
+// stand; every other built-in only as the head of a form
+bool IsReservedValueName(std::string_view name);
 
 } // namespace tisple

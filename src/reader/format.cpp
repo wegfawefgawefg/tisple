@@ -142,7 +142,7 @@ void EmitFlat(Formatter& fm, const Node& node) {
     NodeNotes& notes = Notes(fm, node);
     if (node.kind != NodeKind::List) {
         Write(fm, node.text);
-    } else if (node.mark != QuoteMark::None && node.items.size() == 2) {
+    } else if (ShowsMark(node)) {
         Write(fm, QuoteMarkText(node.mark));
         EmitFlat(fm, node.items[1]);
     } else {
@@ -260,7 +260,7 @@ void EmitOnePerLine(Formatter& fm, const Node& list, std::uint32_t base, std::ui
 }
 
 const Node& Unmarked(const Node& node) {
-    if (node.mark != QuoteMark::None && node.items.size() == 2) {
+    if (ShowsMark(node)) {
         return Unmarked(node.items[1]);
     }
     return node;
@@ -365,7 +365,7 @@ void EmitNode(Formatter& fm, const Node& node, std::uint32_t base, std::uint32_t
         Close(fm, node, base);
         return;
     }
-    if (node.mark != QuoteMark::None && node.items.size() == 2) {
+    if (ShowsMark(node)) {
         Write(fm, QuoteMarkText(node.mark));
         EmitNode(fm, node.items[1], base, trailing);
         PushAll(fm, Notes(fm, node).trailing);

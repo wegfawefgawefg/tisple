@@ -101,7 +101,7 @@ void FindUsed(const Pass& p, ExprId id, bool used, std::vector<bool>& value_used
 // a pure value worth nothing to its callers becomes 0
 std::uint64_t Unused(Pass& p, ExprId value) {
     const Expr& e = At(p, value);
-    if (e.kind == ExprKind::Literal || Shared(p, value) || !IsPure(p, value) ||
+    if ((e.kind == ExprKind::Literal && e.value == 0) || Shared(p, value) || !IsPure(p, value) ||
         !ConstKind(KindOf(*p.program, e.type)) || !Allow(p, "unused return value", value, -1)) {
         return 0;
     }
@@ -171,8 +171,9 @@ std::uint64_t DropUnreadArgs(Pass& p) {
             ExprId arg = Item(p, At(p, call), i);
             const Expr& a = At(p, arg);
             bool needed = read[static_cast<std::size_t>(param)] || VarOf(p, param).address_taken;
-            if (needed || a.kind == ExprKind::Literal || Shared(p, arg) || !Quiet(p, arg) ||
-                !ConstKind(KindOf(*p.program, a.type)) || !Allow(p, "unread argument", arg, -1)) {
+            if (needed || (a.kind == ExprKind::Literal && a.value == 0) || Shared(p, arg) ||
+                !Quiet(p, arg) || !ConstKind(KindOf(*p.program, a.type)) ||
+                !Allow(p, "unread argument", arg, -1)) {
                 continue;
             }
             ReplaceWithLiteral(p, arg, 0);

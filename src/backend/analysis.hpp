@@ -45,10 +45,14 @@ std::uint32_t CountExprs(const Program& program, ExprId id);
 // (+ t 7), (* x 1) is x, (+ (+ p 0) 2) is (+ p 2), a constant tree a literal (fold.cpp)
 void FoldConstants(Program& program);
 
-// by var: the const tables that functions reachable from main (all functions, with no main)
-// name. Run on the program as written, these must keep their memory: the interpreter reads
-// them even where the mid-level passes folded every read away
-std::vector<bool> FindNamedTables(const Program& program);
+// by var: the consts whose addresses functions reachable from main or the handler (all
+// functions, with no main) may use: an addr_of into one, or an address in the data they read
+// (a string in a table they read, and in that string's...). Run on the program as written,
+// these keep their memory: the interpreter needs their addresses even where the mid-level
+// passes folded every use away. A const it only reads by value it reads from its bytes
+std::vector<bool> FindAddressedConsts(const Program& program);
+// kept grows to every var an address slot of a kept var points into, and theirs
+void AddSlotTargets(const Program& program, std::vector<bool>& kept);
 
 // functions this small (in expressions, CountExprs) are inlined at every call (gen_call.cpp)
 constexpr std::uint32_t kMaxInlineExprs = 24;

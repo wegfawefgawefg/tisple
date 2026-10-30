@@ -65,13 +65,17 @@ ExprId CheckName(Checker& ck, const Node& node) {
         value = MakeLiteral(ck, node, EnumType(ck, ref.index), ref.value);
         break;
     case NameKind::Const: {
-        EvalConst(ck, ref.index);
+        // a struct or array const's value may name the const itself, for its address
+        const ConstDecl& busy = ck.consts[static_cast<std::size_t>(ref.index)];
+        if (busy.state != Progress::Busy || busy.var < 0) {
+            EvalConst(ck, ref.index);
+        }
         const ConstDecl& cd = ck.consts[static_cast<std::size_t>(ref.index)];
-        if (cd.state != Progress::Done) {
+        if (cd.state != Progress::Done && !(cd.state == Progress::Busy && cd.var >= 0)) {
             return ErrorExpr(ck, node);
         }
-        if (cd.string) {
-            value = StringPointer(ck, node, cd.var);
+        if (cd.address >= 0) {
+            value = CloneExpr(ck, cd.address, node);
         } else if (cd.var >= 0) {
             value = AddExpr(ck, ExprKind::VarRef, cd.type, node);
             ExprAt(ck, value).ref = cd.var;
@@ -81,13 +85,16 @@ ExprId CheckName(Checker& ck, const Node& node) {
         break;
     }
     case NameKind::Var: {
+        EnsureGlobal(ck, ref.index);
         const Var& var = ck.out->vars[static_cast<std::size_t>(ref.index)];
         value = AddExpr(ck, ExprKind::VarRef, var.type, node);
         ExprAt(ck, value).ref = ref.index;
         break;
     }
     }
-    if (ref.used < segments.size() && ref.kind != NameKind::Var) {
+    bool data = ref.kind == NameKind::Var ||
+                (ref.kind == NameKind::Const && ExprAt(ck, value).kind == ExprKind::VarRef);
+    if (ref.used < segments.size() && !data) {
         std::string base = segments[0];
         for (std::size_t i = 1; i < ref.used; i++) {
             base += "." + segments[i];

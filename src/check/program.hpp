@@ -6,8 +6,9 @@
 // - Flat arrays indexed by 32-bit ids (types, structs, enums, vars, functions, exprs);
 //   -1 means none. Ids are stable once the checker returns.
 // - Types are interned: two types are equal exactly when their TypeIds are equal.
-// - Every name is resolved. A Var is any storage: a top-level let, a const array, a
-//   parameter or a local (one Var per declaration; code refers to it by id, never by text).
+// - Every name is resolved. A Var is any storage: a top-level let, a const of a struct or
+//   array type, a parameter or a local (one Var per declaration; code refers to it by id,
+//   never by text). Addresses in initial values are AddrSlots beside the bytes.
 //   Scalar constants and enum members are folded into Literal exprs.
 // - Every Expr has its type. Statements are Void; return, break and continue are Never.
 // - A function body is a Do. Calls name a Function id. Pointer arithmetic is PtrAdd/PtrSub
@@ -99,8 +100,10 @@ struct EnumDecl {
 };
 
 enum class VarKind : std::uint8_t {
-    Global,     // top-level let
-    ConstArray, // (const NAME (array t n) ...), read only
+    Global, // top-level let
+    // (const NAME type value) of a type that is not a scalar, and the string literals' tables:
+    // read-only data. A store through a pointer into it is undefined
+    Const,
     Param,
     Local,
 };
@@ -115,10 +118,15 @@ struct Placement {
     bool reserve = false; // :reserve: memory the program reaches by address; not a variable
 };
 
-// a function's address inside a const table's initial bytes (Var::init holds zeros there)
-struct FnSlot {
-    std::uint32_t offset = 0; // packed byte offset of the 2-byte element
-    std::int32_t function = -1;
+// an address the link knows, inside a var's initial bytes (Var::init holds zeros there): a
+// function's (its value as a function pointer), or byte `at` of a var's packed bytes (that
+// var's address_taken is set, so it is stored packed). Only pointer and function pointer
+// values hold one
+struct AddrSlot {
+    std::uint32_t offset = 0;   // packed byte offset of the 2-byte value in the var's bytes
+    std::int32_t function = -1; // a function's address
+    std::int32_t var = -1;      // else the address of byte `at` of this var
+    std::uint32_t at = 0;       // 0 to the var's size (one past its end is an address too)
 };
 
 struct Var {
@@ -131,8 +139,8 @@ struct Var {
     Placement placement;
     bool address_taken = false; // some addr_of reaches into it: stored packed
     bool loop_var = false;
-    std::vector<std::uint8_t> init; // packed bytes; empty means zero
-    std::vector<FnSlot> fn_slots;   // const tables of function pointers: the addresses in init
+    std::vector<std::uint8_t> init;   // packed bytes; empty means zero
+    std::vector<AddrSlot> addr_slots; // the addresses in init
     // the interrupt handler (or a function it calls) reads or writes it: it may change, or be
     // looked at, between any two instructions of the rest of the program
     bool irq_shared = false;
@@ -203,7 +211,7 @@ enum class ExprKind : std::uint8_t {
     // a call through a function pointer: a, the pointer, then the list's arguments, worked out
     // in that order; type the signature's return type
     CallPtr,
-    FnRef, // ref: function; a function's name as a value, its address, of type (fn ...)
+    FnRef,      // ref: function; a function's name as a value, its address, of type (fn ...)
     Interrupts, // (cli) value 1: interrupts on; (sei) value 0: off; void
 };
 
@@ -286,8 +294,21 @@ std::int32_t FindVar(const Program& program, const std::string& qualified);
 std::int32_t FindFieldIndex(const Program& program, TypeId struct_type, const std::string& name);
 
 // the raw bits of a constant expression, folded with the target's arithmetic; false when it
-// is not constant (a division by zero counts as not constant)
+// is not constant (a division by zero counts as not constant). A read of const data at
+// constant indexes counts, unless an address the link fills in is there
 bool ConstValue(const Program& program, ExprId id, std::uint16_t& value);
+
+// a place (VarRef, Index and Field) rooted at a Const var with every index constant and in
+// range: the var and the place's packed byte offset in it
+bool ConstPlace(const Program& program, ExprId place, std::int32_t& var, std::uint32_t& offset);
+// a pointer into const data whose value is constant: (addr_of place) as ConstPlace, moved by
+// a constant count inside the var; the var and the byte offset it points at
+bool ConstAddress(const Program& program, ExprId id, std::int32_t& var, std::uint32_t& offset);
+// the address slot of var whose bytes overlap [offset, offset + size), or null
+const AddrSlot* SlotOverlapping(const Var& var, std::uint32_t offset, std::uint32_t size);
+// a scalar of size bytes (1 or 2) at offset in var's initial bytes, low byte first; false when
+// an address slot covers any of them
+bool InitBits(const Var& var, std::uint32_t offset, std::uint32_t size, std::uint16_t& bits);
 
 // the functions a call through a pointer of this (fn ...) type may reach: every function
 // whose address is taken with exactly that type (no conversion makes a function pointer)

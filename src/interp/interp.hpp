@@ -23,6 +23,8 @@
 //   Division by zero gives what the backend's routine gives (check/arith.hpp) and goes on.
 // - A global with :address and no value is never written at the start: it holds whatever
 //   memory held (zero in a fresh interpreter), as on the machine.
+// - Const data never changes, so a const the link left out of memory (the compiled code
+//   never reads it) is read from its initial bytes.
 
 #include "check/program.hpp"
 #include "link/layout.hpp"
@@ -66,6 +68,10 @@ struct Interp {
     const Program* program = nullptr;
     const Layout* layout = nullptr;
     std::vector<std::uint8_t> memory; // 64 KB
+    // by var: the initial bytes of a const the link left out (no kept code reads it, nothing
+    // takes its address), which the program as written may still read; a place in one has
+    // address 0 and packed bytes on the layout, so its cursor's address is the byte offset
+    std::vector<std::vector<std::uint8_t>> left_out;
     IoHooks io;
     std::uint64_t max_steps = 10000000;
     // when set, one count per expr id of how often it was evaluated (tisple race-gen's

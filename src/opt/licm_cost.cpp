@@ -10,6 +10,8 @@ namespace {
 
 // cycles an expression must save over reading the local it moves to
 constexpr std::int32_t kMinSaving = 12;
+// a loop known to make this many passes or more moves out work saving half as much
+constexpr std::int64_t kManyTrips = 8;
 // a 16-bit multiply by a constant of at most this many nonzero digits is inline
 // (gen_mulconst.cpp); a byte multiply by a constant always is
 constexpr int kInlineMulDigits = 4;
@@ -227,7 +229,7 @@ std::int32_t EstimatedCycles(const Pass& p, ExprId id) {
     return Cost(p, id);
 }
 
-bool Worth(const Pass& p, ExprId id) {
+bool Worth(const Pass& p, ExprId id, std::int64_t trips) {
     const Expr& e = At(p, id);
     // a condition branches on its compare directly; a bool in a local would be made, then
     // tested (its operands may still move)
@@ -240,7 +242,9 @@ bool Worth(const Pass& p, ExprId id) {
     if (e.kind == ExprKind::Convert && Wide(p, e) && !Wide(p, At(p, e.a))) {
         return false;
     }
-    return Cost(p, id) - 3 * (Wide(p, e) ? 2 : 1) >= kMinSaving;
+    std::int32_t saving = Cost(p, id) - 3 * (Wide(p, e) ? 2 : 1);
+    // half as much, in a loop known to make many passes (unrolled, each copy pays it)
+    return saving >= kMinSaving || (trips >= kManyTrips && 2 * saving >= kMinSaving);
 }
 
 std::int64_t KnownTrips(const Pass& p, ExprId loop, ExprId before) {

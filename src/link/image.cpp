@@ -38,6 +38,14 @@ std::uint16_t FunctionValue(const Layout& layout, std::int32_t function) {
     return static_cast<std::uint16_t>(kFunctionValueBase + function);
 }
 
+std::uint16_t SlotValue(const Layout& layout, const AddrSlot& slot) {
+    if (slot.function >= 0) {
+        return FunctionValue(layout, slot.function);
+    }
+    const VarPlace& place = layout.vars[static_cast<std::size_t>(slot.var)];
+    return static_cast<std::uint16_t>((place.address + slot.at) & 0xFFFF);
+}
+
 std::int32_t FunctionOfValue(const Program& program, const Layout& layout, std::uint16_t value) {
     if (value == 0) {
         return -1;
@@ -55,8 +63,8 @@ std::vector<std::uint8_t> InitBytes(const Program& program, const Layout& layout
                                     std::int32_t var) {
     const Var& v = program.vars[static_cast<std::size_t>(var)];
     std::vector<std::uint8_t> bytes = v.init;
-    for (const FnSlot& slot : v.fn_slots) {
-        std::uint16_t value = FunctionValue(layout, slot.function);
+    for (const AddrSlot& slot : v.addr_slots) {
+        std::uint16_t value = SlotValue(layout, slot);
         bytes[slot.offset] = static_cast<std::uint8_t>(value & 0xFF);
         bytes[slot.offset + 1] = static_cast<std::uint8_t>(value >> 8);
     }
@@ -70,7 +78,7 @@ void WriteVarInit(const Program& program, const Layout& layout, std::int32_t var
         layout.vars[static_cast<std::size_t>(var)].dropped) {
         return;
     }
-    if (v.fn_slots.empty()) {
+    if (v.addr_slots.empty()) {
         WriteValue(program, layout, VarCursor(layout, var), var, v.type, v.init, 0, memory);
         return;
     }

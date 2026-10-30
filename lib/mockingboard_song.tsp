@@ -81,11 +81,11 @@
 (macro number_at (codes i stop where label)
     (let value 0)
     (let digits 0)
-    (while (and (< i (len codes)) (and (!= (nth codes i) 32) (!= (nth codes i) stop)))
+    (while (and (< i (len codes)) (and (!= (nth codes i) ' ') (!= (nth codes i) stop)))
         (let c (nth codes i))
-        (if (or (< c 48) (> c 57))
+        (if (or (< c '0') (> c '9'))
             (error "pattern " where ": " label " wants a number"))
-        (set value (+ (* value 10) (- c 48)))
+        (set value (+ (* value 10) (- c '0')))
         (set digits (+ digits 1))
         (set i (+ i 1)))
     (if (= digits 0)
@@ -100,13 +100,13 @@
 ; c d e f g a b from the letter's code, -1 for any other
 (macro semitone (c)
     (match c
-        (99 0)
-        (100 2)
-        (101 4)
-        (102 5)
-        (103 7)
-        (97 9)
-        (98 11)
+        ('c' 0)
+        ('d' 2)
+        ('e' 4)
+        ('f' 5)
+        ('g' 7)
+        ('a' 9)
+        ('b' 11)
         (_ -1)))
 
 ; a command letter and its number: (bytes 0 next)
@@ -116,9 +116,9 @@
 
 ; h shape:period
 (macro envelope_bytes (codes i where)
-    (let shape (number_at codes (+ i 1) 58 where "h"))
+    (let shape (number_at codes (+ i 1) ':' where "h"))
     (let colon (nth shape 1))
-    (if (or (>= colon (len codes)) (!= (nth codes colon) 58))
+    (if (or (>= colon (len codes)) (!= (nth codes colon) ':'))
         (error "pattern " where ": h wants shape:period, as h14:600"))
     (let period (number_at codes (+ colon 1) 0 where "h's period"))
     (let p (in_range (nth period 0) 0 65535 where "h's period"))
@@ -132,7 +132,7 @@
     (let semi (semitone c))
     (if (>= semi 0)
         (do
-            (let sharp (if (and (< (+ i 1) (len codes)) (= (nth codes (+ i 1)) 35))
+            (let sharp (if (and (< (+ i 1) (len codes)) (= (nth codes (+ i 1)) '#'))
                 1
                 0))
             (let got (number_at codes (+ (+ i 1) sharp) 0 where "a note's octave"))
@@ -140,20 +140,20 @@
             (let n (+ (+ (* (- octave 1) 12) semi) sharp))
             (return (list (list (in_range n 0 95 where "a note")) 1 (nth got 1)))))
     (match c
-        (114 (list (list REST) 1 (+ i 1)))
-        (45 (list (list TIE) 1 (+ i 1)))
-        (108
+        ('r' (list (list REST) 1 (+ i 1)))
+        ('-' (list (list TIE) 1 (+ i 1)))
+        ('l'
             (do
                 (let got (number_at codes (+ i 1) 0 where "l"))
                 (list (list (+ LENGTH (- (in_range (nth got 0) 1 64 where "l") 1))) 0 (nth got 1))))
-        (118 (command codes i VOLUME 0 15 where "v"))
-        (107 (command codes i DECAY 0 15 where "k"))
-        (109 (command codes i MIXER 0 3 where "m"))
-        (110
+        ('v' (command codes i VOLUME 0 15 where "v"))
+        ('k' (command codes i DECAY 0 15 where "k"))
+        ('m' (command codes i MIXER 0 3 where "m"))
+        ('n'
             (do
                 (let got (number_at codes (+ i 1) 0 where "n"))
                 (list (list NOISE (in_range (nth got 0) 0 31 where "n")) 0 (nth got 1))))
-        (104 (envelope_bytes codes i where))
+        ('h' (envelope_bytes codes i where))
         (_
             (error "pattern " where ": a token starts with the character code " c
                 "; write notes as c4 c#4 ..., then r - l v k m n h"))))
@@ -165,7 +165,7 @@
     (let sounds 0)
     (let i 0)
     (while (< i (len codes))
-        (if (= (nth codes i) 32)
+        (if (= (nth codes i) ' ')
             (do
                 (set i (+ i 1))
                 (continue)))

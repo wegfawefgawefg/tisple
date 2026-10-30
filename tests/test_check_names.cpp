@@ -1,5 +1,7 @@
 #include "test_check.hpp"
 
+#include <cstdio>
+
 namespace tisple_tests {
 
 namespace {
@@ -52,14 +54,20 @@ void NamingTests(TestResults& results) {
                 "t.tsp:1:20: local a__1: names are snake_case; write a_1");
     ExpectError(results, "(macro Inc (p) `(set ,p 1))",
                 "t.tsp:1:8: macro Inc: names are snake_case; write inc");
-    // built-in names stay built in
-    ExpectError(results, "(fn f () void (let at u8 0))",
-                "t.tsp:1:20: at is a built-in name; rename this local");
+    // a built-in is reserved only as the head of a form: functions keep clear of them, and
+    // variables of types' names, true, false and _
     ExpectError(results, "(fn load () void)", "t.tsp:1:5: load is a built-in name; rename this fn");
-    ExpectError(results, "(struct P ((ptr u8)))",
-                "t.tsp:1:13: ptr is a built-in name; rename this field");
-    ExpectError(results, "(fn f () void (for as u8 0 3))",
-                "t.tsp:1:20: as is a built-in name; rename this loop variable");
+    ExpectError(results, "(fn f () void (let u8 u8 0))",
+                "t.tsp:1:20: u8 is a built-in name; rename this local");
+    ExpectError(results, "(fn f ((true bool)) void)",
+                "t.tsp:1:9: true is a built-in name; rename this parameter");
+    ExpectError(results, "(let ptr u8 0)", "t.tsp:1:6: ptr is a built-in name; rename this let");
+    // a function pointer variable is called by its name, so it may not be a built-in's
+    ExpectError(results, "(fn g ((x u8)) void)\n(fn f () void (let at (fn (u8) void) g))",
+                "t.tsp:2:20: at is a built-in, so (at ...) could not call this local; rename it");
+    ExpectError(results, "(fn f ((load (fn () void))) void)",
+                "t.tsp:1:9: load is a built-in, so (load ...) could not call this parameter; "
+                "rename it");
     // a local named like an import would make hgr.x ambiguous
     ExpectError(results, "(import gfx/hgr)\n(fn f () void (let hgr u8 0))",
                 "t.tsp:2:20: hgr is an imported module here, so hgr.x would be ambiguous; "
@@ -115,12 +123,37 @@ void ResolveTests(TestResults& results) {
     ExpectError(results, "(fn f () u8 (do (let n u8 1)) n)", "t.tsp:1:31: unknown name n");
 }
 
+// built-ins name variables, parameters, fields and members; fields and members take module
+// aliases' names too, since they only ever follow a dot or a :keyword
+void BuiltinNamesAsValues(TestResults& results) {
+    Built built = BuildText("(import gfx/hgr)\n"
+                            "(struct Pos ((at u8) (load u8) (hgr u8) (make u8)))\n"
+                            "(enum Kind (at load hgr))\n"
+                            "(let as u8 3)\n"
+                            "(fn step ((at u8) (load u8)) u8\n"
+                            "    (let make Pos (make Pos :at at :load load :hgr 1 :make 2))\n"
+                            "    (let p (ptr Pos) (addr_of make))\n"
+                            "    (for if u8 0 2 (set as (+ as if)))\n"
+                            "    (+ (+ make.at (load p load)) (+ as (as u8 Kind.hgr))))\n",
+                            kHgr);
+    CHECK(results, built.ok);
+    if (!built.ok) {
+        std::fprintf(stderr, "%s\n", ErrorText(built).c_str());
+        return;
+    }
+    tisple::Interp in;
+    StartInterp(in, built);
+    // 1 + 2 + (3 + 0 + 1) + 2
+    CHECK(results, CallOk(results, in, "t.step", {1, 2}) == 9);
+}
+
 } // namespace
 
 void RunCheckNameTests(TestResults& results) {
     LoadingTests(results);
     NamingTests(results);
     ResolveTests(results);
+    BuiltinNamesAsValues(results);
 }
 
 } // namespace tisple_tests

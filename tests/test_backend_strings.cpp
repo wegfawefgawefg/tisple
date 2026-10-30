@@ -73,13 +73,16 @@ void TestDropped(TestResults& results) {
         if (var.name == "t.UNUSED" || var.name == "str#0") {
             CHECK(results, dropped && c.code.layout.vars[v].size == 0);
         }
+        // (load "KEPT") is 'K' once first is inlined: only the interpreter, running the
+        // program as written, needs the string, and has it inside the code
         if (var.name == "str#1") {
-            CHECK(results, !dropped && c.code.layout.vars[v].size == 5);
+            CHECK(results, !dropped && c.code.layout.vars[v].interp_only);
+            CHECK(results, c.code.layout.vars[v].size == 5);
         }
     }
-    // KEPT and its 0 are all the data there is, but out in zero page and the frames (first is
-    // inlined at the mid level, never emptied: their parameters keep bytes, for the interpreter)
-    CHECK(results, c.code.data_bytes == 5 + c.code.mem_frames);
+    // no data at all but the frames (first is inlined at the mid level, never emptied: its
+    // parameters keep bytes, for the interpreter); out is in zero page
+    CHECK(results, c.code.data_bytes == c.code.mem_frames);
     Diff d;
     CHECK(results, StartDiff(d, c) && DiffCall(d, "t.main", {}));
 }

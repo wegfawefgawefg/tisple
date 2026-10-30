@@ -1,5 +1,7 @@
 #include "reader/lexer.hpp"
 
+#include <cstdio>
+
 namespace tisple {
 
 namespace {
@@ -184,6 +186,80 @@ bool LexString(Lexer& lx) {
     return true;
 }
 
+// what may follow a char literal: the end, a space, ')' or ';'. So '('x) stays a quoted list
+// whose first item is quoted, as the formatter prints (quote ((quote x)))
+bool EndsToken(const Lexer& lx, std::uint32_t at) {
+    char c = At(lx, at);
+    return AtEnd(lx, at) || IsSpaceChar(c) || c == ')' || c == ';';
+}
+
+// a char literal: ' then one character or one of the strings' escapes, then ', then the end
+// of the token. 'A' is 65, an integer token like 65; anything else that starts with ' is a
+// quote mark as before
+bool CharLiteral(const Lexer& lx, std::uint32_t start, std::uint32_t& end, std::int64_t& value) {
+    char c = At(lx, start + 1);
+    if (AtEnd(lx, start + 1) || c == '\n' || c == '\'') {
+        return false;
+    }
+    if (c != '\\') {
+        if (AtEnd(lx, start + 2) || At(lx, start + 2) != '\'') {
+            return false;
+        }
+        end = start + 3;
+        value = static_cast<unsigned char>(c);
+        return EndsToken(lx, end);
+    }
+    char e = At(lx, start + 2);
+    std::uint32_t close = start + 3;
+    switch (e) {
+    case 'n':
+        value = '\n';
+        break;
+    case 't':
+        value = '\t';
+        break;
+    case 'r':
+        value = '\r';
+        break;
+    case '0':
+        value = 0;
+        break;
+    case '\\':
+    case '\'':
+    case '"':
+        value = e;
+        break;
+    case 'x':
+        if (!IsHexDigit(At(lx, start + 3)) || !IsHexDigit(At(lx, start + 4))) {
+            return false;
+        }
+        value = DigitValue(At(lx, start + 3)) * 16 + DigitValue(At(lx, start + 4));
+        close = start + 5;
+        break;
+    default:
+        return false;
+    }
+    if (AtEnd(lx, close) || At(lx, close) != '\'') {
+        return false;
+    }
+    end = close + 1;
+    return EndsToken(lx, end);
+}
+
+bool LexChar(Lexer& lx, std::uint32_t end, std::int64_t value) {
+    std::uint32_t start = lx.pos;
+    if (value > 127) {
+        char hex[8];
+        std::snprintf(hex, sizeof(hex), "0x%02X", static_cast<unsigned>(value));
+        return Fail(lx, start,
+                    std::string("a char literal is plain ASCII, 0 to 127; write ") + hex);
+    }
+    Push(lx, TokenKind::Integer, start, end);
+    lx.out->back().value = value;
+    lx.pos = end;
+    return true;
+}
+
 bool LexQuoteMark(Lexer& lx) {
     std::uint32_t start = lx.pos;
     char c = At(lx, start);
@@ -228,6 +304,11 @@ bool LexOne(Lexer& lx) {
     }
     if (c == '"') {
         return LexString(lx);
+    }
+    std::uint32_t char_end = 0;
+    std::int64_t char_value = 0;
+    if (c == '\'' && CharLiteral(lx, start, char_end, char_value)) {
+        return LexChar(lx, char_end, char_value);
     }
     if (c == '\'' || c == '`' || c == ',') {
         return LexQuoteMark(lx);

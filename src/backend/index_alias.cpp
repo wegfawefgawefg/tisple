@@ -26,7 +26,7 @@ bool ByteForm(const Program& program, ExprId id, int depth, std::vector<std::int
     const Expr& e = ExprOf(program, id);
     switch (e.kind) {
     case ExprKind::VarRef:
-        if (program.vars[static_cast<std::size_t>(e.ref)].kind == VarKind::ConstArray) {
+        if (program.vars[static_cast<std::size_t>(e.ref)].kind == VarKind::Const) {
             return false;
         }
         vars.push_back(e.ref);

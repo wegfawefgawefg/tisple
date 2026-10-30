@@ -41,7 +41,7 @@
     (if mb.found
         (do
             (text40.print "SLOT ")
-            (text40.put (+ 0x30 mb.slot)))
+            (text40.put (+ '0' mb.slot)))
         (text40.print "NO CARD: EFFECTS ON THE SPEAKER"))
     (text40.move 2 7)
     (text40.print "1 ZAP  2 COIN  3 BOOM  4 CHIME")

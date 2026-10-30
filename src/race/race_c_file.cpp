@@ -42,7 +42,7 @@ void NameEverything(Writer& w) {
     std::vector<std::set<std::string>> taken(program.functions.size());
     for (std::size_t i = 0; i < program.vars.size(); i++) {
         const Var& var = program.vars[i];
-        if (var.kind == VarKind::Global || var.kind == VarKind::ConstArray) {
+        if (var.kind == VarKind::Global || var.kind == VarKind::Const) {
             w.var_names[i] = "t_" + Identifier(var.name);
             continue;
         }
@@ -118,10 +118,13 @@ bool Globals(Writer& w, std::string& text) {
     const Program& program = *w.program;
     for (std::size_t i = 0; i < program.vars.size(); i++) {
         const Var& var = program.vars[i];
-        if (var.kind != VarKind::Global && var.kind != VarKind::ConstArray) {
+        if (var.kind != VarKind::Global && var.kind != VarKind::Const) {
             continue;
         }
         const std::string& name = w.var_names[i];
+        if (!var.addr_slots.empty()) {
+            return w.Fail(var.name + ": addresses in a starting value are not written in C");
+        }
         if (var.placement.has_address) {
             if (!IsScalarKind(KindOf(program, var.type)) || !var.init.empty()) {
                 return w.Fail(var.name + ": only a scalar without a value can have :address");
@@ -132,7 +135,7 @@ bool Globals(Writer& w, std::string& text) {
             text += line;
             continue;
         }
-        text += std::string("static ") + (var.kind == VarKind::ConstArray ? "const " : "") +
+        text += std::string("static ") + (var.kind == VarKind::Const ? "const " : "") +
                 DeclareAny(w, var.type, name);
         if (!var.init.empty()) {
             text += " = " + Initializer(w, var.type, var.init, 0);

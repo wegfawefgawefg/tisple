@@ -172,7 +172,7 @@ std::vector<ExprId> Hoist(Hoister& h, ExprId loop, ExprId before) {
         return out;
     }
     Invariants found;
-    FindInvariants(p, loop, w, found);
+    FindInvariants(p, loop, w, trips, found);
     std::vector<Moved> moved;
     MoveAll(h, loop, found.head, moved, out);
     bool guard = !found.body.empty() && trips < 0 && !BodyRuns(p, loop);

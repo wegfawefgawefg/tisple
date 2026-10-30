@@ -61,7 +61,21 @@ bool Steady(const Pass& p, ExprId id);
 Val BinaryValue(const Pass& p, const Expr& e, Val a, Val b);
 Val UnaryValue(const Pass& p, const Expr& e, Val a);
 Val ConvertValue(const Pass& p, const Expr& e, Val a);
-// (at TABLE k) for a const array and a known k
-Val ElementValue(const Pass& p, const Expr& index, Val k);
+// where a place lies in const data, as far as its indexes are known
+struct ConstAt {
+    std::int32_t var = -1; // -1: not in const data, or an index not known
+    std::uint32_t offset = 0;
+};
+// a var's own place: in const data when it is a const
+ConstAt ConstRoot(const Pass& p, std::int32_t var);
+// (at base k) for a known k inside the array
+ConstAt ElementAt(const Pass& p, const Expr& index, ConstAt base, Val k);
+// a read of const data at a known place: its value
+Val ConstReadValue(const Pass& p, const Expr& read, ConstAt at);
+// a load of a scalar at a constant address into const data ((load (+ "HELLO" 1)))
+Val LoadValue(const Pass& p, ExprId load);
+// a pointer or function pointer read of const data at a constant place where the link fills in
+// an address becomes that address (const_data.cpp); true when id was rewritten
+bool FoldAddressRead(Pass& p, ExprId id);
 
 } // namespace tisple::opt

@@ -95,7 +95,7 @@ SymbolKind VarSymbolKind(VarKind kind) {
     switch (kind) {
     case VarKind::Global:
         return SymbolKind::Global;
-    case VarKind::ConstArray:
+    case VarKind::Const:
         return SymbolKind::Constant;
     case VarKind::Param:
         return SymbolKind::Parameter;
@@ -149,7 +149,7 @@ Definition Describe(const IndexBuilder& ib, const NameUse& use) {
         def.name = info.name;
         def.qualified = ModuleOf(ib, info.module) + "." + info.name;
         def.type = TypeName(program, info.type);
-        if (info.ok && info.var < 0) {
+        if (info.ok && info.var < 0 && !info.address) {
             def.type += " = " + ValueText(program, info.type, info.value);
         }
         def.loc = info.loc;

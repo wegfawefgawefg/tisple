@@ -40,8 +40,8 @@
     (spawn 0 20 12)
     (for frame u8 0 120
         (for i u8 0 thing_count
-            (draw i 0x20)
+            (draw i ' ')
             (let step (fn (u8) void) (at things i step))
             (step i)
-            (draw i 0x2A))
+            (draw i '*'))
         (timing.frame)))

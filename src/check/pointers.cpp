@@ -144,7 +144,10 @@ ExprId CheckAddrOf(Checker& ck, const Node& node) {
         return ErrorExpr(ck, node);
     }
     if (expr.kind == ExprKind::Literal) {
-        return Fail(ck, place_node, "constants have no address; use a top-level let");
+        return Fail(ck, place_node,
+                    Show(place_node) +
+                        " is a number with no address; give it storage with a top-level let, "
+                        "or make it a const table");
     }
     if (expr.kind == ExprKind::FnRef) {
         return Fail(ck, place_node,
@@ -161,10 +164,8 @@ ExprId CheckAddrOf(Checker& ck, const Node& node) {
                     "addr_of needs a variable, element or field; " + Show(place_node) +
                         " is not one");
     }
+    // a const's address is read-only data: a store through it is undefined, like a string's
     Var& var = ck.out->vars[static_cast<std::size_t>(root)];
-    if (var.kind == VarKind::ConstArray) {
-        return Fail(ck, place_node, "constants have no address; use a top-level let");
-    }
     if (var.loop_var) {
         return Fail(ck, place_node,
                     "the loop variable " + var.name + " has no address; copy it into a let first");

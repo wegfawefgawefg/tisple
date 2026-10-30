@@ -104,6 +104,40 @@ void TestQuoteMarks(TestResults& results) {
     CHECK(results, Reads("''x", tree) && tisple::PrintFlat(tree.forms) == "''x");
 }
 
+// 'A' is the integer 65, spelled as written; ' then one character or escape then ', ending
+// the token. Anything else starting with ' is a quote mark as before
+void TestCharLiterals(TestResults& results) {
+    Tree tree;
+    CHECK(results,
+          Reads("(f 'A' ' ' '\\n' '\\t' '\\r' '\\0' '\\\\' '\\'' '\\\"' '\\x7F' '(' ')' '\"')",
+                tree));
+    const auto& items = tree.forms[0].items;
+    const std::int64_t want[] = {'A',  ' ', '\n', '\t', '\r', 0,  '\\',
+                                 '\'', '"', 0x7F, '(',  ')',  '"'};
+    CHECK(results, items.size() == 14);
+    for (std::size_t i = 0; i < std::size(want) && i + 1 < items.size(); i++) {
+        CHECK(results, items[i + 1].kind == NodeKind::Integer && items[i + 1].value == want[i]);
+    }
+    CHECK(results, items[1].text == "'A'" && items[2].text == "' '");
+    // at the end of a list, before a comment, at the end of the text
+    CHECK(results, Reads("(f 'a')", tree) && tree.forms[0].items[1].value == 'a');
+    CHECK(results, Reads("(f 'a';x\n)", tree) && tree.forms[0].items[1].value == 'a');
+    CHECK(results, Reads("'a'", tree) && tree.forms[0].kind == NodeKind::Integer);
+    // quote marks stay: 'x, ''x, '(a), and a quoted list whose first item is quoted, as the
+    // formatter prints (quote ((quote a) b))
+    CHECK(results, Reads("'x", tree) && tree.forms[0].mark == QuoteMark::Quote);
+    CHECK(results, Reads("''x", tree) && tree.forms[0].items[1].mark == QuoteMark::Quote);
+    CHECK(results, Reads("'('a b)", tree) && tree.forms[0].mark == QuoteMark::Quote);
+    CHECK(results, tree.forms[0].items[1].items[0].mark == QuoteMark::Quote);
+    CHECK(results, tisple::PrintFlat(tree.forms) == "'('a b)");
+    CHECK(results, Reads("'a'b", tree) && tree.forms.size() == 2);
+    CHECK(results,
+          tree.forms[0].mark == QuoteMark::Quote && tree.forms[1].mark == QuoteMark::Quote);
+    // plain ASCII only: the fix is the number
+    CHECK(results, FailsAt("(f '\\x80')", 1, 4, "plain ASCII, 0 to 127; write 0x80"));
+    CHECK(results, FailsAt("(f '\\xFF')", 1, 4, "write 0xFF"));
+}
+
 void TestLexErrors(TestResults& results) {
     CHECK(results, FailsAt("(let x 0x)", 1, 8, "hex integer has no digits"));
     CHECK(results, FailsAt("(let x 0x1G)", 1, 11, "bad digit 'G' in hex"));
@@ -175,6 +209,7 @@ void RunReaderTests(TestResults& results) {
     TestAtoms(results);
     TestStructure(results);
     TestQuoteMarks(results);
+    TestCharLiterals(results);
     TestLexErrors(results);
     TestParenErrors(results);
 }

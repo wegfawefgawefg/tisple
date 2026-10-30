@@ -23,8 +23,8 @@
 
 (fn show ((s u8)) void
     (text40.move 0 0)
-    (text40.put (+ 0x30 (/ s 10)))
-    (text40.put (+ 0x30 (% s 10))))
+    (text40.put (+ '0' (/ s 10)))
+    (text40.put (+ '0' (% s 10))))
 
 (fn main () void
     (text40.on)

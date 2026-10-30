@@ -19,7 +19,11 @@ std::uint16_t FunctionValue(const Layout& layout, std::int32_t function);
 // the function a function pointer's value names, or -1 when it names none
 std::int32_t FunctionOfValue(const Program& program, const Layout& layout, std::uint16_t value);
 
-// a var's packed initial bytes with its function slots (Var::fn_slots) filled in
+// what an address slot holds on this layout: a function's value, or the address of a byte of a
+// var (stored packed, as its address is taken)
+std::uint16_t SlotValue(const Layout& layout, const AddrSlot& slot);
+
+// a var's packed initial bytes with its address slots (Var::addr_slots) filled in
 std::vector<std::uint8_t> InitBytes(const Program& program, const Layout& layout, std::int32_t var);
 
 // one var's packed initial bytes (InitBytes) at its layout address; nothing if it has none

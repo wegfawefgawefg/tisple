@@ -163,6 +163,18 @@ struct Gen {
     // stream of its own (fuzz_gen_io.cpp); only in GenerateIoProgram's programs
     Rng io_rng;
     bool io_shapes = false;
+    // const data: tables of structs with arrays, strings and addresses in them, from a stream
+    // of its own (fuzz_gen_data.cpp); only in GenerateDataProgram's programs. What the reads
+    // must stay inside: the foes' count, the shortest strings of each kind
+    Rng data_rng;
+    bool data_shapes = false;
+    int data_foes = 2;
+    int data_dm0_len = 1;
+    int data_move_len[4] = {1, 1, 1, 1};
+    int data_moves_min = 1;
+    int data_name_min = 1;
+    int data_names_min = 0;
+    int data_foe_moves_min = 1;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -336,6 +348,18 @@ struct Gen {
     std::string IoBaseValue();
     std::string IoBased();
     std::string IoShape(int depth);
+    // ---- const data (fuzz_gen_data.cpp)
+    std::string DataString(int& len);
+    std::string DataByte();
+    std::string DataMove(bool copies, int& min_len);
+    // DMv, DFoe, dstep0-1, dglob, dacc, DM0, DMOVES, DFOES, DNAMES, DPTR, DGP and dcur,
+    // before the generated functions
+    std::string DataHelpers();
+    std::string DataFoe();
+    std::string DataIndex(int n);
+    std::string DataMoveIndex();
+    std::string DataValue();
+    std::string DataShape(int depth);
     // the pure helpers common shapes call, after peek2 and poke2
     std::string CommonHelpers();
     T CommonInt();

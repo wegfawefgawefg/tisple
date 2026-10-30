@@ -78,8 +78,9 @@ whole program, so files are namespaces, not separate compilation units.
 - `tisple build main.tsp` follows imports to find every file.
 - Every top-level name is importable for now.
 - An import cycle is an error.
-- A local may not have the same name as an imported module, so `hgr.x` can
-  only mean one thing.
+- A variable or parameter may not have the same name as an imported module, so
+  `hgr.x` can only mean one thing. A field may: it only ever follows a dot or a
+  `:keyword`.
 
 ### lib/apple2
 
@@ -151,6 +152,13 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
   An enum member converts to its number, `(as u8 Action.fire)`; nothing
   converts back to an enum, and nothing converts to or from `bool`. A pointer
   converts only to and from `u16`: `(as (ptr u8) addr)`, `(as u16 p)`.
+- A char literal is an integer literal written as the character: `'A'` is 65,
+  `' '` is 32, and the escapes are the strings' (`'\n'` `'\t'` `'\r'` `'\0'`
+  `'\\'` `'\''` `'\xHH'`). Plain ASCII, 0 to 127 (`'\x80'` is an error that
+  says to write `0x80`); libraries apply screen codes. The reader takes `'` with
+  one character or one escape and a closing `'` that ends the token (a space,
+  `)`, `;` or the end follows) as one; every other `'` is the quote mark in macro
+  code, so `'x`, `''x` and `'('a b)` read as before (2026-10-30).
 - A literal has no type of its own. It takes the type its context needs and is
   an error if out of range (`(+ x 300)` with `x : u8` fails). `let`, `const`
   and `for` always state the type, so a literal next to one always has one.
@@ -173,7 +181,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 
 | Form | Meaning |
 | --- | --- |
-| `(const NAME type value)` | compile-time constant, a scalar or a table of scalars |
+| `(const NAME type value)` | compile-time constant of any type: a scalar, or data (structs, arrays); see Static data |
 | `(let name type value)` | variable. A local always has a value; a top-level `let` may leave it out |
 | `(set place value)` | assign to a name, `s.x` or `(at ...)` |
 | `(fn name (params) type body ...)` | function; `(params)` is `()` when empty, `type` is `void` when it returns nothing |
@@ -219,11 +227,11 @@ except with `:address` (see Placement). A local `let` always has a value.
 
 `make` builds every compound value, so a value slot always holds one form. A
 struct value names every field in declared order. An array value gives exactly
-`n` elements, each a constant; it is only the value of a `const` table or a
-top-level `let`: `(const ROW_ADDR (array u16 192) (make (array u16 192) 0x2000
-0x2400 ...))`. A `const` table holds numbers, bools, enum members or pointers;
-a top-level `let` may also start an array of structs or of arrays. Arrays are
-never copied as values, so other arrays are filled element by element.
+`n` elements; it is only the value of a `const` or a top-level `let`, at any
+depth there (an array of structs with arrays in them), never in code: `(const
+ROW_ADDR (array u16 192) (make (array u16 192) 0x2000 0x2400 ...))`. Arrays
+are never copied as values in code, so other arrays are filled element by
+element. What a const or a let's value may hold: Static data.
 
 `if` and `match` give a value only when it is used: as an operand, argument,
 `let` or `set` value, return value or a function's last form. Then every arm
@@ -240,8 +248,13 @@ template cannot glue `,s` and `.x` into one symbol: templates write
 `(. ,s x)` (owner, 2026-10-26). In hand code it is an error that says what to
 write: `p.x`, `(at sprites i x)` or `(load p x)`.
 
-Built-in names (`at`, `load`, `addr_of`, `as`, `make`, ...) cannot be used for
-variables, functions or fields; the error says to rename.
+A built-in name (`at`, `load`, `addr_of`, `as`, `make`, ...) means the
+built-in only as the head of a form, so variables, parameters and fields may
+take one: `(fn hp ((at u8)) u8 (at ENEMIES at hp))`. A function may not, since
+its name heads its calls, and neither may a variable or parameter holding a
+function pointer (`(at 1)` would be the built-in); the error says to rename.
+The names of types, `true`, `false` and `_` mean something wherever they stand
+and name nothing. Fields and enum members take any name (2026-10-30).
 
 Locals declared with `let` inside a body live to the end of the enclosing body.
 No shadowing in the same body.
@@ -497,7 +510,8 @@ because a macro emits Tisple, not instructions.
 - Arrays of structs are stored one array per field, and arrays of `u16`, `i16`
   and pointers as a low-byte table and a high-byte table, unless something
   takes an element's address; then they are packed (little-endian). Either way
-  `(at arr i)` with `i : u8` is one or two `LDA abs,X`.
+  `(at arr i)` with `i : u8` is one or two `LDA abs,X`. Const tables are laid
+  out the same.
 - `(ptr t)` arithmetic: `(+ p n)` moves by `n` elements, not bytes (settled).
   `n` is `u8` or `u16`; a `u8` count is `(as u16 n)` written short, since
   `(load (+ p x))` with `x : u8` is the 6502's `LDA (p),Y` (2026-10-26).
@@ -549,10 +563,9 @@ closures).
   through a `let` first: the head of a form is always a name. Arguments are
   checked against the type's parameters; the callee is worked out before the
   arguments.
-- A const table may hold functions' names. A top-level `let` may not start
-  with them (its bytes are worked out before the code is placed): set it in
-  code. A `const` scalar of a function type is an error that says to name the
-  function directly.
+- A const or a top-level `let` may hold functions' names, at any depth (an
+  address the link fills in; Static data). A `const` scalar of a function type
+  is an error that says to name the function directly.
 - `=` and `!=` compare them. Nothing converts to or from one, and there is no
   arithmetic on them, so a call through a pointer of type t can only reach a
   function of type t whose name is used as a value somewhere in the program:
@@ -803,12 +816,80 @@ use and placed with the other const tables; `(const GREETING (ptr u8)
 "HELLO")` names one, and `GREETING` reads like the literal. The escapes are the
 reader's, `\n \t \r \0 \\ \" \xHH`: `\r` is RETURN, which lib/text40 and
 lib/text80 take as a new line, and a `\0` ends the string early. Nothing writes
-a string; a store through one is undefined. A string cannot start a top-level
-`let` or fill a const table, since its address is known only once the program
-is laid out.
+a string; a store through one is undefined. A string is an address the link
+knows, so it may fill a const or start a top-level `let` (Static data).
 
-A const table, a string's or any other, that no kept function reads is left
-out of the binary.
+## Static data
+
+Settled 2026-10-30, from writing Witchdog. One model for what a program's
+memory starts with: a `const` of any type, and the value of a top-level `let`,
+are worked out while compiling, to the byte.
+
+```scheme
+(struct Move ((name (ptr u8)) (power u8) (glyph u8)))
+(struct Enemy ((name (ptr u8)) (hp u8) (moves (array Move 2)) (step (fn (u8) u8))))
+
+(const BITE Move (make Move :name "BITE" :power 3 :glyph '!'))
+(const ENEMIES (array Enemy 2)
+    (make (array Enemy 2)
+        (make Enemy :name "PUFFCAP" :hp 16 :moves (make (array Move 2) BITE BITE) :step double)
+        (make Enemy :name "OWL" :hp 30
+            :moves (make (array Move 2) BITE (make Move :name "HOOT" :power 2 :glyph '@'))
+            :step half)))
+(const BOSS (ptr Enemy) (addr_of (at ENEMIES 1)))
+(let current (ptr Enemy) (addr_of (at ENEMIES 0)))
+
+(fn hp ((i u8)) u8 (at ENEMIES i hp))                       ; LDA ENEMIES_hp,X
+(fn power ((i u8) (k u8)) u8 (at (at ENEMIES i moves) k power))
+```
+
+- A `const` has any type: a scalar is a value with no storage (as before); a
+  struct or an array is read-only data with an address. Code reads it like a
+  top-level `let` (`BITE.power`, `(at ENEMIES i hp)`, `(load BOSS hp)`) and never
+  sets it: `(set (at ENEMIES 0 hp) 1)` is an error.
+- A value is built of numbers (char literals among them), bools, enum members,
+  constants and operators on them; `make` at any depth; a const of the slot's
+  type or a part of one, copied (`BITE`, `(at MOVES 3)`, `ENEMY.moves`); and
+  addresses the link knows.
+- An address the link knows is a pointer or function pointer value: a string
+  literal, a function's name, `(addr_of x ...)` of a top-level `let` or a const
+  with constant indexes, any of those moved by a constant count while it stays
+  inside what it points to (one past the end included), and a pointer or
+  function pointer read from const data at a constant place (`(at NAMES 2)`).
+  Converting one to a number, `(as u16 "HI")`, is not constant: an address is
+  only ever a pointer.
+- A const's value may hold its own address or that of a const that holds its
+  (a ring of nodes), never read its own value: `(const T (array u8 2) (make
+  (array u8 2) 1 (at T 0)))` is an error.
+- `(addr_of CONST ...)` is a pointer to read-only data: a store through it is
+  undefined, as through a string. A scalar const has no address (`(addr_of K)`
+  says to make it a table or a `let`).
+- A pointer const, `(const BOSS (ptr Enemy) (addr_of (at ENEMIES 1)))`, is its
+  address wherever it is named, as a scalar const is its number.
+- Layout as for `let`s: one table per byte of the element, `u16` and pointer
+  fields as low and high tables, unless an `addr_of` reaches into the const; then
+  it is packed, with the packed warning. Nested arrays are reached with nested
+  `at`. A flat table indexed by one row (`(at FACES row effect)`) is one indexed
+  load; two computed indexes into nested arrays multiply one of them.
+- An `:address` let outside the binary, which the startup writes, holds
+  numbers only; addresses in its value are an error that says to set them in
+  main.
+
+What the optimiser does with it (src/opt/const_data.cpp, consts_eval.cpp):
+
+- A read at a constant place is its value, at -O0 too; so is a load at a
+  constant address into const data, `(load (+ "HELLO" 1))`.
+- An address read at a constant place becomes the address: `(at NAMES 2)` is
+  the string, `(at STEPS 1)` the function, so a call through it is direct.
+- At indexes the ranges pass does not know, a field's values lie between the
+  least and the most in the table, and when there are at most 16 of them, are
+  those: `(= (at ENEMIES i kind) 5)` is false when no enemy's kind is 5, and so
+  is a match clause for 5.
+- A const that no kept code names, and that no address in kept data points
+  into, is not in the binary. When the program as written may still use its
+  address, the reference interpreter (which runs that program on the compiled
+  layout) gets it at an address inside the code, memory it never otherwise
+  touches; the binary has no bytes of it.
 
 ## Exact delays
 

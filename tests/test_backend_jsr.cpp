@@ -183,9 +183,8 @@ void TestJsrChecks(TestResults& results) {
                 "t.tsp:1:29: 300 does not fit in u8 (0 to 255)");
     ExpectError(results, "(fn f ((p u8)) void (jsr p))",
                 "t.tsp:1:26: the jsr address needs a u16 but p is u8; write (as u16 p)");
-    // jsr is a built-in name
-    ExpectError(results, "(fn f () void (let jsr u8 1))",
-                "t.tsp:1:20: jsr is a built-in name; rename this local");
+    // jsr is a built-in name: no function may take it
+    ExpectError(results, "(fn jsr () void)", "t.tsp:1:5: jsr is a built-in name; rename this fn");
 }
 
 void TestJsrInterp(TestResults& results) {

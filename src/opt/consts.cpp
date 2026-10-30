@@ -2,8 +2,10 @@
 // consts_walk.cpp finds what each expression holds on every run; here the tree is rewritten:
 //
 // - a pure expression that always holds one value becomes that literal (its variables, its
-//   arithmetic, a const array read at a known index; a division by zero is folded to the
-//   defined result, as the interpreter gives it)
+//   arithmetic, a read of const data at known indexes, a load from it at a constant address; a
+//   division by zero is folded to the defined result, as the interpreter gives it)
+// - an address read from const data at a constant place becomes that address
+//   (const_data.cpp)
 // - an if or match whose condition is known and pure becomes the arm it picks
 // - a while whose condition is false whenever it is tested becomes nothing
 // - (and false x) and (or true x) become their value, (and true x) and (or false x) become x
@@ -147,6 +149,9 @@ bool Foldable(ExprKind kind) {
     switch (kind) {
     case ExprKind::VarRef:
     case ExprKind::Index:
+    case ExprKind::Field:
+    case ExprKind::Load:
+    case ExprKind::LoadField:
     case ExprKind::Unary:
     case ExprKind::Binary:
     case ExprKind::Convert:
@@ -245,6 +250,10 @@ void Rewrite(Rewriter& r, ExprId id, bool shared) {
     while (!shared && Cut(r, id)) {
     }
     if (!shared && Fold(r, id)) {
+        return;
+    }
+    if (!shared && FoldAddressRead(p, id)) {
+        r.changes++;
         return;
     }
     Expr e = At(p, id);

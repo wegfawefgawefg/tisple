@@ -41,6 +41,8 @@ void RunCheckDecisionTests(TestResults& results);
 void RunExpandTests(TestResults& results);
 void RunMacroTests(TestResults& results);
 void RunLayoutTests(TestResults& results);
+// static data: consts of any type, addresses in initial values (test_check_data.cpp)
+void RunCheckDataTests(TestResults& results);
 void RunInterpTests(TestResults& results);
 void RunInterpArithTests(TestResults& results);
 
