@@ -276,6 +276,74 @@ instructions, outside the closed world.
   forgotten at them.
 - The handler's own code is optimised like any function; it runs with interrupts off.
 
+Slice 6 (2026-10-30), from the worst race losses after slice 5 and the backend round. Once a
+round changes nothing, inlining copies calls, then (when nothing is left to copy) collapse's
+walk unrolls and unswitches; each round ends with known elements:
+
+- `inline.cpp`, `inline_copy.cpp` (`inline`): the calls the backend inlines become copies of
+  the body where they are made: every call of a function of at most kMaxInlineExprs (24)
+  nodes, the one call of a function called in one place (in a loop too, where the backend
+  keeps a body with loops a JSR: the line kernel 507296 to 506033 cycles). Not main, what
+  `--no-inline` names (BuildOptions::no_inline: the race's clock ends), a function whose
+  address is taken, the interrupt handler's code, a function that calls through a pointer
+  (fold.cpp drops such a call where its value does not matter: a backend bug), a small
+  function with loops of its own called in several places (the caller would get a loop, and
+  the backend keeps a once-called caller with loops a JSR in a loop: snake's step), a small
+  function given a for's counter (the backend copies the counter to the parameter's byte, a
+  better operand: the life kernel's rows); only with a main. Calls count in the functions
+  main, the handler and address-taken functions reach through the calls in the bodies now,
+  so one whose calls were all copied runs no more, and its body is emptied unless the build
+  keeps every function (tests call them by address). Each settled round goes down the call
+  tree in steps; a function copied in a step waits with its own calls for the next, when the
+  copies count as calls (as the backend counts them).
+  - The copy: a let of a new local per parameter; an argument that is a literal, a variable
+    or a few pure, quiet nodes the body never changes the inputs of stands where the
+    parameter is read when the parameter is never set (as the backend's CanBind). Every local
+    of the callee the body names gets a new local of the caller, a set of one whose let the
+    passes took away too (fuzz seed 10010645: it wrote the callee's frame, which shares bytes
+    with others).
+  - Returns: the last item (return v) is v; an if or match among the items with arms that
+    return makes the rest of the body its other arms, copied into two arms at most and only
+    when it is a few nodes that declare nothing (a call whose value nobody uses drops a pure
+    value at the end first). A return in a loop or a value keeps the call.
+  - A call that is a statement, or the value of (set x ...), gives the copy's items to the do
+    around it (x set where each way ends); any other call becomes a do in its place.
+  - Not done: functions of 25 to 96 nodes called twice (0.8438 to 0.8402 on the race, but
+    paint's code 1581 to 1667 bytes and snake's 1077 to 1162; gated on fors whose passes are
+    known 0.8427, most of it gone).
+- `ranges_divs.cpp` (`divisions`, in ranges): (/ x 1) is x, (% x 1) 0, (% x 0) x, (/ x 0)
+  all ones (signed: by the dividend's sign); unsigned or never negative, a dividend below
+  the divisor makes (/ x y) 0 and (% x y) x; unsigned (/ x (| x 1)) is (& x 1), (% x (| x 1))
+  (& x (- (& x 1) 1)), (/ (% x y) y) 0 for y never 0, (/ x x) 1 or (if (= x 0) all-ones 1).
+  Not for x reading a loop's counter (unrolling may make it a literal: seed 617).
+- `pointers.cpp` (`pointers`): a pointer local one let sets to (addr_of (at A k)), k a
+  literal, never set again nor its address taken, names that element: a load or store
+  through it at a literal count, inside the array, is a read or set of the element. Last in
+  the round: a store it makes a set changes what the round's summaries say (fuzz seed
+  33001074, collapse ran a loop around such a call once). Not for counts worked out at run
+  time: a u16 index costs the backend an address per access where the pointer is set once
+  (seed 583 69439 to 138860 cycles), and the backend loses a constant part of such an index.
+- `collapse_exit.cpp` (`scans`, in collapse): a while whose body only steps its counter by
+  1, testing (< c k) or (and (< c k) x) with x the same on every pass, is (if test (set c k)).
+  A while whose body ends in a break every pass reaches makes one pass. A counting while in
+  a branch's arm finds its counter's let before the branch (unswitching puts it there).
+- ranges: a while counting up from a start not known has its counter in [lo(v), max(hi(v),
+  k - 1 + s)]; more than 64 elements of an all-zero array no store reaches read as 0
+  (seed 841's scans of wb).
+- unswitch: also when no copy collapses but the loop has no calls and no arm sets a variable
+  an index reads (seed 1239: the other copy works out one address on every pass, which the
+  backend does not keep); on a branch in a for inside (seed 359), up to six copies of a small
+  loop, and on counting whiles (exits on what the loop never changes: seed 56).
+- collapse: a field of an element whose index is not known (in range) is that field of
+  every element, apart from the struct's other fields (seed 62); a call whose value nobody
+  uses reads what its effects need (Summary::effect_reads: not what only a pure last value
+  reads; seed 161).
+- live: a for that surely makes a pass kills what its first pass sets before reading it
+  (seed 1278).
+- cse: a widened byte times a constant is not kept in a local (the backend works it out in A
+  and one byte, but into a local's two bytes by shifts of memory: the life kernel's rows).
+- `--no-pass inline|pointers|divisions|scans`. Results: dogfood.md 51.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`
