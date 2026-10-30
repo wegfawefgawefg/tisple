@@ -52,10 +52,10 @@ bool ParseArgs(int argc, char** argv, bool run, BuildArgs& args) {
     for (int i = 2; i < argc; i++) {
         const char* arg = argv[i];
         bool has_value = i + 1 < argc;
-        std::string opt_error;
-        if (ParseOptFlag(argc, argv, i, args.options.opt, opt_error)) {
-            if (!opt_error.empty()) {
-                std::fprintf(stderr, "tisple: %s\n", opt_error.c_str());
+        std::string flag_error;
+        if (ParseCodeFlag(argc, argv, i, args.options, flag_error)) {
+            if (!flag_error.empty()) {
+                std::fprintf(stderr, "tisple: %s\n", flag_error.c_str());
                 return false;
             }
             continue;
@@ -70,8 +70,6 @@ bool ParseArgs(int argc, char** argv, bool run, BuildArgs& args) {
                 return false;
             }
             args.options.origin = static_cast<std::uint16_t>(number);
-        } else if (std::strcmp(arg, "--no-inline") == 0 && has_value) {
-            args.options.no_inline.push_back(argv[++i]);
         } else if (run && std::strcmp(arg, "--max-cycles") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number)) {
                 return false;
@@ -122,6 +120,21 @@ void PrintSizes(const Compiled& c) {
 }
 
 } // namespace
+
+bool ParseCodeFlag(int argc, char** argv, int& i, BuildOptions& options, std::string& error) {
+    if (ParseOptFlag(argc, argv, i, options.opt, error)) {
+        return true;
+    }
+    if (std::strcmp(argv[i], "--no-inline") != 0) {
+        return false;
+    }
+    if (i + 1 >= argc) {
+        error = "--no-inline takes a function, module.fn";
+        return true;
+    }
+    options.no_inline.push_back(argv[++i]);
+    return true;
+}
 
 int RunBuildCommand(int argc, char** argv) {
     BuildArgs args;
