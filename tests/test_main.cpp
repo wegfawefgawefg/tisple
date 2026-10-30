@@ -115,6 +115,7 @@ int main() {
     tisple_tests::RunUnpackLibTests(results);
     tisple_tests::RunUnpackIrqTests(results);
     tisple_tests::RunDhgrLibTests(results);
+    tisple_tests::RunDhgrRunsTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);
     tisple_tests::RunSuperoptTests(results);

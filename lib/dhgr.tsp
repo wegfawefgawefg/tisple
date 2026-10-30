@@ -14,6 +14,9 @@
 ;   (dhgr.masked page bank col top w h pic mask)  each byte (screen & mask) | pic
 ;   (dhgr.copy_box page bank col top w h from)  the same box of the page from ($20 steps, a
 ;                                   saved backdrop: $6000, $8000 ...) onto page
+;   (dhgr.runs page bank col top h stream flags)  a sprite half stored as runs (masks only
+;                                   where it has edges), from its memory or the aux language
+;                                   card (flags dhgr.FROM_CARD; dhgr.AS_WHITE: in white)
 ;   (dhgr.aux_rmw addr keep set)    an aux memory byte becomes (byte & keep) | set; gives what
 ;                                   it was
 ;   (dhgr.text_row page row codes)  80 screen codes onto text row 0-23 of the text page the
@@ -29,6 +32,7 @@
 
 (import apple2 a2)
 (import auxmem)
+(import auxcard)
 (import tables)
 
 (let page1_main (array u8 8192) :address 0x2000 :reserve)
@@ -169,7 +173,10 @@
 ; auxmem.pages the rows (H), auxmem.work: 0 EVEN, 1 ODD (fill's two bytes; copy_box's source
 ; page), 2-3 MASK, 4 COL, 5 W, 6 PAGEHI; auxmem.from the bytes (SRC), auxmem.to (DST) the
 ; screen byte, which row_at works out a row at a time. rmw: X the memory, A keep, Y set, DST
-; the byte; text_row: SRC 80 codes, DST the row, writing aux with RAMWRT alone.
+; the byte; text_row: SRC 80 codes, DST the row, writing aux with RAMWRT alone. runs (at
+; $1F47, after text_row): SRC the runs, work 0 the flags (bit 7 FROM_CARD, bit 0 AS_WHITE), 1 the row's
+; first DST, 2-3 a run's masks, 5 a run's length; between rows of runs in the aux language card
+; ALTZP goes off and interrupts are let in for a moment (auxcard.call runs it with them off).
 (const HOME u16 0x1E00)
 (const MASKED u16 0x1E00)
 (const COPY u16 0x1E03)
@@ -177,12 +184,13 @@
 (const FILL u16 0x1E09)
 (const RMW u16 0x1E0C)
 (const TEXT_ROW u16 0x1E0F)
-(const KIT_SIZE u16 327)
+(const RUNS u16 0x1F47)
+(const KIT_SIZE u16 497)
 (let home_main (array u8 KIT_SIZE) :address 0x1E00 :reserve)
 (let home_aux (array u8 KIT_SIZE) :address 0x1E00 :in aux :reserve)
 
-(const KIT (array u8 327)
-    (make (array u8 327)
+(const KIT (array u8 497)
+    (make (array u8 497)
         0x4C 0x6B 0x1E 0x4C 0x9D 0x1E      ; JMP masked / JMP copy
         0x4C 0xB4 0x1E 0x4C 0xD4 0x1E      ; JMP copy_box / JMP fill
         0x4C 0x06 0x1F 0x4C 0x23 0x1F      ; JMP rmw / JMP text_row
@@ -243,7 +251,40 @@
         0x8D 0x05 0xC0 0xA4 0xF6 0x91 0xFC ; STA $C005 / LDY COL / STA (DST),Y
         0x8D 0x04 0xC0 0xA5 0xF6 0x0A 0xA8 ; STA $C004 / LDA COL / ASL A / TAY
         0xC8 0xB1 0xFA 0xA4 0xF6 0x91 0xFC ; INY / LDA (SRC),Y / LDY COL / STA (DST),Y
-        0xC6 0xF6 0x10 0xE1 0x60))         ; DEC COL / BPL t_col / RTS
+        0xC6 0xF6 0x10 0xE1 0x60           ; DEC COL / BPL t_col / RTS
+        0x20 0x5B 0x1E                     ; runs: JSR start
+        0xA5 0xFC 0x85 0xF3 0xA0 0x00      ; row: LDA DST / STA ROWLO / LDY #0
+        0xB1 0xFA 0xF0 0x7B 0xE6 0xFA      ; seg: LDA (SRC),Y / BEQ row_end / INC SRC
+        0xD0 0x02 0xE6 0xFB                ; BNE c1 / INC SRC+1
+        0xC9 0x40 0xB0 0x07 0x65 0xFC      ; c1: CMP #$40 / BCS run / ADC DST
+        0x85 0xFC 0x4C 0x50 0x1F           ; STA DST / JMP seg
+        0xAA 0x29 0x3F 0x85 0xF7 0xA8 0x88 ; run: TAX / AND #$3F / STA N / TAY / DEY
+        0xE0 0x80 0xB0 0x1D 0xA5 0xF2 0x4A ; CPX #$80 / BCS masked / LDA FLAGS / LSR A
+        0xB0 0x0C                          ; BCS o_white
+        0xB1 0xFA 0x91 0xFC 0x88 0x10 0xF9 ; o_byte: LDA (SRC),Y / STA (DST),Y / DEY / BPL o_byte
+        0xA5 0xF7 0x4C 0xBA 0x1F           ; LDA N / JMP advance
+        0xA9 0x7F                          ; o_white: LDA #$7F
+        0x91 0xFC 0x88 0x10 0xFB 0xA5 0xF7 ; o_wbyte: STA (DST),Y / DEY / BPL o_wbyte / LDA N
+        0x4C 0xBA 0x1F                     ; JMP advance
+        0xA5 0xFA 0x18 0x65 0xF7 0x85 0xF4 ; masked: LDA SRC / CLC / ADC N / STA MSK
+        0xA5 0xFB 0x69 0x00 0x85 0xF5      ; LDA SRC+1 / ADC #0 / STA MSK+1
+        0xA5 0xF2 0x4A 0xB0 0x0D           ; LDA FLAGS / LSR A / BCS m_white
+        0xB1 0xFC 0x31 0xF4 0x11 0xFA      ; m_byte: LDA (DST),Y / AND (MSK),Y / ORA (SRC),Y
+        0x91 0xFC 0x88 0x10 0xF5 0x30 0x0B ; STA (DST),Y / DEY / BPL m_byte / BMI m_done
+        0xB1 0xF4 0x49 0x7F 0x11 0xFC      ; m_white: LDA (MSK),Y / EOR #$7F / ORA (DST),Y
+        0x91 0xFC 0x88 0x10 0xF5           ; STA (DST),Y / DEY / BPL m_white
+        0xA5 0xF7 0x0A                     ; m_done: LDA N / ASL A
+        0x18 0x65 0xFA 0x85 0xFA 0x90 0x02 ; advance: CLC / ADC SRC / STA SRC / BCC a1
+        0xE6 0xFB                          ; INC SRC+1
+        0xA5 0xFC 0x18 0x65 0xF7 0x85 0xFC ; a1: LDA DST / CLC / ADC N / STA DST
+        0xA0 0x00 0x4C 0x50 0x1F           ; LDY #0 / JMP seg
+        0xE6 0xFA 0xD0 0x02 0xE6 0xFB      ; row_end: INC SRC / BNE r1 / INC SRC+1
+        0xA5 0xF3 0x85 0xFC 0x24 0xF2      ; r1: LDA ROWLO / STA DST / BIT FLAGS
+        0x10 0x09 0x8D 0x08 0xC0 0x58 0xEA ; BPL r2 / STA $C008 / CLI / NOP
+        0x78 0x8D 0x09 0xC0                ; SEI / STA $C009
+        0x20 0x43 0x1E 0xF0 0x03           ; r2: JSR next_row / BEQ fin
+        0x4C 0x4A 0x1F                     ; JMP row
+        0x4C 0x64 0x1E))                   ; fin: JMP done
 
 (let ready bool false)
 (let shown u8 PAGE1)
@@ -334,6 +375,24 @@
     (box_at page col top w h)
     (set (at auxmem.work 1) from)
     (jsr COPY_BOX (x bank)))
+
+; runs flags: the runs are in the aux language card (lib/auxcard reaches them), the shape
+; drawn in white
+(const FROM_CARD u8 0x80)
+(const AS_WHITE u8 0x01)
+
+; a sprite half stored as runs onto the page's bank, its top-left at byte column col (even, as
+; for masked), h rows: per row, control bytes up to a 0: 1-63 skip that many bytes, $40 + n n
+; picture bytes copied (opaque), $80 + n n picture bytes then their n masks, each screen byte
+; (screen & mask) | picture; n is 1-63. The runs are in the bank's memory, or with FROM_CARD
+; in the aux language card for either bank. AS_WHITE draws the shape in white instead.
+(fn runs ((page u8) (bank u8) (col u8) (top u8) (h u8) (stream (ptr u8)) (flags u8)) void
+    (box_at page col top 1 h)
+    (set (at auxmem.work 0) flags)
+    (set auxmem.from stream)
+    (if (!= (& flags FROM_CARD) 0)
+        (auxcard.call RUNS bank)
+        (jsr RUNS (x bank))))
 
 (fn aux_rmw ((addr u16) (keep u8) (set_bits u8)) u8
     (setup)
