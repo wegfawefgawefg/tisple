@@ -57,10 +57,18 @@ function keyCode(spec) {
 
 // input: every press and release goes to the machine and the log
 
+// a browser that kept the sound off at the start tap gets asked again on every press
+function wakeAudio() {
+    if (state.audio && state.audio.state !== "running") {
+        state.audio.resume();
+    }
+}
+
 function press(code) {
     if (!state.running) {
         return;
     }
+    wakeAudio();
     state.m._tp_key_down(code);
     state.log.push([state.m._tp_cycles(), code]);
     ui.rec.textContent = "rec " + state.log.length;
@@ -179,6 +187,9 @@ registerProcessor("feed", Feed);
 
 async function startAudio() {
     state.audio = new AudioContext({ sampleRate: AUDIO_RATE, latencyHint: "interactive" });
+    // resume inside the tap itself: after an await, some browsers (Brave) no longer count the
+    // gesture and keep the context suspended
+    state.audio.resume();
     if (state.audio.audioWorklet) {
         const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
         await state.audio.audioWorklet.addModule(url);
@@ -275,7 +286,9 @@ function tick(now) {
         sendSamples(count);
     }
     draw();
-    if (state.m._tp_stopped()) {
+    if (state.audio && state.audio.state !== "running") {
+        setStatus("sound is " + state.audio.state + ": tap a button");
+    } else if (state.m._tp_stopped()) {
         setStatus("the program stopped");
     } else if (ui.status.textContent === "loading...") {
         setStatus("");
