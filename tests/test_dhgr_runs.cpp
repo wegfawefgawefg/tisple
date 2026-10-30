@@ -118,6 +118,7 @@ std::string Program(const Half& aux, const Half& main) {
 (let ticks u16 0 :address 0x03C0)
 (macro pixel_colour (i) (% (+ (* i 7) (/ i 3)) 16))
 (tables.table PIXELS u8 140 pixel_colour)
+(let back (array u8 140) :address 0x0B00)
 (fn irq () void :interrupt
     (mb.service)
     (set ticks (+ ticks 1)))
@@ -148,6 +149,7 @@ std::string Program(const Half& aux, const Half& main) {
     ; a row of colour pixels: 20 groups at row 190, 3 groups from column 10 at row 191
     (dhgr_pixels.row dhgr.PAGE1 0 190 20 (addr_of (at PIXELS 0)))
     (dhgr_pixels.row dhgr.PAGE1 10 191 3 (addr_of (at PIXELS 0)))
+    (dhgr_pixels.read dhgr.PAGE1 0 190 20 (addr_of (at back 0)))
     ; the aux half from the card's bank 1
     (dhgr.runs dhgr.PAGE2 dhgr.AUX 4 120 )" +
            std::to_string(kH) + R"( (as (ptr u8) 0xD400) dhgr.FROM_CARD1)
@@ -265,11 +267,18 @@ void RunDhgrRunsTests(TestResults& results) {
         int want =
             x >= 35 && x < 56 ? ((x - 35) * 7 + (x - 35) / 3) % 16 : PixelAt(*a, 0x2000, x, 189);
         pixels = pixels && PixelAt(*a, 0x2000, x, 191) == want;
-        if (PixelAt(*a, 0x2000, x, 190) != (x * 7 + x / 3) % 16 || PixelAt(*a, 0x2000, x, 191) != want) {
-            std::printf("pixel %d: %d %d want %d %d\n", x, PixelAt(*a, 0x2000, x, 190), PixelAt(*a, 0x2000, x, 191), (x * 7 + x / 3) % 16, want);
+        if (PixelAt(*a, 0x2000, x, 190) != (x * 7 + x / 3) % 16 ||
+            PixelAt(*a, 0x2000, x, 191) != want) {
+            std::printf("pixel %d: %d %d want %d %d\n", x, PixelAt(*a, 0x2000, x, 190),
+                        PixelAt(*a, 0x2000, x, 191), (x * 7 + x / 3) % 16, want);
         }
     }
     CHECK(results, pixels);
+    bool back = true; // and read back
+    for (int x = 0; x < 140; x++) {
+        back = back && a->cpu.mem[0x0B00 + x] == (x * 7 + x / 3) % 16;
+    }
+    CHECK(results, back);
     // no tick lost: interrupts are off while the card's code runs, but for a moment a row
     uint64_t counted = a->cpu.mem[kTicks] | (a->cpu.mem[kTicks + 1] << 8);
     uint64_t due = a->cpu.cycles / kMbTick;
