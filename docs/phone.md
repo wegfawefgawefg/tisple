@@ -16,8 +16,21 @@ buttons into key presses.
 - Logs: the page records every key press and release with its machine cycle and posts
   them to `.../phone/logs/<game>-<session>.json` every 30 s and when it goes to the
   background, so a playtest can be replayed on the desktop against the disk it was made on.
-- A game's config may list `taps`: boxes in hi-res pixels (280 x 192) with the key each
-  presses, so the screen itself takes taps (Catwiz: the dice, reroll, the enemies, meow).
+- A game's config (`game.json`) names its buttons in `pad`: rows top to bottom, each
+  `{"size": "small" | "medium" | "big", "keys": [...]}`, a key `{"label": "END TURN", "key":
+  "E", "look": "white", "span": 2}` (looks: `card`, `white`, `violet`, `orange`, `green`;
+  `\n` breaks a label in two; `sub` adds smaller words; the key letter shows small in a
+  corner, or `hint`). Put the most pressed ones in the last rows, big: they are the ones in
+  thumb reach. Small rows sit at the right. The older form, `buttons` in rows of `columns`
+  with `sub` and `wide`, still works (the demos in `programs/` use it).
+- A config may list `taps`: boxes in hi-res pixels (280 x 192) with the key each presses,
+  first match wins, so the screen itself takes taps and clicks (Catwiz: everything, with a
+  last box over the whole screen for ESC).
+- Layout (`web/pad.js`): in portrait the screen goes across the top and the pad under it. In
+  landscape, and on a desktop with a mouse, the screen is as big as fits; a game with `taps`
+  gets no pad there, any other has it in a column beside the screen. The buttons and the bar
+  letter in the machine's own font (`web/font.py` writes `font.js` from
+  `src/machine/font.cpp` at build).
 - `tisple machine --window --taps <config>` reads the same `taps` for the desktop window:
   a left click on a box presses its key until the button comes up.
 - `?autostart` runs without the tap and without sound, for headless checks.

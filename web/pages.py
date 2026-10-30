@@ -128,33 +128,37 @@ PICKER = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0b0d0b">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
 <title>Tisple ][ demos</title>
 <style>
-:root { --bg: #0b0d0b; --panel: #161a16; --text: #d8e8d0; --dim: #7f907a; --accent: #7ee07a; }
+/* the player's look: black, the Apple's hi-res green and violet, hard edges */
+:root { --bg: #000; --text: #fff; --dim: #8fd46a; --accent: #42c600; --violet: #ba38ff; }
 * { box-sizing: border-box; }
 body {
     margin: 0 auto; max-width: 960px; padding: 16px; background: var(--bg); color: var(--text);
     font: 15px/1.45 ui-monospace, "DejaVu Sans Mono", monospace;
 }
-h1 { font-size: 20px; margin: 0 0 4px; }
+h1 { font-size: 20px; margin: 0 0 4px; color: var(--accent); letter-spacing: 2px; }
 p { color: var(--dim); margin: 0 0 16px; }
 a { color: var(--accent); }
 #games { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .game {
-    display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 8px;
-    background: var(--panel); color: var(--text); text-decoration: none;
+    display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 2px solid var(--accent);
+    background: var(--bg); color: var(--text); text-decoration: none;
 }
+.game:hover, .game:active { border-color: var(--violet); }
 .game img { width: 100%; height: auto; image-rendering: pixelated; background: #000; }
+.game b { text-transform: uppercase; letter-spacing: 1px; }
 .game span { color: var(--dim); font-size: 13px; }
 </style>
 </head>
 <body>
 <h1>Tisple ][</h1>
 <p>Disks built by the <a href="{repo}">Tisple ][</a> compiler, booting on its Apple IIe emulator
-compiled to WebAssembly, with its own boot rom (no Apple rom). Tap a game, then tap the screen
-to start. The on-screen buttons and a keyboard (arrows, return, letters) both work.</p>
+compiled to WebAssembly, with its own boot rom (no Apple rom). Tap a game, then tap to start.
+A game's screen takes taps and clicks where it has them (Catwiz: everything), the others have
+buttons, and a keyboard (arrows, return, letters) works too.</p>
 <div id="games">
 {cards}
 </div>

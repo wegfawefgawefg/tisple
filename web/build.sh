@@ -59,5 +59,6 @@ em++ "${OBJECTS[@]}" -O2 -o web/dist/machine.js \
     -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432 \
     -sEXPORTED_FUNCTIONS=_malloc,_free \
     -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP16
-cp web/index.html web/player.js web/manifest.json web/icon.svg web/dist/
+cp web/index.html web/player.js web/pad.js web/manifest.json web/icon.svg web/dist/
+python3 web/font.py web/dist/font.js
 echo "web/dist: $(du -sh web/dist | cut -f1)"

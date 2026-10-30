@@ -3,9 +3,10 @@
 
     web/publish.py NAME DISK CONFIG [--home ~/.local/share/tisple/phone]
 
-CONFIG is the game's player config, kept with the game, e.g.
-    {"title": "Catwiz", "mockingboard": 4, "columns": 5,
-     "buttons": [{"label": "1", "key": "1"}, {"label": "go", "key": "RETURN", "wide": true}]}
+CONFIG is the game's player config, kept with the game (docs/phone.md), e.g.
+    {"title": "Catwiz", "mockingboard": 4,
+     "pad": [{"size": "big", "keys": [{"label": "END TURN", "key": "E", "look": "white"}]}],
+     "taps": [{"x": 240, "y": 126, "w": 40, "h": 17, "key": "E"}]}
 A key is a character, a number, or RETURN ESC SPACE LEFT RIGHT UP DOWN TAB DELETE.
 The game becomes the default one the player opens.
 """
