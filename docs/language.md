@@ -475,7 +475,12 @@ because a macro emits Tisple, not instructions.
 - Globals get fixed addresses from the linker. `tisple check`, `interp`,
   `build` and `run` all lay the program out the way the backend does, so
   pointer programs agree byte for byte and layout errors are the same
-  everywhere.
+  everywhere. `check` takes the build's `--origin A`, `--disk` and code
+  flags for that.
+- An `addr_of` into an array of multibyte elements stores the whole array
+  packed (pointers see packed bytes), so every access to it multiplies the
+  index by the element size. build, run and check warn at the first such
+  `addr_of`.
 - No recursion in this subset: the checker rejects call-graph cycles. A call
   through a function pointer counts as a call of every function of its type
   whose name is used as a value. Every function gets a static frame; the

@@ -77,3 +77,4 @@ variable's name); zero-page allocation moves them.
 | 2026-10-29 | (mid-level slice 5: variable ranges, unstored elements, unrolling, unswitching, unused returns) | life, plasma | generations, frames in 10 s | 56, 243 (the same, byte for byte) |
 | 2026-10-30 | (backend: divisions compare inline, flags through calls, number-left compares, loop pointers given back) | life, plasma | generations, frames in 10 s | 56, 243 (230, 975 in 40.92 M cycles, as before) |
 | 2026-10-30 | (mid-level slice 6: inlining, divisions without dividing, known elements, scans to their bound, more unswitching) | life, plasma | generations, frames in 10 s | 56, 243 (230, 975 in 40.92 M cycles, as before) |
+| 2026-10-30 | (code size budget for copies and unrolled loops, two backend miscompiles fixed) | life, plasma | generations, frames in 10 s | 56, 243 (230, 975 in 40.92 M cycles, as before; life code 882 to 739 bytes, plasma byte for byte) |

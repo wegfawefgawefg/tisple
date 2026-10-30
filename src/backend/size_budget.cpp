@@ -74,8 +74,8 @@ bool Kept(const SizeChoices& choices, const SizeItem& key) {
     return key.first ? choices.keep_loops[i] : choices.keep_calls[i];
 }
 
-// saves kHotCycles cycles or more for each byte it adds: over the item and function budgets
-// it may go, and only the program's takes it, last
+// saves kHotCycles cycles or more for each byte it adds: it pays for its bytes, and no budget
+// counts it or turns it down
 bool Hot(const Item& item) {
     return item.benefit >=
            Times(kHotCycles, static_cast<std::uint64_t>(std::max<std::int64_t>(item.growth, 0)));

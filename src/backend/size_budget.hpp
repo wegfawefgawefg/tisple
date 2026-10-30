@@ -15,9 +15,9 @@
 //   items that save the fewest cycles for their bytes go: that function's calls stay JSRs,
 //   that loop stays a loop. Then the program is generated and measured again
 //   (CompileProgram); an item inside or around one that went waits for that measure.
-// - The budgets: kMaxItemGrowth bytes for one item and kMaxFunctionGrowth for one
-//   function's code, except for items that save kHotCycles cycles or more a byte; and
-//   kMaxProgramGrowth plus an eighth of the code for the whole program, hot items last.
+// - The budgets: kMaxItemGrowth bytes for one item, kMaxFunctionGrowth for one function's
+//   code, kMaxProgramGrowth plus an eighth of the code for the whole program. Items that save
+//   kHotCycles (32) cycles or more a byte pay for themselves: no budget counts them.
 // - The mid-level passes copy small functions too (opt/inline.cpp), and their copies are
 //   plain code here. So the program as the mid-level leaves it before it inlines is
 //   measured first, and a function whose copies at its calls would go over the item budget
