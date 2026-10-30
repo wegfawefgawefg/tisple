@@ -102,9 +102,34 @@ void TestAdds(TestResults& results) {
                  "t.f", {0xC7});
 }
 
+// (set x (+ x (as u16 b))): the high byte only stepped on a carry (gen_stmt.cpp): a global
+// and a local, the byte from a table, worked out in A, read from x itself, and in a loop
+// whose sum crosses pages
+void TestByteSums(TestResults& results) {
+    for (int start : {0, 0xFF, 0x1F0, 0xFFF0}) {
+        CheckProgram(results,
+                     "(let tab (array u8 256)) (let gs u16 " + std::to_string(start) +
+                         ")\n"
+                         "(fn f ((n u8)) u16\n"
+                         "    (for i u16 0 256 (set (at tab (as u8 i)) (as u8 (* i 37))))\n"
+                         "    (let s u16 " +
+                         std::to_string(start) +
+                         ")\n"
+                         "    (for i u8 0 n\n"
+                         "        (set s (+ s (as u16 (at tab i))))\n"
+                         "        (set gs (+ (as u16 (^ i n)) gs))\n"
+                         "        (set s (+ s (as u16 (at tab (as u8 s))))))\n"
+                         "    (+ s gs))",
+                     "t.f", {200});
+    }
+    Compiled c = CompileText("(let s u16 0) (let b u8 0)\n(fn f () void (set s (+ s (as u16 b))))");
+    CHECK(results, c.ok && CountMn(c, "t.f", tisple::Mn::INC) == 1);
+}
+
 } // namespace
 
 void RunBackendWideTests(TestResults& results) {
+    TestByteSums(results);
     TestShifts(results);
     TestProducts(results);
     TestAdds(results);
