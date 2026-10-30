@@ -136,6 +136,12 @@ struct Var {
     // the interrupt handler (or a function it calls) reads or writes it: it may change, or be
     // looked at, between any two instructions of the rest of the program
     bool irq_shared = false;
+    // made by the mid-level passes (src/opt): no source names it, so the reference interpreter,
+    // which runs the program as written, never gives it bytes; frames may share them
+    bool made = false;
+    // made by inlining: the function whose parameter or local it copies (frame_share.cpp may
+    // give it bytes in that function's frame), else -1
+    std::int32_t copied_from = -1;
 };
 
 enum class Op : std::uint8_t {

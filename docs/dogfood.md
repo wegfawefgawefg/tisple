@@ -1608,6 +1608,76 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     effects and through pointers, constant-plus-byte indexes; 46 of its first
     96 programs differ on the compiler before this round. Tests:
     tests/test_backend_size.cpp, tests/test_backend_build.cpp (the warning).
+54. Frames for inlined copies (2026-10-30, src/backend/frame_share.cpp,
+    frame_live.cpp). The zero page that mid-level inlining cost (53) is back,
+    and then some. Considered first: copies reusing the callee's own
+    parameters and locals, fresh ones only where copies of one callee nest
+    or are live at once. Not done: every pass takes a function's variables
+    to be touched only by its own body (live.cpp's liveness, vars taking a
+    parameter's range from what the calls pass, args, the backend's
+    CanBind and dead stores), and "live at once" is not a property of the
+    tree: the backend reads a copy's value where it is after the next
+    operand, forwards lets to their uses, keeps values in temporaries, so
+    nesting found in the tree would miss cases and a wrong guess is a
+    miscompile. What went in: every local the passes make is `Var::made`
+    (the interpreter, running the program as written, never sees it), a
+    copy's records the function it came from (`Var::copied_from`), and the
+    frame allocator, which runs after code generation and the peephole pass,
+    takes liveness over each function's finished items (frame_live.cpp:
+    plain stores kill a byte, (zp),Y reads the pointer, indexed accesses
+    touch the whole symbol, a JSR reads its callee's parameters; a symbol
+    reached any other way holds a value everywhere). Made locals that never
+    meet (one written while the other holds a value) share a slot; a copy's
+    slot goes into the frame of the function it came from when only code
+    above that frame names it, it holds no value across a call of anything
+    but that function's callees, and it meets no byte of a frame that may
+    overlap that one (else its own function's frame, which is always safe:
+    the old placement). So copies of functions called one after the other
+    share bytes the way their calls' frames did. A made local no code names
+    gets no bytes; a program variable no code names (a function whose calls
+    were all copied) gets bytes over its function's temporaries and slots,
+    which only the interpreter reads. Zero page / frames in memory, before
+    (-O1, then --no-pass inline on the old compiler) and after (-O1):
+    life 93/13 (68/4) to 67/6; paint 85/34 (73/6) to 64/12; text_demo
+    88/14 (60/6) to 58/7; snake 45/4 (39/3) to 37/5; plasma 26/7 (25/4) to
+    22/7; the game 256/125 (160/32) to 142/34, its code 15346 to 14789 bytes
+    (more variables in zero page); dispatch 42/15 to 33/9, ticks 44/12 to
+    34/8, mockingboard_demo 129/19 to 94/11, dot 31/5 to 26/3, multi 27/16
+    to 23/5, keys 14 to 13, sprites' memory frames 0 to 1; code bytes the
+    same in every program and example. Memory frames stay above the old
+    --no-pass inline ones where the copied function's own variables need
+    more bytes than its copies (paint: hgr.line's 26 against 20 bytes of
+    slots, then plot's and pixel_byte's). Random race, seeds 1-2000: geomean
+    0.811 and wins 68.8% as on main; 32 programs faster, 10 slower (at most
+    1.5%, seed 1300: other variables in zero page), bytes the same. Kernel
+    race the same, kernel for kernel. Compile time the same (the game 0.15 s,
+    text_demo 1.03 s). The game runs to its battle with a die used. Fuzz
+    shape tests/fuzz_gen_frames.cpp (`seed N (frames)`, one seed in four, a
+    stream of its own): small helpers with byte, word and pointer locals,
+    copies in each other's arguments, values of copies needed at once, a
+    copy's value held across calls of helpers that stay JSRs with and
+    without parameters, copies in loops around them, a helper called once
+    holding copies of the others; in 110 of its programs 98 move copies to
+    their callee's frame, 80 share slots and 52 refuse that frame for some
+    copy (the inline shape: 63, 34 and 5), zero page 4980 to 3361 bytes in
+    all. With the checks taken out one at a time, 200 seeds find 10 (meets)
+    and 40 (slots) mismatches; the call check alone finds none (the backend
+    keeps a value in a temporary across a call, and parameters set before a
+    call meet first). Found on the way,
+    on main too: compile-time evaluation remembered (zdiv 0), worked out for
+    a function that never runs, for the whole compile; later vars made x a
+    literal in zdiv's body (every running call passes 65535), args passed 0
+    for the unread x, and the remembered 0 replaced 5046 (fuzz seeds
+    73069302 and 74142977, size shape). Values are remembered for one round
+    now (eval.cpp). Fuzz on the final code: 12 x TISPLE_FUZZ=12000 (576,338
+    programs), 0 mismatches; on the way 4 runs of 11-12 processes (1,610,000
+    programs), which found only the eval one; ASan and UBSan 12 x 600 seeds
+    (28,970 programs and the whole suite each time), clean, after a local
+    fix of a read past the end of a string in test_mockingboard_lib.cpp:252
+    (`p += 3` past "c5"; not committed, it is the Mockingboard round's). Tests:
+    tests/test_backend_frames.cpp (sizes of three functions copied five
+    times, and copies whose bytes must not meet),
+    tests/programs/fuzz_farm/73069302_reduced.tsp, 74142977.tsp.
 
 ## Gap finder (2026-10-26)
 

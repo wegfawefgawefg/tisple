@@ -129,5 +129,7 @@ void RunBackendWhileTests(TestResults& results);
 void RunBackendMulTests(TestResults& results);
 void RunBackendBytewiseTests(TestResults& results);
 void RunBackendStepsTests(TestResults& results);
+// inlined copies' locals sharing bytes (test_backend_frames.cpp)
+void RunBackendFrameTests(TestResults& results);
 
 } // namespace tisple_tests

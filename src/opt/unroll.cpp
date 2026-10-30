@@ -125,6 +125,7 @@ std::int32_t CopyLocal(Pass& p, std::int32_t function, std::int32_t var) {
     Var copy = VarOf(p, var);
     copy.name = "opt." + std::to_string(p.program->vars.size());
     copy.function = function;
+    copy.made = true;
     std::int32_t id = static_cast<std::int32_t>(p.program->vars.size());
     p.program->vars.push_back(copy);
     p.program->functions[static_cast<std::size_t>(function)].locals.push_back(id);

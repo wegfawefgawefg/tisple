@@ -81,6 +81,13 @@ std::string GenerateInlineProgram(std::uint64_t seed);
 constexpr int kSizePercent = 25;
 std::string GenerateSizeProgram(std::uint64_t seed);
 
+// for one seed in kFramesPercent hundred, the seed's program with small helpers whose copies'
+// locals share bytes, nested in each other's arguments, needed at once, held across calls of
+// a helper that stays a JSR, in loops, in a helper called once (fuzz_gen_frames.cpp), for
+// backend/frame_share.hpp; "" for the others
+constexpr int kFramesPercent = 25;
+std::string GenerateFramesProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

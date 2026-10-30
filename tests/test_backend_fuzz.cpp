@@ -11,7 +11,8 @@
 // ninth, with an interrupt handler of its own, run with interrupts raised early in main
 // ("(irq)"), and one in four a tenth, with calls to inline and divisions to work out
 // ("(inline)"), and one in four an eleventh, with copies the size budget weighs, folds around
-// calls and constant indexes ("(size)").
+// calls and constant indexes ("(size)"), and one in four a twelfth, with copies whose locals
+// share bytes ("(frames)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -324,6 +325,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string sized = GenerateSizeProgram(seed);
         if (!sized.empty()) {
             FuzzOne(seed, " (size)", sized, stats);
+        }
+        std::string frames = GenerateFramesProgram(seed);
+        if (!frames.empty()) {
+            FuzzOne(seed, " (frames)", frames, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

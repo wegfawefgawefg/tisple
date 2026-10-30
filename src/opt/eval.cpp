@@ -10,8 +10,12 @@
 // - A step budget (one step per expression the interpreter works out) keeps compile time
 //   small: kCallSteps for one call, kTotalSteps for every call of one compile. A call over
 //   its budget stays a call, and is not tried again.
-// - Inner calls first, so (f (g 3)) is worked out whole in one round. A call tried once is
-//   remembered with its value for the rest of the compile.
+// - Inner calls first, so (f (g 3)) is worked out whole in one round. A call worked out is
+//   remembered with its value for the round, one that could not be for the rest of the
+//   compile. Not a value for longer: between rounds the passes keep what a body gives its
+//   running calls, not what any argument would give (fuzz seed 73069302: vars made a
+//   parameter every running call passes 65535 a literal, args then passed 0 there, and
+//   (zdiv 0) from a function that never runs, worked out the round before, said 0).
 // - The interpreter runs the function as it is now (the passes keep what it computes) on a
 //   layout of the program made with LayoutProgram's defaults; a program whose data do not fit
 //   there is left as it is.
@@ -22,6 +26,7 @@
 #include "opt/consts.hpp"
 
 #include <algorithm>
+#include <map>
 
 namespace tisple::opt {
 
@@ -37,6 +42,8 @@ struct Evaluator {
     Layout layout;
     Interp in;
     std::uint64_t changes = 0;
+    // the calls worked out in this round (the function, then its arguments' bits)
+    std::map<std::vector<std::uint32_t>, std::int32_t> values;
 };
 
 // a function the interpreter can run now, giving what the 6502 would give then
@@ -76,9 +83,12 @@ std::int32_t Run(Evaluator& ev, std::int32_t function, const std::vector<std::ui
     Pass& p = *ev.p;
     std::vector<std::uint32_t> key = {static_cast<std::uint32_t>(function)};
     key.insert(key.end(), args.begin(), args.end());
-    auto found = p.evaluated.find(key);
-    if (found != p.evaluated.end()) {
+    auto found = ev.values.find(key);
+    if (found != ev.values.end()) {
         return found->second;
+    }
+    if (p.not_evaluated.count(key) > 0) {
+        return -1;
     }
     std::int32_t value = -1;
     if (p.eval_steps < kTotalSteps && Ready(ev)) {
@@ -90,7 +100,11 @@ std::int32_t Run(Evaluator& ev, std::int32_t function, const std::vector<std::ui
             value = MaskToKind(kind, result.value);
         }
     }
-    p.evaluated[key] = value;
+    if (value < 0) {
+        p.not_evaluated.insert(key);
+    } else {
+        ev.values[key] = value;
+    }
     return value;
 }
 

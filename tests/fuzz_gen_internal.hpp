@@ -153,6 +153,12 @@ struct Gen {
     // programs
     Rng size_rng;
     bool size_shapes = false;
+    // where inlined copies' locals get bytes (frame_share.hpp), from a stream of its own
+    // (fuzz_gen_frames.cpp); only in GenerateFramesProgram's programs. frames_once: the
+    // helper called in one place is called
+    Rng frames_rng;
+    bool frames_shapes = false;
+    bool frames_once = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -318,6 +324,9 @@ struct Gen {
     std::string SizeIndex();
     std::string SizeUnroll();
     std::string SizeShape(int depth);
+    // ---- where inlined copies' locals get bytes (fuzz_gen_frames.cpp)
+    std::string FramesHelpers();
+    std::string FramesShape(int depth);
     // the pure helpers common shapes call, after peek2 and poke2
     std::string CommonHelpers();
     T CommonInt();

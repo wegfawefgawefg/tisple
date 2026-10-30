@@ -302,6 +302,11 @@ walk unrolls and unswitches; each round ends with known elements:
     of the callee the body names gets a new local of the caller, a set of one whose let the
     passes took away too (fuzz seed 10010645: it wrote the callee's frame, which shares bytes
     with others).
+  - Frames (2026-10-30): every local the passes make is `Var::made`, and a copy's records
+    the function it came from (`Var::copied_from`); the backend gives them bytes by where
+    the finished code holds their values, a copy's in that function's frame when nothing
+    there can meet it (src/backend/frame_share.hpp), so copies share bytes as the calls'
+    frames did. Results: dogfood.md 54.
   - Returns: the last item (return v) is v; an if or match among the items with arms that
     return makes the rest of the body its other arms, copied into two arms at most and only
     when it is a few nodes that declare nothing (a call whose value nobody uses drops a pure
