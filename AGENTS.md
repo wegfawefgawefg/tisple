@@ -17,8 +17,8 @@ Typed Lisp for the Apple II with its own optimizing 6502 backend. Read
 
 ## File Size
 
-- Target file size is roughly 300-500 lines.
-- If a file is clearly growing past that range, prefer splitting it.
+- Target file size is roughly 300-500 lines; 500 is the maximum.
+- Split a file before it goes past 500, not after.
 - Split by cohesive responsibility, not arbitrarily.
 - Small exceptions are fine when the language or framework strongly favors a
   single file, or when a split would make navigation worse.
