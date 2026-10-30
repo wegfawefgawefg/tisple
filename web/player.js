@@ -344,11 +344,28 @@ async function boot() {
     }
 }
 
+// keeps the screen on while the page is in front (https only; dropped when hidden)
+async function keepAwake() {
+    try {
+        if (navigator.wakeLock && document.visibilityState === "visible") {
+            await navigator.wakeLock.request("screen");
+        }
+    } catch (err) {
+        // no wake lock over plain http: the screen may dim
+    }
+}
+document.addEventListener("visibilitychange", () => {
+    if (state.running) {
+        keepAwake();
+    }
+});
+
 ui.start.addEventListener("pointerdown", async () => {
     if (!state.m) {
         return;
     }
     ui.start.style.display = "none";
+    keepAwake();
     await startAudioOrNot();
     state.last = performance.now();
     state.running = true;

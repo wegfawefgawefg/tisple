@@ -9,7 +9,8 @@ buttons into key presses.
 - `web/publish.py NAME DISK CONFIG`: puts a disk in `~/.local/share/tisple/phone/games`
   with its button layout (CONFIG, kept with the game) and makes it the default. A reload
   on the phone plays it. Every published disk is also kept in `.../phone/disks/<sha1>.dsk`.
-- `web/serve.py --bind <tailscale ip>`: serves the page and the games. Over plain http
+- `web/serve.py --bind <tailscale ip>`: serves the page and the games (a second one on
+  127.0.0.1 behind `tailscale serve --bg 8650` gives https://<machine>.<tailnet>.ts.net/). Over plain http
   the page plays sound through ScriptProcessor; over https (`tailscale serve`) through an
   AudioWorklet.
 - Logs: the page records every key press and release with its machine cycle and posts
