@@ -119,6 +119,8 @@ std::string Program(const Half& aux, const Half& main) {
 (macro pixel_colour (i) (% (+ (* i 7) (/ i 3)) 16))
 (tables.table PIXELS u8 140 pixel_colour)
 (let back (array u8 140) :address 0x0B00)
+(macro cell_bits (i) (% (* i 5) 16))
+(tables.table CELLS u8 35 cell_bits)
 (fn irq () void :interrupt
     (mb.service)
     (set ticks (+ ticks 1)))
@@ -150,6 +152,7 @@ std::string Program(const Half& aux, const Half& main) {
     (dhgr_pixels.row dhgr.PAGE1 0 190 20 (addr_of (at PIXELS 0)))
     (dhgr_pixels.row dhgr.PAGE1 10 191 3 (addr_of (at PIXELS 0)))
     (dhgr_pixels.read dhgr.PAGE1 0 190 20 (addr_of (at back 0)))
+    (dhgr_pixels.cells dhgr.PAGE2 0 191 5 (addr_of (at CELLS 0)))
     ; the aux half from the card's bank 1
     (dhgr.runs dhgr.PAGE2 dhgr.AUX 4 120 )" +
            std::to_string(kH) + R"( (as (ptr u8) 0xD400) dhgr.FROM_CARD1)
@@ -279,6 +282,12 @@ void RunDhgrRunsTests(TestResults& results) {
         back = back && a->cpu.mem[0x0B00 + x] == (x * 7 + x / 3) % 16;
     }
     CHECK(results, back);
+    bool cells = true; // the cells: pixel 4c + k white when bit k of cell c
+    for (int x = 0; x < 140; x++) {
+        int bit = (((x / 4) * 5 % 16) >> (x % 4)) & 1;
+        cells = cells && PixelAt(*a, 0x4000, x, 191) == (bit ? 15 : 0);
+    }
+    CHECK(results, cells);
     // no tick lost: interrupts are off while the card's code runs, but for a moment a row
     uint64_t counted = a->cpu.mem[kTicks] | (a->cpu.mem[kTicks + 1] << 8);
     uint64_t due = a->cpu.cycles / kMbTick;
