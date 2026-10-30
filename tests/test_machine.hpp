@@ -18,6 +18,7 @@ void RunMachineMouseTests(TestResults& results);
 void RunMachineMockingboardTests(TestResults& results);
 void RunMachineAuxTests(TestResults& results);
 void RunMachineVideo80Tests(TestResults& results);
+void RunMachineTapsTests(TestResults& results);
 
 // a fresh machine with these bytes loaded at $6000 and ready to start
 std::unique_ptr<tisple::Apple2> MachineWithBytes(const std::vector<uint8_t>& bytes);

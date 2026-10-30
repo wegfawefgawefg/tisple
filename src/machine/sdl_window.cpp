@@ -38,7 +38,8 @@ struct WindowState {
     VideoLook look = VideoLook::kColor;
     bool reported_stop = false;
     bool mouse_captured = false;
-    float mouse_dx = 0; // motion not yet passed on: under one apple pixel
+    bool tap_held = false; // a click on a tap box (--taps) holds its key
+    float mouse_dx = 0;    // motion not yet passed on: under one apple pixel
     float mouse_dy = 0;
     Framebuffer fb;
     SpeakerRenderer speaker;
@@ -143,8 +144,32 @@ void FeedMouseMotion(WindowState& w, Apple2& a, float xrel, float yrel) {
     }
 }
 
+// with --taps, a click on a box presses its key until the button comes up; the mouse card is
+// left alone. returns true when the event was a click or release
+bool HandleTapEvent(WindowState& w, Apple2& a, const WindowOptions& options, SDL_Event e) {
+    if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && w.tap_held) {
+        w.tap_held = false;
+        ReleaseKey(a);
+        return true;
+    }
+    if (e.type != SDL_EVENT_MOUSE_BUTTON_DOWN || e.button.button != SDL_BUTTON_LEFT) {
+        return e.type == SDL_EVENT_MOUSE_BUTTON_UP || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+    }
+    SDL_ConvertEventToRenderCoordinates(w.renderer, &e); // to the 560 x 384 picture
+    const Tap* tap =
+        TapAt(options.taps, static_cast<int>(e.button.x) / 2, static_cast<int>(e.button.y) / 2);
+    if (tap) {
+        PressKey(a, tap->code);
+        w.tap_held = true;
+    }
+    return true;
+}
+
 // returns true when the event was the mouse's
 bool HandleMouseEvent(WindowState& w, Apple2& a, const WindowOptions& options, const SDL_Event& e) {
+    if (!options.taps.empty()) {
+        return HandleTapEvent(w, a, options, e);
+    }
     switch (e.type) {
     case SDL_EVENT_MOUSE_MOTION:
         FeedMouseMotion(w, a, e.motion.xrel, e.motion.yrel);

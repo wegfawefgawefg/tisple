@@ -34,6 +34,8 @@ void PrintMachineUsage() {
         "  --load-snapshot F | --save-snapshot F   machine state in and out\n"
         "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
+        "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
+        "                      (a game's phone player config, docs/phone.md)\n"
         "numbers take $hex, 0xhex or decimal; a cycle may be given in frames as 30f\n"
         "exit code 3 when the program hits an illegal opcode or jumps into empty rom space\n");
 }
@@ -63,6 +65,8 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.look = VideoLook::kMono;
         } else if (std::strcmp(arg, "--ntsc") == 0) {
             args.look = VideoLook::kNtsc;
+        } else if (std::strcmp(arg, "--taps") == 0 && has_value) {
+            args.taps = argv[++i];
         } else if (std::strcmp(arg, "--window") == 0) {
             args.window = true;
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {

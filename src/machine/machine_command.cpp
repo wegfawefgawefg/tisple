@@ -9,6 +9,7 @@
 #include "machine/png.hpp"
 #include "machine/scripted_input.hpp"
 #include "machine/speaker_audio.hpp"
+#include "machine/taps.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -288,6 +289,10 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         WindowOptions options;
         options.scale = args.scale;
         options.look = args.look;
+        if (args.taps != nullptr && !LoadTaps(args.taps, options.taps, error)) {
+            std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+            return 1;
+        }
         options.max_cycles = args.cycles_given ? args.cycles : 0;
         if (args.program != nullptr) {
             options.title = std::string("Tisple ][ - ") + args.program;

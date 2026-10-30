@@ -4,8 +4,10 @@
 // which is only built when SDL3 is (cmake option TISPLE_SDL).
 
 #include "machine/apple2.hpp"
+#include "machine/taps.hpp"
 
 #include <string>
+#include <vector>
 
 namespace tisple {
 
@@ -14,6 +16,7 @@ struct WindowOptions {
     VideoLook look = VideoLook::kColor; // F2 cycles color, ntsc, mono
     uint64_t max_cycles = 0;            // 0: run until the window closes
     std::string title = "Tisple ][";
+    std::vector<Tap> taps; // --taps: clicks press these keys instead of moving the mouse card
 };
 
 // returns the process exit code; closing the window returns at once

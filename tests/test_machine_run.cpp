@@ -238,6 +238,7 @@ void RunMachineTests(TestResults& results) {
     RunMachineMockingboardTests(results);
     RunMachineAuxTests(results);
     RunMachineVideo80Tests(results);
+    RunMachineTapsTests(results);
 }
 
 } // namespace tisple_tests
