@@ -116,28 +116,38 @@ sprite masked in both memories is about 9,000 cycles.
   aux memory can come out in main and the other way.
 - The unpacker is our own 394 bytes at `$1C00` in both memories (`$1C00`-`$1D89` reserved),
   copied there the first time, aux memory's copy only once a mode needs it. It borrows
-  auxmem's zero page. About 46 cycles a byte out on double hi-res pictures: 0.75 s for a whole
-  16 KB screen. With an interrupt handler, `(auxmem.guard)` first.
+  auxmem's zero page. 26 to 49 cycles a byte out (below): long runs are fast, short matches
+  and literals slow. With an interrupt handler, `(auxmem.guard)` first.
 
 ### The format, by measurement
 
 The format is ZX0 (Einar Saukas's, version 2: forward, the offset's high part inverted), so the
-reference `zx0` and `dzx0` tools read and write the same bytes. Measured on the double hi-res
-mockup for Catwiz (16 screen halves of the round-2 art directions and 4 of the first viewer),
-the mockup's 12 sprite sheets (cat and two mushrooms, picture and mask in each memory), and
-Catwiz's current hi-res art (backdrop, 4 title pictures, sprites, font). Packed size over
-unpacked; cycles a byte out of each 6502 unpacker on the built-in IIe:
+reference `zx0` and `dzx0` tools read and write the same bytes. Measured on Catwiz's double
+hi-res art as tools/dhgr exports it (art/dhgr: 6 screens, packed a memory's half at a time;
+15 lit sprite frames, 15 materials, 3 patches, the icons and both fonts), the double hi-res
+mockup for Catwiz (16 screen halves of the round-2 art directions and 4 of the first viewer,
+and 12 sprite sheets: cat and two mushrooms, picture and mask in each memory), and Catwiz's
+older hi-res art (backdrop, 4 title pictures, sprites, font). Packed size over unpacked, and
+cycles a byte out of each 6502 unpacker on the built-in IIe:
 
-| Data | Bytes | ZX0, reference | ZX0, ours | LZSA2 | LZ4 (HC) | RLE |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| double hi-res screens | 163,840 | 0.216 | 0.223 | 0.238 | 0.297 | 0.693 |
-| double hi-res sprites | 23,008 | 0.194 | 0.195 | 0.207 | 0.309 | 0.572 |
-| Catwiz's hi-res art | 49,529 | 0.250 | 0.259 | 0.271 | 0.329 | 0.576 |
-| cycles a byte, screens / sprites / Catwiz | | | 45.9 / 42.2 / 49.1 | | 32.7 / 35.2 / 32.5 | |
+| Data | Bytes | ZX0, reference | ZX0, ours | LZSA2 | LZ4 (HC) | RLE | zlib -9 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Catwiz screens | 98,304 | 0.063 | 0.065 | 0.072 | 0.090 | 0.353 | 0.066 |
+| Catwiz sprites, materials, the rest | 66,976 | 0.208 | 0.211 | 0.222 | 0.296 | 0.557 | 0.211 |
+| mockup screens | 163,840 | 0.216 | 0.223 | 0.238 | 0.297 | 0.693 | |
+| mockup sprites | 23,008 | 0.194 | 0.195 | 0.207 | 0.309 | 0.572 | |
+| Catwiz's hi-res art | 49,529 | 0.250 | 0.259 | 0.271 | 0.329 | 0.576 | |
 
-- ZX0 packs a quarter smaller than LZ4 for 40% more time unpacking; for art loaded a fight at
-  a time the bytes matter more. LZSA2 is between them in size (its sizes here are from our own
-  near-optimal parse, not the lzsa tool); RLE does not catch the 2-byte colour patterns.
+| Cycles a byte out | Catwiz screens | Catwiz the rest | mockup screens | mockup sprites | hi-res art |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ZX0 (lib/unpack) | 26.5 | 43.7 | 45.9 | 42.2 | 49.1 |
+| LZ4 | 23.1 | 32.1 | 32.7 | 35.2 | 32.5 |
+
+- ZX0 packs a quarter to a third smaller than LZ4 for 15-40% more time unpacking; for art
+  loaded a fight at a time the bytes matter more. It packs as small as zlib -9, which
+  tools/dhgr's memory report used as a stand-in. LZSA2 is between ZX0 and LZ4 in size (its
+  sizes here are from our own near-optimal parse, not the lzsa tool); RLE does not catch the
+  2-byte colour patterns. A Catwiz screen (16 KB) unpacks in about 0.43 s.
 - Our packer is a near-optimal parse, not the reference compressor's exhaustive one (about
   125 ms a KB): a forward pass keeps the six cheapest ways to reach each byte, each with its
   last offset, fed by every offset up to 128 and hash chains at match lengths 3, 8, 24 and 64.
