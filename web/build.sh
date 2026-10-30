@@ -47,7 +47,10 @@ OBJECTS=()
 for src in "${SOURCES[@]}"; do
     obj="web/obj/$(echo "$src" | tr '/' '_').o"
     OBJECTS+=("$obj")
-    if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
+    # a header newer than the object rebuilds it too: a struct that changed size must not link
+    # against code compiled for the old one
+    if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ] ||
+        [ -n "$(find src web -name '*.hpp' -newer "$obj" -print -quit)" ]; then
         extra=()
         [ "$src" = src/emu/chips_impl.cpp ] && extra=(-w)
         em++ "${FLAGS[@]}" "${extra[@]}" -c "$src" -o "$obj"
