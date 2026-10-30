@@ -66,6 +66,8 @@ void CheckSegmentsApart(TestResults& results, const Compiled& c);
 void RunLinkRegionTests(TestResults& results);
 // lib/text80, lib/text40 and lib/auxmem on the machine (test_text_libs.cpp)
 void RunTextLibTests(TestResults& results);
+// lib/dhgr: switches, pixels and bytes on both pages (test_dhgr.cpp)
+void RunDhgrLibTests(TestResults& results);
 // lib/mockingboard with the emulated card (test_mockingboard_lib.cpp)
 void RunMockingboardLibTests(TestResults& results);
 // its effects in line, and the speaker's version left out (test_mockingboard_line.cpp)
