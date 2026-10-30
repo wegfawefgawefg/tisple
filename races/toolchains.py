@@ -385,8 +385,10 @@ def _tisple_objects(listing):
 
 
 def build_tisple(kernel, variant, outdir):
-    src = os.path.join(outdir, "kernel.tsp")
-    shutil.copy(os.path.join(kernel_dir(kernel), variant.source), src)
+    # built where it is, so a program's imports (from a subfolder, which is not a variant)
+    # are found; the entry is the file's main
+    src = os.path.join(kernel_dir(kernel), variant.source)
+    module = os.path.splitext(variant.source)[0]
     listing = run([tisple_binary(), "build", src, "--origin", "0x%04X" % TISPLE_ORIGIN,
                    "--asm", "-o", os.path.join(outdir, "k.bin")], outdir, "tisple build")
     build = Build()
@@ -396,9 +398,9 @@ def build_tisple(kernel, variant, outdir):
     with open(build.listing, "w") as f:
         f.write(listing)
     build.objects = _tisple_objects(listing)
-    entry = [o for o in build.objects if o[0] == "kernel.main"]
+    entry = [o for o in build.objects if o[0] == module + ".main"]
     if not entry:
-        raise BuildError("no kernel.main in the tisple listing")
+        raise BuildError("no %s.main in the tisple listing" % module)
     build.start = TISPLE_ORIGIN
     build.entry = entry[0][1]
     for b in kernel.buffers:

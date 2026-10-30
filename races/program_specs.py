@@ -17,6 +17,7 @@ ORDER = [
     "bytesieve",
     "sort",
     "dhrystone",
+    "parser",
 ]
 
 

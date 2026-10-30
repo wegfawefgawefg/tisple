@@ -36,9 +36,12 @@
 ; lo..split is at most every key in split+1..hi
 (fn partition ((lo u16) (hi u16)) u16
     (let mid u16 (+ lo (>> (- hi lo) 1)))
-    (if (< (at keys mid) (at keys lo)) (swap_keys mid lo))
-    (if (< (at keys hi) (at keys lo)) (swap_keys hi lo))
-    (if (< (at keys hi) (at keys mid)) (swap_keys hi mid))
+    (if (< (at keys mid) (at keys lo))
+        (swap_keys mid lo))
+    (if (< (at keys hi) (at keys lo))
+        (swap_keys hi lo))
+    (if (< (at keys hi) (at keys mid))
+        (swap_keys hi mid))
     (let pivot u16 (at keys mid))
     (let i u16 lo)
     (let j u16 hi)

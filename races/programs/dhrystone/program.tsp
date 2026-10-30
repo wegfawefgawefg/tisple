@@ -8,8 +8,11 @@
 
 (enum Ident (ident_1 ident_2 ident_3 ident_4 ident_5))
 
-(struct Rec ((ptr_comp (ptr Rec)) (discr Ident) (enum_comp Ident) (int_comp i16)
-    (str_comp (array u8 31))))
+(struct Rec ((ptr_comp (ptr Rec))
+        (discr Ident)
+        (enum_comp Ident)
+        (int_comp i16)
+        (str_comp (array u8 31))))
 
 (let checksum u16 :address 0x5F00)
 (let runs u16 :address 0x5F02)
@@ -41,7 +44,9 @@
         (if (= (load (+ a i)) 0)
             (return 0))
         (set i (+ i 1)))
-    (if (< (load (+ a i)) (load (+ b i))) -1 1))
+    (if (< (load (+ a i)) (load (+ b i)))
+        -1
+        1))
 
 (fn proc_7 ((int_1_par_val i16) (int_2_par_val i16)) i16
     (let int_loc i16 (+ int_1_par_val 2))
@@ -110,7 +115,9 @@
     (set bool_glob false))
 
 ; arr_2 is 50 x 50, row by row
-(fn proc_8 ((arr_1_par_ref (ptr i16)) (arr_2_par_ref (ptr i16)) (int_1_par_val i16)
+(fn proc_8 ((arr_1_par_ref (ptr i16))
+        (arr_2_par_ref (ptr i16))
+        (int_1_par_val i16)
         (int_2_par_val i16)) void
     (let int_loc i16 (+ int_1_par_val 5))
     (let row u16 (* (as u16 int_loc) 50))
@@ -139,7 +146,8 @@
     (let int_loc i16 2)
     (let ch_loc u8 0)
     (while (<= int_loc 2)
-        (if (= (func_1 (load (+ str_1_par_ref (as u16 int_loc)))
+        (if (=
+                (func_1 (load (+ str_1_par_ref (as u16 int_loc)))
                     (load (+ str_2_par_ref (as u16 (+ int_loc 1)))))
                 Ident.ident_1)
             (do
@@ -222,7 +230,9 @@
     (set sum_a 0)
     (set sum_b 0)
     (fold (as u16 int_glob))
-    (fold (if bool_glob 1 0))
+    (fold (if bool_glob
+        1
+        0))
     (fold (as u16 ch_1_glob))
     (fold (as u16 ch_2_glob))
     (fold (as u16 (at arr_1_glob 8)))
