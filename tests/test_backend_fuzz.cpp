@@ -16,8 +16,9 @@
 // their parameters on ("(io)", also at -O0: "(io -O0)"), and one in four a thirteenth each,
 // with const data ("(data)", also at -O0) and with functions in separate stretches of memory
 // and tail calls between them ("(stretch)"), and one in four a fourteenth, with Hoare's
-// partition loops ("(partition)", also at -O0); and a seed in four's own program with a
-// tighter size budget ("(squeeze N)", N from 1 to 10 by the seed).
+// partition loops ("(partition)", also at -O0), and one in four a fifteenth, with places
+// reached through known addresses ("(places)", also at -O0); and a seed in four's own program
+// with a tighter size budget ("(squeeze N)", N from 1 to 10 by the seed).
 
 #include "backend/size_budget.hpp"
 #include "fuzz_gen.hpp"
@@ -371,6 +372,13 @@ void RunBackendFuzzTests(TestResults& results) {
             tisple::OptOptions o0;
             o0.level = 0;
             FuzzOne(seed, " (partition -O0)", partition, stats, IrqPlan(), o0);
+        }
+        std::string places = GeneratePlacesProgram(seed);
+        if (!places.empty()) {
+            FuzzOne(seed, " (places)", places, stats);
+            tisple::OptOptions o0;
+            o0.level = 0;
+            FuzzOne(seed, " (places -O0)", places, stats, IrqPlan(), o0);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

@@ -448,6 +448,9 @@ std::string Gen::Stmt(int depth) {
     if (late_shapes && late_rng.Chance(10)) {
         return LateWait();
     }
+    if (places_shapes && places_rng.Chance(25)) {
+        return PlacesShape(depth);
+    }
     if (partition_shapes && depth > 0 && partition_rng.Chance(15)) {
         return PartitionLoop(depth);
     }
@@ -682,6 +685,9 @@ std::string Gen::Program() {
     if (stretch_shapes) {
         text += StretchHelpers();
     }
+    if (places_shapes) {
+        text += PlacesHelpers();
+    }
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;
@@ -848,6 +854,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     }
     for (int i = 0; i < 4; i++) {
         g.partition_rng.Next();
+    }
+    g.places_rng.s = seed * 0x94D049BB133111EBull + 0xA54FF53Bull;
+    if (g.places_rng.s == 0) {
+        g.places_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.places_rng.Next();
     }
 }
 
@@ -1016,6 +1029,16 @@ std::string GeneratePartitionProgram(std::uint64_t seed) {
         return "";
     }
     g.partition_shapes = true;
+    return g.Program();
+}
+
+std::string GeneratePlacesProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.places_rng.Chance(kPlacesPercent)) {
+        return "";
+    }
+    g.places_shapes = true;
     return g.Program();
 }
 
