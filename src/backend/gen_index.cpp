@@ -188,39 +188,53 @@ bool UseCounterDerived(Gen& g, PlaceRef& place, TypeId type) {
     return true;
 }
 
+bool SameByteValue(const AsmValue& a, const AsmValue& b) {
+    return a.sym == b.sym && a.offset == b.offset && a.part == b.part;
+}
+
 // a function keeps this many page pointers at most (they live in zero page)
-constexpr std::size_t kMaxPagePointers = 4;
+constexpr std::size_t kMaxPagePointers = 6;
 
-} // namespace
+// the known pointer at base's page for this high byte, or sym -1
+AsmValue KnownPage(const Gen& g, const AsmValue& base, const ByteRef& high) {
+    for (const PageKnown& k : g.page_known) {
+        if (SameByteValue(k.base, base) && k.high.kind == high.kind &&
+            SameByteValue(k.high.value, high.value)) {
+            return k.ptr;
+        }
+    }
+    return AsmValue();
+}
 
-bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
-    const Opnd& index = place.index;
-    if (place.pointer || !place.has_index || place.mult != 1 || place.delta != 0 ||
-        place.site < 0 || index.size != 2 || index.in_a || index.index.used) {
+// does the site need a page pointer it has not got yet for base
+bool NeedsNewPage(const Gen& g, ExprId site, const AsmValue& base, const ByteRef& high) {
+    if (KnownPage(g, base, high).sym >= 0) {
         return false;
     }
-    if (!IsScalarKind(KindOf(*g.program, type)) || TypeOf(*g.program, type).size != 1) {
-        return false;
+    for (const PagePointer& p : g.page_ptrs) {
+        if (p.site == site && SameByteValue(p.base, base)) {
+            return false;
+        }
     }
-    ByteKind high = index.b[1].kind;
-    if (index.b[0].kind != ByteKind::Mem || (high != ByteKind::Mem && high != ByteKind::Imm) ||
-        IsSteppedIndex(g, index)) {
-        return false;
+    return true;
+}
+
+// the page pointer for base indexed by index (its high byte worked out now, unless known)
+AsmValue PagePointerAt(Gen& g, ExprId site, const AsmValue& base, const Opnd& index) {
+    const ByteRef& high = index.b[1];
+    AsmValue known = KnownPage(g, base, high);
+    if (known.sym >= 0) {
+        return known;
     }
-    AsmValue base = place.base;
-    base.offset = static_cast<std::int32_t>((base.offset + place.cursor.address) & 0xFFFF);
     const PagePointer* found = nullptr;
     for (const PagePointer& p : g.page_ptrs) {
-        if (p.site == place.site && p.base.sym == base.sym && p.base.offset == base.offset) {
+        if (p.site == site && SameByteValue(p.base, base)) {
             found = &p;
         }
     }
     if (!found) {
-        if (g.page_ptrs.size() >= kMaxPagePointers) {
-            return false;
-        }
         PagePointer p;
-        p.site = place.site;
+        p.site = site;
         p.base = base;
         // its low byte is set once at the function's start
         p.ptr = NewLoopPointer(g, true);
@@ -235,11 +249,52 @@ bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
         OpA(g, Mn::ADC, SymImmOpnd(base, 2), 1);
         Emit(g, Mn::STA, Mode::Abs, SymValue(ptr.sym, ptr.offset + 1));
     }
+    PageKnown k;
+    k.ptr = ptr;
+    k.base = base;
+    k.high = high;
+    g.page_known.push_back(k);
+    return ptr;
+}
+
+} // namespace
+
+bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
+    const Opnd& index = place.index;
+    if (place.pointer || !place.has_index || place.mult != 1 || place.delta != 0 ||
+        place.site < 0 || index.size != 2 || index.in_a || index.index.used) {
+        return false;
+    }
+    // a byte, or a u16 of a split array: its high byte a plane away, through a pointer of its own
+    std::uint32_t size = TypeOf(*g.program, type).size;
+    bool word = size == 2 && place.cursor.split && place.cursor.stride > 1;
+    if (!IsScalarKind(KindOf(*g.program, type)) || (size != 1 && !word)) {
+        return false;
+    }
+    ByteKind high = index.b[1].kind;
+    if (index.b[0].kind != ByteKind::Mem || (high != ByteKind::Mem && high != ByteKind::Imm) ||
+        IsSteppedIndex(g, index)) {
+        return false;
+    }
+    AsmValue base = place.base;
+    base.offset = static_cast<std::int32_t>((base.offset + place.cursor.address) & 0xFFFF);
+    AsmValue base2 = base;
+    base2.offset = static_cast<std::int32_t>((base.offset + place.cursor.stride) & 0xFFFF);
+    std::size_t needed = NeedsNewPage(g, place.site, base, index.b[1]) ? 1 : 0;
+    if (word && NeedsNewPage(g, place.site, base2, index.b[1])) {
+        needed++;
+    }
+    if (g.page_ptrs.size() + needed > kMaxPagePointers) {
+        return false;
+    }
+    // (a read of (at came_from next), then its store: the same pointer)
+    AsmValue ptr = PagePointerAt(g, place.site, base, index);
+    AsmValue ptr2 = word ? PagePointerAt(g, place.site, base2, index) : AsmValue();
     Opnd low = index;
     low.size = 1;
     place.pointer = true;
     place.ptr = ptr;
-    place.ptr2 = AsmValue();
+    place.ptr2 = ptr2;
     place.cursor.address = 0;
     place.index = low;
     place.counter = -1;

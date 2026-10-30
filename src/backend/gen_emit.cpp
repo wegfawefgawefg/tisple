@@ -184,6 +184,30 @@ void Unsupported(Gen& g, ExprId id, const char* what) {
          std::string("the 6502 backend does not support ") + what + " yet");
 }
 
+namespace {
+
+// a write to memory at value: the page pointers known through that byte, or whose high byte it
+// may be, are not any more
+void ForgetPagesWritten(Gen& g, Mode mode, const AsmValue& value) {
+    if (g.page_known.empty()) {
+        return;
+    }
+    bool direct = mode == Mode::Abs || mode == Mode::Zp;
+    std::vector<PageKnown> kept;
+    for (const PageKnown& k : g.page_known) {
+        AsmValue high = SymValue(k.ptr.sym, k.ptr.offset + 1);
+        bool hit = direct ? SameValue(value, high) || SameValue(value, k.ptr) ||
+                                (k.high.kind == ByteKind::Mem && SameValue(value, k.high.value))
+                          : true;
+        if (!hit) {
+            kept.push_back(k);
+        }
+    }
+    g.page_known = kept;
+}
+
+} // namespace
+
 void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
     g.out->push_back(MakeIns(mn, mode, value));
     g.cost += static_cast<std::uint64_t>(ItemCycles(g.be->as, g.out->back())) * LoopWeight(g);
@@ -213,6 +237,7 @@ void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
     }
     bool direct = mode == Mode::Abs || mode == Mode::Zp;
     bool pointer = mode == Mode::IndY || mode == Mode::IndX;
+    ForgetPagesWritten(g, mode, value);
     for (RegContent& c : g.reg) {
         if (!c.known || !c.mem) {
             continue;
@@ -398,6 +423,7 @@ void Jump(Gen& g, std::int32_t label) {
 void ForgetRegs(Gen& g) {
     g.reg[0].known = false;
     g.reg[1].known = false;
+    g.page_known.clear();
 }
 
 void SourceNote(Gen& g, const Loc& loc) {

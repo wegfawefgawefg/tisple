@@ -239,6 +239,15 @@ struct PagePointer {
     AsmValue ptr;
 };
 
+// a page pointer whose high byte now is its base's plus the index high byte `high` (a byte in
+// memory or a number), from the code generated so far up to a label, a call or a write to
+// either (gen_index.cpp): another (at table i) of the same table and index reads through it
+struct PageKnown {
+    AsmValue ptr;
+    AsmValue base;
+    ByteRef high;
+};
+
 // a u16 variable a while loop steps only by one, whose page pointers keep their high bytes up
 // to date across the loop (gen_follow.cpp): the labels after its steps (true: up), after its
 // other sets, and the page pointers (indices into Gen::page_ptrs) it indexes
@@ -345,6 +354,7 @@ struct Gen {
     std::vector<SteppedVar> stepped;
     std::vector<StepFixup> step_fixups;
     std::vector<PagePointer> page_ptrs;
+    std::vector<PageKnown> page_known;
     std::vector<Follow> follows; // of the while loop being generated
     // u16 for counters replaced by a let of their body (ReplacedLoop): counter, let, and the
     // let minus the counter
