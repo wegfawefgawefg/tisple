@@ -18,9 +18,11 @@ import html
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -80,7 +82,33 @@ def add_game(out, name, disk, config, tisple, frames):
     if game.get("mockingboard"):
         cmd += ["--mockingboard", str(game["mockingboard"])]
     run(cmd)
+    squeeze_png(shot)
     return game
+
+
+# tisple writes its pngs stored, not deflated; the site wants them small
+def squeeze_png(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    chunks = []
+    idat = b""
+    at = 8
+    while at < len(data):
+        size = struct.unpack(">I", data[at:at + 4])[0]
+        kind = data[at + 4:at + 8]
+        body = data[at + 8:at + 8 + size]
+        at += 12 + size
+        if kind == b"IDAT":
+            idat += body
+            if data[at + 4:at + 8] != b"IDAT":
+                chunks.append((b"IDAT", zlib.compress(zlib.decompress(idat), 9)))
+        else:
+            chunks.append((kind, body))
+    with open(path, "wb") as f:
+        f.write(data[:8])
+        for kind, body in chunks:
+            f.write(struct.pack(">I", len(body)) + kind + body)
+            f.write(struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF))
 
 
 def picker_html(entries):

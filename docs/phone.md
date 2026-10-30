@@ -17,7 +17,28 @@ buttons into key presses.
   them to `.../phone/logs/<game>-<session>.json` every 30 s and when it goes to the
   background, so a playtest can be replayed on the desktop against the disk it was made on.
 - A game's config may list `taps`: boxes in hi-res pixels (280 x 192) with the key each
-  presses, so the screen itself takes taps (Witchdog: the dice, the enemies, BARK, END).
+  presses, so the screen itself takes taps (Catwiz: the dice, reroll, the enemies, meow).
 - `tisple machine --window --taps <config>` reads the same `taps` for the desktop window:
   a left click on a box presses its key until the button comes up.
 - `?autostart` runs without the tap and without sound, for headless checks.
+
+## The web demo
+
+`web/pages.py OUT [--game NAME DISK CONFIG]...` builds the same player as a static site for
+GitHub Pages: a picker page (`index.html`, a screenshot of each disk made with
+`tisple machine`), the player as `play.html`, and disks built from `programs/` with the
+`game.json` kept beside each program. `--game` adds a disk built elsewhere with its config,
+first in the picker; Catwiz: `--game catwiz <catwiz>/build/catwiz.dsk
+<catwiz>/tools/phone/catwiz.json`. `games/index.json` says `"static": true`, so the page
+keeps no log and shows a games button back to the picker. Only our roms are in it (the
+player has no others); `web/rom_check.py OUT` then looks for byte runs of Apple's roms and
+DOS and fails the build on a hit.
+
+Publishing it to the `gh-pages` branch (Pages set to that branch, root):
+
+```sh
+web/pages.py /tmp/tisple-site --game catwiz ../catwiz/build/catwiz.dsk ../catwiz/tools/phone/catwiz.json
+git worktree add --orphan -b gh-pages ../tisple-gh-pages   # once; later: git worktree add ../tisple-gh-pages gh-pages
+rsync -a --delete --exclude .git --exclude .tisple-pages /tmp/tisple-site/ ../tisple-gh-pages/
+git -C ../tisple-gh-pages add -A && git -C ../tisple-gh-pages commit -m "Web demo" && git -C ../tisple-gh-pages push origin gh-pages
+```
