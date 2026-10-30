@@ -49,6 +49,10 @@ std::string Gen::InlineHelpers() {
     text += "(fn id ((a u8) (b u16)) u16\n    (let q u16 (/ b (| b 1)))\n";
     text += "    (if (= a " + Num(r.Below(4)) + ") (return (% b (| b 1))))\n";
     text += "    (+ q (as u16 (ia a (ic a)))))\n";
+    // returns from match clauses, one of them only now and then, and a rest after the match
+    text += "(fn im ((x u8)) u8\n    (match (& x 3) (0 (if (> ig " + Num(r.Below(256)) +
+            ") (return 1))) (1 (return (+ x ig))) (_ (set ig (+ ig 1))))\n";
+    text += r.Chance(50) ? "    (set ih (+ ih 1)) x)\n" : "    (let z u8 (+ x ig)) (set ig z) z)\n";
     // a return from inside a loop: stays a function
     text += "(fn ie ((x u8)) u8\n    (for i u8 0 " + Num(2 + r.Below(6)) +
             " (if (= (& (+ i x) 3) 0) (return i)))\n    (set ig (+ ig x))\n    x)\n";
@@ -100,12 +104,71 @@ std::string Gen::InlineDivision() {
     return "(set " + g + " " + value + ")";
 }
 
+// a pointer at a literal element of wb or pt, loads and stores at literal counts from it and
+// from a copy of it, and a store at a count not known; all inside the array (provenance: a
+// pointer into an array reaches only it)
+std::string Gen::InlineElements() {
+    Rng& r = inline_rng;
+    bool big = r.Chance(60);
+    std::string array = big ? "wb" : "pt";
+    int count = big ? 1024 : 16;
+    int base = r.Below(count - 8);
+    std::string q = Fresh("q");
+    std::string c = Fresh("q");
+    std::vector<const VarInfo*> bytes = VarsOf(T::U8, true);
+    std::string g = bytes[static_cast<std::size_t>(r.Below(static_cast<int>(bytes.size())))]->name;
+    std::string text = "(do (let " + q + " (ptr u8) (addr_of (at " + array + " " + Num(base) +
+                       "))) (let " + c + " (ptr u8) " + q + ")";
+    for (int i = 0; i < 2 + r.Below(3); i++) {
+        std::string ptr = r.Chance(50) ? q : c;
+        std::string at = r.Chance(70) ? "(+ " + ptr + " " + Num(r.Below(count - base)) + ")"
+                                      : "(- " + ptr + " " + Num(r.Below(base + 1)) + ")";
+        switch (r.Below(4)) {
+        case 0:
+            text += " (store " + at + " " + Expr(T::U8, 1) + ")";
+            break;
+        case 1:
+            text += " (set " + g + " (+ " + g + " (load " + at + ")))";
+            break;
+        case 2:
+            text += " (store " + at + " (+ (load " + at + ") 1))";
+            break;
+        default:
+            text += " (store (+ " + ptr + " (as u16 (& " + Var(T::U8) + " 7))) " + g + ")";
+            break;
+        }
+    }
+    return text + ")";
+}
+
+// a loop writing one field of an element and reading another field (or the same) of any
+std::string Gen::InlineFields() {
+    Rng& r = inline_rng;
+    std::string k = Fresh("k");
+    std::vector<const VarInfo*> bytes = VarsOf(T::U8, true);
+    std::string g = bytes[static_cast<std::size_t>(r.Below(static_cast<int>(bytes.size())))]->name;
+    std::string field = r.Chance(70) ? "b" : "a";
+    std::string value = field == "b" ? Expr(T::I16, 1) : Expr(T::U8, 1);
+    std::string mask = "7";
+    return "(for " + k + " u8 0 " + Num(2 + r.Below(20)) + " (set (at sa " + Num(r.Below(8)) + " " +
+           field + ") " + value + ") (set " + g + " (+ (at sa (& (+ " + Var(T::U8) + " " + k +
+           ") " + mask + ") a) 1)))";
+}
+
 std::string Gen::InlineShape(int depth) {
     Rng& r = inline_rng;
     std::vector<const VarInfo*> bytes = VarsOf(T::U8, true);
     std::string g = bytes[static_cast<std::size_t>(r.Below(static_cast<int>(bytes.size())))]->name;
     std::string dest = r.Chance(30) ? "ig" : g;
-    switch (r.Below(10)) {
+    switch (r.Below(14)) {
+    case 10:
+        return "(set " + dest + " (im " + Expr(T::U8, 1) + "))";
+    case 11:
+        return "(im " + Var(T::U8) + ")";
+    case 12:
+        return InlineElements();
+    case 13:
+        return InlineFields();
     case 0:
         return "(ib " + Expr(T::U16, 1) + ")";
     case 1:

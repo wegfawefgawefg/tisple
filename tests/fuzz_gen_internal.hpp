@@ -303,6 +303,8 @@ struct Gen {
     std::string InlineHelpers();
     T InlineInt();
     std::string InlineDivision();
+    std::string InlineElements();
+    std::string InlineFields();
     std::string InlineShape(int depth);
     // the pure helpers common shapes call, after peek2 and poke2
     std::string CommonHelpers();
