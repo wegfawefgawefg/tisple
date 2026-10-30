@@ -217,8 +217,8 @@ def geomean_row(by_kernel, compilers):
     return "| geomean, x the fastest | %s | | %s |" % (" | ".join(cells), tisple)
 
 
-def summary_table(by_kernel, compilers):
-    head = "| Kernel | " + " | ".join(compilers) + " | Winner | Tisple / best other |"
+def summary_table(by_kernel, compilers, label="Kernel"):
+    head = "| %s | " % label + " | ".join(compilers) + " | Winner | Tisple / best other |"
     lines = [head, "| --- |" + " ---: |" * len(compilers) + " --- | ---: |"]
     for kernel, results in by_kernel:
         best = best_by_compiler(results, compilers)
@@ -313,7 +313,7 @@ def main():
         json.dump([r.as_json() for r in results], f, indent=1)
 
     sections = ["Cycles / bytes, best setting of each compiler:", "",
-                summary_table(by_kernel, compilers)]
+                summary_table(by_kernel, compilers, "Program" if args.programs else "Kernel")]
     for k, rs in by_kernel:
         sections += ["", kernel_table(k, rs, compilers)]
         if args.variants:

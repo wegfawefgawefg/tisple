@@ -88,6 +88,39 @@ $5F00, an input generator and a reference), then `kernels/<name>/kernel.c` and
 `kernel.tsp`. Keep both idiomatic: C that a 6502 C programmer would write, Tisple as the
 language docs write it.
 
+## The program race
+
+Ten whole programs instead of kernels: a text adventure parser, Dhrystone, LZ4, a bytecode
+interpreter, BFS, a sprite blitter, a tile scroller, decimal scores and a bignum, sorting,
+BYTE's sieve. Results and the losses: `docs/races.md`, "Program race".
+
+```sh
+races/run.sh --programs                       # all ten, every compiler (~3 s on 16 jobs)
+races/run.sh --programs --kernels vm,lz4 --variants
+races/run.sh --programs --update-doc          # rewrite the program tables in docs/races.md
+```
+
+Everything else is the kernel race's: the same builds, settings, buffer modes, clock
+(main's first instruction to its RTS), byte counts and output checks. Builds go to
+`races/out/programs/`, results to `races/out/programs/results.json`.
+
+- `program_specs.py` lists the programs; each `programs/<name>/` has `spec.py` (`PROGRAM`, a
+  `kernels.Kernel`: buffers, an input generator, a Python reference), `program.c` and
+  `program.tsp`, and other ways to write it (`loop.c`, `index.c`, `pointer.tsp`, ...),
+  raced like the kernels' `lib.c`.
+- Each program folds its results into a u16 checksum at `$5F00`, the same fold in every
+  language (`a += v; b += a`, then `a ^ b`). The reference computes the same checksum and
+  the output buffers; a difference is a wrong result.
+- Inputs are buffers in `$2000`-`$5FFF` written when main is entered (scripts, maps,
+  bytecode, compressed data), so no compiler folds the work away; tables a program would
+  carry (a vocabulary, tiles, sprite shapes) are its own constants.
+- Tisple programs are built where they are (`tisple build programs/<name>/program.tsp`), so
+  a program may import modules from a subfolder (one that is not a variant).
+- Oscar64 has no `register` keyword; `include/race.h` defines it away for Oscar64.
+
+To add one: a folder with the three files, and its name in `program_specs.ORDER`. Write
+both versions as a programmer of that language would, with the same algorithm and data.
+
 ## Random programs
 
 The kernels are 13 programs written for the race. The random race takes the fuzz

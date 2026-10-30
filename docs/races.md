@@ -5,8 +5,9 @@ Started 2026-10-26. Tisple against the best 6502 C compilers, cc65 V2.19, LLVM-M
 cycle-exact simulator, so all four are on one clock. `races/README.md` has the versions,
 download URLs, flags and the timing rules; `races/run.sh` reruns everything and prints the
 tables below. Add a dated note when something changes; regenerate the tables with
-`races/run.sh --update-doc`. The same race on thousands of random programs is the last
-section, "Random programs".
+`races/run.sh --update-doc`. Ten whole programs (a parser, Dhrystone, a decompressor, a
+bytecode interpreter, ...) are raced the same way in "Program race"; the same race on
+thousands of random programs is the last section, "Random programs".
 
 In short: the kernel is `main` in every language. Its inputs are written into fixed
 buffers when main is entered, so no compiler can fold them, and the cycles count from
@@ -428,6 +429,275 @@ inputs; before, gaps ran them on zeroed buffers, where strlen's string was empty
   `index.c` (`sprites[i].x`) rather than `kernel.c` (`struct sprite *s`).
 - Oscar64 misreads `(uint16_t)a[i]` when `a` is a macro for a constant pointer (it applies
   `[i]` to the cast), so the C kernels write `(uint16_t)(a[i])`.
+
+## Program race
+
+Started 2026-10-30. The kernels are single loops, so this race takes ten programs of 24 to
+450 lines, each written once in C and once in Tisple the way a programmer of that language
+would write it: globals and `uint8_t` indexes in the C as cc65 users write it, the C
+library where a C programmer would reach for it (`strcpy`, `strcmp`, `memcmp`, `memset`),
+`match`, macros for tables and split struct arrays in the Tisple, and nothing in either
+that the other cannot say. `races/run.sh --programs` runs them with the kernel race's
+machinery (same simulator, flags, buffer modes, byte counts, fastest correct build per
+compiler); `races/README.md`, "The program race", has the layout. Every program folds its
+results into a u16 checksum at $5F00 the same way in both languages, and the harness checks
+it and the output buffers against a Python reference (`spec.py` beside each program). A
+wrong result is a failure, not a slow time.
+
+| Program | What it does | Lines C / Tisple |
+| --- | --- | ---: |
+| bytesieve | BYTE's sieve as published (Gilbreath 1981): 10 passes, 8191 flags, `int` | 30 / 24 |
+| sort | quicksort of 1024 words with an explicit stack and an insertion pass, a stable insertion sort of 64 records, a high-score table | 151 / 141 |
+| dhrystone | Dhrystone 2.1, 16-bit ints, 200 runs | 239 / 248 |
+| parser | text adventure: 300 typed commands upper-cased, split, looked up in a 46-word vocabulary, dispatched to verb handlers | 351 / 447 |
+| lz4 | LZ4 block decompression of 8 KB (text and a tile map) | 55 / 62 |
+| vm | a 16-bit stack machine's interpreter running 29443 bytecodes (sort, gcds, Fibonacci, hash, sieve) | 114 / 173 |
+| bfs | breadth-first search on a 64 x 48 grid, 6 paths walked back and marked | 69 / 72 |
+| blit | 24 masked 16 x 16 sprites shifted into a bitmap with save-under, 8 frames | 115 / 115 |
+| scroll | a 128 x 24 tile map drawn at a pixel scroll, animated tiles, a player, 8 frames | 98 / 95 |
+| bignum | 8-digit decimal scores and a high-score table, then 100! printed by bignum division | 138 / 128 |
+
+Other ways each is written, raced too (the table names the one that won): `unsigned.c`
+(bytesieve with unsigned variables), `loop.c` (parser's word compare as a loop, not
+`memcmp`), `index.c` (lz4 with indexes, not pointers), `twoindex.c` (bignum's digits
+reversed with two indexes), and `pointer.tsp` (lz4, blit and scroll with pointers instead of
+u16 indexes, as their C has).
+
+<!-- program race results: begin (races/run.sh --programs --update-doc writes this part) -->
+
+Cycles / bytes, best setting of each compiler:
+
+| Program | cc65 | llvm-mos | oscar64 | tisple | Winner | Tisple / best other |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| bytesieve | 20598829 / 328 | 22068852 / 4103 | 14349970 / 177 | 12090810 / 202 | tisple | 0.84 |
+| sort | 3820411 / 2520 | 2192144 / 6261 | 1202552 / 1452 | failed | oscar64 | - |
+| dhrystone | 2205531 / 3200 | 951470 / 2493 | 391865 / 1289 | 858590 / 3465 | oscar64 | 2.19 |
+| parser | 8244051 / 2402 | 1782671 / 6951 | 2280481 / 1974 | 1436999 / 1758 | tisple | 0.81 |
+| lz4 | 3199397 / 838 | 1212242 / 605 | 901828 / 372 | 1183148 / 457 | oscar64 | 1.31 |
+| vm | 12676676 / 2775 | 7360089 / 4569 | 5628776 / 1137 | 4471198 / 1243 | tisple | 0.79 |
+| bfs | 10098451 / 1074 | 5643078 / 2087 | 3157011 / 726 | 4818412 / 602 | oscar64 | 1.53 |
+| blit | 6688330 / 1642 | 4499903 / 2278 | 2186965 / 873 | 2365823 / 737 | oscar64 | 1.08 |
+| scroll | 45569306 / 1078 | 12854461 / 1813 | 8869763 / 459 | 12642268 / 689 | oscar64 | 1.43 |
+| bignum | 10148189 / 1807 | 6656057 / 5322 | 3365122 / 840 | 1699799 / 1255 | tisple | 0.51 |
+| geomean, x the fastest | 3.73x | 1.85x | 1.17x | 1.24x (9 of 10) | | 1.070 |
+
+### bytesieve: BYTE's sieve as published: 10 passes, 8191 flags, 1899 primes
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 20598829 | 328 | -Oirs -Cl const unsigned.c |
+| llvm-mos | 22068852 | 4103 | -O3 extern |
+| oscar64 | 14349970 | 177 | -O2 const unsigned.c |
+| tisple | 12090810 | 202 | - |
+
+Winner: tisple. Tisple / best other: 0.84.
+
+### sort: Quicksort (explicit stack) and insertion sort of 1024 words, a stable record sort, a high-score table
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 3820411 | 2520 | -Oirs -Cl const |
+| llvm-mos | 2192144 | 6261 | -O3 const |
+| oscar64 | 1202552 | 1452 | -O3 const |
+| tisple | failed | | run: error kernel cycle limit |
+
+Winner: oscar64. Tisple / best other: -.
+
+### dhrystone: Dhrystone 2.1, 16-bit ints, 200 runs
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 2205531 | 3200 | -Oirs -Cl const |
+| llvm-mos | 951470 | 2493 | -O2 const |
+| oscar64 | 391865 | 1289 | -O3 -Ox -OM const |
+| tisple | 858590 | 3465 | - |
+
+Winner: oscar64. Tisple / best other: 2.19.
+
+### parser: Text adventure: 300 typed commands tokenized, looked up, dispatched
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 8244051 | 2402 | -Oirs -Cl const |
+| llvm-mos | 1782671 | 6951 | -O3 const loop.c |
+| oscar64 | 2280481 | 1974 | -O3 const loop.c |
+| tisple | 1436999 | 1758 | - |
+
+Winner: tisple. Tisple / best other: 0.81.
+
+### lz4: LZ4 block decompression: 8 KB of text and tile map
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 3199397 | 838 | -Oirs -Cl const |
+| llvm-mos | 1212242 | 605 | -O3 extern |
+| oscar64 | 901828 | 372 | -O2 const |
+| tisple | 1183148 | 457 | - |
+
+Winner: oscar64. Tisple / best other: 1.31.
+
+### vm: Bytecode interpreter: a stack machine sorting, gcds, Fibonacci, sieve
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 12676676 | 2775 | -Oirs -Cl extern |
+| llvm-mos | 7360089 | 4569 | -O2 const |
+| oscar64 | 5628776 | 1137 | -O3 -Ox -OM const |
+| tisple | 4471198 | 1243 | - |
+
+Winner: tisple. Tisple / best other: 0.79.
+
+### bfs: Pathfinding: breadth-first search on a 64 x 48 grid, 6 paths
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 10098451 | 1074 | -Oirs -Cl const |
+| llvm-mos | 5643078 | 2087 | -O2 const |
+| oscar64 | 3157011 | 726 | -O3 const |
+| tisple | 4818412 | 602 | - |
+
+Winner: oscar64. Tisple / best other: 1.53.
+
+### blit: Sprite blitter: 24 masked 16 x 16 sprites shifted into a bitmap, background saved and restored, 8 frames
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 6688330 | 1642 | -Oirs -Cl const |
+| llvm-mos | 4499903 | 2278 | -O3 extern |
+| oscar64 | 2186965 | 873 | -O3 -Ox -OM const |
+| tisple | 2365823 | 737 | pointer.tsp |
+
+Winner: oscar64. Tisple / best other: 1.08.
+
+### scroll: Tile map scroller: 32 x 24 tiles of a 128-wide map at pixel scroll, animated tiles, a player, 8 frames
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 45569306 | 1078 | -Oirs -Cl const |
+| llvm-mos | 12854461 | 1813 | -O2 extern |
+| oscar64 | 8869763 | 459 | -O3 const |
+| tisple | 12642268 | 689 | pointer.tsp |
+
+Winner: oscar64. Tisple / best other: 1.43.
+
+### bignum: Decimal scores and a high-score table, then 100! printed by bignum division
+
+| Compiler | Cycles | Bytes | Best setting |
+| --- | ---: | ---: | --- |
+| cc65 | 10148189 | 1807 | -Oirs -Cl extern twoindex.c |
+| llvm-mos | 6656057 | 5322 | -O2 const twoindex.c |
+| oscar64 | 3365122 | 840 | -O2 striped twoindex.c |
+| tisple | 1699799 | 1255 | - |
+
+Winner: tisple. Tisple / best other: 0.51.
+
+<!-- program race results: end -->
+
+### Where Tisple loses, and why (2026-10-30, 02e5697)
+
+Tisple is fastest on four programs (bignum 0.51, vm 0.79, parser 0.81, bytesieve 0.84),
+behind Oscar64 on five (blit 1.08, lz4 1.31, scroll 1.43, bfs 1.53, dhrystone 2.19), and
+miscompiles sort. The geometric mean of Tisple over the fastest other compiler is 1.07 on
+the nine it runs: the kernels' 0.6 to 0.9 does not carry over to whole programs. Oscar64 is
+again the compiler to beat; cc65 is 2x to 5x behind everyone. From `tisple race --profile`
+and the listings:
+
+- **dhrystone 2.19.** Oscar64 inlines every procedure into main and then sees that
+  `Ptr_Glob` is only ever `&Glob_Rec` and that `Int_1_Loc` is 3 whenever Proc_8 is called:
+  the record fields and `Arr_2_Glob[8][7]` become absolute addresses (`INC $6398`), the
+  `* 50` row multiplies disappear. Tisple keeps `ptr_glob` a pointer read through `(p),Y`,
+  and `int_1_loc` has its address taken (`proc_2`), so nothing about it is known: proc_8's
+  `(* (as u16 int_loc) 50)` is a multiply every run. The record copy `*Ptr_Comp = *Ptr_Glob`
+  (37 bytes) costs Tisple 797 cycles a run, 19% of its time: it loads every byte into zero
+  page and then stores every byte through the pointer, 21 cycles a byte; Oscar64 copies
+  with `LDA abs,Y / STA abs,Y` at 14. Tisple's `str_copy` loop (16 cycles a byte) is as good
+  as a library `strcpy`; the C compilers fold the constant strings' copies instead.
+- **bfs 1.53.** `visit` (4 calls a cell) is 57% of the time and is not inlined: it is over
+  the 24-node limit for every-call inlining (`kMaxInlineExprs`). Each call pays the JSR, the
+  RTS, its arguments, and sets up its own pointers from scratch (the zero low bytes of three
+  plane pointers, `came_from`'s high byte twice, two pointers into the split `queue`).
+  Oscar64 inlines all four and reaches the neighbours from one cell pointer with `Y`
+  offsets.
+- **scroll 1.43** (`pointer.tsp`; 1.54 with indexes). `tile_line`, called twice a screen
+  byte, is not inlined: the inliner skips a small function given a for's counter on
+  purpose (`inline.cpp`, for life's rows). Its body is a third of the time, and each call
+  copies three arguments and pays a JSR and an RTS; the shifts are the same loops Oscar64
+  emits (`ASL / DEX / BNE`). Oscar64 inlines it.
+- **lz4 1.31.** The match copy, `(set (at out o) (at out m))` with u16 `o`, `m` and `len`,
+  is 63 cycles a byte against Oscar64's 44: the loop's pointers replace the indexes for the
+  load and the store, but `o` and `m` are still stepped every byte as well (`m` is dead
+  after the loop), and the u16 count is decremented and tested with `ORA` each pass, where
+  Oscar64 keeps its low byte in X. The pointer version (`pointer.tsp`, 1193968) is no
+  faster: `(set src (+ src 1))` on a pointer global is a full 16-bit add, not an `INC`.
+- **blit 1.08** (`pointer.tsp`; 1.31 with u16 indexes into the screen). The variable shifts
+  are the same loops as Oscar64's, but every `(<< x back)` also tests for a count of 8 or
+  more (Tisple defines a shift by the width as 0, and `back` is 1 to 8, which the backend
+  does not know): 6 more cycles a shift, three shifts a byte.
+
+The common thread is the inliner. Oscar64 inlines small procedures into the hot loop and
+then folds what the call site knows; Tisple's limit (24 nodes, no small function in a for's
+counter) keeps `visit` and `tile_line` as calls. Second, induction variables that the
+pointer strength reduction leaves stepping when the pointer has replaced them (lz4).
+Third, aggregate copies through zero page.
+
+Where Tisple wins: bignum's `(/ v 10)` and `(% v 10)` by a constant are done inline (41%
+of its time) while the C compilers call their 16-bit divide (Oscar64's `divmod` is 60% of
+its); vm's `match` on 26 opcodes is a jump table with the stack in split byte arrays; the
+parser's tables are split per field so the vocabulary scan is `LDA table,X`.
+
+### Compiler bugs found (2026-10-30)
+
+Reduced, not fixed (the race is not the place to change the compiler).
+
+1. **Tisple: a store after an inner loop goes to a stale address** (sort). An element
+   pointer the outer loop made for `(at keys j)` is not refreshed after an inner `while`
+   moves `j`, so the store lands where `j` was; the interpreter gives 353, the build 1:
+
+   ```scheme
+   (let keys (array u16 300))
+   (fn f ((hi u16)) u16
+       (let i u16 0)
+       (let j u16 hi)
+       (while true
+           (while (< (at keys i) 500)
+               (set i (+ i 1)))
+           (while (> (at keys j) 500)
+               (set j (- j 1)))
+           (if (>= i j)
+               (return j))
+           (set (at keys j) 0xFFFF)
+           (set j (- j 1)))
+       j)
+   (fn main () u16
+       (for i u16 0 300 (set (at keys i) (& (* i 97) 0x3FF)))
+       (let r u16 (f 299))
+       (let sum u16 r)
+       (for i u16 0 300 (set sum (+ (+ sum sum) (at keys i))))
+       sum)
+   ```
+
+   `tisple interp` returns 353 (Python agrees), `tisple run --sim` 1. In the full
+   partition the same stale pointer also adds the split array's high-plane offset with the
+   carry set (`ADC #$2C` after a `BCC` not taken), one byte too far. Without the first inner
+   `while`, or without the store, the two agree. The program's quicksort never ends.
+2. **Oscar64: an in-place reverse keeps a stale high byte** (bignum, every setting).
+   `for (i = 0; i < n / 2; i++) { t = dec[i]; dec[i] = dec[n - 1 - i]; dec[n - 1 - i] = t; }`
+   with `dec` a constant pointer: the 16-bit temporary for `n - 1 - i` keeps the pointer's
+   high byte from the last pass, so every odd element gets 0. `twoindex.c` (`i` and `j`
+   meeting) is right, and is where Oscar64's bignum time comes from.
+3. **Oscar64: a `__striped` store at index 256** (sort, every setting with `striped`).
+   Insertion sort's `keys[j] = keys[j - 1]` on a striped u16 array addresses `keys[j]` as
+   `(keys - 1 + 256 * hi(j)),Y` with `Y = lo(j) + 1` by `INY`, which wraps when `lo(j)` is
+   255.
+4. **Oscar64 -O2: sort's quicksort never ends** (-O3 is right). Needs the median of three;
+   reduced to a 60-line program (partition, the explicit stack and the loop), not further.
+5. **Oscar64 -O2: Dhrystone's Int_2_Loc ends 9, not 13** (-O3 is right): the run's last
+   `Int_2_Loc = 7 * (Int_2_Loc - Int_3_Loc) - Int_1_Loc` is lost. Not reduced below the
+   program.
+6. **Oscar64: a local named like a struct tag hides the tag**: `struct score { int score; };`
+   then `int score; struct score *p;` in a function is error 3013 "Struct expected". The
+   sort program's struct is `entry` for that reason.
+7. **Oscar64 has no `register` keyword** (error 3005); `race.h` defines it away for Oscar64.
 
 ## Random programs
 
