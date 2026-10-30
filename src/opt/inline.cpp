@@ -44,7 +44,10 @@ struct Inliner {
     std::vector<bool> copied;   // by function: its calls are copied in this round
     std::vector<bool> waits;    // by function: its body is copied in this round
     std::vector<bool> once;     // by function: called in one place, not small
-    std::uint32_t budget = 0;   // nodes left to copy
+    std::vector<bool> as_value; // by function: copied where its value is used too
+    bool dry = false;           // only count the calls that would be copied, into wanted
+    std::vector<std::uint32_t> wanted;
+    std::uint32_t budget = 0; // nodes left to copy
     std::vector<std::uint32_t> size;
     std::uint64_t changes = 0;
 };
@@ -72,18 +75,23 @@ bool CounterArgument(const Pass& p, const Expr& call) {
 }
 
 // may this call be copied here
-bool Wanted(Inliner& in, ExprId call, bool shared) {
+bool Wanted(Inliner& in, ExprId call, bool shared, bool statement) {
     Pass& p = *in.p;
     const Expr& e = At(p, call);
     std::size_t f = static_cast<std::size_t>(e.ref);
     if (e.kind != ExprKind::Call || shared || Shared(p, call) || !in.copied[f] ||
-        in.waits[static_cast<std::size_t>(in.function)] || in.size[f] > in.budget) {
+        in.waits[static_cast<std::size_t>(in.function)] || in.size[f] > in.budget ||
+        (!statement && !in.as_value[f])) {
         return false;
     }
     // a small function given a for's counter: the backend copies the counter (a register) to
     // the parameter's byte, a better operand than the register the copy would read in place
     // (the life kernel's rows)
     if (!in.once[f] && CounterArgument(p, e)) {
+        return false;
+    }
+    if (in.dry) {
+        in.wanted[f]++;
         return false;
     }
     if (!Allow(p, "call inlined", call, -1)) {
@@ -132,7 +140,7 @@ void VisitDo(Inliner& in, ExprId id, bool shared) {
             dest = At(p, e.a).ref;
         }
         if (value || shared || Shared(p, item) || At(p, call).kind != ExprKind::Call ||
-            !Wanted(in, call, shared)) {
+            !Wanted(in, call, shared, mode == CopyMode::Statement)) {
             Visit(in, item, shared);
             i++;
             continue;
@@ -165,7 +173,7 @@ void Visit(Inliner& in, ExprId id, bool shared) {
         VisitDo(in, id, shared);
         return;
     }
-    if (e.kind == ExprKind::Call && Wanted(in, id, shared)) {
+    if (e.kind == ExprKind::Call && Wanted(in, id, shared, false)) {
         InPlace(in, id);
         return;
     }
@@ -294,6 +302,7 @@ std::uint64_t InlineStep(Pass& p) {
     in.copied.assign(count, false);
     in.waits.assign(count, false);
     in.once.assign(count, false);
+    in.as_value.assign(count, false);
     in.size.assign(count, 0);
     in.budget = kMaxCopied > p.inline_copied ? kMaxCopied - p.inline_copied : 0;
     for (std::size_t f = 0; f < count; f++) {
@@ -316,13 +325,27 @@ std::uint64_t InlineStep(Pass& p) {
         if (small && calls[f] > 1 && HasLoops(program, fn.body)) {
             continue;
         }
-        if ((small || calls[f] == 1) && Lowerable(p, static_cast<std::int32_t>(f))) {
+        std::int32_t id = static_cast<std::int32_t>(f);
+        in.as_value[f] = (small || calls[f] == 1) && Lowerable(p, id, CopyMode::Value);
+        if (in.as_value[f] || ((small || calls[f] == 1) && Lowerable(p, id, CopyMode::Statement))) {
             in.copied[f] = true;
             in.once[f] = !small;
         }
     }
     // a function copied in this step keeps its calls for the next, when the copies count
-    in.waits = in.copied;
+    // (only one some call of which may be copied: else its calls would wait for ever)
+    in.wanted.assign(count, 0);
+    in.dry = true;
+    for (std::size_t f = 0; f < count; f++) {
+        if (runs[f] && !handler[f]) {
+            in.function = static_cast<std::int32_t>(f);
+            Visit(in, p.program->functions[f].body, false);
+        }
+    }
+    in.dry = false;
+    for (std::size_t f = 0; f < count; f++) {
+        in.waits[f] = in.copied[f] && in.wanted[f] > 0;
+    }
     std::uint32_t budget = in.budget;
     for (std::size_t f = 0; f < count; f++) {
         if (!runs[f] || in.waits[f] || handler[f]) {

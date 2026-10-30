@@ -102,11 +102,19 @@ void Kept(TestResults& results) {
                 With("(fn f ((x u8)) u8 (for i u8 0 4 (if (= i x) (return i))) (set g 1) 9)\n"
                      "(fn main () u8 (set h (f g)) (+ h (f 2)))"),
                 2);
-    // an arm that may or may not return: a call
+    // an arm that may or may not return, and a rest after it that declares a variable: a call
     ExpectCalls(results,
                 With("(fn f ((x u8)) u8 (if (> x 3) (do (if (= g 0) (return 1)) (set g 0)))\n"
-                     "    (set h 2) x)\n(fn main () u8 (+ (f g) (f h)))"),
+                     "    (let z u8 (+ x h)) (set h 2) z)\n(fn main () u8 (+ (f g) (f h)))"),
                 2);
+    // with a rest of a few nodes, the rest goes into both ways (and into a match's wildcard)
+    ExpectCalls(results,
+                With("(fn f ((x u8)) u8 (if (> x 3) (do (if (= g 0) (return 1)) (set g 0)))\n"
+                     "    (set h 2) x)\n"
+                     "(fn k ((x u8)) u8 (match (& x 3) (0 (if (= g 0) (return 4))) (1 (return 5)) "
+                     "(_ (set g 1)))\n"
+                     "    (+ x 1))\n(fn main () u8 (+ (+ (f g) (f h)) (+ (k g) (k h))))"),
+                0);
     // what --no-inline names
     tisple::OptOptions never;
     never.no_inline = {"t.f"};

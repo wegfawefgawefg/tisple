@@ -13,6 +13,9 @@ namespace tisple::opt {
 
 namespace {
 
+// nodes of the rest of a body copied into more than one arm of a branch that returns
+constexpr int kMaxRestNodes = 8;
+
 bool HasReturn(const Pass& p, ExprId id) {
     if (id < 0) {
         return false;
@@ -94,6 +97,106 @@ ExprId MakeDo(Copier& c, const std::vector<ExprId>& out, const Loc& loc) {
     return c.build ? NewList(*c.p, ExprKind::Do, ResultType(c), out, loc) : -1;
 }
 
+ExprId Lower(Copier& c, std::vector<ExprId> items, Loc loc);
+
+int Nodes(const Pass& p, ExprId id) {
+    int n = 1;
+    EachChild(p, At(p, id), [&](ExprId child) { n += Nodes(p, child); });
+    return n;
+}
+
+bool Declares(const Pass& p, ExprId id) {
+    const Expr& e = At(p, id);
+    if (e.kind == ExprKind::Let || e.kind == ExprKind::For) {
+        return true;
+    }
+    bool found = false;
+    EachChild(p, e, [&](ExprId child) { found = found || Declares(p, child); });
+    return found;
+}
+
+// the rest of the body, copied into more than one arm: a few nodes that declare nothing (a
+// value, a set), so the copies name the same variables
+bool SmallRest(const Pass& p, const std::vector<ExprId>& rest) {
+    int n = 0;
+    for (ExprId id : rest) {
+        if (Declares(p, id)) {
+            return false;
+        }
+        n += Nodes(p, id);
+    }
+    return n <= kMaxRestNodes;
+}
+
+// an if or match among the items, some arm of which returns, with the rest of the body after
+// it: each arm that may not return gets the rest (a copy of it when two do, a few nodes that
+// declare nothing); a match with no wildcard gets one, which is the rest
+ExprId LowerBranch(Copier& c, const Expr& e, std::vector<ExprId> rest) {
+    const Pass& p = *c.p;
+    // a call whose value nobody uses needs no pure value at the end
+    if (c.mode == CopyMode::Statement && !rest.empty() && IsPure(p, rest.back())) {
+        rest.pop_back();
+    }
+    std::vector<ExprId> arms;
+    std::vector<Clause> clauses;
+    if (e.kind == ExprKind::If) {
+        arms = {e.b, e.c};
+    } else {
+        bool wildcard = false;
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            clauses.push_back(p.program->clauses[e.first + i]);
+            arms.push_back(clauses.back().body);
+            wildcard = wildcard || clauses.back().wildcard;
+        }
+        if (!wildcard) {
+            Clause other;
+            other.wildcard = true;
+            other.loc = e.loc;
+            clauses.push_back(other);
+            arms.push_back(-1);
+        }
+    }
+    int falls = 0;
+    for (ExprId arm : arms) {
+        falls += arm >= 0 && AlwaysReturns(p, arm) ? 0 : 1;
+    }
+    // more copies than two of the rest cost a match its plain dispatch (seed 314)
+    if (falls > 1 && !rest.empty() && (falls > 2 || !SmallRest(p, rest))) {
+        c.ok = false;
+        return -1;
+    }
+    ExprId cond = Copy(c, e.a);
+    std::vector<ExprId> lowered;
+    for (ExprId arm : arms) {
+        std::vector<ExprId> run;
+        if (arm >= 0) {
+            run.push_back(arm);
+        }
+        if (arm < 0 || !AlwaysReturns(p, arm)) {
+            run.insert(run.end(), rest.begin(), rest.end());
+        }
+        lowered.push_back(Lower(c, run, arm >= 0 ? At(p, arm).loc : e.loc));
+    }
+    if (!c.build || !c.ok) {
+        return -1;
+    }
+    Expr made = e;
+    made.type = ResultType(c);
+    made.a = cond;
+    if (e.kind == ExprKind::If) {
+        made.b = lowered[0];
+        made.c = lowered[1];
+        return NewExpr(*c.p, made);
+    }
+    for (std::size_t i = 0; i < clauses.size(); i++) {
+        clauses[i].body = lowered[i];
+    }
+    made.first = static_cast<std::uint32_t>(c.p->program->clauses.size());
+    made.count = static_cast<std::uint32_t>(clauses.size());
+    c.p->program->clauses.insert(c.p->program->clauses.end(), clauses.begin(), clauses.end());
+    return NewExpr(*c.p, made);
+}
+
 // items, the rest of the body from some point, with no return left: a do of their copies
 ExprId Lower(Copier& c, std::vector<ExprId> items, Loc loc) {
     const Pass& p = *c.p;
@@ -124,44 +227,14 @@ ExprId Lower(Copier& c, std::vector<ExprId> items, Loc loc) {
             k--;
             continue;
         }
-        if (e.kind != ExprKind::If || HasReturn(p, e.a)) {
+        bool branch = e.kind == ExprKind::If || e.kind == ExprKind::Match;
+        if (!branch || HasReturn(p, e.a)) {
             c.ok = false;
             return -1;
         }
-        bool then_returns = AlwaysReturns(p, e.b);
-        bool else_returns = e.c >= 0 && AlwaysReturns(p, e.c);
-        bool then_some = HasReturn(p, e.b);
-        bool else_some = e.c >= 0 && HasReturn(p, e.c);
-        if ((then_some && !then_returns) || (else_some && !else_returns)) {
-            c.ok = false; // an arm that may or may not return: the rest would need two copies
-            return -1;
-        }
         std::vector<ExprId> rest(items.begin() + static_cast<std::ptrdiff_t>(k) + 1, items.end());
-        std::vector<ExprId> a = {e.b};
-        std::vector<ExprId> b;
-        if (e.c >= 0) {
-            b.push_back(e.c);
-        }
-        if (!then_returns) {
-            a.insert(a.end(), rest.begin(), rest.end());
-        }
-        if (!else_returns) {
-            b.insert(b.end(), rest.begin(), rest.end());
-        }
-        ExprId cond = Copy(c, e.a);
-        ExprId arm_a = Lower(c, a, At(p, e.b).loc);
-        ExprId arm_b = Lower(c, b, e.loc);
-        if (c.build && c.ok) {
-            Expr branch;
-            branch.kind = ExprKind::If;
-            branch.type = ResultType(c);
-            branch.a = cond;
-            branch.b = arm_a;
-            branch.c = arm_b;
-            branch.loc = e.loc;
-            out.push_back(NewExpr(*c.p, branch));
-        }
-        return MakeDo(c, out, loc);
+        out.push_back(LowerBranch(c, e, rest));
+        return c.ok ? MakeDo(c, out, loc) : -1;
     }
     return MakeDo(c, out, loc);
 }
@@ -169,12 +242,6 @@ ExprId Lower(Copier& c, std::vector<ExprId> items, Loc loc) {
 // an argument read where the parameter is (a few nodes copied to each read) at most this
 // many nodes in all
 constexpr int kMaxPutIn = 8;
-
-int Nodes(const Pass& p, ExprId id) {
-    int n = 1;
-    EachChild(p, At(p, id), [&](ExprId child) { n += Nodes(p, child); });
-    return n;
-}
 
 // reads of var under id; under a loop of the body they count as many
 int Reads(const Pass& p, ExprId id, std::int32_t var, int loops) {
@@ -258,7 +325,7 @@ void Locals(const Pass& p, ExprId id, std::int32_t function, std::vector<std::in
 } // namespace
 
 // may the body become a copy with no returns (looked at without building one)
-bool Lowerable(Pass& p, std::int32_t callee) {
+bool Lowerable(Pass& p, std::int32_t callee, CopyMode mode) {
     const Function& fn = p.program->functions[static_cast<std::size_t>(callee)];
     const Expr& body = At(p, fn.body);
     if (body.kind != ExprKind::Do) {
@@ -267,6 +334,7 @@ bool Lowerable(Pass& p, std::int32_t callee) {
     Copier c;
     c.p = &p;
     c.type = fn.ret;
+    c.mode = mode;
     std::vector<ExprId> items(p.program->lists.begin() + body.first,
                               p.program->lists.begin() + body.first + body.count);
     Lower(c, items, body.loc);

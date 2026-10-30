@@ -13,8 +13,9 @@ enum class CopyMode : std::uint8_t {
     SetVar,    // it goes into a variable
 };
 
-// may the function's body become a copy with no returns
-bool Lowerable(Pass& p, std::int32_t callee);
+// may the function's body become a copy with no returns, for a call of that mode (a statement
+// needs no pure value after a branch that returns, so its rest is copied less)
+bool Lowerable(Pass& p, std::int32_t callee, CopyMode mode);
 // the copy of call, made in caller: the lets of its parameters, then the body's items, into
 // out, each named once; dest is the variable a SetVar copy sets
 void CopyCall(Pass& p, std::int32_t caller, ExprId call, CopyMode mode, std::int32_t dest,

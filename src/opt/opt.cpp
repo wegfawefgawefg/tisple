@@ -87,9 +87,6 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         if (args) {
             changes += opt::DropUnreadArgs(p);
         }
-        if (pointers) {
-            changes += opt::PointersToElements(p);
-        }
         if (returns) {
             changes += opt::DropUnusedReturns(p);
         }
@@ -114,6 +111,11 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         }
         for (std::size_t f = 0; f < fn_count && cse; f++) {
             changes += opt::CommonSubexpressions(p, static_cast<std::int32_t>(f));
+        }
+        // last too: a store it makes a set changes what the summaries of this round say a
+        // function does (fuzz seed 33001074: a call collapsed as storing nothing)
+        if (pointers) {
+            changes += opt::PointersToElements(p);
         }
         if (changes == 0 && inlines) {
             // settled: the functions are as small as the passes make them, which decides
