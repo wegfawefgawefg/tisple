@@ -1,0 +1,116 @@
+; program.tsp with pointers into the screen and the saved bytes, as program.c has.
+; A sprite blitter as an 8-bit game has one: 24 masked 16 x 16 sprites drawn into a
+; 256 x 192 bitmap (32 bytes a row, the leftmost pixel in bit 7). Each row of a shape is
+; two image bytes and two opaque bytes, shifted right by x & 7 across three screen bytes
+; at run time: screen = (screen & ~opaque) | image. The background under each sprite is
+; saved before it is drawn; each frame puts the backgrounds back in reverse order, moves
+; every sprite (bouncing off the edges) and draws them again. 8 frames; the checksum
+; folds the screen.
+
+(const ROW u16 32)
+(const SPRITES u8 24)
+(const FRAMES u8 8)
+(const MAX_X u8 232)
+(const MAX_Y u8 176)
+
+; per shape, per row: image high, image low, opaque high, opaque low
+(const SHAPES (array u8 256)
+    (make (array u8 256)
+        ; ball
+        0x02 0xC0 0x03 0xC0 0x0D 0xD0 0x0F 0xF0 0x1B 0xB8 0x1F 0xF8 0x34 0x74 0x3C 0xFC
+        0x68 0x6E 0x78 0x7E 0x58 0x5C 0x78 0x7E 0xBB 0xBB 0xFF 0xFF 0x77 0x77 0xFF 0xFF
+        0xEE 0xEE 0xFF 0xFF 0xDD 0xDD 0xFF 0xFF 0x3B 0xBA 0x7F 0xFE 0x77 0x76 0x7F 0xFE
+        0x2E 0xEC 0x3F 0xFC 0x1D 0xD8 0x1F 0xF8 0x0B 0xB0 0x0F 0xF0 0x03 0x40 0x03 0xC0
+        ; ship
+        0x01 0x80 0x01 0x80 0x01 0x80 0x01 0x80 0x03 0x40 0x03 0xC0 0x02 0xC0 0x03 0xC0
+        0x05 0xC0 0x07 0xE0 0x02 0x20 0x06 0x60 0x06 0x70 0x0E 0x70 0x0E 0xE0 0x0F 0xF0
+        0x1D 0xD8 0x1F 0xF8 0x39 0xB8 0x3D 0xBC 0x75 0x36 0x7D 0xBE 0xEE 0xEE 0xFF 0xFF
+        0xD5 0xCD 0xF7 0xEF 0xA3 0x83 0xE3 0xC7 0x41 0x03 0xC1 0x83 0x80 0x00 0x80 0x01
+        ; ghost
+        0x03 0xA0 0x07 0xE0 0x17 0x70 0x1F 0xF8 0x2E 0xEC 0x3F 0xFC 0x51 0xCC 0x73 0xCE
+        0x21 0x82 0x61 0x86 0x65 0x16 0x65 0x96 0x62 0xCE 0x73 0xCE 0xDD 0xDD 0xFF 0xFF
+        0xBB 0xBB 0xFF 0xFF 0x77 0x77 0xFF 0xFF 0xEE 0xEE 0xFF 0xFF 0xDD 0xDD 0xFF 0xFF
+        0xBB 0xBB 0xFF 0xFF 0x55 0x33 0xDD 0xBB 0x88 0x88 0x88 0x88 0x00 0x00 0x00 0x00
+        ; diamond
+        0x01 0x00 0x01 0x80 0x02 0xC0 0x03 0xC0 0x05 0xC0 0x07 0xE0 0x0A 0x30 0x0E 0x70
+        0x14 0x30 0x1C 0x38 0x28 0x0C 0x38 0x1C 0x50 0x0C 0x70 0x0E 0xA1 0x83 0xE1 0x87
+        0x61 0x07 0xE1 0x87 0x60 0x0E 0x70 0x0E 0x18 0x1C 0x38 0x1C 0x18 0x38 0x1C 0x38
+        0x06 0x70 0x0E 0x70 0x06 0xE0 0x07 0xE0 0x01 0xC0 0x03 0xC0 0x01 0x80 0x01 0x80))
+
+(struct Sprite ((x u8) (y u8) (dx i8) (dy i8) (shape u8)))
+
+(let screen (array u8 6144) :address 0x2000)
+(let sprites (array Sprite 24) :address 0x5800)
+(let checksum u16 :address 0x5F00)
+
+(let saved (array u8 1152)) ; 48 bytes a sprite
+
+(fn screen_at ((i u8)) u16
+    (+ (* (as u16 (at sprites i y)) ROW) (as u16 (>> (at sprites i x) 3))))
+
+(fn save_and_draw ((i u8)) void
+    (let p (ptr u8) (addr_of (at screen (screen_at i))))
+    (let save (ptr u8) (addr_of (at saved (* (as u16 i) 48))))
+    (let shape u8 (* (at sprites i shape) 64))
+    (let shift u8 (& (at sprites i x) 7))
+    (let back u8 (- 8 shift))
+    (for r u8 0 16
+        (let i0 u8 (at SHAPES shape))
+        (let i1 u8 (at SHAPES (+ shape 1)))
+        (let o0 u8 (at SHAPES (+ shape 2)))
+        (let o1 u8 (at SHAPES (+ shape 3)))
+        (store save (load p))
+        (store (+ save 1) (load (+ p 1)))
+        (store (+ save 2) (load (+ p 2)))
+        (store p (| (& (load p) (~ (>> o0 shift))) (>> i0 shift)))
+        (store (+ p 1)
+            (| (& (load (+ p 1)) (~ (| (<< o0 back) (>> o1 shift))))
+                (| (<< i0 back) (>> i1 shift))))
+        (store (+ p 2) (| (& (load (+ p 2)) (~ (<< o1 back))) (<< i1 back)))
+        (set shape (+ shape 4))
+        (set save (+ save 3))
+        (set p (+ p ROW))))
+
+(fn restore ((i u8)) void
+    (let p (ptr u8) (addr_of (at screen (screen_at i))))
+    (let save (ptr u8) (addr_of (at saved (* (as u16 i) 48))))
+    (for r u8 0 16
+        (store p (load save))
+        (store (+ p 1) (load (+ save 1)))
+        (store (+ p 2) (load (+ save 2)))
+        (set save (+ save 3))
+        (set p (+ p ROW))))
+
+; x and y stay in 0..MAX: a step past an edge wraps to a big byte, and turns back
+(fn move ((i u8)) void
+    (let x u8 (+ (at sprites i x) (as u8 (at sprites i dx))))
+    (let y u8 (+ (at sprites i y) (as u8 (at sprites i dy))))
+    (if (> x MAX_X)
+        (do
+            (set (at sprites i dx) (- 0 (at sprites i dx)))
+            (set x (+ (at sprites i x) (as u8 (at sprites i dx))))))
+    (if (> y MAX_Y)
+        (do
+            (set (at sprites i dy) (- 0 (at sprites i dy)))
+            (set y (+ (at sprites i y) (as u8 (at sprites i dy))))))
+    (set (at sprites i x) x)
+    (set (at sprites i y) y))
+
+(fn main () void
+    (for i u8 0 SPRITES
+        (save_and_draw i))
+    (for f u8 0 FRAMES
+        (let i u8 SPRITES)
+        (while (!= i 0)
+            (set i (- i 1))
+            (restore i))
+        (for i u8 0 SPRITES
+            (move i))
+        (for i u8 0 SPRITES
+            (save_and_draw i)))
+    (let sum_a u16 0)
+    (let sum_b u16 0)
+    (for n u16 0 6144
+        (set sum_a (+ sum_a (as u16 (at screen n))))
+        (set sum_b (+ sum_b sum_a)))
+    (set checksum (^ sum_a sum_b)))

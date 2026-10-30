@@ -20,6 +20,8 @@ ORDER = [
     "parser",
     "lz4",
     "vm",
+    "bfs",
+    "blit",
 ]
 
 
