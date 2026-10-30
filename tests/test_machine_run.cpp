@@ -235,6 +235,7 @@ void RunMachineTests(TestResults& results) {
     RunMachineRunTests(results);
     RunMachineVideoTests(results);
     RunMachineMouseTests(results);
+    RunMachineMockingboardTests(results);
     RunMachineAuxTests(results);
     RunMachineVideo80Tests(results);
 }

@@ -1,6 +1,7 @@
 #include "machine/slots.hpp"
 
 #include "machine/disk2.hpp"
+#include "machine/mockingboard.hpp"
 #include "machine/mouse.hpp"
 
 namespace tisple {
@@ -39,7 +40,6 @@ uint8_t CardIoAccess(Apple2& a, int slot, int reg, bool is_write, uint8_t value,
 }
 
 uint8_t CardRomAccess(Apple2& a, int slot, int offset, bool is_write, uint8_t value, bool& drives) {
-    (void)value;
     drives = false;
     switch (KindAt(a, slot)) {
     case CardKind::kTestCard:
@@ -51,6 +51,8 @@ uint8_t CardRomAccess(Apple2& a, int slot, int offset, bool is_write, uint8_t va
     case CardKind::kMouse:
         drives = !is_write;
         return MouseRomByte(a, offset);
+    case CardKind::kMockingboard:
+        return MockingboardRomAccess(a, offset, is_write, value, drives);
     default:
         return 0;
     }
@@ -104,6 +106,9 @@ void ResetCards(Apple2& a) {
         }
         if (a.slots.kind[slot] == CardKind::kMouse) {
             ResetMouse(a);
+        }
+        if (a.slots.kind[slot] == CardKind::kMockingboard) {
+            ResetMockingboard(a);
         }
     }
 }

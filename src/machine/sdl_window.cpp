@@ -1,6 +1,6 @@
 // `tisple machine --window`: the machine at real speed in an SDL3 window, with keyboard,
-// speaker audio and the mouse card. built only with TISPLE_SDL. it never raises itself, and
-// closing the window returns at once.
+// speaker and Mockingboard audio and the mouse card. built only with TISPLE_SDL. it never raises
+// itself, and closing the window returns at once.
 //
 // the mouse: while the pointer is over the window, its motion moves the card's mouse (one
 // hi-res pixel per two screen pixels at scale 1). it is never grabbed until a click into the
@@ -8,6 +8,8 @@
 // and the left button go to the card until Esc (which the Apple does not see) or losing
 // focus lets it go.
 
+#include "machine/mockingboard.hpp"
+#include "machine/mockingboard_audio.hpp"
 #include "machine/mouse.hpp"
 #include "machine/speaker_audio.hpp"
 #include "machine/window.hpp"
@@ -40,6 +42,7 @@ struct WindowState {
     float mouse_dy = 0;
     Framebuffer fb;
     SpeakerRenderer speaker;
+    MockingboardRenderer chips;
     std::vector<int16_t> samples;
     // real-time pacing: apple cycle base_cycle was due at host time base_ns
     uint64_t base_ns = 0;
@@ -59,11 +62,15 @@ void PushSilence(WindowState& w, int ms) {
 void SkipAudio(WindowState& w, const Apple2& a) {
     w.speaker.next_toggle = a.speaker.toggle_count;
     w.speaker.samples_done = SamplesForCycles(Cycles(a));
+    StartMockingboardAudio(w.chips, a);
 }
 
 void FeedAudio(WindowState& w, const Apple2& a) {
     w.samples.clear();
     RenderSpeaker(w.speaker, a, Cycles(a), w.samples);
+    if (HasMockingboard(a)) {
+        MixMockingboard(w.chips, a, Cycles(a), w.samples, 0);
+    }
     if (w.audio == nullptr) {
         return;
     }
