@@ -54,7 +54,7 @@ class Variant:
         parts = [" ".join(self.flags)] if self.flags else []
         if self.compiler != "tisple":
             parts.append(self.mode)
-        if self.source not in ("kernel.c", "kernel.tsp"):
+        if self.source not in MAIN_SOURCES:
             parts.append(self.source)
         return " ".join(parts)
 
@@ -80,17 +80,22 @@ LLVM_MOS_FLAGS = [["-O2"], ["-O3"]]
 OSCAR64_FLAGS = [["-O2"], ["-O3"], ["-O3", "-Ox", "-OM"]]
 
 
+# each folder's own source in each language; other files are other ways to write it
+MAIN_SOURCES = ("kernel.c", "kernel.tsp", "program.c", "program.tsp")
+
+
 def kernel_dir(kernel):
-    return os.path.join(HERE, "kernels", kernel.name)
+    return os.path.join(HERE, kernel.folder, kernel.name)
 
 
 def variants_for(kernel, compilers):
-    # kernel.c and kernel.tsp, then other ways to write it: lib.c through the C library,
-    # unroll.tsp with macros.unroll, ...
+    # kernel.c and kernel.tsp (program.c and program.tsp), then other ways to write it:
+    # lib.c through the C library, unroll.tsp with macros.unroll, ...
     files = os.listdir(kernel_dir(kernel))
-    sources = sorted((s for s in files if s.endswith(".c")), key=lambda s: (s != "kernel.c", s))
+    sources = sorted((s for s in files if s.endswith(".c")),
+                     key=lambda s: (s not in MAIN_SOURCES, s))
     tisple_sources = sorted((s for s in files if s.endswith(".tsp")),
-                            key=lambda s: (s != "kernel.tsp", s))
+                            key=lambda s: (s not in MAIN_SOURCES, s))
     has_multibyte = any(b.is_multibyte() for b in kernel.buffers)
     out = []
     for compiler in compilers:
@@ -380,8 +385,10 @@ def _tisple_objects(listing):
 
 
 def build_tisple(kernel, variant, outdir):
-    src = os.path.join(outdir, "kernel.tsp")
-    shutil.copy(os.path.join(kernel_dir(kernel), variant.source), src)
+    # built where it is, so a program's imports (from a subfolder, which is not a variant)
+    # are found; the entry is the file's main
+    src = os.path.join(kernel_dir(kernel), variant.source)
+    module = os.path.splitext(variant.source)[0]
     listing = run([tisple_binary(), "build", src, "--origin", "0x%04X" % TISPLE_ORIGIN,
                    "--asm", "-o", os.path.join(outdir, "k.bin")], outdir, "tisple build")
     build = Build()
@@ -391,9 +398,9 @@ def build_tisple(kernel, variant, outdir):
     with open(build.listing, "w") as f:
         f.write(listing)
     build.objects = _tisple_objects(listing)
-    entry = [o for o in build.objects if o[0] == "kernel.main"]
+    entry = [o for o in build.objects if o[0] == module + ".main"]
     if not entry:
-        raise BuildError("no kernel.main in the tisple listing")
+        raise BuildError("no %s.main in the tisple listing" % module)
     build.start = TISPLE_ORIGIN
     build.entry = entry[0][1]
     for b in kernel.buffers:
