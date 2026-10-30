@@ -1275,7 +1275,85 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     CounterBefore reading the condition of an item that is no while). Tests:
     tests/test_opt_values.cpp; fuzz shape tests/fuzz_gen_values.cpp (`seed N
     (values)`, one seed in four).
-49. Function pointers (2026-10-30, docs/language.md): `(fn (t ...) r)`, a
+49. Backend round by profile (2026-10-30). Every race program run with `tisple
+    race --profile` and its listing annotated with each instruction's runs and
+    cycles; a pattern's size is its log-points, the sum over the 2000 programs
+    of ln(T / (T - X)) for the X cycles it costs (2000 log-points of the race's
+    total would halve the geomean). Random race, seeds 1-2000, against the
+    fastest C compiler, against main 2d6df41: geomean 0.919 to 0.887, median
+    0.88 to 0.85, wins 61.2% to 64.5%, p99 6.16 to 5.85, max 44.51 to 40.18
+    (seed 1241); against llvm-mos 0.823 to 0.794, Oscar64 0.578 to 0.558. 1185
+    programs faster, 71 slower (the worst seed 244, 16 to 18; most a branch or
+    table moved across a page). Families: divide 0.86 to 0.82, multiply 1.01 to
+    0.97, call 0.89 to 0.85, widen 0.96 to 0.93, 8-bit &|^ 0.91 to 0.88, pointer
+    1.41 to 1.38. What landed, by log-points won:
+    - u8 divisions by a variable compare the dividend with the divisor inline:
+      below it, the quotient is 0 and the remainder the dividend with no call;
+      else JSR rt.divu8.ge, past the routine's own compare, which no longer
+      needs the carry set (a SEC on its divisor-128-or-more path). A / and % of
+      the same operands leave both results where the routine would. 19.1. u16
+      divisions the same with rt.divu16.ge (unpaired only): 8.4. 62% of the
+      race's byte divisions had the dividend below the divisor.
+    - Flag liveness (dead_regs.cpp): a JSR or tail JMP to a symbol is our own
+      code, which never reads the flags it is entered with; a JMP to a label
+      reads only what the label does (it read everything). CMP, CPX, CPY #0
+      right after an instruction whose N and Z already show that register goes
+      when nothing reads its carry (match dispatch on (& x 3) with a 0 clause).
+      8.4, and 7.6 more once inline divisions skipped calls.
+    - A number on the left of a compare goes right when A holds the other side
+      or it is a word: k < b is b >= k + 1 (a for loop's guard against an end
+      just worked out was STA t / LDA #k / CMP t), unsigned 0 < b is b != 0 by
+      the load's flags. Against a byte in memory LDA #k / CMP m stays: A and the
+      carry it leaves are used after (fill, speaker and sprites lost bytes the
+      other way). 15.8.
+    - Division operands worked out straight into rt_a and rt_b when the other
+      operand cannot call a routine, not into temporaries copied there. 8.1.
+    - Quarter squares when the program's multiplies together may run more than
+      once (they were chosen when one multiply might): the tables serve all of
+      them. 7.0; seed 1296 996 to 445, 1280 201 to 97.
+    - A store through a pointer takes an index just worked out in A with TAY,
+      as abs,X stores took TAX. 3.8.
+    Correctness: the miscompile main had (farm seed 42013970, -O0 too): frames
+    of functions that never run at the same time share bytes, and a function
+    that inlines several callees holds bytes of each; the register pass tracked
+    memory by symbol, so after f0's unread a17 was stored over f2's p25 it still
+    believed p25 held what the first unrolled copy stored and dropped the second
+    copy's sets. A write to an inlined callee's frame byte now forgets what was
+    known of every other callee's (peephole.cpp, FrameSharers in compile.cpp).
+    Running out of zero page for loop pointers (fuzz seed 23013202 needed 288
+    bytes): a loop outside every other loop gives its loop pointers back after
+    it, unless it made a page pointer (read again wherever its function is
+    inlined; its low byte is set at the function's start, and new ones go above
+    every byte handed out before). Inside another loop they stay taken: that
+    loop's own pointers, made after an inner loop, are set before it starts.
+    Three miscompiles of this round's own on the way, all found by the fuzzer or
+    the race and each a test now: a let read in its place (IndexAlias forward)
+    with a division in its value ran the routine while the outer dividend sat in
+    rt_a (fuzz 4046043); loop pointers given back inside an outer loop (race seed
+    342) and by a loop that made a page pointer (fuzz 6063372). Measured and not
+    built: the 3 cycles of the JMP to t.checksum in every program are 85.7 (main
+    tail-calls the clock's end; the C pays a JSR), work no program does, so not
+    a layout trick to win; quarter squares for a multiply that runs once 24.4,
+    the 1 KB of tables and the routine in every such program, the owner's call;
+    long branches 9.2 (4.4 in match chains, most of the rest loop back edges
+    over bodies past 127 bytes); taken branches across pages 3.4; stores of
+    unread arguments 2.6 at most; the empty DEX loops of item 47 none left;
+    signed divisions inline (their signs come first; 13 of JSR and RTS in all);
+    seed 308's outer loop not copied (its body past kMaxCountedExprs after the
+    mid level unrolled the inner one). Kernels byte for byte; Life 56 (230 in
+    40.92 M cycles), plasma 243 (975). Binaries against main: life and plasma
+    the same size, a jump threaded one test further; paint zero page 75 to 73
+    bytes (loop pointers given back); snake code 1093 to 1091 (a match's CMP
+    #0; its sounds' loops unchanged); text_demo code 3297 to 3283, still in the
+    language card; fill 102 to 101 and speaker 158 to 156 bytes (a u16 count's
+    guard LDA / ORA / BEQ), sprites the same size (LDA / BEQ); dot, multi,
+    hires_plot, keys, macros, read_key byte for byte. `tisple build --disk` of
+    text_demo 0.915 s both. Fuzz on the final code: 16 x TISPLE_FUZZ=30000
+    (1,318,000 programs), 0 mismatches, 0 unsupported; ASan/UBSan 8 x 700
+    (15,414), clean. Tests: test_backend_number_cmp, _rt_args, _zero_cmp,
+    _loop_ptrs, _mul (one product alone), _preload; farm programs 42013970.tsp
+    and _reduced.tsp.
+50. Function pointers (2026-10-30, docs/language.md): `(fn (t ...) r)`, a
     function's name as its address, `(f args ...)` through a name holding one,
     const tables of them. The closed world of slice 5 had four places that
     would have miscompiled a call through a pointer had they seen one: vars
@@ -1287,8 +1365,8 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     backend's FoldConstants and FindNamedTables walked a call's arguments only
     for direct calls. The four have tests in tests/test_backend_fnptr.cpp, each
     failing with its fix taken out; the two backend walks have none (the
-    lowered code names the same tables, and nothing shares those nodes). The backend side is a lowering, not
-    new code generation: a dispatcher per type and an entry per target make
+    lowered code names the same tables, and nothing shares those nodes). The
+    backend side is a lowering, not new code generation: a dispatcher per type and an entry per target make
     them direct calls, so frames, effects, ranges and inlining needed nothing
     (src/backend/dispatch.cpp). Every program and example byte for byte as
     before, the random race (seeds 1-2000) cycle for cycle. The formatter took

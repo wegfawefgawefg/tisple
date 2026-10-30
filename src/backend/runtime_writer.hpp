@@ -12,8 +12,9 @@ namespace tisple {
 struct Writer {
     Backend* be = nullptr;
     std::vector<AsmItem>* out = nullptr;
-    // second entries of the unsigned divisions, for the signed ones and divu16 (A holds the
-    // dividend, at least the divisor, with the carry set)
+    // second entries of the unsigned divisions, for the signed ones, divu16 and divisions that
+    // compare inline (the dividend at least the divisor, divu8's also in A; neither reads the
+    // flags it is entered with)
     std::int32_t divu8_ge = -1;
     std::int32_t divu16_ge = -1;
 

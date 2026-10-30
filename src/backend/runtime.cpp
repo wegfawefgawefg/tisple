@@ -256,8 +256,8 @@ void EmitRuntime(Backend& be, std::vector<AsmItem>& out) {
     Writer w;
     w.be = &be;
     w.out = &out;
-    w.divu8_ge = NewSym(be, "rt.divu8.ge", SymRole::Label, -1);
-    w.divu16_ge = NewSym(be, "rt.divu16.ge", SymRole::Label, -1);
+    w.divu8_ge = be.divu8_ge;
+    w.divu16_ge = be.divu16_ge;
     void (*bodies[kRuntimeCount])(Writer&) = {Mul8,   Mul16,  DivU8, DivU16, DivS8,
                                               DivS16, Mul8x8, Mul8Q, Mul16Q, Mul8x8Q};
     for (int r = 0; r < kRuntimeCount; r++) {

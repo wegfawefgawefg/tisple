@@ -165,12 +165,7 @@ AsmValue StepPointer(Gen& g, const SteppedVar& s, AsmValue base, std::int32_t va
     d.base = base;
     d.var = var;
     d.offset = offset;
-    std::uint32_t at = g.lptr_top;
-    g.lptr_top += 2;
-    std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
-    max = g.lptr_top > max ? g.lptr_top : max;
-    d.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
-                     static_cast<std::int32_t>(at));
+    d.ptr = NewLoopPointer(g, false);
     g.derived.push_back(d);
     return d.ptr;
 }

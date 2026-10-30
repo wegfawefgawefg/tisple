@@ -48,6 +48,24 @@ std::vector<StoreScope> StoreScopes(const Backend& be, std::int32_t function) {
     return out;
 }
 
+// by symbol, for this function's code: the function whose frame holds the byte, for the
+// locals and parameters of the functions it inlines (frames.cpp may give their frames the
+// same bytes, as they never run at the same time); -1 for its own, globals and fixed places
+std::vector<std::int32_t> FrameSharers(const Backend& be, std::int32_t function) {
+    std::vector<std::int32_t> out(be.info.size(), -1);
+    for (std::size_t s = 0; s < be.info.size(); s++) {
+        const SymInfo& info = be.info[s];
+        if (info.role != SymRole::Var) {
+            continue;
+        }
+        const Var& var = be.program->vars[static_cast<std::size_t>(info.owner)];
+        if (var.function >= 0 && var.function != function && !var.placement.has_address) {
+            out[s] = var.function;
+        }
+    }
+    return out;
+}
+
 void MakeSymbols(Backend& be) {
     const Program& program = *be.program;
     be.var_sym.resize(program.vars.size());
@@ -101,6 +119,8 @@ void MakeSymbols(Backend& be) {
     for (int r = 0; r < kRuntimeCount; r++) {
         be.rt_sym[r] = NewSym(be, names[r], SymRole::Label, -1);
     }
+    be.divu8_ge = NewSym(be, "rt.divu8.ge", SymRole::Label, -1);
+    be.divu16_ge = NewSym(be, "rt.divu16.ge", SymRole::Label, -1);
     be.sq_tables = NewSym(be, "sq_tables", SymRole::Data, -1);
 }
 
@@ -196,22 +216,20 @@ void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added)
 }
 
 // the quarter-square routines (1 KB of tables, about half the cycles) for every multiply when
-// one multiply of the kept code may run more than once in a run of the program (all its
-// copies counted: inlined, unrolled), the shift-and-add ones otherwise
+// the multiplies of the kept code together may run more than once in a run of the program
+// (every copy counted: inlined, unrolled; the tables serve them all), the shift-and-add ones
+// otherwise
 void UpgradeMultiplies(Backend& be) {
     const Runtime pairs[3][2] = {{Runtime::Mul8, Runtime::Mul8Q},
                                  {Runtime::Mul16, Runtime::Mul16Q},
                                  {Runtime::Mul8x8, Runtime::Mul8x8Q}};
-    std::vector<std::uint64_t> runs(be.program->exprs.size(), 0);
-    bool tables = false;
+    std::uint64_t total = 0;
     for (const auto& sites : be.multiplies) {
         for (const auto& [id, n] : sites) {
-            std::uint64_t& total = runs[static_cast<std::size_t>(id)];
             total = std::min<std::uint64_t>(total + n, std::uint64_t(1) << 32);
-            tables = tables || total >= 2;
         }
     }
-    if (!tables) {
+    if (total < 2) {
         return;
     }
     for (std::vector<AsmItem>& code : be.code) {
@@ -239,6 +257,12 @@ void FindUsedRoutines(Backend& be) {
     }
     for (int r = 0; r < kRuntimeCount; r++) {
         be.rt_used[r] = named[static_cast<std::size_t>(be.rt_sym[r])];
+    }
+    if (named[static_cast<std::size_t>(be.divu8_ge)]) {
+        be.rt_used[static_cast<int>(Runtime::DivU8)] = true;
+    }
+    if (named[static_cast<std::size_t>(be.divu16_ge)]) {
+        be.rt_used[static_cast<int>(Runtime::DivU16)] = true;
     }
     for (const DivRoutine& r : be.div_routines) {
         if (r.needs >= 0 && named[static_cast<std::size_t>(r.sym)]) {
@@ -300,7 +324,8 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
             GenDispatcher(be, static_cast<std::int32_t>(f));
         } else {
             GenFunction(be, static_cast<std::int32_t>(f));
-            Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)));
+            Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
+                     FrameSharers(be, static_cast<std::int32_t>(f)));
         }
         added[f] = AddedSince(be, weights);
     }

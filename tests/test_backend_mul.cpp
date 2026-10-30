@@ -1,7 +1,8 @@
 // multiplies on the 6502 against the interpreter: two bytes widened (the whole product of
 // rt.mul8x8), a byte and a word (rt.mul16 with a zero high byte), words whose high bytes are
 // zero only at run time, signed values, and the products of every pair of bytes; each by
-// shift and add (in code that runs once) and by quarter squares (in loops, and then everywhere)
+// shift and add (a program's one product, run once) and by quarter squares (in loops, or when
+// the products together run more than once, and then everywhere)
 
 #include "backend/analysis.hpp"
 #include "test_backend.hpp"
@@ -14,7 +15,7 @@ namespace tisple_tests {
 
 namespace {
 
-// products that run once (no loops, nothing calls them): the shift-and-add routines
+// products that run once (no loops, nothing calls them); several, so the quarter squares
 const char* const kMulOnce =
     "(let ta (array u8 256))\n"
     "(let tw (array u16 64))\n"
@@ -128,12 +129,63 @@ void TestProducts(TestResults& results, const std::string& text, bool loops) {
         std::fprintf(stderr, "products:\n%s\n  %s\n", text.c_str(), d.message.c_str());
     }
     CHECK(results, ok);
-    // every routine of its kind ran (two widened bytes call the byte routines), and none of
-    // the other kind
+    // every quarter-square routine ran (two widened bytes call the byte routines), and no
+    // shift-and-add one
     for (const char* name : {"rt.mul8", "rt.mul16", "rt.mul8x8"}) {
-        CHECK(results, HasRoutine(c, name) == !loops);
-        CHECK(results, HasRoutine(c, std::string(name) + "q") == loops);
+        CHECK(results, !HasRoutine(c, name));
+        CHECK(results, HasRoutine(c, std::string(name) + "q"));
     }
+}
+
+// a program whose only product runs once: the shift-and-add routine, against the interpreter
+// on every pair of bytes, or words and bytes against words
+void TestOnce(TestResults& results) {
+    struct One {
+        const char* text;
+        const char* routine;
+        bool bytes;
+    };
+    const One ones[] = {
+        {"(fn f ((a u8) (b u8)) u16 (* (as u16 a) (as u16 b)))", "rt.mul8x8", true},
+        {"(fn f ((a u8) (b u8)) u8 (* a b))", "rt.mul8", true},
+        {"(fn f ((a u16) (b u16)) u16 (* a b))", "rt.mul16", false},
+        {"(fn f ((a u16) (b u16)) u16 (* (& a 255) b))", "rt.mul16", false},
+        {"(fn f ((a u16) (b u16)) u16 (* (& a 255) (& (+ b 3) 255)))", "rt.mul8x8", false},
+        {"(fn f ((a i16) (b i16)) i16 (* a b))", "rt.mul16", false},
+    };
+    std::vector<std::uint16_t> words = {0,      1,      2,      0xFF,   0x100,  0x101,
+                                        0x1FF,  0x7FFF, 0x8000, 0xFF00, 0xFFFF, 1234,
+                                        0x00FE, 0xFE00, 0x55AA, 0xAA55, 300,    5678};
+    for (const One& one : ones) {
+        Compiled c = CompileText(one.text);
+        CHECK(results, HasRoutine(c, one.routine));
+        CHECK(results, !HasRoutine(c, std::string(one.routine) + "q"));
+        Diff d;
+        bool ok = StartDiff(d, c);
+        for (std::uint32_t a = 0; a < 256 && ok && one.bytes; a++) {
+            for (std::uint32_t b = 0; b < 256 && ok; b++) {
+                ok = DiffCall(d, "t.f",
+                              {static_cast<std::uint16_t>(a), static_cast<std::uint16_t>(b)});
+            }
+        }
+        for (std::uint16_t a : words) {
+            for (std::uint16_t b = 0; b < 256 && ok && !one.bytes; b += 3) {
+                ok = DiffCall(d, "t.f", {a, b}) && DiffCall(d, "t.f", {b, a});
+            }
+            for (std::uint16_t b : words) {
+                ok = ok && DiffCall(d, "t.f", {a, b});
+            }
+        }
+        if (!ok) {
+            std::fprintf(stderr, "product:\n%s\n  %s\n", one.text, d.message.c_str());
+        }
+        CHECK(results, ok);
+    }
+    // two products that each run once run twice together: the tables serve both
+    Compiled two = CompileText("(fn f ((a u16) (b u16)) u16 (* a b))\n"
+                               "(fn g ((a u8) (b u8)) u8 (* a b))");
+    CHECK(results, HasRoutine(two, "rt.mul16q") && HasRoutine(two, "rt.mul8q"));
+    CHECK(results, !HasRoutine(two, "rt.mul16") && !HasRoutine(two, "rt.mul8"));
 }
 
 // every byte times every constant, in a loop and alone; a byte widened and a word times
@@ -224,6 +276,7 @@ void RunBackendMulTests(TestResults& results) {
     TestRunCounts(results);
     TestProducts(results, kMul, true);
     TestProducts(results, kMulOnce, false);
+    TestOnce(results);
     TestConstProducts(results);
 }
 
