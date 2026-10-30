@@ -27,6 +27,9 @@ void RunCheckExampleTests(TestResults& results) {
         "examples/dispatch.tsp",
         "examples/ticks.tsp",
         "examples/mockingboard_demo.tsp",
+        "examples/dhgr_demo.tsp",
+        "lib/dhgr.tsp",
+        "lib/unpack.tsp",
     };
     for (const char* file : files) {
         Built built = BuildFile(file);

@@ -61,6 +61,8 @@ bool CheckBindingName(MacroRun& run, const Frame& frame, const Node& name, const
 bool IsLibraryFunction(const std::string& name);
 Value CallLibrary(MacroRun& run, Frame& frame, const std::string& name, std::vector<Value>& args,
                   const Node& at);
+// library_pack.cpp: (pack bytes)
+Value PackLibrary(MacroRun& run, Frame& frame, std::vector<Value>& args, const Node& at);
 
 // typed_call.cpp: an ordinary Tisple fn or constant, by its (maybe prefixed) name
 bool FindTypedFunction(const MacroWorld& world, std::int32_t module, const std::string& name,

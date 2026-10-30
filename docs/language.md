@@ -123,7 +123,7 @@ Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
 `KEY_RETURN`, `KEY_ESC`, `KEY_SPACE`, `KEY_DELETE`). Write `(import apple2 a2)`
 and `a2.SPKR`; never type an I/O address or key code by hand.
 
-### lib/text80, lib/text40 and lib/auxmem
+### lib/text80, lib/text40, lib/auxmem, lib/dhgr and lib/unpack
 
 - `lib/text80`: 80-column text on the extended 80-column card. `(text80.on)`,
   `(text80.print "Hello")` (a macro: a `put` call a character),
@@ -135,17 +135,24 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
   80STORE and PAGE2 on, through `io_write` so nothing moves across the switch.
 - `lib/text40`: the same on text page 1, 40 columns, without the aux half.
 - `lib/auxmem`: `(auxmem.read dst src count)` and `(auxmem.write dst src
-  count)` copy between main memory and aux memory, with pointers from
-  `addr_of`. It is the only way code reaches a let `:in aux` (see Memory map).
-  Its mover is 42 bytes of our own 6502 code run from page 3, with a copy at the
-  same address in aux memory, since RAMRD sends the instruction fetches there
-  too; `:reserve` lets keep `$0300`-`$03AB` in main memory and all of page 3 in
-  aux memory, so an `:address` let there is an overlap error. Its arguments are
-  four lets at `$F9`-`$FE`, which the program's other variables never take. A
-  one-byte read takes about 140 cycles with its call (560 before 2026-10-30,
-  when the mover saved the zero page it borrowed), a page about 4100 more.
-  `(auxmem.guard)` makes copies safe while an interrupt handler runs
-  (Interrupts). (Not `aux.tsp`: Windows keeps that name.)
+  count)` copy between main memory and aux memory, and `(auxmem.copy dst src
+  count)` inside aux memory (RAMRD and RAMWRT both on), with pointers from
+  `addr_of`. It is the only way code reaches a let `:in aux` (see Memory map),
+  with lib/unpack. Its mover is 45 bytes of our own 6502 code run from page 3,
+  with a copy at the same address in aux memory, since RAMRD sends the
+  instruction fetches there too; `:reserve` lets keep `$0300`-`$03AB` in main
+  memory and all of page 3 in aux memory, so an `:address` let there is an
+  overlap error. Its arguments are four lets at `$F9`-`$FE`, and `auxmem.work`
+  at `$F2`-`$F8` is lib/unpack's and lib/dhgr's (2026-10-30): the program's
+  other variables never take them. A one-byte read takes about 140 cycles with
+  its call (560 before 2026-10-30, when the mover saved the zero page it
+  borrowed), a page about 4100 more. `(auxmem.guard)` makes copies safe while
+  an interrupt handler runs (Interrupts). (Not `aux.tsp`: Windows keeps that
+  name.)
+- `lib/dhgr`: double hi-res, 140 x 192 in 15 colours on two pages with page
+  flipping, boxes, sprites, pixels and the mixed window's 80-column text.
+  `lib/unpack`: tables packed while compiling (`tables.packed`) back to bytes,
+  in main or aux memory. Both in [`dhgr.md`](dhgr.md).
 
 ## Keywords
 
@@ -452,6 +459,7 @@ Library, in macro code only (Tisple code may still use these names):
 | `(chars "text")` | the character codes |
 | `(kind x)` | `'int`, `'float`, `'bool`, `'symbol`, `'keyword`, `'string`, `'list` or `'fn` |
 | `(error part ...)` | stops with this message, at the call |
+| `(pack bytes)` | the bytes (a list, 1 to 65535 of 0-255) packed, ZX0 ([`dhgr.md`](dhgr.md), Packed data) |
 | `sin cos sqrt floor round float pi` | see Values |
 
 A list holds at most 131072 items. Parameters and lets may not take a library
@@ -502,7 +510,10 @@ main.tsp:12:1: sprite BALL: row 1 is 3 wide, the first is 4 (in macro tables.spr
   `(const NAME (array type count) (make (array type count) (f 0) (f 1) ...)
   options ...)`. `(tables.sprite NAME row ...)` turns rows of `#` and `.` into
   hi-res bytes: 7 pixels a byte, the low bit leftmost, `(width + 6) / 7` bytes
-  a row.
+  a row. `(tables.packed NAME count f options ...)` is the same
+  bytes as a table, packed with `pack` (a let with `:in aux`, otherwise a
+  const), and `(tables.packed_bytes NAME (b ...) options ...)` packs the bytes
+  given; lib/unpack puts them back.
 - `lib/macros`: `inc`, `dec`, and `(macros.unroll i start end body ...)`: the
   body once for each `i`, with `i` a literal in each copy, each copy in its own
   `do`. Plasma's draw loop unrolled goes from 18.3 to 20.1 frames a second,

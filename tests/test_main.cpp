@@ -8,6 +8,7 @@
 #include "test_ide.hpp"
 #include "test_machine.hpp"
 #include "test_opt.hpp"
+#include "test_pack.hpp"
 #include "test_project.hpp"
 #include "test_race.hpp"
 #include "test_reader.hpp"
@@ -51,6 +52,7 @@ int main() {
     tisple_tests::RunCheckDecisionTests(results);
     tisple_tests::RunExpandTests(results);
     tisple_tests::RunMacroTests(results);
+    tisple_tests::RunPackTests(results);
     tisple_tests::RunIndexTests(results);
     tisple_tests::RunProjectTests(results);
     tisple_tests::RunLayoutTests(results);
@@ -110,6 +112,9 @@ int main() {
     tisple_tests::RunMockingboardLineTests(results);
     tisple_tests::RunMockingboardAuxTests(results);
     tisple_tests::RunTextDemoTests(results);
+    tisple_tests::RunUnpackLibTests(results);
+    tisple_tests::RunUnpackIrqTests(results);
+    tisple_tests::RunDhgrLibTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);
     tisple_tests::RunSuperoptTests(results);

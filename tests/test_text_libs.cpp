@@ -144,17 +144,49 @@ void TestAuxMem(TestResults& results) {
     }
     // buf[699] is 699 % 251 = 197, buf[5] the 77 written to aux and read back
     CHECK(results, (a->cpu.mem[0x03C0] | (a->cpu.mem[0x03C1] << 8)) == 197 + 77);
-    // the mover in page 3 of both memories; all switches off again; zero page as it was
-    CHECK(results, a->cpu.mem[0x0300] == 0x9D && a->aux[0x0300] == 0x9D);
+    // the mover in page 3 of both memories (STA $C005, its copy step, first); all switches
+    // off again; zero page as it was
+    CHECK(results, a->cpu.mem[0x0300] == 0x8D && a->aux[0x0300] == 0x8D);
     CHECK(results, !a->sw.ramrd && !a->sw.ramwrt);
 }
 
 } // namespace
 
+// aux to aux: 600 bytes (two pages and more) into another let, and 300 down a byte inside one
+// (a forward copy, so the overlap is fine); the switches off after
+void TestAuxCopy(TestResults& results) {
+    auto a =
+        RunWithLib(results, "(import auxmem)\n"
+                            "(macro counting (n)\n"
+                            "    `(make (array u8 ,n) ,@(map (fn (i) (% i 251)) (range 0 n))))\n"
+                            "(let doc (array u8 700) (counting 700) :in aux)\n"
+                            "(let copy (array u8 600) :in aux)\n"
+                            "(fn main () void\n"
+                            "    (auxmem.copy (addr_of (at copy 0)) (addr_of (at doc 50)) 600)\n"
+                            "    (auxmem.copy (addr_of (at doc 0)) (addr_of (at doc 1)) 300))");
+    if (a == nullptr) {
+        return;
+    }
+    // where the two lets went: doc first in aux memory, then copy
+    uint16_t doc = 0x0800;
+    uint16_t copy = doc + 700;
+    bool ok = true;
+    for (int i = 0; i < 600; i++) {
+        ok = ok && a->aux[copy + i] == (50 + i) % 251;
+    }
+    for (int i = 0; i < 300; i++) {
+        ok = ok && a->aux[doc + i] == (i + 1) % 251; // down a byte: a forward copy is right
+    }
+    CHECK(results, ok);
+    CHECK(results, a->aux[doc + 300] == 300 % 251);
+    CHECK(results, !a->sw.ramrd && !a->sw.ramwrt);
+}
+
 void RunTextLibTests(TestResults& results) {
     TestText80(results);
     TestText40(results);
     TestAuxMem(results);
+    TestAuxCopy(results);
 }
 
 } // namespace tisple_tests

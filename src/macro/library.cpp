@@ -9,8 +9,8 @@ namespace {
 
 // keep in step with docs/language.md (Macros)
 const char* const kLibraryNames[] = {
-    "list",  "len",   "nth",  "head", "tail", "append", "map",   "range", "repeat", "symbol",
-    "chars", "error", "kind", "sin",  "cos",  "sqrt",   "floor", "round", "float",  "pi",
+    "list",  "len",  "nth", "head", "tail", "append", "map",   "range", "repeat", "symbol", "chars",
+    "error", "kind", "sin", "cos",  "sqrt", "floor",  "round", "float", "pi",     "pack",
 };
 
 const char* const kOperators[] = {
@@ -479,6 +479,9 @@ Value CallLibrary(MacroRun& run, Frame& frame, const std::string& name, std::vec
     }
     if (name == "chars") {
         return Chars(c);
+    }
+    if (name == "pack") {
+        return PackLibrary(run, frame, args, at);
     }
     if (name == "kind") {
         if (!Count(c, 1, "(kind x)")) {
