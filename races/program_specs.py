@@ -22,6 +22,8 @@ ORDER = [
     "vm",
     "bfs",
     "blit",
+    "scroll",
+    "bignum",
 ]
 
 
