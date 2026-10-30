@@ -322,6 +322,7 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
         return;
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         EachChild(p, e, [&](ExprId child) { Visit(g, child, shared, -1); });
         ForgetGlobals(g, false);
         return;

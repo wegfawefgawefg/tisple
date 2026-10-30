@@ -53,6 +53,10 @@ ExprId FunctionValue(Checker& ck, const Node& node, std::int32_t function) {
     if (type == kErrorType) {
         return ErrorExpr(ck, node);
     }
+    if (ck.out->functions[static_cast<std::size_t>(function)].interrupt) {
+        return Fail(ck, node,
+                    node.text + " is the interrupt handler: an IRQ runs it, no pointer does");
+    }
     ck.out->functions[static_cast<std::size_t>(function)].address_taken = true;
     ExprId id = AddExpr(ck, ExprKind::FnRef, type, node);
     ExprAt(ck, id).ref = function;

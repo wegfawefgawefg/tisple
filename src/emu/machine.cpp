@@ -80,10 +80,36 @@ Regs GetRegs(const Machine& m) {
 
 void StepInstruction(Machine& m) {
     // the fetch of the next instruction is the last tick, so stop when SYNC comes back
+    bool taken = false;
     do {
         DoBusCycle(m);
+        bool irq = m.irq_next < m.irq_count && m.cycles >= m.irq_cycles[m.irq_next];
+        if (irq) {
+            m.pins |= M6502_IRQ;
+        } else {
+            m.pins &= ~M6502_IRQ;
+        }
         m.pins = m6502_tick(&m.cpu, m.pins);
+        // the cpu takes it (one a step: the sequence keeps the flag a few ticks): the line goes
+        // high again
+        if (irq && !taken && (m.cpu.brk_flags & M6502_BRK_IRQ) != 0) {
+            taken = true;
+            m.irq_next++;
+            m.irqs_taken++;
+        }
     } while ((m.pins & M6502_SYNC) == 0);
+}
+
+bool RequestIrq(Machine& m, uint64_t cycle) {
+    if (m.irq_next == m.irq_count) {
+        m.irq_next = 0; // all taken: start the list again
+        m.irq_count = 0;
+    }
+    if (m.irq_count == Machine::kMaxIrqs) {
+        return false;
+    }
+    m.irq_cycles[m.irq_count++] = cycle;
+    return true;
 }
 
 } // namespace tisple

@@ -206,6 +206,33 @@ std::string ShowItems(const Node& list, std::size_t first) {
     return text;
 }
 
+// (fn name () void :interrupt ...): the program's interrupt handler
+void ReadHandlerOption(Checker& ck, std::int32_t index, const Node& form, const Node& option,
+                       const std::string& params_text, const std::string& return_text) {
+    Function& fn = ck.out->functions[static_cast<std::size_t>(index)];
+    const std::string& name = form.items[1].text;
+    if (option.text != ":interrupt") {
+        Err(ck, option, option.text + " is no fn option; the one there is is :interrupt");
+        return;
+    }
+    if (!fn.params.empty() || fn.ret != kVoidType) {
+        Err(ck, form,
+            "an interrupt handler takes nothing and gives nothing; write (fn " + name +
+                " () void :interrupt ...), not (fn " + name + " " + params_text + " " +
+                return_text + " :interrupt ...)");
+        return;
+    }
+    if (ck.out->handler >= 0) {
+        Err(ck, option,
+            "a program has one interrupt handler, and " +
+                ck.out->functions[static_cast<std::size_t>(ck.out->handler)].name +
+                " is it; poll every device there");
+        return;
+    }
+    fn.interrupt = true;
+    ck.out->handler = index;
+}
+
 // (fn name (params) type body ...); the old (args ...) and (returns t) get a fix
 void ReadSignature(Checker& ck, std::int32_t index) {
     Progress& state = ck.signature_states[static_cast<std::size_t>(index)];
@@ -252,6 +279,11 @@ void ReadSignature(Checker& ck, std::int32_t index) {
         Err(ck, form,
             "the return type comes after the parameters, void when " + name +
                 " returns nothing; write (fn " + name + " " + params_text + " void ...)");
+    }
+    // options after the return type: :interrupt
+    if (next < items.size() && items[next].kind == NodeKind::Keyword) {
+        ReadHandlerOption(ck, index, form, items[next], params_text, return_text);
+        next++;
     }
     std::string fix = "(fn " + name + " " + params_text + " " + return_text + " ...)";
     if (old_params) {
@@ -432,6 +464,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
         }
     }
     FindMain(ck);
+    CheckHandler(ck);
     if (names) {
         CopyConsts(ck);
     }

@@ -52,10 +52,16 @@ int WrittenIndexReg(Mn mn) {
     }
 }
 
+// memory an interrupt handler shares: what a register loaded from it may not stay true
+bool SharedByte(const Gen& g, const AsmValue& v) {
+    return v.sym >= 0 && g.be->as.symbols[static_cast<std::size_t>(v.sym)].shared;
+}
+
 void TrackIndexWrite(Gen& g, int r, Mn mn, Mode mode, const AsmValue& value) {
     RegContent& c = g.reg[r];
     if (mn == Mn::LDX || mn == Mn::LDY) {
-        c.known = mode == Mode::Imm || ((mode == Mode::Abs || mode == Mode::Zp) && value.sym >= 0);
+        c.known = mode == Mode::Imm || ((mode == Mode::Abs || mode == Mode::Zp) && value.sym >= 0 &&
+                                        !SharedByte(g, value));
         c.mem = mode != Mode::Imm;
         c.v = value;
         c.delta = 0;
@@ -426,7 +432,7 @@ void LoadIndexReg(Gen& g, int reg, const Index& index) {
         // A was just stored there (or loaded from there): TAX instead of LDX, the register
         // known to hold that byte as after the load
         Emit(g, reg == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
-        g.reg[reg].known = index.value.sym >= 0;
+        g.reg[reg].known = index.value.sym >= 0 && !SharedByte(g, index.value);
         g.reg[reg].mem = true;
         g.reg[reg].v = index.value;
         g.reg[reg].delta = 0;

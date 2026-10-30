@@ -382,6 +382,7 @@ Val WalkNode(Walker& w, const Expr& e, Env& env) {
         return AnyVal();
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         WalkChildren(w, e, env);
         if (env.reached) {
             ForgetGlobals(w, env);

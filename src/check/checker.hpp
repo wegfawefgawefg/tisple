@@ -266,6 +266,13 @@ ExprId CheckIndirectCall(Checker& ck, const Node& node, ExprId callee);
 void AddIndirectCallees(Checker& ck);
 // check.cpp: the signature, once (const tables may need it before the functions are read)
 void EnsureSignature(Checker& ck, std::int32_t function);
+
+// the interrupt handler (interrupts.cpp)
+// (sei) and (cli)
+ExprId CheckInterruptsForm(Checker& ck, const Node& node);
+// once main is known: the handler shares no function with main and does not turn interrupts
+// on; marks what it reads and writes (Var::irq_shared)
+void CheckHandler(Checker& ck);
 // (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);
 ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string& field);

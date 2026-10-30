@@ -261,6 +261,7 @@ void Walk(Walker& w, ExprId id, Bits& live) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         OrBits(live, w.globals);
         break;
     case ExprKind::Index:
@@ -291,7 +292,8 @@ void Walk(Walker& w, ExprId id, Bits& live) {
 } // namespace
 
 bool TrackedVar(const Var& var, std::int32_t function) {
-    if (var.address_taken || var.placement.has_address || var.placement.in_aux) {
+    if (var.address_taken || var.placement.has_address || var.placement.in_aux ||
+        var.irq_shared) {
         return false;
     }
     if (var.kind == VarKind::Global) {

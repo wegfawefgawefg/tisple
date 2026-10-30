@@ -1,5 +1,6 @@
 #include "backend/runtime.hpp"
 
+#include "backend/irq.hpp"
 #include "backend/runtime_writer.hpp"
 
 namespace tisple {
@@ -288,13 +289,50 @@ void EmitRuntimeTables(Backend& be, std::vector<AsmItem>& out) {
     }
 }
 
+namespace {
+
+void StoreWord(Writer& w, std::uint16_t at, AsmValue value) {
+    AsmValue low = value;
+    AsmValue high = value;
+    low.part = Part::Low;
+    high.part = Part::High;
+    w.Op(Mn::LDA, Mode::Imm, low);
+    w.Op(Mn::STA, Mode::Abs, Num(at));
+    w.Op(Mn::LDA, Mode::Imm, high);
+    w.Op(Mn::STA, Mode::Abs, Num(at + 1));
+}
+
+// the handler's entry at $3FE, the old vector kept; with the card's ram in, the cpu reads its
+// vectors there: NMI and RESET as the roms have them, IRQ straight to the handler. Then
+// interrupts on
+void InstallHandler(Writer& w, const StartupPlan& plan) {
+    for (int k = 0; k < 2; k++) {
+        w.Op(Mn::LDA, Mode::Abs, Num(kIrqVector + k));
+        w.Op(Mn::STA, Mode::Abs, SymValue(plan.irq_saved, k));
+    }
+    StoreWord(w, kIrqVector, SymValue(plan.irq_entry));
+    if (plan.card_ram) {
+        StoreWord(w, kCpuVectors, Num(0x03FB));
+        StoreWord(w, kCpuVectors + 2, Num(0xFA62));
+        StoreWord(w, kCpuVectors + 4, SymValue(plan.irq_direct));
+    }
+    w.Op(Mn::CLI);
+}
+
+} // namespace
+
 void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out) {
     Writer w;
     w.be = &be;
     w.out = &out;
     std::int32_t save = w.Label("start.save");
     std::int32_t restore = w.Label("start.restore");
+    bool irq = plan.irq_entry >= 0;
     w.Op(Mn::CLD);
+    if (irq) {
+        w.Op(Mn::PHP); // the caller's I flag, for the end
+        w.Op(Mn::SEI);
+    }
     if (plan.card_ram) {
         w.Op(Mn::BIT, Mode::Abs, Num(0xC083)); // two reads: bank 2 ram, reads and writes
         w.Op(Mn::BIT, Mode::Abs, Num(0xC083));
@@ -318,11 +356,22 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
         w.Imm(Mn::LDA, store.second);
         w.Op(Mn::STA, Mode::Abs, Num(store.first));
     }
+    if (irq) {
+        InstallHandler(w, plan);
+    }
     w.Place(plan.ready_sym);
     if (plan.main_sym >= 0) {
         w.Mem(Mn::JSR, plan.main_sym);
     }
     w.Place(plan.after_sym);
+    if (irq) {
+        // the vector the startup found, with interrupts off until the caller's I flag
+        w.Op(Mn::SEI);
+        for (int k = 0; k < 2; k++) {
+            w.Op(Mn::LDA, Mode::Abs, SymValue(plan.irq_saved, k));
+            w.Op(Mn::STA, Mode::Abs, Num(kIrqVector + k));
+        }
+    }
     w.Imm(Mn::LDX, 0);
     w.Place(restore);
     w.Op(Mn::LDA, Mode::AbsX, SymValue(plan.save_sym));
@@ -331,6 +380,9 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
     w.Br(Mn::BNE, restore);
     if (plan.card_ram) {
         w.Op(Mn::BIT, Mode::Abs, Num(0xC082)); // the rom again, for whoever called us
+    }
+    if (irq) {
+        w.Op(Mn::PLP);
     }
     w.Op(Mn::RTS);
 }

@@ -225,7 +225,10 @@ int BodyHeaderCount(const Node& node) {
         if (anonymous && IsFnPointerType(node)) {
             return -1;
         }
-        return anonymous ? 1 : 3;
+        // (fn name (params) type :interrupt body ...): the option stays on the head line
+        bool option = !anonymous && node.items.size() > 4 &&
+                      node.items[4].kind == NodeKind::Keyword;
+        return anonymous ? 1 : option ? 4 : 3;
     }
     if (head == "macro") {
         // (macro name (params) body ...)

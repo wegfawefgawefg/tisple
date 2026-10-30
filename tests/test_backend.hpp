@@ -109,6 +109,8 @@ void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
 // calls through function pointers (test_backend_fnptr.cpp)
 void RunBackendFnPtrTests(TestResults& results);
+// interrupt handlers (test_backend_irq.cpp)
+void RunBackendIrqTests(TestResults& results);
 void RunBackendWaitTests(TestResults& results);
 void RunBackendStringTests(TestResults& results);
 void RunBackendWhileTests(TestResults& results);

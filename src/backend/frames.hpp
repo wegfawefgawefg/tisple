@@ -4,7 +4,8 @@
 //
 // Every function's frame holds its params, locals and temporaries. A frame starts after the
 // frames of every function that can call it (directly or not), so functions that are never
-// live together share bytes. There are two such stacks: one in zero page, one in memory.
+// live together share bytes. There are two such stacks: one in zero page, one in memory. The
+// interrupt handler's functions share none with the rest: an IRQ comes at any time.
 //
 // Zero page gets, in order: the runtime scratch bytes, every dereferenced pointer and
 // pointer temporary (forced), then frame items and small globals by uses per byte (each

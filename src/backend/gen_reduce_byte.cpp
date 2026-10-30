@@ -48,7 +48,8 @@ bool SafeEarly(const ByteLoop& l, ExprId id) {
         return false;
     }
     if (e.kind == ExprKind::VarRef &&
-        program.vars[static_cast<std::size_t>(e.ref)].placement.has_address) {
+        (program.vars[static_cast<std::size_t>(e.ref)].placement.has_address ||
+         program.vars[static_cast<std::size_t>(e.ref)].irq_shared)) {
         return false;
     }
     if (e.kind != ExprKind::Literal && e.kind != ExprKind::VarRef && e.kind != ExprKind::Index &&

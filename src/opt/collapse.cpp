@@ -412,6 +412,7 @@ void Visit(Collapser& c, ExprId id, bool shared) {
     case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
+    case ExprKind::Interrupts:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:

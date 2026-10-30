@@ -140,6 +140,10 @@ struct Gen {
     Rng fnptr_rng;
     bool fnptr_shapes = false;
     bool fnptr_targets = false;
+    // an interrupt handler of its own, from a stream of its own (fuzz_gen_irq.cpp); only in
+    // GenerateIrqProgram's programs
+    Rng irq_rng;
+    bool irq_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -335,6 +339,13 @@ struct Gen {
     // target; the lets it needs go into lets
     std::string FnPtrValue(T t, std::string& lets);
     std::string FnPtrShape(int depth);
+    // ---- an interrupt handler (fuzz_gen_irq.cpp)
+    std::string IrqValue(bool two, int depth);
+    std::string IrqStmt(int depth);
+    // hq0-2, hw0-1, hs, ha, the helper hf and the handler on_irq, before the generated
+    // functions
+    std::string IrqHelpers();
+    std::string IrqMask(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

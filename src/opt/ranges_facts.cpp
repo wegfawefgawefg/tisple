@@ -43,6 +43,7 @@ void ForgetWritesIn(Ranger& g, ExprId id) {
         break;
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         ForgetGlobals(g, false);
         break;
     case ExprKind::Literal:

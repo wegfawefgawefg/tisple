@@ -20,7 +20,7 @@
 namespace tisple::opt {
 
 bool Hardware(const Var& v) {
-    return v.placement.has_address || v.placement.in_aux || v.placement.reserve;
+    return v.placement.has_address || v.placement.in_aux || v.placement.reserve || v.irq_shared;
 }
 
 namespace {

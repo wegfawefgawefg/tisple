@@ -21,6 +21,11 @@ constexpr std::uint32_t kMaxStartupStores = 256;
 constexpr std::uint32_t kCardStart = 0xD000;
 constexpr std::uint32_t kCardEnd = 0x10000;
 
+// with an interrupt handler the startup writes the cpu's vectors at the card's top
+std::uint32_t CardEnd(const Program& program) {
+    return program.handler >= 0 ? kCpuVectors : kCardEnd;
+}
+
 std::string Hex(std::uint32_t value) {
     char text[16];
     std::snprintf(text, sizeof(text), "$%04X", value);
@@ -132,7 +137,8 @@ std::vector<AddressRange> FreeStretches(const Backend& be, const BuildOptions& o
         out.insert(out.end(), low.begin(), low.end());
     }
     if (card) {
-        std::vector<AddressRange> high = Subtract(AddressRange{kCardStart, kCardEnd}, cuts);
+        std::vector<AddressRange> high =
+            Subtract(AddressRange{kCardStart, CardEnd(program)}, cuts);
         out.insert(out.end(), high.begin(), high.end());
     }
     return out;
@@ -301,6 +307,11 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     sp.zp_base = plan.zp_globals_base;
     sp.zp_count = plan.zp_globals_size;
     sp.card_ram = card;
+    if (in.irq != nullptr && !in.irq->empty()) {
+        sp.irq_entry = in.irq_plan.entry_sym;
+        sp.irq_direct = in.irq_plan.direct_sym;
+        sp.irq_saved = in.irq_plan.saved_sym;
+    }
     if (!StartupStores(be, options.origin, data_end, sp.stores, errors)) {
         return LinkResult::kError;
     }
@@ -320,6 +331,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
     Append(items, *in.runtime, out, -1, "runtime");
+    if (sp.irq_entry >= 0) {
+        Append(items, *in.irq, out, -1, "interrupt entry");
+    }
     std::vector<AsmItem> tables;
     EmitRuntimeTables(be, tables);
     if (!tables.empty()) {
@@ -372,7 +386,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         lo.more_data.push_back(AddressRange{options.low_start, options.origin});
     }
     if (card) {
-        lo.more_data.push_back(AddressRange{kCardStart, kCardEnd});
+        lo.more_data.push_back(AddressRange{kCardStart, CardEnd(program)});
     }
     lo.preset.assign(program.vars.size(), -1);
     for (std::size_t v = 0; v < program.vars.size(); v++) {
@@ -485,6 +499,12 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     out.after_main =
         static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sp.after_sym)].value);
     out.save_buffer = static_cast<std::uint16_t>(data_end);
+    if (sp.irq_entry >= 0) {
+        out.irq_entry = static_cast<std::uint16_t>(
+            be.as.symbols[static_cast<std::size_t>(sp.irq_entry)].value);
+        out.irq_direct = static_cast<std::uint16_t>(
+            be.as.symbols[static_cast<std::size_t>(sp.irq_direct)].value);
+    }
     std::uint32_t total = static_cast<std::uint32_t>(out.image.size());
     for (const MemorySegment& segment : out.segments) {
         total += static_cast<std::uint32_t>(segment.bytes.size());

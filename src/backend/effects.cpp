@@ -110,6 +110,9 @@ bool CodeMayWrite(const Program& program, const Effects& effects, ExprId code, s
         return false;
     }
     const Var& v = program.vars[static_cast<std::size_t>(var)];
+    if (v.irq_shared) {
+        return true; // the interrupt handler may change it while any code runs
+    }
     bool reachable = v.address_taken;
     bool found = false;
     auto visit = [&](const Expr& e) {

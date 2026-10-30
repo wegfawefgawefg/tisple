@@ -359,8 +359,13 @@ ExprId CheckJsr(Checker& ck, const Node& node) {
 }
 
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function) {
+    EnsureSignature(ck, function);
     const Function& fn = ck.out->functions[static_cast<std::size_t>(function)];
     const std::string& head = node.items[0].text;
+    if (fn.interrupt) {
+        return Fail(ck, node,
+                    head + " is the interrupt handler: an IRQ runs it, a call never does");
+    }
     std::size_t given = node.items.size() - 1;
     if (given != fn.params.size()) {
         std::string params = ParamText(ck, fn);

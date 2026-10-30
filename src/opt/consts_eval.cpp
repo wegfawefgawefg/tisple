@@ -91,7 +91,7 @@ bool Steady(const Pass& p, ExprId id) {
         return true;
     case ExprKind::VarRef: {
         const Var& var = VarOf(p, e.ref);
-        return !var.placement.has_address && !var.placement.in_aux;
+        return !var.placement.has_address && !var.placement.in_aux && !var.irq_shared;
     }
     case ExprKind::Index:
     case ExprKind::Field:

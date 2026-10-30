@@ -24,9 +24,9 @@ const char* const kSpecialForms[] = {
 const char* const kTypeNames[] = {"u8", "i8", "u16", "i16", "bool", "void", "ptr", "array"};
 
 const char* const kBuiltins[] = {
-    "at", "load", "store", "addr_of", "io_read", "io_write", "jsr", "wait_cycles", "not",
-    "+",  "-",    "*",     "/",       "%",       "=",        "!=",  "<",           "<=",
-    ">",  ">=",   "&",     "|",       "^",       "~",        "<<",  ">>",
+    "at",  "load", "store", "addr_of", "io_read", "io_write", "jsr", "wait_cycles", "sei", "cli",
+    "not", "+",    "-",     "*",       "/",       "%",        "=",   "!=",          "<",   "<=",
+    ">",   ">=",   "&",     "|",       "^",       "~",        "<<",  ">>",
 };
 
 const char* const kConstantNames[] = {"true", "false"};

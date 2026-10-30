@@ -399,7 +399,7 @@ bool Trackable(const Assembly& as, Mode mode, const AsmValue& v) {
         return false;
     }
     const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
-    return !sym.defined || sym.value < 0xC000;
+    return (!sym.defined || sym.value < 0xC000) && !sym.shared;
 }
 
 // an indexed byte of RAM the program owns, which nothing but stores changes: abs,X and abs,Y of
@@ -410,7 +410,7 @@ std::uint8_t TrackableIndex(const Assembly& as, Mode mode, const AsmValue& v) {
     }
     const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
     // the offset wraps: arr-1 is arr+65535
-    if (sym.defined && ((sym.value + v.offset) & 0xFFFF) + 0x100 > 0xC000) {
+    if ((sym.defined && ((sym.value + v.offset) & 0xFFFF) + 0x100 > 0xC000) || sym.shared) {
         return kPlain;
     }
     switch (mode) {

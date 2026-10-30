@@ -82,7 +82,7 @@ bool Plain(const Pass& p, ExprId id) {
         return false;
     }
     const Var& v = VarOf(p, e.ref);
-    return !v.placement.has_address && !v.placement.in_aux;
+    return !v.placement.has_address && !v.placement.in_aux && !v.irq_shared;
 }
 
 // small pure trees of plain reads and arithmetic: what a guard may test a second time
@@ -321,6 +321,7 @@ void Visit(Hoister& h, ExprId id, bool shared) {
     case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
+    case ExprKind::Interrupts:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:

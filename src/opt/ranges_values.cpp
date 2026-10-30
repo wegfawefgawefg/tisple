@@ -262,7 +262,8 @@ bool Quiet(const Pass& p, ExprId id) {
         return true;
     case ExprKind::VarRef: {
         const Var& v = VarOf(p, e.ref);
-        return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve;
+        return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve &&
+               !v.irq_shared;
     }
     case ExprKind::Index:
     case ExprKind::Field:
@@ -357,7 +358,8 @@ bool RangedVar(const Pass& p, std::int32_t var) {
     TypeKind kind = KindOf(*p.program, v.type);
     bool scalar = IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum;
     return scalar && v.kind != VarKind::ConstArray && !v.address_taken &&
-           !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve;
+           !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve &&
+           !v.irq_shared;
 }
 
 void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi) {

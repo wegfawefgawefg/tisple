@@ -421,6 +421,9 @@ std::string Gen::Stmt(int depth) {
     if (fnptr_shapes && !fnptr_targets && depth > 0 && fnptr_rng.Chance(20)) {
         return FnPtrShape(depth);
     }
+    if (irq_shapes && depth > 0 && irq_rng.Chance(6)) {
+        return IrqMask(depth);
+    }
     if (entry_shapes && depth > 0 && entry_rng.Chance(15)) {
         return EntryLoop(depth);
     }
@@ -637,6 +640,9 @@ std::string Gen::Program() {
     if (fnptr_shapes) {
         text += FnPtrHelpers();
     }
+    if (irq_shapes) {
+        text += IrqHelpers();
+    }
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;
@@ -748,6 +754,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.fnptr_rng.Next();
     }
+    g.irq_rng.s = seed * 0x8CB92BA72F3D8DD7ull + 0x510E527Full;
+    if (g.irq_rng.s == 0) {
+        g.irq_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.irq_rng.Next();
+    }
 }
 
 } // namespace
@@ -835,6 +848,16 @@ std::string GenerateFnPtrProgram(std::uint64_t seed) {
         return "";
     }
     g.fnptr_shapes = true;
+    return g.Program();
+}
+
+std::string GenerateIrqProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.irq_rng.Chance(kIrqPercent)) {
+        return "";
+    }
+    g.irq_shapes = true;
     return g.Program();
 }
 

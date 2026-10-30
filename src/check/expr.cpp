@@ -198,6 +198,9 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint, bool used) {
     if (head == "wait_cycles") {
         return CheckWaitCycles(ck, node);
     }
+    if (head == "sei" || head == "cli") {
+        return CheckInterruptsForm(ck, node);
+    }
     if (head == "fn" || head == "struct" || head == "enum" || head == "const" || head == "import" ||
         head == "macro") {
         std::string fix = head == "const" ? "; use let here" : "; move it out of this function";

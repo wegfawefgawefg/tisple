@@ -70,6 +70,9 @@ struct AsmSymbol {
     bool zp = false; // lives in zero page; known before LayoutCode
     bool defined = false;
     std::uint32_t value = 0;
+    // memory an interrupt handler shares: it may change between any two instructions, so no
+    // register is ever known to hold what it holds
+    bool shared = false;
 };
 
 struct Assembly {

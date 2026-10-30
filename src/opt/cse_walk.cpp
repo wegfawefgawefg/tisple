@@ -426,6 +426,7 @@ void Walk(Walker& w, ExprId id, bool shared) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         WalkChildren(w, e, shared);
         KillAll(w);
         return;

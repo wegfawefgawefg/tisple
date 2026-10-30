@@ -58,6 +58,7 @@ void ScanWrites(const Pass& p, ExprId id, LoopWrites& w) {
     }
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         w.all = true;
         return;
     case ExprKind::Literal:
@@ -97,7 +98,7 @@ void ScanWrites(const Pass& p, ExprId id, LoopWrites& w) {
 // a variable that holds its value while the loop runs
 bool Holds(const Pass& p, std::int32_t var, const LoopWrites& w) {
     const Var& v = VarOf(p, var);
-    if (v.placement.has_address || v.placement.in_aux || v.placement.reserve) {
+    if (v.placement.has_address || v.placement.in_aux || v.placement.reserve || v.irq_shared) {
         return false;
     }
     if (v.kind == VarKind::ConstArray) {
@@ -237,6 +238,7 @@ bool MayLeave(const Pass& p, ExprId id, int depth) {
     case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
+    case ExprKind::Interrupts:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:
@@ -383,6 +385,7 @@ void Candidates(Finder& f, ExprId id, bool shared, bool sometimes) {
     case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
+    case ExprKind::Interrupts:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:

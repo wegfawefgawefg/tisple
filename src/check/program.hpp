@@ -133,6 +133,9 @@ struct Var {
     bool loop_var = false;
     std::vector<std::uint8_t> init; // packed bytes; empty means zero
     std::vector<FnSlot> fn_slots;   // const tables of function pointers: the addresses in init
+    // the interrupt handler (or a function it calls) reads or writes it: it may change, or be
+    // looked at, between any two instructions of the rest of the program
+    bool irq_shared = false;
 };
 
 enum class Op : std::uint8_t {
@@ -195,6 +198,7 @@ enum class ExprKind : std::uint8_t {
     // in that order; type the signature's return type
     CallPtr,
     FnRef, // ref: function; a function's name as a value, its address, of type (fn ...)
+    Interrupts, // (cli) value 1: interrupts on; (sei) value 0: off; void
 };
 
 struct Expr {
@@ -231,6 +235,7 @@ struct Function {
     std::vector<std::int32_t> callees;
     bool address_taken = false; // its name is used as a value: callers the tree does not show
     TypeId type = -1;           // its (fn ...) type, once its address is taken
+    bool interrupt = false;     // (fn name () void :interrupt): the IRQ handler
     // backend only (backend/dispatch.cpp): jumps to the address in its first parameter
     bool dispatcher = false;
 };
@@ -254,6 +259,7 @@ struct Program {
     std::vector<Clause> clauses;
     std::vector<Signature> signatures; // of (fn ...) types, by Type::decl
     std::int32_t main = -1;            // main in the entry module, if any
+    std::int32_t handler = -1;         // the function marked :interrupt, if any
 };
 
 bool IsIntegerKind(TypeKind kind);
