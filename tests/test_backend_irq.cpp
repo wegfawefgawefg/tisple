@@ -143,6 +143,40 @@ void HandlerTests(TestResults& results) {
     CheckIrqs(results, kBusy, Route::Rom, cycles, steps, 40);
 }
 
+// fuzz seed 5064309 (irq): u8 divisions by a variable call rt.divu8.ge, a second entry of
+// the routine, which the entry did not count as the runtime: rt_r and rt_s went unsaved
+const char* const kDivide = R"(
+(let hq u8 200)
+(let hd u8 7)
+(let hs u16 0)
+(let out (array u8 64))
+(fn tick () void :interrupt
+    (set hs (+ hs 1))
+    (set hq (+ (/ hq (| hd 1)) (/ (+ hq 50) (| hd 3))))
+    (set hd (+ hd 1)))
+(fn main () void
+    (for i u8 0 64
+        (let d u8 (| (* i 3) 1))
+        (set (at out i) (+ (/ (+ i 200) d) (% (* i 7) d)))))
+)";
+
+void DivideTests(TestResults& results) {
+    Compiled c = CompileMainText(kDivide);
+    CHECK(results, c.ok);
+    int bad = 0;
+    for (int k = 0; k < 200 && bad < 3 && c.ok; k++) {
+        IrqRun run;
+        RunIrqs(run, c, k % 2 == 0 ? Route::Direct : Route::Rom,
+                {static_cast<std::uint64_t>(30 + k * 23)}, {40});
+        if (!run.ok || run.sim_irqs != 1) {
+            bad++;
+            std::fprintf(stderr, "divisions, interrupt at cycle %d: %s\n", 30 + k * 23,
+                         run.d.message.c_str());
+        }
+    }
+    CHECK(results, bad == 0);
+}
+
 void MaskTests(TestResults& results) {
     // a 16-bit counter read whole with interrupts off; the interrupt waits for (cli)
     CheckIrqs(results, R"(
@@ -380,8 +414,8 @@ void ExampleTests(TestResults& results) {
     }
     std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
     CHECK(results, tisple::LoadRom(*a, rom.data(), rom.size(), error));
-    CHECK(results, tisple::LoadProgram(*a, c.code.image.data(), c.code.image.size(),
-                                       c.code.origin, error));
+    CHECK(results,
+          tisple::LoadProgram(*a, c.code.image.data(), c.code.image.size(), c.code.origin, error));
     for (int k = 1; k <= 700; k++) {
         tisple::RequestIrq(a->cpu, a->cpu.cycles + static_cast<std::uint64_t>(k) * 17045);
     }
@@ -423,6 +457,7 @@ void CheckerTests(TestResults& results) {
 
 void RunBackendIrqTests(TestResults& results) {
     HandlerTests(results);
+    DivideTests(results);
     MaskTests(results);
     PassTests(results);
     RomTests(results);

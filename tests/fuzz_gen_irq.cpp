@@ -68,8 +68,8 @@ std::string Gen::IrqStmt(int depth) {
         return "(for hj u8 0 (& " + IrqValue(false, 1) +
                " 7)\n        (set (at ha hj) (+ (at ha hj) " + IrqValue(false, 1) + ")))";
     default:
-        return "(if (< " + IrqValue(false, 1) + " " + IrqValue(false, 1) + ") " + IrqStmt(0) + " " +
-               IrqStmt(0) + ")";
+        return "(if (< hq" + std::to_string(irq_rng.Below(3)) + " " + IrqValue(false, 1) + ") " +
+               IrqStmt(0) + " " + IrqStmt(0) + ")";
     }
 }
 

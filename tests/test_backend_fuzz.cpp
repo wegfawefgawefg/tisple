@@ -58,8 +58,8 @@ IrqPlan MakeIrqPlan(std::uint64_t seed) {
     std::uint64_t cycle = 20;
     std::uint64_t step = 5;
     for (int i = 0; i < count; i++) {
-        cycle += 1 + next(1500);
-        step += 1 + next(120);
+        cycle += 1 + next(400);
+        step += 1 + next(40);
         plan.cycles.push_back(cycle);
         plan.steps.push_back(step);
     }
@@ -209,7 +209,18 @@ bool DiffFile(TestResults& results) {
     Diff d;
     d.in.max_steps = 300000;
     d.max_cycles = 40000000;
-    bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+    // TISPLE_FUZZ_IRQ=seed: the interrupts that seed's (irq) program runs with
+    std::uint64_t irq_seed = EnvNumber("TISPLE_FUZZ_IRQ", 0);
+    bool ok = StartDiff(d, c);
+    if (ok && irq_seed != 0) {
+        StartIrqs(d, MakeIrqPlan(irq_seed));
+    }
+    ok = ok && DiffCall(d, "t.main", {});
+    if (ok && irq_seed != 0 && d.sim.machine->irqs_taken != d.in.irqs_taken) {
+        d.message = std::to_string(d.sim.machine->irqs_taken) + " interrupts on the 6502, " +
+                    std::to_string(d.in.irqs_taken) + " in the interpreter";
+        ok = false;
+    }
     if (opt.bisect >= 0) {
         std::printf("%s\n", tisple::DescribeOptReport(c.code.opt).c_str());
     }

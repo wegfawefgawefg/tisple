@@ -17,16 +17,23 @@ bool IsScratch(const Backend& be, std::int32_t sym) {
     return std::find(syms.begin(), syms.end(), sym) != syms.end();
 }
 
-bool IsRoutine(const Backend& be, std::int32_t sym) {
-    for (int r = 0; r < kRuntimeCount; r++) {
-        if (be.rt_sym[r] == sym) {
-            return true;
+// a call or jump from function f's code to the runtime: to no function's entry and to no
+// label of f's own (division routines have second entries, rt.divu8.ge and the like)
+bool CallsRuntime(const Backend& be, std::size_t f) {
+    std::vector<std::int32_t> own;
+    for (const AsmItem& item : be.code[f]) {
+        if (item.kind == ItemKind::Label) {
+            own.push_back(item.value.sym);
         }
     }
-    for (const DivRoutine& d : be.div_routines) {
-        if (d.sym == sym) {
-            return true;
+    for (const AsmItem& item : be.code[f]) {
+        bool call = item.kind == ItemKind::Ins && (item.mn == Mn::JSR || item.mn == Mn::JMP) &&
+                    item.mode == Mode::Abs && item.value.sym >= 0;
+        if (!call || std::find(own.begin(), own.end(), item.value.sym) != own.end() ||
+            std::find(be.fn_sym.begin(), be.fn_sym.end(), item.value.sym) != be.fn_sym.end()) {
+            continue;
         }
+        return true;
     }
     return false;
 }
@@ -100,9 +107,8 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
         }
         for (const AsmItem& item : be.code[f]) {
             ItemBytes(be, item, bytes);
-            bool call = item.kind == ItemKind::Ins && (item.mn == Mn::JSR || item.mn == Mn::JMP);
-            routines = routines || (call && IsRoutine(be, item.value.sym));
         }
+        routines = routines || CallsRuntime(be, f);
     }
     if (routines) {
         for (const AsmItem& item : runtime) {
