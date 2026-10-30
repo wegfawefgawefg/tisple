@@ -23,37 +23,37 @@ std::uint64_t Times(std::uint64_t a, std::uint64_t b) {
 }
 
 // the calls under id, each running `runs` times per run of the code at id
-void AddCalls(const Program& program, ExprId id, std::uint64_t runs,
+void AddCalls(const Program& program, ExprId id, std::uint64_t runs, std::uint32_t most,
               std::vector<std::uint64_t>& out) {
     if (id < 0) {
         return;
     }
     const Expr& e = ExprOf(program, id);
     if (e.kind == ExprKind::While || e.kind == ExprKind::For) {
-        std::uint64_t body = Times(runs, LoopTrips(program, id));
-        AddCalls(program, e.a, e.kind == ExprKind::While ? body : runs, out);
-        AddCalls(program, e.b, e.kind == ExprKind::While ? body : runs, out);
-        AddCalls(program, e.c, body, out);
+        std::uint64_t body = Times(runs, LoopTrips(program, id, most));
+        AddCalls(program, e.a, e.kind == ExprKind::While ? body : runs, most, out);
+        AddCalls(program, e.b, e.kind == ExprKind::While ? body : runs, most, out);
+        AddCalls(program, e.c, body, most, out);
         return;
     }
     if (e.kind == ExprKind::Call) {
         std::size_t callee = static_cast<std::size_t>(e.ref);
         out[callee] = std::min(kMaxRuns, out[callee] + runs);
     }
-    AddCalls(program, e.a, runs, out);
-    AddCalls(program, e.b, runs, out);
-    AddCalls(program, e.c, runs, out);
+    AddCalls(program, e.a, runs, most, out);
+    AddCalls(program, e.b, runs, most, out);
+    AddCalls(program, e.c, runs, most, out);
     switch (e.kind) {
     case ExprKind::Call:
     case ExprKind::StructLit:
     case ExprKind::Do:
         for (std::uint32_t i = 0; i < e.count; i++) {
-            AddCalls(program, ListItem(program, e, i), runs, out);
+            AddCalls(program, ListItem(program, e, i), runs, most, out);
         }
         return;
     case ExprKind::Match:
         for (std::uint32_t i = 0; i < e.count; i++) {
-            AddCalls(program, program.clauses[e.first + i].body, runs, out);
+            AddCalls(program, program.clauses[e.first + i].body, runs, most, out);
         }
         return;
     default:
@@ -63,7 +63,7 @@ void AddCalls(const Program& program, ExprId id, std::uint64_t runs,
 
 } // namespace
 
-std::uint32_t LoopTrips(const Program& program, ExprId loop) {
+std::uint32_t LoopTrips(const Program& program, ExprId loop, std::uint32_t most) {
     const Expr& e = ExprOf(program, loop);
     if (e.kind == ExprKind::While) {
         return 8;
@@ -85,10 +85,11 @@ std::uint32_t LoopTrips(const Program& program, ExprId loop) {
         return 4;
     }
     std::int32_t trips = to - from;
-    return static_cast<std::uint32_t>(trips < 2 ? 2 : trips > 64 ? 64 : trips);
+    std::uint32_t n = static_cast<std::uint32_t>(trips < 2 ? 2 : trips);
+    return n > most ? most : n;
 }
 
-std::vector<std::uint64_t> FindRunCounts(const Program& program) {
+std::vector<std::uint64_t> FindRunCounts(const Program& program, std::uint32_t most) {
     std::size_t count = program.functions.size();
     std::vector<std::uint64_t> runs(count, 0);
     std::vector<bool> called(count, false);
@@ -104,7 +105,7 @@ std::vector<std::uint64_t> FindRunCounts(const Program& program) {
     for (std::int32_t f : CallersFirst(program)) {
         std::uint64_t r = runs[static_cast<std::size_t>(f)];
         if (r > 0) {
-            AddCalls(program, program.functions[static_cast<std::size_t>(f)].body, r, runs);
+            AddCalls(program, program.functions[static_cast<std::size_t>(f)].body, r, most, runs);
         }
     }
     return runs;

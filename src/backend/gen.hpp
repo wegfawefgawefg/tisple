@@ -30,6 +30,7 @@
 #include "backend/effects.hpp"
 #include "backend/index_alias.hpp"
 #include "backend/ranges.hpp"
+#include "backend/size_budget.hpp"
 
 #include <string>
 #include <vector>
@@ -100,7 +101,8 @@ struct Backend {
     // by for expression: the first of the literals its counter takes in copies of its body
     // (AddCounterLiterals), or -1
     std::vector<ExprId> counter_literals;
-    std::vector<std::uint64_t> fn_runs; // by function: FindRunCounts
+    std::vector<std::uint64_t> fn_runs;     // by function: FindRunCounts
+    std::vector<std::uint64_t> fn_all_runs; // the same, trips not capped (size budget)
     // by function: its Gen::multiplies, for the choice of multiply routines
     std::vector<std::vector<std::pair<ExprId, std::uint64_t>>> multiplies;
     std::vector<bool> deref;              // by var: some load or store goes straight through it
@@ -110,8 +112,13 @@ struct Backend {
     std::vector<DivRoutine> div_routines; // the ones the code calls
     ValueRanges ranges;
     std::vector<std::vector<AsmItem>> code; // by function
-    std::int32_t scratch = -1;              // 2 bytes
-    std::int32_t rt_a = -1;                 // 2 bytes each
+    // the copies the generation made, for the size budget (size_budget.hpp), and by for
+    // expression the loops it must not unroll
+    std::vector<SizeNote> size_notes;
+    std::vector<bool> keep_loops;
+    std::vector<std::uint64_t> fn_cost; // by function: its own code's Gen::cost
+    std::int32_t scratch = -1;          // 2 bytes
+    std::int32_t rt_a = -1;             // 2 bytes each
     std::int32_t rt_b = -1;
     std::int32_t rt_r = -1;
     std::int32_t rt_s = -1; // 1 byte
@@ -345,8 +352,13 @@ struct Gen {
     // callee never changes, instead of a copy of it
     std::vector<std::pair<std::int32_t, ExprId>> bound;
     std::uint64_t cost = 0; // cycles emitted so far, times each loop level's factor
+    // the cycles of the runtime routines the code calls, weighed the same way (about; only
+    // the size budget reads it)
+    std::uint64_t routine_cost = 0;
     // by loop level: how many times its body may run, for weighing code (LoopFactor)
     std::vector<std::uint32_t> loop_factors;
+    // by loop level: the same, a for's trips not capped at 64 (the size budget's)
+    std::vector<std::uint32_t> loop_runs;
     bool violation = false; // code touched a pinned register
     int loop_depth = 0;
     int for_depth = 0;
@@ -358,6 +370,10 @@ struct Gen {
     // functions called in one place whose call was inlined here: that call made again (a
     // while test made twice) is a JSR
     std::vector<std::int32_t> inlined_once;
+    // the copies made so far in this function's code (Backend::size_notes), and the ones
+    // being made now, outermost first
+    std::vector<SizeNote> size_notes;
+    std::vector<SizeItem> open_notes;
     // data the code reads (a match's value tables), placed after the function's code
     std::vector<AsmItem> tables;
     std::uint32_t temp_top = 0;
@@ -667,12 +683,32 @@ bool ReplacedLoop(Gen& g, const ForParts& f);
 // a literal for each value the counter of a short for with constant bounds takes, when its
 // body reads it, appended to the program (gen_unroll.cpp): by for expression, the first
 std::vector<ExprId> AddCounterLiterals(Program& program);
-// a loop whose counter nothing reads as its body once per trip, one after the other: no
-// counter and no test; a continue goes to the next copy (gen_unroll.cpp)
-void UnrolledLoop(Gen& g, const ForParts& f);
-// the body once per trip, the counter in each copy bound to its literal; false (nothing
-// made) when the loop has no literals or the copies would be too big
-bool CountedCopies(Gen& g, const ForParts& f);
+// gen_unroll.cpp: a loop with a constant trip count as copies of its body, one after the
+// other: no counter and no test, a continue goes to the next copy. When nothing reads the
+// counter the body is copied as it is; else (counted) each copy binds the counter to its
+// literal, which CountedCopiesFit says it has, and the copies are not too big. Both the
+// copies and the loop (RolledLoop) are made: the copies stay unless the size budget turns
+// them down or they are no faster and no smaller, noted for the budget
+bool CountedCopiesFit(const Gen& g, const ForParts& f);
+void CopiesOrLoop(Gen& g, const ForParts& f, bool counted);
+// the loop itself, its counter in X, Y or memory (gen_loop.cpp)
+void RolledLoop(Gen& g, const ForParts& f);
+// the size budget (size_budget.cpp): the start of a call's copy, then its end noted with its
+// bytes and cycles; bound_bytes: the arguments it reads in place, which a JSR would store;
+// weight: LoopWeight at the call
+std::size_t StartCopyNote(Gen& g, const SizeItem& item);
+void EndCallNote(Gen& g, std::size_t start, ExprId site, std::uint32_t bound_bytes,
+                 std::uint64_t cost_before, std::uint64_t weight);
+// the bytes of the code from mark on; of items once the peephole pass is done with them (as
+// one function's code, which may store for code after it)
+std::int64_t RawBytes(const Gen& g, std::size_t mark);
+std::int64_t CleanBytes(const Gen& g, std::vector<AsmItem> items);
+// LoopWeight with the loops' whole trip counts (Gen::loop_runs)
+std::uint64_t RunWeight(const Gen& g);
+// the budget says this for loop stays a loop
+bool KeepsLoop(const Gen& g, ExprId loop);
+// a call's target, when it is a runtime or division routine: its cycles, about (else 0)
+std::uint64_t RoutineCycles(const Backend& be, const AsmValue& target);
 // (set place value) steps place by one: (+ place 1), (- place 1), (+ place s) for a unit step s
 bool IsStepByOne(const Gen& g, ExprId place, ExprId value);
 // gen_follow.cpp: start following the u16 variables the while loop `loop` only steps by one;

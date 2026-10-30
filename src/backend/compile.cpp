@@ -8,63 +8,14 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 namespace tisple {
 
 namespace {
 
-// a variable's bytes, as the dead-store pass may see them from this function's code: its own
-// locals and parameters and every function's locals are read only by code that writes them
-// first (a callee's locals by its inlined copies, or by itself); globals and other
-// functions' parameters by any code after a call or the return
-StoreScope VarScope(const Var& var, std::int32_t function) {
-    if (var.address_taken || var.placement.has_address || var.irq_shared) {
-        return StoreScope::Untracked;
-    }
-    if (var.kind == VarKind::Local || (var.kind == VarKind::Param && var.function == function)) {
-        return StoreScope::Private;
-    }
-    if (var.kind == VarKind::Global || var.kind == VarKind::Param) {
-        return StoreScope::Exposed;
-    }
-    return StoreScope::Untracked;
-}
-
-// by symbol, for this function's code
-std::vector<StoreScope> StoreScopes(const Backend& be, std::int32_t function) {
-    std::vector<StoreScope> out(be.info.size(), StoreScope::Untracked);
-    for (std::size_t s = 0; s < be.info.size(); s++) {
-        const SymInfo& info = be.info[s];
-        if (info.role == SymRole::Var) {
-            out[s] = VarScope(be.program->vars[static_cast<std::size_t>(info.owner)], function);
-            continue;
-        }
-        bool frame = info.role == SymRole::Temps || info.role == SymRole::PtrTemps ||
-                     info.role == SymRole::LoopPtrs;
-        if (frame && info.owner == function) {
-            out[s] = StoreScope::Private;
-        }
-    }
-    return out;
-}
-
-// by symbol, for this function's code: the function whose frame holds the byte, for the
-// locals and parameters of the functions it inlines (frames.cpp may give their frames the
-// same bytes, as they never run at the same time); -1 for its own, globals and fixed places
-std::vector<std::int32_t> FrameSharers(const Backend& be, std::int32_t function) {
-    std::vector<std::int32_t> out(be.info.size(), -1);
-    for (std::size_t s = 0; s < be.info.size(); s++) {
-        const SymInfo& info = be.info[s];
-        if (info.role != SymRole::Var) {
-            continue;
-        }
-        const Var& var = be.program->vars[static_cast<std::size_t>(info.owner)];
-        if (var.function >= 0 && var.function != function && !var.placement.has_address) {
-            out[s] = var.function;
-        }
-    }
-    return out;
-}
+// generations of the code at most, each with fewer copies than the one before
+constexpr int kMaxSizeRounds = 8;
 
 void MakeSymbols(Backend& be) {
     const Program& program = *be.program;
@@ -278,6 +229,108 @@ void FindUsedRoutines(Backend& be) {
     be.div_routines = used;
 }
 
+// every function's code, with the copies the size budget allows (be as prepared: analyses
+// done, no symbols yet)
+void GenerateFunctions(Backend& be, const SizeChoices& choices, std::vector<WeightsAdded>& added) {
+    const Program& program = *be.program;
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (choices.keep_calls[f]) {
+            be.inlines[f] = InlineKind::None;
+        }
+    }
+    be.deref = FindDerefPointers(program, be.inlines);
+    be.keep_loops = choices.keep_loops;
+    be.fn_cost.assign(program.functions.size(), 0);
+    MakeSymbols(be);
+    added.assign(program.functions.size(), {});
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        std::vector<std::uint64_t> weights = Weights(be);
+        if (program.functions[f].dispatcher) {
+            GenDispatcher(be, static_cast<std::int32_t>(f));
+        } else {
+            GenFunction(be, static_cast<std::int32_t>(f));
+            Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
+                     FrameSharers(be, static_cast<std::int32_t>(f)));
+        }
+        added[f] = AddedSince(be, weights);
+    }
+}
+
+// the code of a program the mid-level passes are done with, made again with fewer copies
+// while the copies go over the size budget (rounds generations at most): in be, with the
+// functions it keeps and what each added to the symbols' weights. choices: what the budget
+// turned down
+bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, Backend& be,
+                     std::vector<WeightsAdded>& added, std::vector<bool>& kept,
+                     SizeChoices& choices, std::vector<Diagnostic>& errors) {
+    std::vector<std::int32_t> entries = LowerIndirectCalls(program);
+    std::vector<ExprId> counter_literals = AddCounterLiterals(program);
+    std::size_t before = errors.size();
+    Backend prepared;
+    prepared.program = &program;
+    prepared.errors = &errors;
+    if (!ShapeProgram(program, prepared.shapes, errors)) {
+        return false;
+    }
+    prepared.counter_literals = counter_literals;
+    prepared.entries = entries;
+    prepared.inlines = FindInlines(program, options.no_inline);
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (program.functions[f].dispatcher || program.functions[f].interrupt) {
+            prepared.inlines[f] = InlineKind::None; // only for the analyses; the IRQ entry calls it
+        }
+    }
+    prepared.aliases = FindIndexAliases(program);
+    prepared.unit_steps = FindUnitSteps(program);
+    prepared.effects = ComputeEffects(program);
+    prepared.div_pairs = FindDivPairs(program);
+    prepared.ranges = FindValueRanges(program);
+    prepared.fn_runs = FindRunCounts(program);
+    prepared.fn_all_runs = FindRunCounts(program, kMaxRunTrips);
+    prepared.multiplies.assign(program.functions.size(), {});
+    choices.keep_calls.assign(program.functions.size(), false);
+    choices.keep_loops.assign(program.exprs.size(), false);
+    for (int round = 1;; round++) {
+        be = prepared;
+        GenerateFunctions(be, choices, added);
+        if (errors.size() != before) {
+            return false;
+        }
+        kept = KeptFunctions(be, options);
+        if (round >= rounds || !TrimGrowth(be, kept, choices)) {
+            return true;
+        }
+    }
+}
+
+// the small functions whose copies at their calls go over the size budget: the mid-level
+// copies them nowhere either (its copies are code the budget cannot see). Measured on the
+// program as the mid-level passes leave it before they inline, in one generation with every
+// copy made
+void AddCopiesOverBudget(const Program& folded, const BuildOptions& options, const OptOptions& opt,
+                         std::vector<std::string>& no_inline) {
+    Program program = folded;
+    OptOptions before_inline = opt;
+    before_inline.bisect = -1;
+    before_inline.disabled.push_back("inline");
+    OptReport report;
+    OptimizeProgram(program, before_inline, report);
+    Backend be;
+    std::vector<WeightsAdded> added;
+    std::vector<bool> kept;
+    SizeChoices choices;
+    std::vector<Diagnostic> errors;
+    if (!GenerateProgram(program, options, 1, be, added, kept, choices, errors)) {
+        return;
+    }
+    std::vector<bool> over = CopiesOverBudget(be, kept);
+    for (std::size_t f = 0; f < folded.functions.size(); f++) {
+        if (over[f]) {
+            no_inline.push_back(folded.functions[f].name);
+        }
+    }
+}
+
 } // namespace
 
 bool CompileProgram(const Program& source, const BuildOptions& options, Compiled& out,
@@ -290,52 +343,21 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     OptOptions opt = options.opt;
     opt.no_inline = options.no_inline; // the mid-level inlines too
     opt.keep_bodies = options.keep_all_functions;
+    if (opt.level > 0) {
+        AddCopiesOverBudget(program, options, opt, opt.no_inline);
+    }
     OptimizeProgram(program, opt, report);
-    std::vector<std::int32_t> entries = LowerIndirectCalls(program);
-    std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     out = Compiled();
     out.origin = options.origin;
     out.main = program.main;
-    std::size_t before = errors.size();
     Backend be;
-    be.program = &program;
-    be.errors = &errors;
-    if (!ShapeProgram(program, be.shapes, errors)) {
+    std::vector<WeightsAdded> added;
+    std::vector<bool> kept;
+    SizeChoices choices;
+    if (!GenerateProgram(program, options, kMaxSizeRounds, be, added, kept, choices, errors)) {
         return false;
     }
-    be.counter_literals = counter_literals;
-    be.entries = entries;
-    be.inlines = FindInlines(program, options.no_inline);
-    for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if (program.functions[f].dispatcher || program.functions[f].interrupt) {
-            be.inlines[f] = InlineKind::None; // only for the analyses; the IRQ entry calls it
-        }
-    }
-    be.deref = FindDerefPointers(program, be.inlines);
-    be.aliases = FindIndexAliases(program);
-    be.unit_steps = FindUnitSteps(program);
-    be.effects = ComputeEffects(program);
-    be.div_pairs = FindDivPairs(program);
-    be.ranges = FindValueRanges(program);
-    be.fn_runs = FindRunCounts(program);
-    be.multiplies.assign(program.functions.size(), {});
-    MakeSymbols(be);
-    std::vector<WeightsAdded> added(program.functions.size());
-    for (std::size_t f = 0; f < program.functions.size(); f++) {
-        std::vector<std::uint64_t> weights = Weights(be);
-        if (program.functions[f].dispatcher) {
-            GenDispatcher(be, static_cast<std::int32_t>(f));
-        } else {
-            GenFunction(be, static_cast<std::int32_t>(f));
-            Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
-                     FrameSharers(be, static_cast<std::int32_t>(f)));
-        }
-        added[f] = AddedSince(be, weights);
-    }
-    if (errors.size() != before) {
-        return false;
-    }
-    std::vector<bool> kept = KeptFunctions(be, options);
+    PrintSizeNotes(be, kept);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         if (!kept[f]) {
             DropFunction(be, static_cast<std::int32_t>(f), added[f]);

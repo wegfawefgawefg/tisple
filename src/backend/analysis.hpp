@@ -71,11 +71,16 @@ bool HasBigCalls(const Program& program, ExprId id, const std::vector<InlineKind
 std::vector<bool> FindDerefPointers(const Program& program, const std::vector<InlineKind>& inlines);
 
 // how many times a loop's body may run each time the loop is reached: a for with constant
-// bounds its trip count (2 to 64), a while 8, any other loop 4 (run_counts.cpp)
-std::uint32_t LoopTrips(const Program& program, ExprId loop);
+// bounds its trip count (2 to `most`), a while 8, any other loop 4 (run_counts.cpp). Code
+// choices weigh with at most 64; the size budget counts up to the type's whole range
+constexpr std::uint32_t kMaxWeighedTrips = 64;
+constexpr std::uint32_t kMaxRunTrips = 65536;
+std::uint32_t LoopTrips(const Program& program, ExprId loop, std::uint32_t most = kMaxWeighedTrips);
 // by function: how many times it may run in one run of the program, from the calls to it and
-// the loops around them (at most 2^32; 0 for a function main never reaches)
-std::vector<std::uint64_t> FindRunCounts(const Program& program);
+// the loops around them, each loop's trips at most `most` (at most 2^32 in all; 0 for a
+// function main never reaches)
+std::vector<std::uint64_t> FindRunCounts(const Program& program,
+                                         std::uint32_t most = kMaxWeighedTrips);
 
 // by var: locals every let and set gives 1 or -1 (unit_steps.cpp)
 std::vector<bool> FindUnitSteps(const Program& program);

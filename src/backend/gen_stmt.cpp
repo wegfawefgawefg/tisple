@@ -365,6 +365,8 @@ void GenFunction(Backend& be, std::int32_t function) {
     InitPagePointers(g);
     g.out->insert(g.out->end(), g.tables.begin(), g.tables.end());
     be.multiplies[static_cast<std::size_t>(function)] = g.multiplies;
+    be.size_notes.insert(be.size_notes.end(), g.size_notes.begin(), g.size_notes.end());
+    be.fn_cost[static_cast<std::size_t>(function)] = g.cost + g.routine_cost;
 }
 
 } // namespace tisple

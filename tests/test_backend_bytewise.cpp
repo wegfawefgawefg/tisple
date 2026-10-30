@@ -115,10 +115,11 @@ void TestShifts(TestResults& results) {
         fns.push_back(fn);
     }
     CheckEach(results, text, fns);
-    // the CRC step shifts once: one ASL and one ROL a bit, the 8 bits unrolled
+    // the CRC step shifts once: one ASL and one ROL a bit. The 8 bits stay a loop: crc runs
+    // once here, and its 8 copies would add 184 bytes for 34 cycles (size_budget.hpp)
     Compiled c = CompileText(text);
-    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ASL) == 8);
-    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ROL) == 8);
+    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ASL) == 1);
+    CHECK(results, CountMn(c, "t.crc", tisple::Mn::ROL) == 1);
 }
 
 } // namespace

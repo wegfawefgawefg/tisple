@@ -100,6 +100,23 @@ void Successors(const Flow& f, std::size_t i, std::vector<std::size_t>& out) {
     }
 }
 
+// a variable's bytes, as the dead-store pass may see them from this function's code: its own
+// locals and parameters and every function's locals are read only by code that writes them
+// first (a callee's locals by its inlined copies, or by itself); globals and other
+// functions' parameters by any code after a call or the return
+StoreScope VarScope(const Var& var, std::int32_t function) {
+    if (var.address_taken || var.placement.has_address || var.irq_shared) {
+        return StoreScope::Untracked;
+    }
+    if (var.kind == VarKind::Local || (var.kind == VarKind::Param && var.function == function)) {
+        return StoreScope::Private;
+    }
+    if (var.kind == VarKind::Global || var.kind == VarKind::Param) {
+        return StoreScope::Exposed;
+    }
+    return StoreScope::Untracked;
+}
+
 } // namespace
 
 bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& scopes) {
@@ -200,6 +217,42 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& 
     }
     items.swap(kept);
     return dropped;
+}
+
+// by symbol, for this function's code
+std::vector<StoreScope> StoreScopes(const Backend& be, std::int32_t function) {
+    std::vector<StoreScope> out(be.info.size(), StoreScope::Untracked);
+    for (std::size_t s = 0; s < be.info.size(); s++) {
+        const SymInfo& info = be.info[s];
+        if (info.role == SymRole::Var) {
+            out[s] = VarScope(be.program->vars[static_cast<std::size_t>(info.owner)], function);
+            continue;
+        }
+        bool frame = info.role == SymRole::Temps || info.role == SymRole::PtrTemps ||
+                     info.role == SymRole::LoopPtrs;
+        if (frame && info.owner == function) {
+            out[s] = StoreScope::Private;
+        }
+    }
+    return out;
+}
+
+// by symbol, for this function's code: the function whose frame holds the byte, for the
+// locals and parameters of the functions it inlines (frames.cpp may give their frames the
+// same bytes, as they never run at the same time); -1 for its own, globals and fixed places
+std::vector<std::int32_t> FrameSharers(const Backend& be, std::int32_t function) {
+    std::vector<std::int32_t> out(be.info.size(), -1);
+    for (std::size_t s = 0; s < be.info.size(); s++) {
+        const SymInfo& info = be.info[s];
+        if (info.role != SymRole::Var) {
+            continue;
+        }
+        const Var& var = be.program->vars[static_cast<std::size_t>(info.owner)];
+        if (var.function >= 0 && var.function != function && !var.placement.has_address) {
+            out[s] = var.function;
+        }
+    }
+    return out;
 }
 
 } // namespace tisple

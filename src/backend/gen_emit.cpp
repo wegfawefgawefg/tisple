@@ -194,6 +194,7 @@ void Emit(Gen& g, Mn mn, Mode mode, AsmValue value) {
         }
     }
     if (mn == Mn::JSR) {
+        g.routine_cost += RoutineCycles(*g.be, value) * LoopWeight(g);
         if (g.pin[0] >= 0 || g.pin[1] >= 0) {
             g.violation = true;
         }
