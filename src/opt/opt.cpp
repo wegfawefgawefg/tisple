@@ -162,8 +162,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 
 const std::vector<std::string>& OptPassNames() {
     static const std::vector<std::string> names = {
-        "inline", "dead",   "loops", "args",     "returns", "collapse", "unroll", "unswitch",
-        "consts", "ranges", "vars",  "elements", "licm",    "cse",      "eval",   "pointers"};
+        "inline", "dead",     "loops",  "args",     "returns",   "collapse",
+        "unroll", "unswitch", "consts", "ranges",   "vars",      "elements",
+        "licm",   "cse",      "eval",   "pointers", "divisions", "scans"};
     return names;
 }
 
