@@ -13,6 +13,13 @@
 namespace tisple_tests {
 
 Opted Optimize(const std::string& text, const tisple::OptOptions& options) {
+    // the functions as they are: inlining would copy them into main (test_opt_inline.cpp)
+    tisple::OptOptions kept = options;
+    kept.disabled.push_back("inline");
+    return OptimizeInlined(text, kept);
+}
+
+Opted OptimizeInlined(const std::string& text, const tisple::OptOptions& options) {
     Opted out;
     Built built = BuildText(text);
     out.ok = built.ok;

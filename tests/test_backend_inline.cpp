@@ -115,11 +115,18 @@ void TestOnceInSmall(TestResults& results) {
     CHECK(results, CountMn(c, "t.main", tisple::Mn::JSR) == 2);
 }
 
+// the backend's own inlining: the mid level's (src/opt/inline.cpp) would copy f first
+tisple::OptOptions NoMidInline() {
+    tisple::OptOptions options;
+    options.disabled = {"inline"};
+    return options;
+}
+
 void TestOnceInUnrolled(TestResults& results) {
     // the loop's counter is never read: four copies of its body
     std::string text = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
                        "(fn main () u8 (for i u8 0 4 (set out (+ out (f out)))) out)";
-    Compiled c = CompileMainText(text);
+    Compiled c = CompileMainText(text, NoMidInline());
     CheckMain(results, c, text);
     CHECK(results, HasSpan(c.code, "t.f"));
     // every copy calls it, none has the body
@@ -150,7 +157,7 @@ void TestOnceChain(TestResults& results) {
                 std::to_string(i) + "))\n    (+ e (^ d " + next + ")))\n";
     }
     text += "(fn main () u8 (for i u8 0 3 (set out (+ out (f1 (+ out i))))) (+ out g))";
-    Compiled c = CompileMainText(text);
+    Compiled c = CompileMainText(text, NoMidInline());
     CheckMain(results, c, text);
     CHECK(results, !HasSpan(c.code, "t.f1") && !HasSpan(c.code, "t.f4"));
     CHECK(results, HasSpan(c.code, "t.f5"));

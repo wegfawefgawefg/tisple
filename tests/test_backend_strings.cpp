@@ -77,8 +77,9 @@ void TestDropped(TestResults& results) {
             CHECK(results, !dropped && c.code.layout.vars[v].size == 5);
         }
     }
-    // KEPT and its 0 are all the data there is, but out in zero page
-    CHECK(results, c.code.data_bytes == 5);
+    // KEPT and its 0 are all the data there is, but out in zero page and the frames (first is
+    // inlined at the mid level, never emptied: their parameters keep bytes, for the interpreter)
+    CHECK(results, c.code.data_bytes == 5 + c.code.mem_frames);
     Diff d;
     CHECK(results, StartDiff(d, c) && DiffCall(d, "t.main", {}));
 }

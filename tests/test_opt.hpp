@@ -15,7 +15,10 @@ struct Opted {
     bool ok = false;
 };
 
+// (every pass but inline, which would copy the functions a test looks at into their callers)
 Opted Optimize(const std::string& text, const tisple::OptOptions& options = {});
+// every pass, inline too
+Opted OptimizeInlined(const std::string& text, const tisple::OptOptions& options = {});
 // every pass but unroll: for tests of what another pass leaves of a loop
 tisple::OptOptions NoUnroll();
 // nodes of a kind under a function's body after the passes; -1 for no such function

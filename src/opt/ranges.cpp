@@ -260,6 +260,9 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
     case ExprKind::Binary:
         EachChild(p, e, [&](ExprId child) { Visit(g, child, shared, -1); });
         if (!shared) {
+            FoldDivision(g, id);
+        }
+        if (!shared && At(p, id).kind == ExprKind::Binary) {
             FoldCompare(g, id);
         }
         if (!shared && At(p, id).kind == ExprKind::Binary) {

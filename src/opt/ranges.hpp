@@ -42,6 +42,10 @@ struct Ranger {
     Counter written;
 };
 
+// a division the language's rules or the operands' ranges work out without dividing: by 1,
+// by 0, a dividend below the divisor, (/ x (| x 1)) (ranges_divs.cpp)
+void FoldDivision(Ranger& g, ExprId id);
+
 // ---- what sets give the items after them (ranges_facts.cpp)
 
 // the counters or facts change: ranges worked out before may no longer hold
