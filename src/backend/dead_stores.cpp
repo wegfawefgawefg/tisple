@@ -186,40 +186,73 @@ bool NumberBytes(const std::vector<AsmItem>& items, const std::vector<StoreScope
     return true;
 }
 
+// the bytes live after each item, as `words` 64-bit words an item
+struct LiveSets {
+    std::size_t words = 0;
+    std::vector<std::uint64_t> out;
+
+    bool Has(std::size_t item, std::size_t byte) const {
+        return (out[item * words + byte / 64] >> (byte % 64)) & 1;
+    }
+};
+
 // the bytes live after each item; an item `faint` marks (an INC or DEC) neither reads nor
-// writes its byte
-std::vector<Bits> LiveOut(const std::vector<AsmItem>& items, const Bytes& b,
-                          const std::vector<bool>& faint) {
-    std::vector<Bits> live_in(items.size(), b.empty);
-    std::vector<Bits> live_out(items.size(), b.empty);
+// writes its byte. Flat arrays and the successors worked out once: the dead-store pass runs
+// in every peephole round of every function
+LiveSets LiveOut(const std::vector<AsmItem>& items, const Bytes& b,
+                 const std::vector<bool>& faint) {
+    std::size_t n = items.size();
+    std::size_t words = b.empty.words.size();
+    std::vector<std::size_t> first(n + 1, 0);
+    std::vector<std::size_t> succ_all;
     std::vector<std::size_t> succ;
+    for (std::size_t i = 0; i < n; i++) {
+        Successors(b.f, i, succ);
+        first[i] = succ_all.size();
+        succ_all.insert(succ_all.end(), succ.begin(), succ.end());
+    }
+    first[n] = succ_all.size();
+    LiveSets live;
+    live.words = words;
+    live.out.assign(n * words, 0);
+    std::vector<std::uint64_t> live_in(n * words, 0);
+    std::vector<std::uint64_t> in(words, 0);
     for (bool changed = true; changed;) {
         changed = false;
-        for (std::size_t i = items.size(); i-- > 0;) {
-            Successors(b.f, i, succ);
-            for (std::size_t s : succ) {
-                if (s != kNone) {
-                    live_out[i].Merge(live_in[s]);
-                } else {
-                    live_out[i].Merge(b.exposed);
+        for (std::size_t i = n; i-- > 0;) {
+            std::uint64_t* out = &live.out[i * words];
+            for (std::size_t k = first[i]; k < first[i + 1]; k++) {
+                std::size_t s = succ_all[k];
+                const std::uint64_t* from =
+                    s != kNone ? &live_in[s * words] : b.exposed.words.data();
+                for (std::size_t w = 0; w < words; w++) {
+                    out[w] |= from[w];
                 }
             }
-            Bits in = live_out[i];
+            std::copy(out, out + words, in.begin());
             if (items[i].kind == ItemKind::Ins && items[i].mn == Mn::JSR) {
-                in.Merge(b.exposed);
+                for (std::size_t w = 0; w < words; w++) {
+                    in[w] |= b.exposed.words[w];
+                }
             }
             std::size_t byte = b.byte_of[i];
             if (byte != kNone && !faint[i]) {
+                std::uint64_t bit = std::uint64_t(1) << (byte % 64);
                 if (IsStore(items[i].mn)) {
-                    in.Clear(byte);
+                    in[byte / 64] &= ~bit;
                 } else {
-                    in.Set(byte);
+                    in[byte / 64] |= bit;
                 }
             }
-            changed = live_in[i].Merge(in) || changed;
+            std::uint64_t* at = &live_in[i * words];
+            for (std::size_t w = 0; w < words; w++) {
+                std::uint64_t both = at[w] | in[w];
+                changed = changed || both != at[w];
+                at[w] = both;
+            }
         }
     }
-    return live_out;
+    return live;
 }
 
 // the next item from i on that is not a note
@@ -242,12 +275,12 @@ bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& 
     if (!NumberBytes(items, scopes, b)) {
         return false;
     }
-    std::vector<Bits> live_out = LiveOut(items, b, std::vector<bool>(items.size(), false));
+    LiveSets live_out = LiveOut(items, b, std::vector<bool>(items.size(), false));
     std::vector<AsmItem> kept;
     bool dropped = false;
     for (std::size_t i = 0; i < items.size(); i++) {
         std::size_t byte = b.byte_of[i];
-        if (byte != kNone && IsStore(items[i].mn) && !live_out[i].Has(byte)) {
+        if (byte != kNone && IsStore(items[i].mn) && !live_out.Has(i, byte)) {
             dropped = true;
             continue;
         }
@@ -298,15 +331,15 @@ bool DropFaintSteps(const Assembly& as, std::vector<AsmItem>& items,
     std::vector<std::uint8_t> live;
     for (bool again = true; again;) {
         again = false;
-        std::vector<Bits> live_out = LiveOut(items, b, faint);
+        LiveSets live_out = LiveOut(items, b, faint);
         bool some = false;
         for (std::size_t i = 0; i < items.size(); i++) {
             if (!faint[i] || group_end[i] == kNone) {
                 continue;
             }
             std::size_t last = group_end[i];
-            bool dead = b.byte_of[i] != kNone && !live_out[i].Has(b.byte_of[i]) &&
-                        b.byte_of[last] != kNone && !live_out[last].Has(b.byte_of[last]);
+            bool dead = b.byte_of[i] != kNone && !live_out.Has(i, b.byte_of[i]) &&
+                        b.byte_of[last] != kNone && !live_out.Has(last, b.byte_of[last]);
             if (dead && live.empty()) {
                 live = LiveRegsIn(as, items);
             }
