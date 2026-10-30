@@ -70,9 +70,11 @@ int RunCheckCommand(int argc, char** argv) {
     const char* path = nullptr;
     BuildOptions options;
     if (!ParseCheckArgs(argc, argv, path, options)) {
-        std::fprintf(stderr, "usage: tisple check file.tsp [--origin A] [--disk [out.dsk]]\n"
-                             "  [-O0|-O1] [--no-pass NAME] [--no-inline module.fn]\n"
-                             "lays the program out as tisple build does with those flags\n");
+        std::fprintf(stderr,
+                     "usage: tisple check file.tsp [--origin A] [--disk [out.dsk]]\n"
+                     "  [-O0|-O1] [--no-pass NAME] [--no-inline module.fn]\n"
+                     "lays the program out as tisple build does with those flags\n"
+                     "a tisple.project at the project root lets tisple check run with no file\n");
         return 1;
     }
     // laid out the way the backend does it, so layout errors match tisple build

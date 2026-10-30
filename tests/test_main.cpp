@@ -8,6 +8,7 @@
 #include "test_ide.hpp"
 #include "test_machine.hpp"
 #include "test_opt.hpp"
+#include "test_project.hpp"
 #include "test_race.hpp"
 #include "test_reader.hpp"
 
@@ -51,6 +52,7 @@ int main() {
     tisple_tests::RunExpandTests(results);
     tisple_tests::RunMacroTests(results);
     tisple_tests::RunIndexTests(results);
+    tisple_tests::RunProjectTests(results);
     tisple_tests::RunLayoutTests(results);
     tisple_tests::RunCheckDataTests(results);
     tisple_tests::RunInterpTests(results);

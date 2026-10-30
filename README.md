@@ -111,6 +111,9 @@ build/tisple build programs/snake/main.tsp --disk snake.dsk # a disk that boots 
 build/tisple machine --disk snake.dsk --window              # boot it on the built-in IIe
 ```
 
+In a folder with a `tisple.project` (docs/language.md), a bare `tisple build` or `tisple run`
+builds or plays that project.
+
 `tisple help` lists the commands. Tests: `cmake --preset dev && cmake --build --preset dev
 && ./build-debug/tisple_tests`.
 

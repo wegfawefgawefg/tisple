@@ -140,11 +140,13 @@ bool ParseCodeFlag(int argc, char** argv, int& i, BuildOptions& options, std::st
 int RunBuildCommand(int argc, char** argv) {
     BuildArgs args;
     if (!ParseArgs(argc, argv, false, args)) {
-        std::fprintf(stderr, "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm]\n"
-                             "  [-O0|-O1] [--opt-bisect N]\n"
-                             "  [--no-pass dead|loops|consts|licm|cse|eval]\n"
-                             "  [--no-inline module.fn] (a function its calls jump to)\n"
-                             "addresses take $hex, 0xhex or decimal\n");
+        std::fprintf(stderr,
+                     "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm]\n"
+                     "  [-O0|-O1] [--opt-bisect N]\n"
+                     "  [--no-pass dead|loops|consts|licm|cse|eval]\n"
+                     "  [--no-inline module.fn] (a function its calls jump to)\n"
+                     "addresses take $hex, 0xhex or decimal\n"
+                     "a tisple.project at the project root lets tisple build run with no file\n");
         return 1;
     }
     Program program;
@@ -188,7 +190,8 @@ int RunRunCommand(int argc, char** argv, MachineWindowFn window) {
                      "usage: tisple run main.tsp [--origin A] [machine flags...]\n"
                      "       tisple run main.tsp --sim [--max-cycles N]\n"
                      "runs in the apple iie window; --frames, --cycles, --screenshot, --wav or\n"
-                     "--headless run without one (see tisple machine for every flag)\n");
+                     "--headless run without one (see tisple machine for every flag)\n"
+                     "a tisple.project at the project root lets tisple run run with no file\n");
         return 1;
     }
     Program program;

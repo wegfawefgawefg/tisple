@@ -7,12 +7,15 @@
 #include "ide/index.hpp"
 #include "interp/interp_command.hpp"
 #include "machine/machine_command.hpp"
+#include "project/project_file.hpp"
 #include "race/race_command.hpp"
 #include "race/race_gen.hpp"
 #include "reader/commands.hpp"
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -45,7 +48,8 @@ void PrintUsage() {
     std::printf("  gaps    rank where the compiled code is worse than it could be (--superopt,\n"
                 "          --fuzz N for the fuzz generator's programs)\n"
                 "  race    time one kernel inside a binary, for races/run.sh\n"
-                "  race-gen  random race programs in Tisple and C, for races/random.sh\n");
+                "  race-gen  random race programs in Tisple and C, for races/random.sh\n"
+                "build, run and check with no .tsp file use the nearest tisple.project\n");
 }
 
 } // namespace
@@ -55,6 +59,23 @@ int main(int argc, char** argv) {
     if (argc < 2 || std::strcmp(argv[1], "help") == 0) {
         PrintUsage();
         return argc < 2 ? 1 : 0;
+    }
+
+    // build, run and check with no .tsp file: the program and flags of the nearest
+    // tisple.project, then the command line's
+    std::vector<std::string> project_words;
+    std::string project_error;
+    if (!tisple::ProjectCommandLine(argc, argv, project_words, project_error)) {
+        std::fputs(project_error.c_str(), stderr);
+        return 1;
+    }
+    std::vector<char*> project_argv;
+    for (std::string& word : project_words) {
+        project_argv.push_back(word.data());
+    }
+    if (!project_argv.empty()) {
+        argc = static_cast<int>(project_argv.size());
+        argv = project_argv.data();
     }
 
     if (std::strcmp(argv[1], "sim") == 0) {

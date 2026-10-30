@@ -142,7 +142,8 @@ int RunBuildDiskCommand(int argc, char** argv) {
                      "  [--asm] [-O0|-O1] [--opt-bisect N] [--no-pass NAME]\n"
                      "  [--no-inline module.fn]\n"
                      "a disk that boots the program on its own (no DOS); the program\n"
-                     "loads in $0B00-$BFFF, the language card and aux memory\n");
+                     "loads in $0B00-$BFFF, the language card and aux memory\n"
+                     "a tisple.project at the project root lets tisple build run with no file\n");
         return 1;
     }
     Compiled compiled;
@@ -174,7 +175,8 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
         std::fprintf(stderr,
                      "usage: tisple run main.tsp --disk [out.dsk] [--origin A] [machine flags]\n"
                      "builds a self-booting disk and boots it (our boot rom, or\n"
-                     "--rom Apple2e.rom [--disk-rom DISK2.rom]); see tisple machine\n");
+                     "--rom Apple2e.rom [--disk-rom DISK2.rom]); see tisple machine\n"
+                     "a tisple.project at the project root lets tisple run run with no file\n");
         return 1;
     }
     Compiled compiled;

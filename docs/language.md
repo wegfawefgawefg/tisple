@@ -82,6 +82,35 @@ whole program, so files are namespaces, not separate compilation units.
   `hgr.x` can only mean one thing. A field may: it only ever follows a dot or a
   `:keyword`.
 
+### tisple.project
+
+A `tisple.project` at a project's root holds the flags its builds need, so
+`tisple build`, `tisple run` and `tisple check` with no `.tsp` file work from
+any folder inside it. It is read with the Tisple reader: one `(name value)`
+form per command-line flag, paths from the file's folder.
+
+```scheme
+; Catwiz: tisple build makes the disk, tisple run plays it
+(program game/main.tsp)
+(origin 0x8000)
+(disk build/catwiz.dsk)
+(mockingboard 4)
+(scale 2)
+(taps tools/phone/catwiz.json)
+```
+
+- `program` is required. `origin` and `disk` go to build, run and check; with
+  a disk, build writes it and run boots it. `mockingboard`, `scale`, `taps` and
+  `rom` go to run only, as the machine flags of the same names.
+- The command finds the nearest `tisple.project` in the current folder or
+  above. Flags on the command line come after the file's and win:
+  `tisple run --scale 3`, `tisple build --asm > game.asm`.
+- With a `.tsp` file on the command line the project file is not read.
+- An unknown or repeated form, or a value of the wrong kind, is an error at
+  its line. Nothing else goes in the file.
+- The editor index loads a file as part of the project's program when that
+  program imports it, before trying the nearest `main.tsp`.
+
 ### lib/apple2
 
 Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
