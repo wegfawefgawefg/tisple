@@ -62,7 +62,7 @@ STA $616B,X   ; dots.phase  (5)
 ## Speed
 
 13 kernels written in C for cc65, LLVM-MOS and Oscar64, and in Tisple, all timed on the same
-cycle-exact simulator, each output checked. Cycles, lower is better. These are from
+cycle-exact simulator, each output checked. Tisple is fastest on all 13. Cycles, lower is better. These are from
 `races/run.sh` on this commit (2026-10-30); settings, versions and per-kernel notes in
 [`docs/races.md`](docs/races.md).
 
@@ -89,8 +89,28 @@ On 2000 random programs from the fuzz generator, each also written in C and race
 way (`races/random.sh`), Tisple's cycles are a geometric mean of 0.809 of the fastest other
 compiler's, and it is the fastest on 69.1% of them (2026-10-30, `docs/dogfood.md`).
 
-The caveat: these are kernels and generated programs, not real applications. A suite of
-real programs is being built.
+Kernels and generated programs flatter it. On ten program-shaped benchmarks (100-450 lines
+each, written plainly in both languages: BYTE sieve, Dhrystone, a sort, a text-adventure
+parser, LZ4, a bytecode VM, BFS on a grid, a sprite blitter, a tile scroller, decimal
+scores; `races/run.sh --programs`) it is about even with the best C compiler, Oscar64:
+
+| Program | cc65 | LLVM-MOS | Oscar64 | Tisple | vs best other |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| decimal scores | 10,148,189 | 6,656,057 | 3,365,122 | **1,699,799** | 0.51 |
+| bytecode VM | 12,676,676 | 7,360,089 | 5,628,776 | **4,471,198** | 0.79 |
+| parser | 8,244,051 | 1,782,671 | 2,280,481 | **1,436,999** | 0.81 |
+| BYTE sieve | 20,598,829 | 22,068,852 | 14,349,970 | **12,090,810** | 0.84 |
+| sprite blitter | 6,688,330 | 4,499,903 | **2,186,965** | 2,365,823 | 1.08 |
+| LZ4 | 3,199,397 | 1,212,242 | **901,828** | 1,183,148 | 1.31 |
+| tile scroller | 45,569,306 | 12,854,461 | **8,869,763** | 12,642,268 | 1.43 |
+| BFS | 10,098,451 | 5,643,078 | **3,157,011** | 4,818,412 | 1.53 |
+| Dhrystone | 2,205,531 | 951,470 | **391,865** | 858,590 | 2.19 |
+| sort | 3,820,411 | 2,192,144 | **1,202,552** | miscompiled | - |
+
+Geometric mean over the nine it runs: 1.07 of the fastest other. The losses are mostly the
+inliner's limits, induction variables kept after pointers replace them, and struct copies
+through zero page; the sort is a Tisple miscompile being fixed. Details and the reduced
+bugs (ours and Oscar64's) in [`docs/races.md`](docs/races.md).
 
 How: whole-program compilation; no recursion, so every function has a static frame,
 frames of functions that never run together share bytes, and they live in zero page where

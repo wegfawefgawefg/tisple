@@ -41,9 +41,10 @@ Cycles / bytes, best setting of each compiler:
 | sort | 2020054 / 122 | 463713 / 56 | 422725 / 47 | 356260 / 51 | tisple | 0.84 |
 | crc16 | 650111 / 218 | 257916 / 253 | 221527 / 78 | 188348 / 202 | tisple | 0.85 |
 | mandel | 11216044 / 656 | 9969128 / 582 | 7601337 / 422 | 4177022 / 553 | tisple | 0.55 |
-| life | 1333565 / 689 | 232244 / 163 | 238566 / 163 | 160648 / 402 | tisple | 0.69 |
-| line | 2451456 / 805 | 767813 / 405 | 576133 / 335 | 507296 / 383 | tisple | 0.88 |
+| life | 1333565 / 689 | 232244 / 163 | 238566 / 163 | 161089 / 340 | tisple | 0.69 |
+| line | 2451456 / 805 | 767813 / 405 | 576133 / 335 | 506033 / 360 | tisple | 0.88 |
 | sprites | 819546 / 424 | 117496 / 119 | 76125 / 85 | 65957 / 78 | tisple | 0.87 |
+| geomean, x the fastest | 3.30x | 2.31x | 1.46x | 1.00x | | 0.720 |
 
 ### mul8: 8-bit multiply: 256 byte products summed in 16 bits
 
@@ -162,7 +163,7 @@ Winner: tisple. Tisple / best other: 0.55.
 | cc65 | 1333565 | 689 | -Oirs -Cl const |
 | llvm-mos | 232244 | 163 | -O2 extern |
 | oscar64 | 238566 | 163 | -O2 const |
-| tisple | 160648 | 402 | - |
+| tisple | 161089 | 340 | - |
 
 Winner: tisple. Tisple / best other: 0.69.
 
@@ -173,7 +174,7 @@ Winner: tisple. Tisple / best other: 0.69.
 | cc65 | 2451456 | 805 | -Oirs -Cl const |
 | llvm-mos | 767813 | 405 | -O2 const |
 | oscar64 | 576133 | 335 | -O2 striped |
-| tisple | 507296 | 383 | - |
+| tisple | 506033 | 360 | - |
 
 Winner: tisple. Tisple / best other: 0.88.
 
