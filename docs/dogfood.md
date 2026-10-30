@@ -1395,6 +1395,43 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     on its own globals with the runtime, X and Y, a loop and a helper; main
     masking interrupts around statements now and then; interrupts early in main
     on both sides.
+51. The Mockingboard (2026-10-30, docs/mockingboard.md), for Witchdog's music.
+    The machine got the card (two 6522s, two AY-3-8910s, `--mockingboard N`,
+    its chips in `--wav` and the window) and an IRQ line as a level
+    (`SetIrqLevel`, sharing one compare a cycle with `RequestIrq`'s list);
+    lib/mockingboard, lib/mockingboard_player and lib/mockingboard_song are
+    a player and a song format written as text; examples/ticks.tsp's machine
+    test runs on the card. What writing the library ran into:
+    - An `io_write` to a computed address is 20 cycles (its operand is stored
+      into the instruction each time), a fixed one 6. A register write is six
+      of them, so the player's writer is a macro that makes one arm a slot and
+      chip, a `match` picking the arm: about 110 cycles a write with the calls
+      around it, where the computed version took 150 in its own function.
+    - A const table has no address, so a song is a top-level `let` the player
+      reaches through `addr_of`. A pointer made with `as` from a number may not
+      reach declared data, which is right, but it means the song macro cannot
+      hand out constants.
+    - examples/mockingboard.tsp could not `(import mockingboard)`: imports look
+      in the program's own folder first, so it imported itself (an import
+      cycle), and `(import keys)` there found examples/keys.tsp. The demo is
+      examples/mockingboard_demo.tsp and reads the keyboard itself. A program
+      named like a library cannot use it.
+    - The handler shares no function with main, so the register write exists
+      twice (a macro makes main's from the same template), and main hands work
+      to the handler through globals set between `(sei)` and `(cli)`.
+    - Zero page is put back when a program returns, so a test that reads a
+      global after the end reads what was there before. The tests give theirs
+      an `:address`.
+    - The macro reader refuses 10594630943592953 ("integer is too large",
+      though macro integers are 64-bit); the note table works out 2^(1/12) by
+      Newton's method instead. `at` cannot be a macro local.
+    - Cost (tests/test_mockingboard_lib.cpp): a tick of the demo 1101 cycles
+      the median, 1345 on average, 7013 at most (the song's first), 13093 with
+      every register changing every tick. First versions took 3238 on average:
+      a pass comparing all 28 registers every tick, and the computed writes.
+      The rest is per-voice counting in compiled code.
+    Every program and example builds byte for byte as before; machine speed
+    the same within noise with no card or an idle one.
 
 ## Gap finder (2026-10-26)
 
