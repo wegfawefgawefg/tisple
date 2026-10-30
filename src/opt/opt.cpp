@@ -32,6 +32,15 @@ bool Allow(Pass& p, const char* what, ExprId at, std::int32_t var) {
     return true;
 }
 
+bool PassOff(const Pass& p, const char* name) {
+    for (const std::string& pass : p.options->disabled) {
+        if (pass == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace opt
 
 namespace {
@@ -65,6 +74,8 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool args = !Disabled(options, "args");
     bool returns = !Disabled(options, "returns");
     bool vars = !Disabled(options, "vars");
+    bool inlines = !Disabled(options, "inline");
+    bool pointers = !Disabled(options, "pointers");
     bool elements = !Disabled(options, "elements");
     // unrolling (in collapse's walk) waits for the other passes to settle: a body they shorten
     // may collapse, and its copies would not
@@ -110,6 +121,17 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         for (std::size_t f = 0; f < fn_count && cse; f++) {
             changes += opt::CommonSubexpressions(p, static_cast<std::int32_t>(f));
         }
+        // last too: a store it makes a set changes what the summaries of this round say a
+        // function does (fuzz seed 33001074: a call collapsed as storing nothing)
+        if (pointers) {
+            changes += opt::PointersToElements(p);
+        }
+        if (changes == 0 && inlines) {
+            // settled: the functions are as small as the passes make them, which decides
+            // which the backend would inline (it looks at the program they leave); the rounds
+            // after work on the copies. Before unrolling, which leaves loops with calls alone
+            changes = opt::InlineCalls(p);
+        }
         if (changes == 0 && (unroll || unswitch)) {
             // settled: what this round worked out still holds, and only unrolling and
             // unswitching are left to change anything; the rounds after them fold the copies
@@ -140,8 +162,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 
 const std::vector<std::string>& OptPassNames() {
     static const std::vector<std::string> names = {
-        "dead",   "loops",  "args", "returns",  "collapse", "unroll", "unswitch",
-        "consts", "ranges", "vars", "elements", "licm",     "cse",    "eval"};
+        "inline", "dead",     "loops",  "args",     "returns",   "collapse",
+        "unroll", "unswitch", "consts", "ranges",   "vars",      "elements",
+        "licm",   "cse",      "eval",   "pointers", "divisions", "scans"};
     return names;
 }
 

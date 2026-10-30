@@ -1395,6 +1395,91 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     on its own globals with the runtime, X and Y, a loop and a helper; main
     masking interrupts around statements now and then; interrupts early in main
     on both sides.
+51. Mid-level slice 6 (2026-10-30, docs/midlevel-optimizer.md): inlining at the
+    mid level (src/opt/inline.cpp, inline_copy.cpp), divisions worked out
+    without dividing (ranges_divs.cpp), pointers to known elements
+    (pointers.cpp), scans run to their bound (collapse_exit.cpp), unswitching
+    without a collapse and on whiles, fields apart in collapse, first passes in
+    liveness. What the worst losses after slice 5 needed, measured one by one:
+    most were not divisions but calls the passes could not see through (1134:
+    run sets g4 = 45228 and calls f2, whose (/ g4 3) is then a constant; 608: f0
+    sets g6 after run's (set g6 (+ g6 (* n36 3))) and its 500-pass scan; 161
+    and 585: a call in a loop doing the same each pass), branches on what loops
+    never change (359, 1808, 56's (if g6 (break))), and scans of wb that read
+    elements nothing stores (841, 1476, 1459). Random race, seeds 1-2000,
+    against the fastest C compiler, on main 05a09d1 (function pointers and
+    interrupts in, the race the same as a669d5c): geomean 0.887 to 0.806,
+    median 0.85 to 0.80, wins 64.5% to 69.2%, p99 5.85 to 4.58, max 40.18 to
+    40.07 (seed 1241); against llvm-mos 0.794 to 0.722, Oscar64 0.558 to 0.506,
+    cc65 0.115 to 0.104. The pointer family 1.38 to 1.14, multiply 0.97 to
+    0.90, call 0.85 to 0.83. 913 programs faster, 240 slower (5.2 log-points
+    in all, the worst 1242 24 to 34 and 474 638 to 862, where unswitching
+    leaves a match of one-pass whiles). One at a time off, against 0.806:
+    unswitch 0.845 (its slice 5 part too), inline 0.833, divisions 0.816,
+    pointers 0.815, scans 0.814. In the order they went in: inlining once the
+    passes settle 0.887 to 0.867, divisions 0.857, calls whose value nobody
+    uses reading only what their effects need 0.857 (161 2067 to 555),
+    once-called functions with loops copied in loops too 0.855, unswitching
+    with no collapse 0.851, six copies 0.849, fields 0.845, first passes 0.844,
+    known elements 0.835, returns in matches 0.833, scans 0.821, whiles
+    unswitched and counting whiles finding their let before a branch 0.806.
+    Seed 1491 253635 to 1342 cycles, 1476 13073 to 125, 958 171727 to 4948, 1134
+    359 to 19, 608 6921 to 377, 585 2435 to 135, 62 898 to 54, 359 960 to 145.
+    Measured and dropped: inlining functions of 25 to 96 nodes called twice
+    (0.8438 to 0.8402 at the time, but paint's code 1581 to 1667 bytes, snake's
+    1077 to 1162; only in fors of known passes 0.8427), (if c1 (if c2
+    (return))) merged into one test (0 on the race), u16 indexes for pointers
+    at counts worked out at run time (net +9.9 log-points but 195 programs
+    slower, seed 583 69439 to 138860: the backend works out an index's address
+    per access where it keeps a pointer), pointer bases not literal (worse
+    still). On the way, the inliner mirrors the backend's choices or binaries
+    grow: inlining before the passes settle made small functions too big for
+    the backend's own inlining (578); copies of small functions given a for's
+    counter read the register where the backend copied it to a byte (the life
+    kernel 160648 to 161943 until not done); cse kept a widened byte times a
+    constant in a local, worked out there by shifts of memory (life again); a
+    small function with a loop copied into snake's step gave step a loop, and
+    the backend keeps such a once-called function a JSR in a loop (snake 1792 to
+    2048 bytes until not done); the bodies of functions nothing calls polluted
+    the backend's whole-program counts (FindDivPairs paired a division in dead
+    run with its copy, 1560 610 to 2395) until emptied. Kernels: life 160648
+    to 160643 cycles (402 to 399 bytes), line 507296 to 506033 (383 to 360:
+    hgr.line's body copied into the loop), the rest the same. Life 56 and
+    plasma 243 (230 and 975 in 40.92 M cycles) as before; tisple_tests' life
+    step 139158 to 139115 cycles, draw 41970 to 41876. Binaries against main:
+    fill, hires_plot, macros, read_key, speaker, sprites byte for byte; life
+    code 1009 to 882 bytes, paint 1604 to 1581, snake 1091 to 1077, text_demo
+    3283 to 3127 (in the language card), dot 359 to 339, dispatch 643 to 610,
+    ticks 663 to 652, keys 152 to 150 (273 to 258 cycles); plasma 1196 to 1218
+    (draw is copied into main's loop), multi 196 to 223 (gr.plot copied, the row
+    worked out once a row and the (& y 1) test once a row: 377073 to 94063
+    cycles). The cost is frames: the copies' locals are the caller's, all live
+    through it, where the backend's inlined callees shared bytes (life's zero
+    page 74 to 99 bytes, text_demo's 62 to 90, paint's 73 to 99), and a
+    function nothing calls keeps its frame for the interpreter (dispatch's
+    memory frames 3 to 15 bytes). Miscompiles of ours, each a test now: a
+    callee's local whose let the passes took away kept the callee's variable in
+    the copy, whose frame shares bytes with others (fuzz seed 10010645,
+    test_opt_inline.cpp); a store made a set in the middle of a round left the
+    round's summaries saying the function stored through a pointer, and
+    collapse ran a loop around its call once (33001074,
+    fuzz_farm/33001074_reduced.tsp; known elements now run last); a node read
+    through a reference across new nodes (ASan). Backend bugs found, on main at
+    -O0, not fixed: constant folding drops a call through a function pointer
+    in (& (fp) 0) (fuzz seed 19014827; the inliner copies no function that
+    calls through a pointer); (at buf (+ 9 (as u16 (+ x 3)))) in a for over x
+    loses the 9 (reads buf+3,X), and (at t (+ 300 (as u16 (- x 2)))) under
+    (> x 1) reads t-2,X. Pass time on text_demo 1.07 ms with --no-pass inline
+    to 2.11 ms (more rounds, 79 changes where there were 5), plasma 0.72 ms,
+    life 0.36 ms. Fuzz on the final code: 6 x TISPLE_FUZZ=22000 (462,394
+    programs), 0 mismatches; on the way 9 more runs of 6 processes (about
+    3,150,000 programs), which found the three of ours and the fold.cpp one;
+    ASan/UBSan on the final code 6 x 700 (14,722 programs), clean. Tests: tests/test_opt_inline.cpp;
+    fuzz shape tests/fuzz_gen_inline.cpp (`seed N (inline)`, one seed in four):
+    helpers returning from either arm, from matches and from loops, setting
+    their parameters and the globals their callers pass, called in every place
+    a call may stand; divisions by 0, 1, (| x 1) and the dividend; pointers to
+    literal elements; loops over one field of sa.
 
 ## Gap finder (2026-10-26)
 

@@ -40,13 +40,16 @@ inline void OrBits(Bits& into, const Bits& from) {
 struct Summary {
     std::vector<bool> reads;  // by var: globals it reads
     std::vector<bool> writes; // by var: globals it sets
-    bool loads = false;       // reads through a pointer: address-taken vars, undeclared memory
-    bool stores = false;      // writes through a pointer
-    bool io = false;          // io_read or io_write
-    bool jsr = false;         // machine code: may read and write any global
-    bool unknown = false;     // a node this analysis does not know: every effect
-    bool terminates = true;   // every loop in it provably ends
-    bool pure = false;        // none of the effects above, and it ends: see PureFunction
+    // by var: globals it reads but those only its pure last value reads (what a call whose
+    // value is unused reads)
+    std::vector<bool> effect_reads;
+    bool loads = false;     // reads through a pointer: address-taken vars, undeclared memory
+    bool stores = false;    // writes through a pointer
+    bool io = false;        // io_read or io_write
+    bool jsr = false;       // machine code: may read and write any global
+    bool unknown = false;   // a node this analysis does not know: every effect
+    bool terminates = true; // every loop in it provably ends
+    bool pure = false;      // none of the effects above, and it ends: see PureFunction
 };
 
 // ---- value ranges of variables (ranges_vars.cpp)
@@ -102,6 +105,8 @@ struct Pass {
     // each call tried (the function, then its arguments' bits) with its value, -1 when it
     // could not be worked out
     std::uint64_t eval_steps = 0;
+    // inlining (inline.cpp), over every round: the nodes copied
+    std::uint32_t inline_copied = 0;
     std::map<std::vector<std::uint32_t>, std::int32_t> evaluated;
     // the last transformation made, for --opt-bisect
     const char* last_what = "";
@@ -115,6 +120,8 @@ const Var& VarOf(const Pass& p, std::int32_t var);
 
 // may this transformation be made? Counts it; false once --opt-bisect's budget is spent
 bool Allow(Pass& p, const char* what, ExprId at, std::int32_t var);
+// --no-pass names it (for parts of a pass that have names of their own: divisions, scans)
+bool PassOff(const Pass& p, const char* name);
 
 void ComputeSummaries(Pass& p);
 // a call that can be dropped when its value is unused: writes no global, no memory through a
@@ -223,6 +230,13 @@ using Decide = Action (*)(const Pass& p, const Liveness& live, ExprId stmt);
 std::uint64_t EditStatements(Pass& p, std::int32_t function, Decide decide);
 
 // ---- passes
+
+// loads and stores through a pointer local set once to a known element, at a literal count
+// from it, become reads and sets of the element (pointers.cpp); returns the changes made
+std::uint64_t PointersToElements(Pass& p);
+// calls the backend would inline become copies of their function's body (inline.cpp); returns
+// the changes made
+std::uint64_t InlineCalls(Pass& p);
 
 Action DecideDead(const Pass& p, const Liveness& live, ExprId stmt); // dead.cpp
 Action DecideLoop(const Pass& p, const Liveness& live, ExprId stmt); // loops.cpp

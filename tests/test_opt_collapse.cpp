@@ -173,9 +173,10 @@ void Kept(TestResults& results) {
         "(fn f ((x u8)) u8 (for i u8 0 4 (set g x) (if (= x 3) (return 7))) g)",
         // a while that is not a counting one
         "(fn f ((x u8)) u8 (let c u8 x) (while (< c 9) (set c (+ c 2)) (set h 1)) h)",
-        // its counter read before its step and changed by a continue
-        "(fn f ((x u8)) u8 (let c u8 0) (while (< c 4) (if (= x 99) (continue)) (set c (+ c 1))\n"
-        "    (set h 1)) h)",
+        // its counter read before its step and changed by a continue (on what the loop
+        // changes: on x alone, unswitching would make two loops of it, slice 6)
+        "(fn f ((x u8)) u8 (let c u8 0) (while (< c 4) (if (= h 99) (continue)) (set c (+ c 1))\n"
+        "    (set h x)) h)",
     };
     for (const char* text : kept) {
         ExpectKept(results, text, 1);

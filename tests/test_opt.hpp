@@ -15,7 +15,10 @@ struct Opted {
     bool ok = false;
 };
 
+// (every pass but inline, which would copy the functions a test looks at into their callers)
 Opted Optimize(const std::string& text, const tisple::OptOptions& options = {});
+// every pass, inline too
+Opted OptimizeInlined(const std::string& text, const tisple::OptOptions& options = {});
 // every pass but unroll: for tests of what another pass leaves of a loop
 tisple::OptOptions NoUnroll();
 // nodes of a kind under a function's body after the passes; -1 for no such function
@@ -39,6 +42,8 @@ void RunOptCollapseTests(TestResults& results);
 void RunOptRangesTests(TestResults& results);
 // slice 5's variable ranges, sets' ranges and unstored elements (test_opt_values.cpp)
 void RunOptValuesTests(TestResults& results);
+// slice 6's inlining and division rules (test_opt_inline.cpp)
+void RunOptInlineTests(TestResults& results);
 // -O0, --opt-bisect and --no-pass (test_opt_flags.cpp)
 void RunOptFlagTests(TestResults& results);
 

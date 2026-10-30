@@ -30,6 +30,11 @@ namespace {
 struct Collapser {
     Pass* p = nullptr;
     std::int32_t function = -1; // the one being walked
+    // the do and index of the branch whose arm the walk is in, when nothing but lets stand
+    // between it and the arm's items: a counting while there may have its let before the
+    // branch (unswitching puts it there); -1 for none
+    ExprId outer_list = -1;
+    std::uint32_t outer_index = 0;
     MemoryFacts memory;
     std::uint64_t changes = 0;
 };
@@ -303,8 +308,11 @@ bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& 
     }
     // (if x (continue)) items first become elses (collapse_continue.cpp)
     c.changes += ContinuesToElse(*c.p, loop);
-    return At(*c.p, loop).kind == ExprKind::For ? CollapseFor(c, loop, out)
-                                                : CollapseWhile(c, loop, before, out);
+    if (At(*c.p, loop).kind == ExprKind::For) {
+        return CollapseFor(c, loop, out);
+    }
+    return CollapseWhile(c, loop, before, out) || ScanToEnd(*c.p, loop, before, out) ||
+           RunsOnce(*c.p, loop, out);
 }
 
 void Visit(Collapser& c, ExprId id, bool shared);
@@ -315,8 +323,23 @@ void VisitDo(Collapser& c, ExprId id, bool shared) {
     std::uint32_t i = 0;
     while (i < At(p, id).count) {
         ExprId item = Item(p, At(p, id), i);
+        ExprId saved_list = c.outer_list;
+        std::uint32_t saved_index = c.outer_index;
+        const Expr& e = At(p, item);
+        if ((e.kind == ExprKind::If || e.kind == ExprKind::Match) && IsPure(p, e.a)) {
+            c.outer_list = id;
+            c.outer_index = i;
+        } else if (!LetsBefore(p, id, i)) {
+            c.outer_list = -1;
+        }
         Visit(c, item, shared);
+        c.outer_list = saved_list;
+        c.outer_index = saved_index;
         ExprId before = CounterBefore(p, id, i);
+        if (c.outer_list >= 0 && LetsBefore(p, id, i) && !LetOfCounter(p, before, item)) {
+            ExprId outer = OuterCounterLet(p, c.outer_list, c.outer_index, item);
+            before = outer >= 0 ? outer : before;
+        }
         std::vector<ExprId> stmts;
         if (shared || !Collapsible(p, item) || !TryCollapse(c, item, before, stmts)) {
             i++;
@@ -346,7 +369,8 @@ ExprId VisitSlot(Collapser& c, ExprId slot, bool shared) {
     Pass& p = *c.p;
     Visit(c, slot, shared);
     std::vector<ExprId> stmts;
-    if (shared || !Collapsible(p, slot) || !TryCollapse(c, slot, -1, stmts)) {
+    ExprId before = c.outer_list >= 0 ? OuterCounterLet(p, c.outer_list, c.outer_index, slot) : -1;
+    if (shared || !Collapsible(p, slot) || !TryCollapse(c, slot, before, stmts)) {
         return slot;
     }
     c.changes++;
@@ -420,9 +444,13 @@ void Visit(Collapser& c, ExprId id, bool shared) {
     case ExprKind::Let:
     case ExprKind::Set:
     case ExprKind::While:
-    case ExprKind::For:
+    case ExprKind::For: {
+        ExprId saved = c.outer_list;
+        c.outer_list = -1;
         EachChild(p, e, [&](ExprId child) { Visit(c, child, shared); });
+        c.outer_list = saved;
         return;
+    }
     default:
         return; // not known here
     }

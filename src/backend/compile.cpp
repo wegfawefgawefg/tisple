@@ -287,7 +287,10 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     Program program = source;
     FoldConstants(program);
     OptReport report;
-    OptimizeProgram(program, options.opt, report);
+    OptOptions opt = options.opt;
+    opt.no_inline = options.no_inline; // the mid-level inlines too
+    opt.keep_bodies = options.keep_all_functions;
+    OptimizeProgram(program, opt, report);
     std::vector<std::int32_t> entries = LowerIndirectCalls(program);
     std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     out = Compiled();

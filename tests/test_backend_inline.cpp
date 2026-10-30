@@ -18,6 +18,13 @@ bool HasSpan(const tisple::Compiled& c, const std::string& name) {
     return false;
 }
 
+// the backend's own inlining: the mid level's (src/opt/inline.cpp) would copy f first
+tisple::OptOptions NoMidInline() {
+    tisple::OptOptions options;
+    options.disabled = {"inline"};
+    return options;
+}
+
 // main's result and globals on the simulator are the interpreter's
 void CheckMain(TestResults& results, const Compiled& c, const std::string& text) {
     CHECK(results, c.ok);
@@ -93,9 +100,11 @@ void TestOnceInLoop(TestResults& results) {
         "    (for i u8 0 (& x 7) (set s (+ s (f i))) (set c (^ c (<< s 1))))\n"
         "    (+ (+ s a) (- c b)))\n"
         "(fn main () u8 (for i u8 0 (& g 7) (set out (+ out (h out)))) out)";
-    Compiled c = CompileMainText(looping);
+    // (the mid level copies h, and the passes then see through it)
+    Compiled c = CompileMainText(looping, NoMidInline());
     CheckMain(results, c, looping);
     CHECK(results, HasSpan(c.code, "t.h"));
+    CheckMain(results, CompileMainText(looping), looping);
     std::string plain = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
                         "(fn main () u8 (for i u8 0 (& g 7) (set out (+ out (f out)))) out)";
     Compiled d = CompileMainText(plain);
@@ -119,7 +128,7 @@ void TestOnceInUnrolled(TestResults& results) {
     // the loop's counter is never read: four copies of its body
     std::string text = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
                        "(fn main () u8 (for i u8 0 4 (set out (+ out (f out)))) out)";
-    Compiled c = CompileMainText(text);
+    Compiled c = CompileMainText(text, NoMidInline());
     CheckMain(results, c, text);
     CHECK(results, HasSpan(c.code, "t.f"));
     // every copy calls it, none has the body
@@ -150,7 +159,7 @@ void TestOnceChain(TestResults& results) {
                 std::to_string(i) + "))\n    (+ e (^ d " + next + ")))\n";
     }
     text += "(fn main () u8 (for i u8 0 3 (set out (+ out (f1 (+ out i))))) (+ out g))";
-    Compiled c = CompileMainText(text);
+    Compiled c = CompileMainText(text, NoMidInline());
     CheckMain(results, c, text);
     CHECK(results, !HasSpan(c.code, "t.f1") && !HasSpan(c.code, "t.f4"));
     CHECK(results, HasSpan(c.code, "t.f5"));

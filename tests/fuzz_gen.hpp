@@ -67,6 +67,13 @@ std::string GenerateFnPtrProgram(std::uint64_t seed);
 constexpr int kIrqPercent = 25;
 std::string GenerateIrqProgram(std::uint64_t seed);
 
+// for one seed in kInlinePercent hundred, the seed's program with calls of small helpers that
+// return early, set their parameters or the globals their callers pass, in every place a call
+// may stand, and divisions by 0, 1, (| x 1) and the dividend (fuzz_gen_inline.cpp), for
+// slice 6's inlining and division rules; "" for the others
+constexpr int kInlinePercent = 25;
+std::string GenerateInlineProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

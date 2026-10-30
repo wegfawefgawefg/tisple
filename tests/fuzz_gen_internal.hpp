@@ -144,6 +144,10 @@ struct Gen {
     // GenerateIrqProgram's programs
     Rng irq_rng;
     bool irq_shapes = false;
+    // calls inlining copies and divisions the ranges pass works out, from a stream of their
+    // own (fuzz_gen_inline.cpp); only in GenerateInlineProgram's programs
+    Rng inline_rng;
+    bool inline_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -295,6 +299,13 @@ struct Gen {
     std::string MotionShape(int depth);
     // ---- values worked out twice, facts from conditions, calls at compile time
     // (fuzz_gen_common.cpp)
+    // ---- calls to copy and divisions to work out (fuzz_gen_inline.cpp)
+    std::string InlineHelpers();
+    T InlineInt();
+    std::string InlineDivision();
+    std::string InlineElements();
+    std::string InlineFields();
+    std::string InlineShape(int depth);
     // the pure helpers common shapes call, after peek2 and poke2
     std::string CommonHelpers();
     T CommonInt();

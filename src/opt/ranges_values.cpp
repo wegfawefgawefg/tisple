@@ -324,13 +324,61 @@ bool WhileCounter(const Pass& p, ExprId loop, ExprId before, Counter& out) {
     return false;
 }
 
+// (slice 6) a while counting up from a start not known: (let c v) just before, (while (< c k)
+// ...) or (while (and (< c k) x) ...), k a literal, the body's one write of c an item
+// (set c (+ c s)), s a literal of at least 1 that cannot wrap past k: c lies in
+// [lo(v), max(hi(v), k - 1 + s)] (seed 841's scans of wb)
+bool ScanCounter(const Pass& p, const Counters& counters, ExprId loop, ExprId before,
+                 Counter& out) {
+    const Expr& let = At(p, before);
+    const Expr& w = At(p, loop);
+    const Expr* cond = &At(p, w.a);
+    if (cond->kind == ExprKind::And) {
+        cond = &At(p, cond->a);
+    }
+    if (let.kind != ExprKind::Let || cond->kind != ExprKind::Binary || cond->op != Op::Lt ||
+        !IsRead(p, cond->a, let.ref) || VarOf(p, let.ref).address_taken) {
+        return false;
+    }
+    TypeKind kind = KindOf(*p.program, VarOf(p, let.ref).type);
+    std::uint16_t k = 0;
+    const Expr& body = At(p, w.b);
+    if (!IsIntegerKind(kind) || !ConstValue(*p.program, cond->b, k) || body.kind != ExprKind::Do ||
+        CountSets(p, w.b, let.ref) != 1) {
+        return false;
+    }
+    for (std::uint32_t i = 0; i < body.count; i++) {
+        const Expr& set = At(p, Item(p, body, i));
+        if (set.kind != ExprKind::Set || !IsRead(p, set.a, let.ref)) {
+            continue;
+        }
+        const Expr& step = At(p, set.b);
+        std::uint16_t s = 0;
+        if (step.kind != ExprKind::Binary || step.op != Op::Add || !IsRead(p, step.a, let.ref) ||
+            !ConstValue(*p.program, step.b, s)) {
+            return false;
+        }
+        std::int64_t end = SignedValue(kind, k) - 1 + SignedValue(kind, s);
+        Range type = TypeRange(p, VarOf(p, let.ref).type);
+        Range start = ValueRange(p, counters, let.a);
+        if (SignedValue(kind, s) < 1 || end > type.hi) {
+            return false;
+        }
+        out.var = let.ref;
+        out.range = Range{start.lo, std::max(start.hi, end)};
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 bool LoopCounter(const Pass& p, const Counters& counters, ExprId loop, ExprId before,
                  Counter& out) {
     const Expr& e = At(p, loop);
     if (e.kind == ExprKind::While) {
-        return WhileCounter(p, loop, before, out);
+        return WhileCounter(p, loop, before, out) ||
+               (before >= 0 && ScanCounter(p, counters, loop, before, out));
     }
     Range start = ValueRange(p, counters, e.a);
     Range end = e.b >= 0 ? ValueRange(p, counters, e.b) : TypeRange(p, VarOf(p, e.ref).type);
@@ -358,8 +406,7 @@ bool RangedVar(const Pass& p, std::int32_t var) {
     TypeKind kind = KindOf(*p.program, v.type);
     bool scalar = IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum;
     return scalar && v.kind != VarKind::ConstArray && !v.address_taken &&
-           !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve &&
-           !v.irq_shared;
+           !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve && !v.irq_shared;
 }
 
 void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi) {

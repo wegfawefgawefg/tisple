@@ -33,7 +33,9 @@ Cell WholeVar(const Pass& p, std::int32_t var) {
 }
 
 // the cell a place rooted at a variable names: one element or field when every index on the
-// way is a literal in range, else the whole variable; false for a place behind a pointer
+// way is a literal in range, a field of every element when the index of an array of structs
+// (rooted at the variable) stays in range, else the whole variable; false for a place behind
+// a pointer
 bool PlaceCell(const Pass& p, ExprId place, Cell& cell, bool& exact) {
     const Expr& e = At(p, place);
     switch (e.kind) {
@@ -46,23 +48,36 @@ bool PlaceCell(const Pass& p, ExprId place, Cell& cell, bool& exact) {
             return false;
         }
         const Type& array = TypeOf(*p.program, At(p, e.a).type);
+        std::uint32_t size = TypeOf(*p.program, e.type).size;
         std::uint16_t index = 0;
-        if (!exact || !ConstValue(*p.program, e.b, index) || index >= array.count) {
-            exact = false;
-            cell = WholeVar(p, cell.var);
+        if (exact && ConstValue(*p.program, e.b, index) && index < array.count) {
+            cell.lo += index * size;
+            cell.hi = cell.lo + size;
             return true;
         }
-        cell.lo += index * TypeOf(*p.program, e.type).size;
-        cell.hi = cell.lo + TypeOf(*p.program, e.type).size;
+        std::int32_t lo = 0;
+        std::int32_t hi = 0;
+        ShapeRange(p, e.b, lo, hi);
+        bool whole = At(p, e.a).kind == ExprKind::VarRef;
+        bool fields = KindOf(*p.program, e.type) == TypeKind::Struct && whole && lo >= 0 &&
+                      hi < static_cast<std::int32_t>(array.count);
+        exact = false;
+        cell = WholeVar(p, cell.var);
+        if (fields) {
+            cell.stride = size;
+            cell.hi = size;
+        }
         return true;
     }
     case ExprKind::Field:
         if (!PlaceCell(p, e.a, cell, exact)) {
             return false;
         }
-        if (exact) {
+        if (exact || (cell.stride != 0 && cell.lo == 0 && cell.hi == cell.stride)) {
             cell.lo += e.value;
             cell.hi = cell.lo + TypeOf(*p.program, e.type).size;
+        } else if (cell.stride != 0) {
+            cell = WholeVar(p, cell.var);
         }
         return true;
     default:
@@ -83,13 +98,18 @@ bool Differs(const Access& a, std::int32_t var) {
     return var == a.counter || (Own(a, var) && !a.steady[static_cast<std::size_t>(var)]);
 }
 
-bool CallVaries(const Pass& p, const Access& a, const Expr& call) {
+// the globals a call reads: for one whose value is unused, not those only its value reads
+const std::vector<bool>& CallReads(const Summary& s, bool unused) {
+    return unused ? s.effect_reads : s.reads;
+}
+
+bool CallVaries(const Pass& p, const Access& a, const Expr& call, bool unused = false) {
     const Summary& s = p.summaries[static_cast<std::size_t>(call.ref)];
     if (a.own_pointed && s.loads) {
         return true;
     }
     for (std::int32_t var : a.own_globals) {
-        if (s.reads[static_cast<std::size_t>(var)] && Differs(a, var)) {
+        if (CallReads(s, unused)[static_cast<std::size_t>(var)] && Differs(a, var)) {
             return true;
         }
     }
@@ -172,21 +192,23 @@ void ScanAddress(const Pass& p, Access& a, ExprId place) {
     }
 }
 
-void ScanCall(const Pass& p, Access& a, const Expr& e) {
+// unused: a statement, whose value nobody reads
+void ScanCall(const Pass& p, Access& a, const Expr& e, bool unused) {
     const Summary& s = p.summaries[static_cast<std::size_t>(e.ref)];
+    const std::vector<bool>& reads = CallReads(s, unused);
     if (s.io || s.jsr || s.unknown) {
         a.all = true;
         return;
     }
     // with the same arguments on every pass a call does the same (what it reads no pass
     // writes, or the loop does not collapse): its writes land where they did
-    bool same = !a.varying && !CallVaries(p, a, e);
+    bool same = !a.varying && !CallVaries(p, a, e, unused);
     for (std::uint32_t i = 0; i < e.count && same; i++) {
         same = !Varies(p, a, Item(p, e, i));
     }
     for (std::size_t v = 0; v < s.reads.size(); v++) {
         std::int32_t var = static_cast<std::int32_t>(v);
-        if (s.reads[v]) {
+        if (reads[v]) {
             a.reads.push_back(WholeVar(p, var));
         }
         if (s.writes[v]) {
@@ -290,7 +312,19 @@ void Scan(const Pass& p, Access& a, ExprId id) {
         }
         return;
     case ExprKind::Call:
-        ScanCall(p, a, e);
+        ScanCall(p, a, e, false);
+        return;
+    case ExprKind::Do:
+        // a call as an item whose value is unused reads only what its effects need
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            ExprId item = Item(p, e, i);
+            bool unused = i + 1 < e.count || e.type == kVoidType;
+            if (unused && At(p, item).kind == ExprKind::Call && !a.all && --a.budget >= 0) {
+                ScanCall(p, a, At(p, item), true);
+            } else {
+                Scan(p, a, item);
+            }
+        }
         return;
     case ExprKind::Unary:
     case ExprKind::Binary:
@@ -299,7 +333,6 @@ void Scan(const Pass& p, Access& a, ExprId id) {
     case ExprKind::Convert:
     case ExprKind::Reinterpret:
     case ExprKind::StructLit:
-    case ExprKind::Do:
     case ExprKind::Return:
         break;
     default:
