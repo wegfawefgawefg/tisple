@@ -10,7 +10,8 @@
 // one in four an eighth, with calls through function pointers ("(fnptr)"), and one in four a
 // ninth, with an interrupt handler of its own, run with interrupts raised early in main
 // ("(irq)"), and one in four a tenth, with calls to inline and divisions to work out
-// ("(inline)").
+// ("(inline)"), and one in four an eleventh, with copies the size budget weighs, folds around
+// calls and constant indexes ("(size)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -319,6 +320,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string inlined = GenerateInlineProgram(seed);
         if (!inlined.empty()) {
             FuzzOne(seed, " (inline)", inlined, stats);
+        }
+        std::string sized = GenerateSizeProgram(seed);
+        if (!sized.empty()) {
+            FuzzOne(seed, " (size)", sized, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

@@ -148,6 +148,11 @@ struct Gen {
     // own (fuzz_gen_inline.cpp); only in GenerateInlineProgram's programs
     Rng inline_rng;
     bool inline_shapes = false;
+    // what the code size budget turns down or keeps, and folds around calls and constant
+    // indexes, from a stream of its own (fuzz_gen_size.cpp); only in GenerateSizeProgram's
+    // programs
+    Rng size_rng;
+    bool size_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -306,6 +311,13 @@ struct Gen {
     std::string InlineElements();
     std::string InlineFields();
     std::string InlineShape(int depth);
+    // ---- the size budget, folds around calls, constant indexes (fuzz_gen_size.cpp)
+    std::string SizeHelpers();
+    std::string SizeCall(std::string& lets);
+    std::string SizeAbsorbed();
+    std::string SizeIndex();
+    std::string SizeUnroll();
+    std::string SizeShape(int depth);
     // the pure helpers common shapes call, after peek2 and poke2
     std::string CommonHelpers();
     T CommonInt();

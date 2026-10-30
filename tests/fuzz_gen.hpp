@@ -74,6 +74,13 @@ std::string GenerateIrqProgram(std::uint64_t seed);
 constexpr int kInlinePercent = 25;
 std::string GenerateInlineProgram(std::uint64_t seed);
 
+// for one seed in kSizePercent hundred, the seed's program with small helpers with loops called
+// at many places, heavy small helpers, unrollable loops of every kind, (& (f) 0) and its kin
+// around calls with effects (through pointers too), and indexes (+ K (as u16 (+ x c)))
+// (fuzz_gen_size.cpp), for the code size budget and two folds; "" for the others
+constexpr int kSizePercent = 25;
+std::string GenerateSizeProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at
