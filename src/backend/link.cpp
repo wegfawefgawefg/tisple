@@ -6,6 +6,7 @@
 
 #include "backend/link.hpp"
 
+#include "backend/link_code.hpp"
 #include "backend/link_data.hpp"
 #include "backend/runtime.hpp"
 #include "link/image.hpp"
@@ -17,18 +18,8 @@ namespace tisple {
 
 namespace {
 
-constexpr std::uint32_t kCardStart = 0xD000;
-constexpr std::uint32_t kCardEnd = 0x10000;
-
-// with an interrupt handler the startup writes the cpu's vectors at the card's top
-std::uint32_t CardEnd(const Program& program) {
-    return program.handler >= 0 ? kCpuVectors : kCardEnd;
-}
-
 std::string Hex(std::uint32_t value) {
-    char text[16];
-    std::snprintf(text, sizeof(text), "$%04X", value);
-    return text;
+    return HexAddress(value);
 }
 
 // the origin itself must be ordinary memory
@@ -57,135 +48,6 @@ void Append(std::vector<AsmItem>& to, const std::vector<AsmItem>& from, Compiled
     to.insert(to.end(), from.begin(), from.end());
     span.end = to.size();
     out.spans.push_back(span);
-}
-
-// [start, end) less every range in cuts
-std::vector<AddressRange> Subtract(AddressRange range, const std::vector<AddressRange>& cuts) {
-    std::vector<AddressRange> out = {range};
-    for (const AddressRange& cut : cuts) {
-        std::vector<AddressRange> next;
-        for (const AddressRange& piece : out) {
-            if (cut.end <= piece.start || cut.start >= piece.end) {
-                next.push_back(piece);
-                continue;
-            }
-            if (cut.start > piece.start) {
-                next.push_back(AddressRange{piece.start, cut.start});
-            }
-            if (cut.end < piece.end) {
-                next.push_back(AddressRange{cut.end, piece.end});
-            }
-        }
-        out = next;
-    }
-    return out;
-}
-
-// the free stretches code and data may fill, in the order they are filled: from the origin,
-// then below it, then the language card. Text page 1, I/O and every main-memory :address
-// or :reserve let are cut out
-std::vector<AddressRange> FreeStretches(const Backend& be, const BuildOptions& options,
-                                        std::uint32_t data_end, bool card) {
-    const Program& program = *be.program;
-    std::vector<AddressRange> cuts(std::begin(kReservedRanges), std::end(kReservedRanges));
-    for (std::size_t v = 0; v < program.vars.size(); v++) {
-        const Var& var = program.vars[v];
-        std::uint32_t size = be.shapes.vars[v].size;
-        if (var.placement.has_address && !var.placement.in_aux && size > 0) {
-            cuts.push_back(AddressRange{var.placement.address, var.placement.address + size});
-        }
-    }
-    std::vector<AddressRange> out = Subtract(AddressRange{options.origin, data_end}, cuts);
-    if (options.low_start < options.origin) {
-        std::vector<AddressRange> low =
-            Subtract(AddressRange{options.low_start, options.origin}, cuts);
-        out.insert(out.end(), low.begin(), low.end());
-    }
-    if (card) {
-        std::vector<AddressRange> high = Subtract(AddressRange{kCardStart, CardEnd(program)}, cuts);
-        out.insert(out.end(), high.begin(), high.end());
-    }
-    return out;
-}
-
-// where each span's code goes: the stretch and its first address
-struct CodePlace {
-    std::size_t stretch = 0;
-    std::uint32_t address = 0;
-};
-
-std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& span) {
-    std::uint32_t size = 0;
-    for (std::size_t i = span.first; i < span.end; i++) {
-        size += items[i].size;
-    }
-    return size;
-}
-
-// spans in order, each whole in the first stretch from the current one on that holds it; the
-// last span is followed by the memory frames. False when they do not fit
-bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
-                const std::vector<AddressRange>& stretches, std::uint32_t mem_frames,
-                std::vector<CodePlace>& places, std::uint32_t& frames_at) {
-    places.assign(spans.size(), CodePlace());
-    std::size_t k = 0;
-    std::uint32_t pc = stretches.empty() ? 0 : stretches[0].start;
-    for (std::size_t s = 0; s < spans.size(); s++) {
-        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == spans.size() ? mem_frames : 0);
-        while (k < stretches.size() && pc + need > stretches[k].end) {
-            k++;
-            pc = k < stretches.size() ? stretches[k].start : 0;
-        }
-        if (k == stretches.size() || (s == 0 && k != 0)) {
-            return false; // the startup must be at the origin
-        }
-        places[s] = CodePlace{k, pc};
-        pc += SpanSize(items, spans[s]);
-    }
-    frames_at = pc;
-    return true;
-}
-
-// lay out each run of spans in one stretch at its address; branches must stay in their run
-bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
-                const std::vector<CodePlace>& places, std::vector<AddressRange>& runs,
-                std::vector<Diagnostic>& errors) {
-    std::size_t s = 0;
-    while (s < spans.size()) {
-        std::size_t end = s + 1;
-        while (end < spans.size() && places[end].stretch == places[s].stretch) {
-            end++;
-        }
-        std::size_t first_item = spans[s].first;
-        std::size_t end_item = spans[end - 1].end;
-        std::vector<AsmItem> run(as.items.begin() + static_cast<std::ptrdiff_t>(first_item),
-                                 as.items.begin() + static_cast<std::ptrdiff_t>(end_item));
-        std::swap(as.items, run);
-        std::uint32_t run_end = LayoutCode(as, static_cast<std::uint16_t>(places[s].address));
-        std::swap(as.items, run);
-        std::copy(run.begin(), run.end(),
-                  as.items.begin() + static_cast<std::ptrdiff_t>(first_item));
-        runs.push_back(AddressRange{places[s].address, run_end});
-        s = end;
-    }
-    for (const AsmItem& item : as.items) {
-        if (item.kind != ItemKind::Ins || item.mode != Mode::Rel || item.value.sym < 0) {
-            continue;
-        }
-        std::uint32_t target =
-            as.symbols[static_cast<std::size_t>(item.value.sym)].value + item.value.offset;
-        bool same_run = false;
-        for (const AddressRange& run : runs) {
-            bool from = item.address >= run.start && item.address < run.end;
-            same_run = same_run || (from && target >= run.start && target < run.end);
-        }
-        if (!same_run) {
-            AddError(errors, Loc(),
-                     "internal: a branch at " + Hex(item.address) + " leaves its function's code");
-            return false;
-        }
-    }
-    return true;
 }
 
 // a segment's extent grows to cover [start, end)
@@ -280,29 +142,36 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     }
     Append(items, zp_image, out, -1, "zero-page image");
 
-    // the code where it fits: one run from the origin when it can be
-    std::uint32_t code_end = LayoutCode(be.as, options.origin);
+    // the code where it fits: one run from the origin when it can be. A branch to another
+    // stretch's code is made far, and the code placed again with its bigger size
     std::vector<AddressRange> stretches = FreeStretches(be, options, data_end, card);
-    std::uint32_t startup_end = options.origin + SpanSize(items, out.spans[0]);
-    if (stretches.empty() || stretches[0].start != options.origin ||
-        stretches[0].end < startup_end) {
-        AddError(errors, Loc(),
-                 "an :address let overlaps the program's startup (" + Hex(options.origin) + "-" +
-                     Hex(startup_end - 1) + "); move it or pick another --origin");
-        return LinkResult::kError;
-    }
     std::vector<CodePlace> places;
     std::uint32_t frames_at = 0;
-    if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at)) {
-        std::string where;
-        for (const AddressRange& stretch : stretches) {
-            where += (where.empty() ? "" : ", ") + Hex(stretch.start) + "-" + Hex(stretch.end - 1);
+    std::uint32_t code_end = 0;
+    for (bool again = true; again;) {
+        code_end = LayoutCode(be.as, options.origin);
+        std::uint32_t startup_end = options.origin + SpanSize(items, out.spans[0]);
+        if (stretches.empty() || stretches[0].start != options.origin ||
+            stretches[0].end < startup_end) {
+            AddError(errors, Loc(),
+                     "an :address let overlaps the program's startup (" + Hex(options.origin) +
+                         "-" + Hex(startup_end - 1) + "); move it or pick another --origin");
+            return LinkResult::kError;
         }
-        AddError(errors, Loc(),
-                 "the code and frames take " +
-                     std::to_string(code_end - options.origin + plan.mem_frames) +
-                     " bytes and do not fit in " + where + "; use a lower --origin or less code");
-        return LinkResult::kNoRoom;
+        if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at)) {
+            std::string where;
+            for (const AddressRange& stretch : stretches) {
+                where +=
+                    (where.empty() ? "" : ", ") + Hex(stretch.start) + "-" + Hex(stretch.end - 1);
+            }
+            AddError(errors, Loc(),
+                     "the code and frames take " +
+                         std::to_string(code_end - options.origin + plan.mem_frames) +
+                         " bytes and do not fit in " + where +
+                         "; use a lower --origin or less code");
+            return LinkResult::kNoRoom;
+        }
+        again = MarkFarBranches(be.as, out.spans, places);
     }
     std::vector<AddressRange> runs;
     bool spilled = places.back().stretch != 0;

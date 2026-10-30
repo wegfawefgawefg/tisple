@@ -6,6 +6,7 @@
 #include "backend/link.hpp"
 #include "backend/peephole.hpp"
 #include "backend/runtime.hpp"
+#include "backend/squeeze.hpp"
 #include "link/image.hpp"
 
 #include <algorithm>
@@ -33,7 +34,8 @@ void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added)
 // the quarter-square routines (1 KB of tables, about half the cycles) for every multiply when
 // the multiplies of the kept code together may run more than once in a run of the program
 // (every copy counted: inlined, unrolled; the tables serve them all), the shift-and-add ones
-// otherwise
+// otherwise. Squeezed, the tables are bytes the first multiply pulls in: only when the
+// multiplies save the budget's hot cycles for each of them (80 cycles a multiply at least)
 void UpgradeMultiplies(Backend& be) {
     const Runtime pairs[3][2] = {{Runtime::Mul8, Runtime::Mul8Q},
                                  {Runtime::Mul16, Runtime::Mul16Q},
@@ -45,6 +47,11 @@ void UpgradeMultiplies(Backend& be) {
         }
     }
     if (total < 2) {
+        return;
+    }
+    const SizeBudget& budget = be.budget;
+    std::uint64_t bytes = kQuarterSquareBytes;
+    if (budget.squeeze > 0 && (budget.hot_cycles == 0 || total * 80 < budget.hot_cycles * bytes)) {
         return;
     }
     for (std::vector<AsmItem>& code : be.code) {
@@ -95,8 +102,12 @@ void FindUsedRoutines(Backend& be) {
 
 // the mid-level passes in two runs: up to where they inline (unrolling and unswitching come
 // after), then the size budget's measure, then the rest, which settles at once and inlines.
-// --opt-bisect counts across both
+// --opt-bisect counts across both. Squeezed far enough, nothing is unrolled or unswitched
 void Optimize(Program& program, const BuildOptions& options, OptOptions opt, OptReport& report) {
+    if (options.squeeze >= kSqueezeRolled) {
+        opt.disabled.push_back("unroll");
+        opt.disabled.push_back("unswitch");
+    }
     if (opt.level <= 0) {
         OptimizeProgram(program, opt, report);
         return;
@@ -120,10 +131,9 @@ void Optimize(Program& program, const BuildOptions& options, OptOptions opt, Opt
     }
 }
 
-} // namespace
-
-bool CompileProgram(const Program& source, const BuildOptions& options, Compiled& out,
-                    std::vector<Diagnostic>& errors) {
+// one build at options.squeeze; what it gave up for room in squeezed
+LinkResult CompileAt(const Program& source, const BuildOptions& options, Compiled& out,
+                     std::vector<Diagnostic>& errors, Squeezed& squeezed) {
     // the same program with its constant arithmetic folded and the mid-level passes run on
     // it: what the code is made from. The interpreter keeps running the program as written
     Program program = source;
@@ -141,7 +151,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     std::vector<bool> kept;
     SizeChoices choices;
     if (!GenerateProgram(program, options, kMaxSizeRounds, be, added, kept, choices, errors)) {
-        return false;
+        return LinkResult::kError;
     }
     PrintSizeNotes(be, kept);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
@@ -161,8 +171,9 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     }
     FramePlan plan;
     if (!AllocateFrames(be, plan)) {
-        return false;
+        return LinkResult::kError;
     }
+    squeezed = NoteSqueezed(be, kept, choices, runtime);
     LinkInput in;
     in.options = &options;
     in.plan = &plan;
@@ -187,12 +198,48 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     }
     errors.insert(errors.end(), link_errors.begin(), link_errors.end());
     if (result != LinkResult::kOk) {
-        return false;
+        return result;
     }
     out.as = std::move(be.as);
     out.opt = report;
     out.warnings = PackedArrayWarnings(source);
-    return true;
+    return LinkResult::kOk;
+}
+
+} // namespace
+
+bool CompileProgram(const Program& source, const BuildOptions& options, Compiled& out,
+                    std::vector<Diagnostic>& errors) {
+    if (!CheckNoInline(source, options.no_inline, errors)) {
+        return false;
+    }
+    // with no room, the size budget tightens a level at a time until the program fits
+    Squeezed usual;
+    BuildOptions tighter = options;
+    for (;;) {
+        std::vector<Diagnostic> tried;
+        Squeezed squeezed;
+        LinkResult result = CompileAt(source, tighter, out, tried, squeezed);
+        if (tighter.squeeze == options.squeeze) {
+            usual = squeezed;
+        }
+        bool again = result == LinkResult::kNoRoom && tighter.squeeze < kMaxSqueeze;
+        if (!again) {
+            errors.insert(errors.end(), tried.begin(), tried.end());
+            if (result == LinkResult::kNoRoom && tighter.squeeze != options.squeeze) {
+                AddError(errors, Loc(),
+                         "the program does not fit even with the tightest size budget (squeeze " +
+                             std::to_string(kMaxSqueeze) +
+                             ": no copy or unrolled loop that adds bytes, multiplies by shift "
+                             "and add)");
+            }
+            if (result == LinkResult::kOk && tighter.squeeze != options.squeeze) {
+                out.warnings.push_back(SqueezeNote(source, usual, squeezed));
+            }
+            return result == LinkResult::kOk;
+        }
+        tighter.squeeze++;
+    }
 }
 
 } // namespace tisple

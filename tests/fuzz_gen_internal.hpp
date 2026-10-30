@@ -175,6 +175,10 @@ struct Gen {
     int data_name_min = 1;
     int data_names_min = 0;
     int data_foe_moves_min = 1;
+    // functions in separate stretches of memory and tail calls between them, from a stream of
+    // its own (fuzz_gen_stretch.cpp); only in GenerateStretchProgram's programs
+    Rng stretch_rng;
+    bool stretch_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -348,6 +352,13 @@ struct Gen {
     std::string IoBaseValue();
     std::string IoBased();
     std::string IoShape(int depth);
+    std::string StretchWork(const std::string& k);
+    std::string StretchInput();
+    std::string StretchBig(int n);
+    std::string StretchCall(int n, const std::string& arg);
+    std::string StretchTail(int t, int n);
+    std::string StretchHelpers();
+    std::string StretchShape(int depth);
     // ---- const data (fuzz_gen_data.cpp)
     std::string DataString(int& len);
     std::string DataByte();

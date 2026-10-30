@@ -76,6 +76,7 @@ int main() {
     tisple_tests::RunBackendCount16Tests(results);
     tisple_tests::RunBackendUnrollTests(results);
     tisple_tests::RunBackendSizeTests(results);
+    tisple_tests::RunBackendSqueezeTests(results);
     tisple_tests::RunBackendIoTests(results);
     tisple_tests::RunBackendSpineTests(results);
     tisple_tests::RunBackendPreloadTests(results);

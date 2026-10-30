@@ -315,6 +315,52 @@ void TestReserveOverlaps(TestResults& results) {
     CheckDiff(results, d, "t.f4", {});
 }
 
+// a conditional tail call, (if c (g)) at the end of tail, is a branch to g (the peephole's
+// branch over a JMP). With g in the stretch after the :reserve page and tail before it, the
+// branch is the long form, and both run as the interpreter does
+void TestBranchAcrossStretches(TestResults& results) {
+    int found = 0;
+    for (int n = 20; n < 50 && found < 3; n++) {
+        std::string text = "(let page (array u8 256) :address 0x6100 :reserve)\n"
+                           "(let buf (array u8 1000))\n"
+                           "(macro stores (n k)\n"
+                           "    (let out (list))\n"
+                           "    (for i 0 n (set out (append out (list `(set (at buf ,(+ i k)) "
+                           ",(% (* i 7) 251))))))\n"
+                           "    `(do ,@out))\n"
+                           "(fn pad () void (stores " +
+                           std::to_string(n) +
+                           " 0))\n"
+                           "(fn tail ((c u8)) void (set (at buf 999) c) (if (= c 3) (g)))\n"
+                           "(fn ends ((c u8)) void (if (< c 9) (do (g) (return))) (set (at buf "
+                           "998) c))\n"
+                           "(fn g () void (stores 30 100))\n";
+        Compiled c = CompileAll(text);
+        if (!Report(c)) {
+            CHECK(results, false);
+            return;
+        }
+        bool apart = FunctionAt(c, "t.tail") < 0x6100 && FunctionAt(c, "t.g") >= 0x6200;
+        bool far = false;
+        for (const tisple::AsmItem& item : c.code.as.items) {
+            far = far || (item.far && item.long_branch);
+        }
+        if (!apart || !far) {
+            continue;
+        }
+        found++;
+        CheckSegmentsApart(results, c);
+        for (std::uint16_t arg :
+             {std::uint16_t(3), std::uint16_t(4), std::uint16_t(8), std::uint16_t(200)}) {
+            Diff d;
+            CHECK(results, StartDiff(d, c));
+            CheckDiff(results, d, "t.tail", {arg});
+            CheckDiff(results, d, "t.ends", {arg});
+        }
+    }
+    CHECK(results, found == 3);
+}
+
 } // namespace
 
 // a build that fails with an error that has part in it
@@ -334,6 +380,7 @@ void RunLinkRegionTests(TestResults& results) {
     TestLanguageCard(results);
     TestAuxPlacement(results);
     TestReserveOverlaps(results);
+    TestBranchAcrossStretches(results);
 }
 
 } // namespace tisple_tests

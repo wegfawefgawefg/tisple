@@ -44,6 +44,9 @@ struct BuildOptions {
     // t.checksum's entry)
     std::vector<std::string> no_inline;
     OptOptions opt; // the mid-level passes (opt/opt.hpp)
+    // how tight the size budget is (size_budget.hpp): 0 as usual; CompileProgram raises it
+    // while the program does not fit its memory
+    int squeeze = 0;
 };
 
 // where one function's code is in Compiled::as.items

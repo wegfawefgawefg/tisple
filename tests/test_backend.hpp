@@ -28,6 +28,8 @@ Compiled CompileFile(const std::string& path);
 Compiled CompileMainText(const std::string& text);
 // the same with these mid-level pass options (-O0, --opt-bisect N, --no-pass NAME)
 Compiled CompileMainText(const std::string& text, const tisple::OptOptions& opt);
+// with these build options (a squeeze, say)
+Compiled CompileMainWith(const std::string& text, const tisple::BuildOptions& options);
 
 // the interpreter and the simulator side by side, calls made on both
 struct Diff {
@@ -109,6 +111,7 @@ void RunBackendCount16Tests(TestResults& results);
 void RunBackendUnrollTests(TestResults& results);
 // the code size budget (test_backend_size.cpp)
 void RunBackendSizeTests(TestResults& results);
+void RunBackendSqueezeTests(TestResults& results);
 // I/O bases, forwarded parameters, the IRQ entry's registers (test_backend_io.cpp)
 void RunBackendIoTests(TestResults& results);
 // 16-bit runs a byte at a time (test_backend_spine.cpp)

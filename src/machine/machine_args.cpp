@@ -37,7 +37,8 @@ void PrintMachineUsage() {
         "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
         "                      (a game's phone player config, docs/phone.md)\n"
         "numbers take $hex, 0xhex or decimal; a cycle may be given in frames as 30f\n"
-        "exit code 3 when the program hits an illegal opcode or jumps into empty rom space\n");
+        "exit code 3 when the program hits an illegal opcode, jams the cpu or jumps into\n"
+        "empty rom space\n");
 }
 
 namespace {

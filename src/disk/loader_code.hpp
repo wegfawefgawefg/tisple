@@ -17,8 +17,7 @@ constexpr int kSignature = 0x0AF0;
 constexpr int kTable = 0x0200; // + nibble: page-aligned, so the lookups never cross a page
 constexpr int kLowBits = 0x0300;
 constexpr int kDone = 0x0356;
-constexpr int kBounce = 0x0400; // an aux sector, before its copy
-constexpr std::uint8_t kLoaderVersion = 2;
+constexpr std::uint8_t kLoaderVersion = 3;
 constexpr char kSignatureText[] = "TISPLE BOOT";
 
 // zero page
@@ -42,6 +41,7 @@ constexpr int kDest = 0xDB;    // and $DC: an aux sector's page
 struct Loader {
     Code6502 c;
     std::vector<std::int32_t> latch_reads; // LDX $C08C+slot instructions to patch
+    int bounce = 0x0B00; // where an aux sector is read before its copy (LoaderPlan)
 
     // LDX latch: the address is patched at boot
     void ReadLatch(std::int32_t loop) {

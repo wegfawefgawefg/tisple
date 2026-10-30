@@ -282,6 +282,7 @@ bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, 
     prepared.fn_runs = FindRunCounts(program);
     prepared.fn_all_runs = FindRunCounts(program, kMaxRunTrips);
     prepared.multiplies.assign(program.functions.size(), {});
+    prepared.budget = BudgetAt(options.squeeze);
     choices.keep_calls.assign(program.functions.size(), false);
     choices.keep_loops.assign(program.exprs.size(), false);
     std::vector<SizeItem> gone;

@@ -225,7 +225,7 @@ Mode EncodedMode(const Assembly& as, const AsmItem& item) {
 
 std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin) {
     for (AsmItem& item : as.items) {
-        item.long_branch = false;
+        item.long_branch = item.far;
     }
     std::uint32_t end = origin;
     // grow branches until every one reaches; sizes only grow, so this ends

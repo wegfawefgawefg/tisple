@@ -1906,6 +1906,90 @@ From a scan of Life, Snake, dot, the other examples and the libraries
       put `read` with its setup into each call site, its parameters copied at
       each level (60-70 bytes a site); with the arguments stored straight into
       the mover's zero page `read` is one flat function of 86 bytes, called.
+58. Catwiz filling main memory and the card (2026-10-30; docs/design.md "Room",
+    docs/disks.md, docs/overlays.md). Four faults and one habit the game hit.
+    - Link (1): `(if c (f))` last, or `(if c (do (f) (return)))`, in a function
+      kept as a call is `JSR f / RTS`, then `JMP f`, then the peephole's branch
+      over a JMP makes it `B!c f`. When the link put f in another stretch the
+      branch had been laid out short against f's address in one layout of all
+      the code, and the build failed ("internal: a branch at $XXXX leaves its
+      function's code"). Now a branch whose target is no label of its own run
+      (the functions in one stretch) is far, always the long form (an inverted
+      branch over a JMP), and the code is placed again with the bigger sizes
+      until no branch is new (src/backend/link_code.cpp, split out of link.cpp).
+      A branch to another function in the same stretch stays short, so every
+      example and race program is byte for byte. Tests: a tail and its callee
+      on either side of a :reserve page (tests/test_link_regions.cpp), and a
+      fuzz shape, tests/fuzz_gen_stretch.cpp (`seed N (stretch)`, one seed in
+      four, a stream of its own): :reserve cuts every few dozen bytes from just
+      past the startup and helpers whose last act is a call of a big helper in
+      the four ways, next to their callee; main's compiler fails 40 of its first
+      110 programs with the link error.
+    - Disks (2): the loader writes whole pages, so segments of one memory that
+      share a page cleared each other's bytes (two reserved rows of text page 2
+      split page $0B in three; next_move loaded as zeros). MakeBootDisk now makes
+      them one segment with zeros between, and refuses segments whose bytes
+      overlap. The coordinator's item: aux sectors went through $0400-$04FF, so
+      the text screen showed rows of garbage for the 10 s load; aux segments now
+      load first and go through the first page of a main segment (loaded again
+      after), and the loader shows text page 1 cleared to spaces but for LOADING
+      in row 12 (not the screen holes), 40 columns. Loader version 3 (version 2
+      disks still found). Catwiz's disk, our roms and Apple's: blank with
+      LOADING until the title. Test: tests/test_disk_segments.cpp, three main
+      segments in page $0B, two aux ones sharing a page, a card one; the screen
+      checked every half second of the boot.
+    - Emulator (3): the "BRK storm with the Mockingboard" that ran 20 s for under 5
+      frames had reached an NMOS JAM opcode ($02, $12, ... $F2), which never
+      fetches again: StepInstruction waited for SYNC forever and nothing ran.
+      A BRK storm through the game's handler runs at 212 M cycles/s, as usual. A
+      booted machine now stops at a JAM ("the cpu jammed on opcode $02 at $0200
+      (only a reset frees it)", exit code 3), and a step of a jammed cpu ends
+      after 32 cycles for the other users of the core. Test in
+      tests/test_machine_run.cpp.
+    - Room (4): the size budget counted bytes against fixed budgets, not the
+      memory there is, so Catwiz kept 128 small event functions as calls with
+      `--no-inline` names (2,071 bytes) and took out every multiply (an add loop
+      collapsed into a multiply pulled in the 1 KB quarter-square tables). Now a
+      program that does not fit (code or data, the card tried too) is built again
+      a level of squeeze at a time, 1 to 10 (src/backend/squeeze.cpp): each level
+      halves the item, function and program budgets and doubles the cycles a byte
+      that make a copy pay for itself (none at 10); squeezed, the quarter-square
+      routines are used only when the multiplies save the level's cycles for each
+      byte of their tables and routines (80 cycles a multiply counted); from
+      level 4 the mid-level passes neither unroll nor unswitch. The build says
+      what it traded in a warning. A program that fits is built as before:
+      examples, programs and the race byte for byte. `--no-inline` names must
+      be functions ("--no-inline helper: no function has that name; did you
+      mean t.helper?", or "... like draw/screen.row_at"); it found two stale names
+      in Catwiz's list (battle/words.face_of, sound/sound.speaker).
+      Catwiz, a copy with game/noinline.txt removed and its flags dropped from
+      tools/build.sh and tools/measure.py, against the game with them on main's
+      compiler: fits at squeeze 4 ("Called instead of copied: 28 functions
+      (state.set_stack, draw/screen.wait_frame, ...), 14 more loops left rolled,
+      no unrolling or unswitching by the mid-level passes"); code 18295 to 18296
+      bytes, data 57042 to 57059, the card 12183 to 12200 of 12282 (frames in
+      memory 42 to 47); compile 0.22 to 1.28 s (five builds). Cycles a pass of
+      the main loop (tools/measure.py, flat out): battle frames 1300-1600 15115
+      to 14982, title 600-900 40547 the same; with the Mockingboard 15817 to
+      15720 and 34060 to 32961. The same battle on screen. Tests:
+      tests/test_backend_squeeze.cpp (a multiply loop with a table one byte
+      bigger at a time until the usual build fails: then shift and add, the
+      note, and the interpreter's result; the same with a small function copied
+      at five calls; a program too big even at 10; the names). Fuzz: a seed in
+      four's own program again at squeeze 1 to 10 (`(squeeze N)`, 23 of the first
+      100 differ in cycles from the unsqueezed build).
+    - Not done: "nearly fits" is taken as "does not fit": the link's own result
+      decides, so a program that fits with a few bytes to spare is built as
+      usual. The overlay note (5) is docs/overlays.md: groups the call graph
+      shows (a screen's step and what only it reaches), bank 1 first for whole
+      functions behind stubs, then groups copied from aux; the handler's code
+      stays resident.
+    Fuzz on the final code: 12 x TISPLE_FUZZ=12000 (792,020 programs), 0
+    mismatches; ASan and UBSan 12 x 600 seeds (39,716 programs and the whole suite each
+    time), clean. A parallel run showed tests/test_machine_taps.cpp writing one
+    fixed /tmp file from every process; it has a name per process now. Random
+    race, seeds 1-2000: geomean 0.809, wins 69.1%, every program's cycles and
+    bytes as on main.
 
 ## Gap finder (2026-10-26)
 

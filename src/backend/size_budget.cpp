@@ -21,7 +21,6 @@ constexpr std::uint64_t kCallCycles = 12; // JSR and RTS
 constexpr std::uint64_t kStoreCycles = 6; // an argument byte stored into the callee's frame
 
 constexpr std::uint64_t kMaxBenefit = std::uint64_t(1) << 40;
-constexpr std::uint64_t kHotCycles = 32;
 
 std::uint64_t Times(std::uint64_t a, std::uint64_t b) {
     if (a == 0 || b == 0) {
@@ -74,11 +73,14 @@ bool Kept(const SizeChoices& choices, const SizeItem& key) {
     return key.first ? choices.keep_loops[i] : choices.keep_calls[i];
 }
 
-// saves kHotCycles cycles or more for each byte it adds: it pays for its bytes, and no budget
-// counts it or turns it down
-bool Hot(const Item& item) {
-    return item.benefit >=
-           Times(kHotCycles, static_cast<std::uint64_t>(std::max<std::int64_t>(item.growth, 0)));
+// saves the budget's hot cycles or more for each byte it adds: it pays for its bytes, and no
+// budget counts it or turns it down
+bool Hot(const SizeBudget& budget, const Item& item) {
+    if (budget.hot_cycles == 0) {
+        return item.growth <= 0;
+    }
+    std::uint64_t bytes = static_cast<std::uint64_t>(std::max<std::int64_t>(item.growth, 0));
+    return item.benefit >= Times(budget.hot_cycles, bytes);
 }
 
 // cycles saved per byte added: a's fewer than b's (growths positive)
@@ -191,13 +193,13 @@ std::int64_t TrimFunction(Trim& t, std::int32_t function) {
     std::int64_t growth = 0;
     for (const auto& [key, bytes] : parts) {
         // hot items pay for their bytes: the budgets are for the rest
-        growth += Kept(*t.choices, key) || Hot(t.items.at(key)) ? 0 : bytes;
+        growth += Kept(*t.choices, key) || Hot(t.be->budget, t.items.at(key)) ? 0 : bytes;
     }
     auto in_function = [&](const SizeItem& key) {
-        return parts.count(key) > 0 && !Hot(t.items.at(key));
+        return parts.count(key) > 0 && !Hot(t.be->budget, t.items.at(key));
     };
     for (const SizeItem& key : CheapestFirst(t, in_function)) {
-        if (growth <= kMaxFunctionGrowth) {
+        if (growth <= t.be->budget.function) {
             break;
         }
         if (TurnDown(t, key, "over the function budget: ")) {
@@ -208,6 +210,18 @@ std::int64_t TrimFunction(Trim& t, std::int32_t function) {
 }
 
 } // namespace
+
+SizeBudget BudgetAt(int squeeze) {
+    SizeBudget b;
+    b.squeeze = std::clamp(squeeze, 0, kMaxSqueeze);
+    int k = b.squeeze;
+    b.item = kMaxItemGrowth >> std::min(k, 6);
+    b.function = kMaxFunctionGrowth >> std::min(k, 8);
+    b.program = kMaxProgramGrowth >> k;
+    b.code_share = 3 + k;
+    b.hot_cycles = k == kMaxSqueeze ? 0 : kHotCycles << k;
+    return b;
+}
 
 bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& choices,
                 std::vector<SizeItem>& gone) {
@@ -221,8 +235,9 @@ bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& c
         }
     }
     // one item
+    const SizeBudget& budget = be.budget;
     auto over = [&](const SizeItem& key) {
-        return t.items[key].growth > kMaxItemGrowth && !Hot(t.items[key]);
+        return t.items[key].growth > budget.item && !Hot(budget, t.items[key]);
     };
     for (const SizeItem& key : CheapestFirst(t, over)) {
         TurnDown(t, key, "over the item budget: ");
@@ -239,14 +254,14 @@ bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& c
     // the whole program; the bodies of functions copied everywhere are not in it
     for (const auto& [key, item] : t.items) {
         if (!key.first && !kept[static_cast<std::size_t>(key.second)] && !Kept(choices, key) &&
-            !Hot(item)) {
+            !Hot(budget, item)) {
             total -= CodeBytes(be, static_cast<std::size_t>(key.second));
         }
     }
-    std::int64_t budget = kMaxProgramGrowth + (code - total) / 8;
-    auto cold = [&](const SizeItem& key) { return !Hot(t.items[key]); };
+    std::int64_t program = budget.program + ((code - total) >> budget.code_share);
+    auto cold = [&](const SizeItem& key) { return !Hot(budget, t.items[key]); };
     for (const SizeItem& key : CheapestFirst(t, cold)) {
-        if (total <= budget) {
+        if (total <= program) {
             break;
         }
         if (TurnDown(t, key, "over the program budget: ")) {
@@ -278,8 +293,8 @@ std::vector<bool> CopiesOverBudget(const Backend& be, const std::vector<bool>& k
         for (ExprId site : list) {
             growth += sites[site].first - sites[site].second;
         }
-        out[static_cast<std::size_t>(callee)] = growth > kMaxItemGrowth;
-        if (Verbose() && growth > kMaxItemGrowth) {
+        out[static_cast<std::size_t>(callee)] = growth > be.budget.item;
+        if (Verbose() && growth > be.budget.item) {
             Item item;
             item.growth = growth;
             PrintItem(*be.program, "not copied by the mid-level: ", {false, callee}, item);

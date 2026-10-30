@@ -9,7 +9,9 @@
 // $0296-$02FF the nibble table it builds: $0200 + n is disk nibble n's 6-bit value
 // $0300-$0355 the low bits of the sector being read
 // $0356-$0365 which sectors of the track are in
-// $0400-$04FF where an aux sector is read before it is copied over (text page 1)
+// $0400-$07FF text page 1, cleared to spaces with LOADING in the middle (not its holes)
+// the bounce page, the first page of a main segment that loads after the aux ones: where an
+//             aux sector is read before it is copied over
 //
 // reading: the head is on track 0 when the rom jumps here. segment by segment (main memory,
 // the language card's bank 2, or aux memory), each from a track of its own, the loader seeks
@@ -46,7 +48,7 @@ void EmitNextTrack(Loader& l, std::int32_t next_track) {
     c.Op(Mn::RTS);
 }
 
-// the sector at kBounce to the aux page at kDest: RAMWRT on, copy, off
+// the sector at the bounce page to the aux page at kDest: RAMWRT on, copy, off
 void EmitToAux(Loader& l, std::int32_t to_aux) {
     Code6502& c = l.c;
     std::int32_t copy = c.Label("aux.copy");
@@ -55,12 +57,40 @@ void EmitToAux(Loader& l, std::int32_t to_aux) {
     c.Mem(Mn::STY, kDest);
     c.Mem(Mn::STA, 0xC005);
     c.Place(copy);
-    c.MemY(Mn::LDA, kBounce);
+    c.MemY(Mn::LDA, l.bounce);
     c.IndY(Mn::STA, kDest);
     c.Op(Mn::INY);
     c.Br(Mn::BNE, copy);
     c.Mem(Mn::STA, 0xC004);
     c.Op(Mn::RTS);
+}
+
+constexpr char kLoading[] = "LOADING";
+constexpr int kLoadingAt = 0x0628 + 16; // row 12, column 16
+
+// text page 1 shown, 40 columns, cleared to spaces but for LOADING; the screen holes (the
+// last 8 bytes of each 128) are the cards' and stay as they are
+void EmitScreen(Loader& l, std::int32_t message) {
+    Code6502& c = l.c;
+    std::int32_t clear = c.Label("screen.clear");
+    std::int32_t show = c.Label("screen.show");
+    c.Mem(Mn::STA, 0xC00C); // 80 columns off
+    c.Mem(Mn::LDA, 0xC051); // text
+    c.Mem(Mn::LDA, 0xC054); // page 1
+    c.Imm(Mn::LDA, 0xA0);
+    c.Imm(Mn::LDY, 119);
+    c.Place(clear);
+    for (int block = 0; block < 8; block++) {
+        c.MemY(Mn::STA, 0x0400 + block * 0x80);
+    }
+    c.Op(Mn::DEY);
+    c.Br(Mn::BPL, clear);
+    c.Imm(Mn::LDX, static_cast<int>(sizeof(kLoading)) - 2);
+    c.Place(show);
+    c.MemLabelX(Mn::LDA, message, 0);
+    c.MemX(Mn::STA, kLoadingAt);
+    c.Op(Mn::DEX);
+    c.Br(Mn::BPL, show);
 }
 
 struct LoaderLabels {
@@ -71,6 +101,7 @@ struct LoaderLabels {
     std::int32_t to_aux = -1;
     std::int32_t table = -1;
     std::int32_t ret = -1;
+    std::int32_t message = -1;
 };
 
 // each segment from the table: first page, pages and bank; 0 pages ends the table. the
@@ -132,6 +163,7 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     for (std::int32_t site : l.latch_reads) {
         c.MemLabel(Mn::STA, site, 1);
     }
+    EmitScreen(l, at.message);
     EmitNibbleTable(l);
     EmitSegmentStart(l, at, segment, track, finish);
 
@@ -153,7 +185,7 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     c.Op(Mn::DEX);
     c.Br(Mn::BPL, clear);
 
-    // a wanted sector to its page; an aux one by way of kBounce
+    // a wanted sector to its page; an aux one by way of the bounce page
     c.Place(sector);
     c.Jump(Mn::JSR, at.address);
     c.Mem(Mn::LDA, kFields + 2);
@@ -171,7 +203,7 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     c.Mem(Mn::LDY, kMode);
     c.Imm(Mn::CPY, static_cast<int>(LoaderBank::kAux));
     c.Br(Mn::BNE, direct);
-    c.Imm(Mn::LDA, kBounce >> 8);
+    c.Imm(Mn::LDA, l.bounce >> 8);
     c.Place(direct);
     c.Mem(Mn::STA, kPtr + 1);
     c.Jump(Mn::JSR, at.data);
@@ -231,8 +263,10 @@ bool BuildLoader(const LoaderPlan& plan, uint8_t out[kBootLoaderSectors][kSector
     // the routines go after main in memory, but main patches their latch reads, so they
     // are written first and moved behind it
     Loader l;
+    l.bounce = plan.bounce_page << 8;
     Code6502& c = l.c;
     LoaderLabels at;
+    at.message = c.Label("message");
     at.seek = c.Label("seek");
     std::int32_t wait = c.Label("wait");
     std::int32_t nibble = c.Label("nibble");
@@ -257,6 +291,10 @@ bool BuildLoader(const LoaderPlan& plan, uint8_t out[kBootLoaderSectors][kSector
     }
     c.Byte(0);
     c.Byte(0); // pages 0: the end
+    c.Place(at.message);
+    for (int i = 0; kLoading[i] != 0; i++) {
+        c.Byte(kLoading[i] | 0x80);
+    }
     std::vector<AsmItem> routines = c.as.items;
     c.as.items.clear();
     c.Byte(kBootLoaderSectors);
@@ -302,8 +340,10 @@ bool FindBootLoader(const DiskTrack& track0, uint16_t& return_pc) {
     uint8_t sectors[kSectorsPerTrack][kSectorBytes];
     bool found[kSectorsPerTrack];
     DenibblizeTrack(track0, 0, sectors, found);
-    // version 1 was two sectors and loaded one stretch of main memory
+    // version 2 read aux sectors through text page 1; version 1 was two sectors and loaded
+    // one stretch of main memory
     return ReadSignature(sectors[2], found[2], kLoaderVersion, return_pc) ||
+           ReadSignature(sectors[2], found[2], 2, return_pc) ||
            ReadSignature(sectors[1], found[1], 1, return_pc);
 }
 

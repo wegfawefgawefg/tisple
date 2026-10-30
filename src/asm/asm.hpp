@@ -63,6 +63,9 @@ struct AsmItem {
     std::uint16_t address = 0;
     std::uint8_t size = 0;
     bool long_branch = false;
+    // a branch whose target may be in another stretch of memory: always the long form
+    // (backend/link_code.hpp)
+    bool far = false;
 };
 
 struct AsmSymbol {

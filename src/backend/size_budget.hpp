@@ -22,6 +22,12 @@
 //   plain code here. So the program as the mid-level leaves it before it inlines is
 //   measured first, and a function whose copies at its calls would go over the item budget
 //   is copied by neither.
+// - Room (squeeze.cpp): when the program does not fit its memory, CompileProgram builds it
+//   again with tighter budgets (BuildOptions::squeeze, 1 to kMaxSqueeze) until it does: each
+//   level halves the budgets and doubles the cycles a byte an item must save to pay for
+//   itself (none does at the last), the quarter-square multiplies must pay for their 1 KB of
+//   tables and routines the same way, and from kSqueezeRolled on the mid-level passes
+//   neither unroll nor unswitch. What the tighter build gave up is reported.
 
 #include "check/program.hpp"
 
@@ -36,6 +42,22 @@ struct Backend;
 constexpr std::int64_t kMaxItemGrowth = 128;
 constexpr std::int64_t kMaxFunctionGrowth = 512;
 constexpr std::int64_t kMaxProgramGrowth = 1024;
+constexpr std::uint64_t kHotCycles = 32;
+constexpr int kMaxSqueeze = 10;
+constexpr int kSqueezeRolled = 4;
+
+// the budgets at one level of squeeze (0: the usual ones)
+struct SizeBudget {
+    int squeeze = 0;
+    std::int64_t item = kMaxItemGrowth;
+    std::int64_t function = kMaxFunctionGrowth;
+    std::int64_t program = kMaxProgramGrowth;
+    int code_share = 3; // the program may also grow by its code over 2^code_share
+    // an item that saves this many cycles a byte or more pays for itself (0: none does)
+    std::uint64_t hot_cycles = kHotCycles;
+};
+
+SizeBudget BudgetAt(int squeeze);
 
 // (true, a for expression) for a loop, (false, a function) for its calls
 using SizeItem = std::pair<bool, std::int32_t>;

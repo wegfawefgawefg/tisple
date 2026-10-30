@@ -203,8 +203,9 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     if (!ok) {
         return 1;
     }
-    bool crashed = a.stopped && (a.stop_reason == MachineStop::kIllegalOpcode ||
-                                 a.stop_reason == MachineStop::kNoRom);
+    bool crashed = a.stopped &&
+                   (a.stop_reason == MachineStop::kIllegalOpcode ||
+                    a.stop_reason == MachineStop::kNoRom || a.stop_reason == MachineStop::kJammed);
     return crashed ? 3 : 0;
 }
 

@@ -252,6 +252,11 @@ RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, voi
             Stop(a, opcode == 0x00 ? MachineStop::kBrk : MachineStop::kIllegalOpcode, pc, opcode);
             break;
         }
+        // the chip would hang there for good; the clock and the screen go on
+        if (IsJamOpcode(opcode)) {
+            Stop(a, MachineStop::kJammed, pc, opcode);
+            break;
+        }
         if (trace != nullptr) {
             trace(trace_ctx, m);
         }
@@ -274,6 +279,8 @@ const char* MachineStopName(MachineStop reason) {
         return "illegal opcode";
     case MachineStop::kNoRom:
         return "jumped into rom";
+    case MachineStop::kJammed:
+        return "jammed";
     default:
         return "running";
     }
@@ -290,6 +297,11 @@ std::string DescribeStop(const Apple2& a) {
     case MachineStop::kIllegalOpcode:
         std::snprintf(text, sizeof(text), "illegal opcode $%02X at $%04X", a.stop_opcode,
                       a.stop_pc);
+        return text;
+    case MachineStop::kJammed:
+        std::snprintf(text, sizeof(text),
+                      "the cpu jammed on opcode $%02X at $%04X (only a reset frees it)",
+                      a.stop_opcode, a.stop_pc);
         return text;
     case MachineStop::kNoRom:
         if (a.stop_pc < 0xC100) {
