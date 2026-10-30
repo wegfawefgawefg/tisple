@@ -549,7 +549,21 @@ Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst) {
                 g.bound.push_back({fn.params[i], ListItem(*g.program, e, i)});
             }
         }
+        // a copy of a small function counts against the size budget; a function called
+        // once has no other copy
+        bool noted = kind == InlineKind::Always;
+        std::uint32_t bound_bytes = 0;
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            std::size_t param = static_cast<std::size_t>(fn.params[i]);
+            bound_bytes += bind[i] ? TypeOf(*g.program, g.program->vars[param].type).size : 0;
+        }
+        std::uint64_t cost_before = g.cost + g.routine_cost;
+        std::uint64_t weight = LoopWeight(g);
+        std::size_t start = noted ? StartCopyNote(g, {false, e.ref}) : 0;
         Opnd out = InlineBody(g, e.ref, size, dst);
+        if (noted) {
+            EndCallNote(g, start, id, bound_bytes, cost_before, weight);
+        }
         g.bound.resize(bound);
         return out;
     }

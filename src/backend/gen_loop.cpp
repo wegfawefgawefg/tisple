@@ -413,6 +413,20 @@ void WordLoop(Gen& g, const ForParts& f, bool pin) {
     g.out->insert(g.out->end(), best_items.begin(), best_items.end());
 }
 
+void RolledLoop(Gen& g, const ForParts& f) {
+    const Program& program = *g.program;
+    bool pin = g.for_depth <= kMaxPinnedDepth;
+    if (f.size == 2) {
+        WordLoop(g, f, pin);
+        return;
+    }
+    const Expr& e = ExprOf(program, f.id);
+    TypeKind kind = KindOf(program, program.vars[static_cast<std::size_t>(f.var)].type);
+    g.ranges.push_back(CounterRangeOf(program, e, kind));
+    ByteLoop(g, f, pin);
+    g.ranges.pop_back();
+}
+
 void GenFor(Gen& g, ExprId id) {
     const Program& program = *g.program;
     const Expr& e = ExprOf(program, id);
@@ -483,23 +497,18 @@ void GenFor(Gen& g, ExprId id) {
     g.loops.push_back(ctx);
     g.loop_factors.resize(static_cast<std::size_t>(g.loop_depth));
     g.loop_factors.push_back(LoopFactor(g, id));
+    g.loop_runs.resize(static_cast<std::size_t>(g.loop_depth));
+    g.loop_runs.push_back(LoopTrips(*g.program, id, kMaxRunTrips));
     g.loop_depth++;
     g.for_depth++;
-    bool pin = g.for_depth <= kMaxPinnedDepth;
     std::uint32_t copies = f.trips == 0 ? 256 : f.trips;
     bool unroll = f.down && copies <= static_cast<std::uint32_t>(kMaxUnrollTrips) &&
                   CountExprs(program, f.body) * copies * g.unrolled_copies <= kMaxUnrollExprs;
-    if (unroll) {
-        // each copy runs once
-        g.loop_factors.back() = 1;
-        UnrolledLoop(g, f);
-    } else if ((fixed || e.b < 0) && CountedCopies(g, f)) {
-    } else if (f.size == 1) {
-        g.ranges.push_back(CounterRangeOf(program, e, kind));
-        ByteLoop(g, f, pin);
-        g.ranges.pop_back();
+    bool counted = !unroll && (fixed || e.b < 0) && CountedCopiesFit(g, f);
+    if (unroll || counted) {
+        CopiesOrLoop(g, f, counted);
     } else {
-        WordLoop(g, f, pin);
+        RolledLoop(g, f);
     }
     g.for_depth--;
     g.loop_depth--;

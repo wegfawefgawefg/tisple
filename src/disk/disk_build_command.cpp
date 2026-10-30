@@ -2,6 +2,7 @@
 // self-booting disk; run boots it on the built-in machine as a rehearsal of real hardware
 
 #include "backend/backend.hpp"
+#include "backend/build_command.hpp"
 #include "check/check.hpp"
 #include "check/diag.hpp"
 #include "disk/disk_command.hpp"
@@ -24,6 +25,7 @@ struct DiskBuildArgs {
     std::string disk;   // the image to write ("" for run: kept in memory)
     std::string binary; // -o: also write the .bin
     BuildOptions options;
+    bool listing = false; // build: --asm
     bool headless = false;
     std::vector<char*> machine_args;
 };
@@ -54,17 +56,14 @@ bool IsHeadlessFlag(const char* arg) {
 }
 
 bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
-    // no DOS to keep clear of: the loader can fill memory up to $BFFF, and from $0B00 below
-    // the origin
-    args.options.limit = 0xC000;
-    args.options.low_start = kBootLoadLow;
+    UseBootDiskLayout(args.options);
     for (int i = 2; i < argc; i++) {
         const char* arg = argv[i];
         bool has_value = i + 1 < argc;
-        std::string opt_error;
-        if (ParseOptFlag(argc, argv, i, args.options.opt, opt_error)) {
-            if (!opt_error.empty()) {
-                std::fprintf(stderr, "tisple: %s\n", opt_error.c_str());
+        std::string flag_error;
+        if (ParseCodeFlag(argc, argv, i, args.options, flag_error)) {
+            if (!flag_error.empty()) {
+                std::fprintf(stderr, "tisple: %s\n", flag_error.c_str());
                 return false;
             }
             continue;
@@ -83,6 +82,8 @@ bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
             args.options.origin = static_cast<uint16_t>(number);
         } else if (!run && std::strcmp(arg, "-o") == 0 && has_value) {
             args.binary = argv[++i];
+        } else if (!run && std::strcmp(arg, "--asm") == 0) {
+            args.listing = true;
         } else if (run && std::strcmp(arg, "--headless") == 0) {
             args.headless = true;
         } else if (args.path == nullptr && arg[0] != '-') {
@@ -108,10 +109,21 @@ bool CompileFor(const DiskBuildArgs& args, Compiled& compiled) {
     if (args.options.opt.bisect >= 0) {
         std::fputs(DescribeOptReport(compiled.opt).c_str(), stderr);
     }
+    std::fputs(FormatDiagnostics(program.sources, compiled.warnings).c_str(), stderr);
+    if (args.listing) {
+        std::fputs(ListProgram(program, compiled).c_str(), stdout);
+    }
     return true;
 }
 
 } // namespace
+
+void UseBootDiskLayout(BuildOptions& options) {
+    // no DOS to keep clear of: the loader can fill memory up to $BFFF, and from $0B00 below
+    // the origin
+    options.limit = 0xC000;
+    options.low_start = kBootLoadLow;
+}
 
 bool HasDiskFlag(int argc, char** argv) {
     for (int i = 2; i < argc; i++) {
@@ -127,6 +139,8 @@ int RunBuildDiskCommand(int argc, char** argv) {
     if (!ParseArgs(argc, argv, false, args)) {
         std::fprintf(stderr,
                      "usage: tisple build main.tsp --disk out.dsk [--origin A] [-o out.bin]\n"
+                     "  [--asm] [-O0|-O1] [--opt-bisect N] [--no-pass NAME]\n"
+                     "  [--no-inline module.fn]\n"
                      "a disk that boots the program on its own (no DOS); the program\n"
                      "loads in $0B00-$BFFF, the language card and aux memory\n");
         return 1;

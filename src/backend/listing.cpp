@@ -41,9 +41,11 @@ std::uint32_t BytesUntilNote(const Assembly& as, std::size_t at, std::size_t end
 } // namespace
 
 std::string ListProgram(const Program& program, const Compiled& c) {
-    (void)program;
     const Assembly& as = c.as;
     std::string text;
+    for (const Diagnostic& warning : c.warnings) {
+        text += "; " + FormatDiagnostic(program.sources, warning) + "\n";
+    }
     for (const FunctionSpan& span : c.spans) {
         std::uint32_t bytes = 0;
         std::uint16_t start = 0;

@@ -1517,6 +1517,97 @@ From a scan of Life, Snake, dot, the other examples and the libraries
       The rest is per-voice counting in compiled code.
     Every program and example builds byte for byte as before; the machine is
     1-2% slower with no card or an idle one (Life 221x real time to 217x).
+53. Correctness and code size round (2026-10-30), from the Witchdog game. Two
+    miscompiles on main, both at -O0 too, now fixed. (1) Constant folding
+    dropped a call through a function pointer in (& (fp) 0) (fuzz seed
+    19014827): FoldConstants runs before LowerIndirectCalls, and HasEffects
+    (and HasWrites, HasCalls, UsesRuntime, MayWriteVar) only knew Call, not
+    CallPtr. The mid-level inliner's workaround (no inlining of a function
+    that calls through a pointer, src/opt/inline.cpp) is gone. (2) An index
+    (+ K (as u16 (+ x c))) lost K: Resolve (gen_place.cpp) put K into the
+    address, then set the address to the array plus c when it moved the byte
+    delta in, so buf+12 read buf+3 and (- x 2) under (> x 1) read t+65534.
+    The pointers pass's limit to literal counts now has one reason left, the
+    speed one (seed 583 69439 to 138860 cycles); not lifted. Both in
+    tests/programs/fuzz_farm (19014827_reduced.tsp with (* (fp) 0) and
+    (| 255 (fp)) too, index_peel_delta.tsp), and in a new fuzz shape.
+    Code size: inlining and unrolling ignored bytes. Witchdog's noise, a
+    small function with a loop called 8 times with constant counts, was
+    5608 bytes at -O0 (every call copied, each copy's loop unrolled, each
+    unrolled pass with a copy of random.byte); in the game it made main 7979
+    bytes. Now a budget (src/backend/size_budget.hpp): generation notes every
+    copy of a small function and every unrolled loop with its bytes (after
+    the peephole pass) and cycles, and makes an unrollable loop both ways to
+    measure both. An item (a function's calls, or one loop) may add 128 bytes,
+    a function 512, the program 1 KB plus an eighth of its code, unless it
+    saves 32 cycles a byte or more (run counts with whole trip counts, not
+    the 64 code choices weigh with). Over budget the items that save the
+    fewest cycles a byte stay JSRs or loops and the functions holding them
+    are made again, 8 rounds at most. The mid-level's copies are plain code to
+    the backend, so the program as the passes leave it before inlining is
+    measured first, and a function whose copies at its calls go over the item
+    budget is copied by neither. noise: 5608 to 326 bytes at -O0, 323 at -O1
+    as before. The game (main.tsp --origin 0x8000 --disk): code 16963 to
+    15346 bytes, the $0B00 part 4640 to 2952 bytes, memory frames 189 to 125
+    (zero page full either way), main.main 7979 to 5959, battle.step 2410 to
+    2288, bytes in source lines copied more than once 3722 to 2024; -O0 16844
+    to 15067; the fixed-seed title (the seed taken off the key-press time)
+    gives the same screen at frame 1700, byte for byte. Random race, seeds
+    1-2000: geomean 0.806 to 0.811, wins 69.2% to 68.8%; against llvm-mos
+    cycles 0.722 to 0.726, bytes 0.758 to 0.739; Tisple's own bytes geomean
+    -2.5%, all 2000 programs 652963 to 625737 bytes (-4.2%), cycles geomean
+    +0.56%; no program both slower and bigger. The worst: 1117 195 to 601
+    cycles for 355 to 181 bytes (a loop of 7 with a match on (* (>> g0 6)
+    n19) left rolled), 459 567 to 1295 for 357 to 149. Kernels the same but
+    life, 160643 to 161089 cycles for 399 to 340 bytes. Binaries: life code
+    882 to 739 (zero page 99 to 93), paint 1581 to 1423 (99 to 85), text_demo
+    3127 to 2982 (90 to 88), hires_plot 494 to 300, snake 1077 to 1085,
+    plasma and the other examples byte for byte. Compile time: the game 0.06
+    to 0.14 s (-O0 0.05 to 0.08 s). On the way, each a step back until
+    fixed: a loop's benefit as its counter's 5 cycles a trip turned down
+    counted copies whose constant counter folds a 16-bit multiply (1124
+    19883 to 55923 cycles), so both ways are made; Gen::cost counts a JSR to
+    rt.mul8 as 6 cycles, so the runtime routines' cycles are added; trips
+    capped at 64 left crc16's 8 bits rolled (188348 to 228281); bytes before
+    the peephole pass showed copies bigger than the loop where later copies'
+    stores make earlier ones dead (419 410 to 432 bytes and twice as slow);
+    measuring the mid-level's copies on the program as checked turned down
+    functions the passes shrink before they copy (926 20 to 57 cycles); hot
+    items counted in the program budget let the race's untimed checksum (mix
+    copied 40 times) push out the timed code. Budgets tried (game code,
+    race): 192/512/1024 with 16 cycles a byte 15896, 0.811 (before the
+    peephole measure); nothing copied at all 14291, 0.826. Zero page: not
+    fixed. Copies' locals are plain caller locals with no mark of the copy
+    they came from, and sharing their bytes needs live ranges that know the
+    backend's own moves (lets worked out before their for, counters replaced
+    by a let, whiles keeping variables in registers, index aliases read at
+    their uses, arguments read in place by inlined copies) and the
+    peephole's alias groups: not a contained change in frames.cpp. What
+    mid-level inlining costs now (-O1 against --no-pass inline): life zero
+    page 93 against 68, paint 85 against 73 (memory frames 34 against 6),
+    text_demo 88 against 60, snake 45 against 39, the game 256 with 125 bytes
+    of frames in memory against 160 with 32. The cheap fix is in
+    src/opt/inline_copy.cpp: a copy uses the callee's own parameters and
+    locals, in the callee's frame, which the call graph already overlaps,
+    and fresh locals only where copies of one callee nest. Command line:
+    build --disk and run --disk take the code flags of a plain build
+    (-O0/-O1, --opt-bisect, --no-pass, --no-inline) and build --disk takes
+    --asm; check takes --origin, --disk [image] and the code flags and lays
+    the program out as that build would, so the game's :address lets check
+    with --origin 0x8000 --disk. An addr_of into an array of multibyte
+    elements (or a struct holding one) now warns at its first addr_of, on
+    build, run and check and at the top of the --asm listing: "this addr_of
+    stores all of state.actors packed (8 elements of 12 bytes), so every
+    element access multiplies its index by 12 instead of indexing split byte
+    planes (and 2 more addr_of)". A warning, not a language change; the game
+    as it is has none. Fuzz on the final code: 8 x 15000 seeds (450,176
+    programs), 0 mismatches; ASan and UBSan 8 x 600 seeds (17,729 programs
+    and the whole suite each time), clean. Fuzz shape tests/fuzz_gen_size.cpp (`seed N
+    (size)`, one seed in four): noise-like helpers, heavy small helpers,
+    unrollable loops of every kind, absorbing operations around calls with
+    effects and through pointers, constant-plus-byte indexes; 46 of its first
+    96 programs differ on the compiler before this round. Tests:
+    tests/test_backend_size.cpp, tests/test_backend_build.cpp (the warning).
 
 ## Gap finder (2026-10-26)
 

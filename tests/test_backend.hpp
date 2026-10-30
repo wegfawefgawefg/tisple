@@ -100,6 +100,8 @@ void RunBackendSignedCmpTests(TestResults& results);
 void RunBackendCount16Tests(TestResults& results);
 // short loops copied with the counter a number (test_backend_unroll.cpp)
 void RunBackendUnrollTests(TestResults& results);
+// the code size budget (test_backend_size.cpp)
+void RunBackendSizeTests(TestResults& results);
 // 16-bit runs a byte at a time (test_backend_spine.cpp)
 void RunBackendSpineTests(TestResults& results);
 // store indices into their registers early (test_backend_preload.cpp)

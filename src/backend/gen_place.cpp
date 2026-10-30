@@ -356,10 +356,11 @@ bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out) {
         out.type = e.type;
         out.site = id;
         if (out.delta != 0 && DeltaFits(g, out.counter, out.delta)) {
-            // (at a (+ i k)) is a + k indexed by i: the sum never wraps
+            // (at a (+ i k)) is a + k indexed by i: the sum never wraps. On top of the constant
+            // peeled off already: (at a (+ c (as u16 (+ i k)))) is a + c + k
             std::int32_t k = out.delta < 0x80 ? out.delta : out.delta - 0x100;
             out.cursor.address = static_cast<std::uint16_t>(
-                (c0.address + k * static_cast<std::int32_t>(out.mult)) & 0xFFFF);
+                (out.cursor.address + k * static_cast<std::int32_t>(out.mult)) & 0xFFFF);
             out.delta = 0;
         }
         return true;

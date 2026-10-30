@@ -94,6 +94,9 @@ AsmValue SymValue(std::int32_t sym, std::int32_t offset = 0, Part part = Part::W
 
 // the mode an instruction is encoded with (Abs may become Zp)
 Mode EncodedMode(const Assembly& as, const AsmItem& item);
+// an item's bytes; before LayoutCode a branch counts 2 and an Abs operand not known to be in
+// zero page 3
+int ItemBytes(const Assembly& as, const AsmItem& item);
 
 // sizes and addresses from origin; defines labels; relaxes branches. Returns the end address
 // (one past the last byte), which may be past $FFFF if the code does not fit.

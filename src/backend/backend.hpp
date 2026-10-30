@@ -78,12 +78,19 @@ struct Compiled {
     std::uint32_t zp_frames = 0;  // of those, the overlapped frames
     std::uint32_t mem_frames = 0; // overlapped frame bytes outside zero page
     OptReport opt;                // what the mid-level passes did
+    // what the program may not mean: arrays an addr_of keeps packed (PackedArrayWarnings)
+    std::vector<Diagnostic> warnings;
 };
 
 bool CompileProgram(const Program& program, const BuildOptions& options, Compiled& out,
                     std::vector<Diagnostic>& errors);
 
-// every function's code under its source lines, with byte counts (tisple build --asm)
+// a warning at the first addr_of into each array of multibyte elements: it stores the whole
+// array packed, so element accesses multiply the index (packed_warnings.cpp)
+std::vector<Diagnostic> PackedArrayWarnings(const Program& program);
+
+// the warnings, then every function's code under its source lines, with byte counts (tisple
+// build --asm)
 std::string ListProgram(const Program& program, const Compiled& compiled);
 
 // a byte of the built program as the cpu sees it with the program's memory switched in:

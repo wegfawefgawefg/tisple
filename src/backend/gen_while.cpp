@@ -418,6 +418,8 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
     g.loops.push_back(ctx);
     g.loop_factors.resize(static_cast<std::size_t>(g.loop_depth));
     g.loop_factors.push_back(LoopFactor(g, id));
+    g.loop_runs.resize(static_cast<std::size_t>(g.loop_depth));
+    g.loop_runs.push_back(LoopTrips(*g.program, id, kMaxRunTrips));
     g.loop_depth++;
     if (regs.bump >= 0) {
         // v + 1, once each time the loop starts; v = 255 never compares true

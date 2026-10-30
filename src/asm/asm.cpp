@@ -146,6 +146,10 @@ std::string OperandText(Mode mode, std::uint32_t v) {
 
 } // namespace
 
+int ItemBytes(const Assembly& as, const AsmItem& item) {
+    return ItemSize(as, item);
+}
+
 std::int32_t NewSymbol(Assembly& as, const std::string& name) {
     AsmSymbol sym;
     sym.name = name;

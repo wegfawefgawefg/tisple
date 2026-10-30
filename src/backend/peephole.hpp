@@ -29,6 +29,13 @@ enum class StoreScope : std::uint8_t {
     Exposed,   // read directly by any code: what calls, jumps out and the return may read
 };
 
+// by symbol, for one function's code: who reads each byte (dead_stores.cpp)
+std::vector<StoreScope> StoreScopes(const Backend& be, std::int32_t function);
+// by symbol, for one function's code: the function whose frame holds the byte, for the
+// locals and parameters of the functions it inlines (frames.cpp may give their frames the
+// same bytes, as they never run at the same time); -1 for its own, globals and fixed places
+std::vector<std::int32_t> FrameSharers(const Backend& be, std::int32_t function);
+
 // frames: by symbol, for a byte of an inlined callee's frame, the callee (else -1). Frames of
 // functions that never run at the same time share bytes (frames.cpp), and code with several
 // callees inlined holds bytes of each: a write to one callee's byte may change another's.
