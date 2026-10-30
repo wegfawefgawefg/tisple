@@ -59,19 +59,27 @@ tisple run examples/mockingboard_demo.tsp --mockingboard 4 \
   handler can poll other devices too.
 - `(mb.play song)` starts a song from the beginning; `(mb.stop)` silences the
   music (an effect playing goes on).
-- `(mb.effect sound voice priority)` plays an effect on voice 0-5. It takes
-  that voice while it plays; the music on it goes on silently and comes back
-  after. A new effect replaces the one playing only if its priority is at
-  least as high. Give effects a voice the music leaves free, or the least
-  missed one.
+- `(mb.effect sound voice priority)` plays an effect on voice 0-5 from the
+  next tick. It takes that voice while it plays; the music on it goes on
+  silently and comes back after. One effect plays at a time: a new one with a
+  higher priority than the one playing cuts it off, any other waits in line
+  and starts on the tick the one before it ends. The line holds 4; more are
+  dropped. Give effects a voice the music leaves free, or the least missed
+  one.
+- `(mb.effect_playing)` is true while an effect plays or waits. A sound that
+  only matters now is dropped rather than queued with
+  `(if (not (mb.effect_playing)) (mb.effect ...))`.
 - `(mb.set_rate cycles)` changes the tick from the next one on.
 - `(mb.off)` before main returns: timer and interrupts off, every voice quiet.
   Without it the card goes on interrupting into whatever runs next.
 - `play`, `stop`, `effect` and `init` turn interrupts on (`CLI`) when they
   return.
-- No card: `mb.found` is false, `play` and `stop` do nothing, and `effect`
-  plays on the speaker while main waits (square waves at the notes' pitches,
-  noise as jittered clicks; no volume, no decay).
+- No card: `mb.found` is false, and `play`, `stop` and `effect` do nothing.
+  `(mb.speaker_effect sound)` plays an effect on the speaker while main waits
+  (square waves at the notes' pitches, noise as jittered clicks; no volume, no
+  decay): `(if mb.found (mb.effect s 5 1) (mb.speaker_effect s))`. A program
+  that never calls it has none of its code: 669 bytes and the 354-byte
+  division routine in the demo, which does call it.
 
 Voices 0-2 are the first AY's channels A-C (`$Cn00`, left), 3-5 the second's
 (`$Cn80`, right). The noise period and the hardware envelope belong to a chip,
@@ -81,8 +89,11 @@ wins.
 ## The song format
 
 Text, turned into bytes while compiling by `tune.song` and `tune.effect`;
-each makes a top-level let, an array of u8. Tokens between spaces; a tick is
-one interrupt.
+each makes a top-level let, an array of u8. Placement options go last and on
+to the let: `(tune.song music ... :in aux)`, `(tune.effect zap "..." :align
+256)`. The player reads songs and effects as code reads memory, so they must
+be in main memory or the language card when they play; a song `:in aux` is
+copied in first (below). Tokens between spaces; a tick is one interrupt.
 
 | Token | Meaning |
 | --- | --- |
@@ -137,27 +148,75 @@ offset of the entry to loop back to. The patterns follow. A pattern is at most
 255 bytes and must hold a note, rest or tie (the macros check both). An effect
 is one pattern.
 
+## Songs in aux memory, copies while it plays
+
+The handler runs from main memory, and lib/auxmem's mover switches main memory
+out while it copies (RAMRD on to read aux memory, RAMWRT to write it): an
+interrupt in a copy would fetch the handler's code from aux memory, or write
+its variables there. So copies needed interrupts off, in pieces short enough
+not to lose a tick. `(auxmem.guard)`, once after `mb.init`, makes them safe
+with interrupts on:
+
+- 108 bytes of our 6502 code in page 3 of both memories. Both `$3FE` vectors
+  (the roms' way to the handler; with RAMRD on the rom reads aux memory's) and,
+  when the program runs in the language card, the card's `$FFFE` point to it.
+  With RAMRD and RAMWRT off it goes straight on to the handler's entry: 19
+  cycles a tick more (the demo's average tick 1004 to 1023). With one on, it
+  turns both off, has the entry's `RTI` come back to it, puts them back and
+  returns to the copy: about 65 cycles more for a tick that lands in a copy.
+- The enhanced IIe's rom puts main memory in on its own way to `$3FE`; the
+  guard then sees both off.
+- It costs the 108 bytes (a const table, so only in a program that calls
+  guard), about 35 bytes of code, and page 3 to `$03AB` in main memory and all
+  of it in aux memory.
+- tests/test_mockingboard_aux.cpp: 8 KB copies each way with the demo's song
+  ticking, through the card's vector and Apple's two IIe roms; about 25 ticks
+  land in reads and 25 in writes, none is lost, every byte arrives. The same
+  program without the guard stops after its first tick.
+
+A song in aux memory is copied into main memory to play. The handler reads the
+song playing, so the copy runs with interrupts off (or after `mb.stop`):
+
+```scheme
+(tune.song title ... :in aux)
+(let playing (array u8 400)) ; the largest song
+
+(sei)
+(auxmem.read (addr_of (at playing 0)) (addr_of (at title 0)) 400)
+(mb.play (addr_of (at playing 0)))
+```
+
+The player cannot read aux memory itself (What is left).
+
 ## What a tick costs
 
 Measured on the machine (`tests/test_mockingboard_lib.cpp`), from the cpu's
-interrupt entry to the end of its `RTI`, through the card's ram vector. Before:
-the player and compiler of round 53 (dogfood 53); after: dogfood 54.
+interrupt entry to the end of its `RTI`, through the card's ram vector, by
+round: the player and compiler of dogfood 53, 55 and 56.
 
-| Case | Before | After | Of a 17030-cycle frame |
-| --- | ---: | ---: | ---: |
-| demo, median tick | 1137 | 800 | 4.7% |
-| demo, average | 1403 | 1030 | 6.0% |
-| demo, the busiest tick after the first | 5382 | 4489 | 26% |
-| demo, the first tick (every voice reads its first pattern) | 7358 | 5647 | 33% |
-| every register of both chips changing every tick | 13779 | 10631 | 62% |
+| Case | 53 | 55 | 56 | Of a 17030-cycle frame |
+| --- | ---: | ---: | ---: | ---: |
+| demo, median tick | 1137 | 800 | 770 | 4.5% |
+| demo, average | 1403 | 1030 | 1004 | 5.9% |
+| demo, the busiest tick after the first | 5382 | 4489 | 4495 | 26% |
+| demo, the first tick (every voice reads its first pattern) | 7358 | 5647 | 5653 | 33% |
+| every register of both chips changing every tick | 13779 | 10631 | 10853 | 64% |
+
+In 56 the fade writes its volume without `reg`'s compare (a fade always
+changes it), 32 cycles off the average; the effect line's check costs 6. The
+last row's program starts an effect every 8000 cycles, each cutting off the
+one before: main did the start before, the tick does it now (about 220
+cycles).
 
 Apple's IIe rom adds about 20 cycles a tick on its way to `$3FE`; the enhanced
 IIe's adds more. Where a tick goes now:
 
 - The entry and exit (A, X and Y saved), the 6522's flag read and answer:
   about 75 cycles.
+- The effect line: about 6 cycles when nothing waits; starting the next
+  effect about 220.
 - Each of the seven slots: 20 cycles when it is not playing, about 35 to count a
-  note down, about 55 when its note fades.
+  note down, about 55 when its note fades and about 120 when the fade writes.
 - A register the player looks at but that has not changed: about 25 cycles (the
   compare in `reg`, inlined). One that changed: about 85, of which 38 are the
   six 6522 accesses themselves, 4 cycles each: `page` is an I/O base
@@ -173,10 +232,13 @@ IIe's adds more. Where a tick goes now:
 Ticks where many voices start notes at once cost the most, so a song whose
 voices start on different ticks spreads its cost.
 
-The demo's code is 4635 bytes (5055 before), the handler's side 940 (1451:
-the tick with fade inlined 161, `send` 72, `out` 184, `events` 523), plus the
-137-byte patch of `page` that init and the startup call; zero page 122 bytes
-with the demo's own (129).
+The demo's code is 4904 bytes (4635 in 55, 5055 in 53), the handler's side
+1120 (the tick with fade inlined 167, `send` 72, `out` 184, `events` 546,
+`start_effect` 151), plus the 137-byte patch of `page` that init and the
+startup call; zero page 89 bytes with the demo's own. Main's `effect` is 120
+bytes, where it was 819 with the speaker's version inside it; the demo still
+has that version (669 bytes, and the 354-byte division routine), since it
+plays its effects on the speaker with no card.
 
 ## The emulated card
 
@@ -211,6 +273,15 @@ runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
 
 ## What is left
 
+- The player reading songs where they live, in aux memory: a byte read with
+  RAMRD on has to run from page 3 (a copy in both memories, as lib/auxmem's
+  mover does), so the handler would `jsr` to it, about 21 cycles more a
+  pattern byte. But a `jsr` anywhere in the handler makes the checker count
+  every global as shared with the handler (src/check/interrupts.cpp: the
+  routine may change any let), and Witchdog's main code grew 330 bytes from
+  that alone. It needs a way to say a routine changes no let, for instance a
+  `jsr` option the handler check honours. Until then songs in aux memory are
+  copied into a buffer the size of the largest.
 - Stereo WAVs: both chips go to one channel now.
 - The handler's cost. The player is compiled Tisple (there is no inline
   assembly). What is left is mostly the compiled code's own: the parser's index

@@ -48,6 +48,12 @@
     (text40.move 2 9)
     (text40.print "ESC TO STOP"))
 
+; an effect on voice 5, or on the speaker with no card
+(fn play_effect ((sound (ptr u8)) (priority u8)) void
+    (if mb.found
+        (mb.effect sound 5 priority)
+        (mb.speaker_effect sound)))
+
 ; the waiting key, or 0 (lib/keys has the same, but examples/keys.tsp takes its name here)
 (fn read_key () u8
     (let k u8 (io_read u8 a2.KBD))
@@ -64,10 +70,10 @@
     (while true
         (let k u8 (read_key))
         (match k
-            (0x31 (mb.effect (addr_of (at zap 0)) 5 1))
-            (0x32 (mb.effect (addr_of (at coin 0)) 5 2))
-            (0x33 (mb.effect (addr_of (at boom 0)) 5 3))
-            (0x34 (mb.effect (addr_of (at chime 0)) 5 1))
+            (0x31 (play_effect (addr_of (at zap 0)) 1))
+            (0x32 (play_effect (addr_of (at coin 0)) 2))
+            (0x33 (play_effect (addr_of (at boom 0)) 3))
+            (0x34 (play_effect (addr_of (at chime 0)) 1))
             (a2.KEY_ESC
                 (mb.off)
                 (return))

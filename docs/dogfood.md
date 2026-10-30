@@ -1765,6 +1765,66 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     parameters are still made by the caller (12 cycles) where a register
     calling convention could pass two bytes; a void function's RTS still
     counts A as read, so a countdown's load before a return stays.
+56. Mockingboard library limits Witchdog hit (2026-10-30, docs/mockingboard.md,
+    lib/auxmem): Witchdog's main memory was full and its language card had 965
+    bytes left. Library and tests only; the compiler is unchanged.
+    - The speaker's version of an effect was inside `mb.effect` (819 bytes in
+      Witchdog with it inlined, and the division routine its pitches need), so
+      a program with card effects only paid for it. Now `effect` plays on the
+      card or does nothing and `(mb.speaker_effect sound)` is its own
+      function: a program with card effects only is 3168 bytes, with the
+      speaker's too 4192 (tests/test_mockingboard_line.cpp).
+    - Effects in line: one plays at a time; a new one with a higher priority
+      cuts it off, others wait (4 at most) and start on the tick the one
+      before ends; `(mb.effect_playing)` for sounds that only matter now. The
+      handler starts each (start_effect, 151 bytes, about 220 cycles that
+      tick), so main's `effect` is 120 bytes and the start code exists once.
+      Before, an equal priority replaced the one playing and Witchdog kept a
+      4-slot queue of its own, stepped once a frame. Per-voice effect slots
+      were the other way; Witchdog's effects are written to follow one
+      another (a blow's zap, thump and squeak), so a line.
+    - `tune.song` and `tune.effect` take placement options last and hand them
+      to the let: `(tune.song title ... :in aux)`. Macro code has no apply,
+      so Witchdog added `:in aux` with a script over `tisple expand`; the
+      macro now collects every part from the first keyword on.
+    - lib/auxmem: `(auxmem.guard)`, 108 bytes of our 6502 code in page 3 of
+      both memories that the `$3FE` vectors and the card's `$FFFE` go
+      through: straight on to the handler with RAMRD and RAMWRT off (19
+      cycles a tick), else both off around the handler and back on after
+      (about 65 more). Copies then run with interrupts on: 8 KB each way with
+      ticks landing in them through the card's vector and both IIe roms, no
+      tick lost (tests/test_mockingboard_aux.cpp); without it the same
+      program dies at its first tick. The mover's zero page is now four lets
+      at `$F9`-`$FE` the program never takes, so it saves and restores
+      nothing: 99 bytes to 42, a one-byte read 559 cycles to 142; the mover
+      and the guard are const tables (an unused let still takes its bytes,
+      an unused const table does not). text_demo 134 bytes smaller.
+    - The fade writes its volume with send, not reg: a fade always changes it.
+      Nothing to skip: a decaying voice writes only on the ticks its level
+      changes. Demo ticks, round 55 to now: median 800 to 770, average 1030 to
+      1004, busiest after the first 4489 to 4495, first 5647 to 5653; every
+      register changing 10631 to 10853 (the effect starts moved into the tick).
+    - Witchdog (a converted copy: no queue or step, songs `:in aux` in
+      game/sound/songs.tsp and no export script, one 8 KB read per picture,
+      no sei pieces): main memory stays full (the link fills it first), the
+      language card 11323 to 10695 bytes, 628 freed; 753 without the guard
+      (it costs 125 there). The title's sound chip writes are the same tick for
+      tick, the battle song's music voices too from its start.
+    - Not done: the player reading songs from aux memory. RAMRD switches the
+      instruction fetches too, so the read has to run from page 3 through a
+      `jsr`, and one `jsr` in the handler makes the checker count every global
+      as shared with it (src/check/interrupts.cpp, `u.machine`): Witchdog's
+      main code 330 bytes bigger, sfx.play's speaker loops among it. It wants
+      a way to say a routine changes no let, a `jsr` option the handler check
+      honours; then a pattern byte from aux memory costs about 21 cycles more
+      and the 395-byte buffer goes. The language card's bank 1 (unused, 4 KB)
+      would be cheaper per byte but the link cannot place data there and the
+      handler's code may be in `$D000`-`$DFFF`, which the switch swaps out.
+    - What else writing it showed: with `read` calling `move` calling the
+      jsr, and Witchdog's calls no longer between `sei` and `cli`, the inliner
+      put `read` with its setup into each call site, its parameters copied at
+      each level (60-70 bytes a site); with the arguments stored straight into
+      the mover's zero page `read` is one flat function of 86 bytes, called.
 
 ## Gap finder (2026-10-26)
 

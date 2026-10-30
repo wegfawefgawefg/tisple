@@ -103,11 +103,15 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 - `lib/auxmem`: `(auxmem.read dst src count)` and `(auxmem.write dst src
   count)` copy between main memory and aux memory, with pointers from
   `addr_of`. It is the only way code reaches a let `:in aux` (see Memory map).
-  Its mover is 99 bytes of our own 6502 code run from page 3, with a copy at the
+  Its mover is 42 bytes of our own 6502 code run from page 3, with a copy at the
   same address in aux memory, since RAMRD sends the instruction fetches there
-  too; two `:reserve` lets keep `$0300`-`$0362` in both memories, so an
-  `:address` let there is an overlap error. It saves the zero page it borrows.
-  (Not `aux.tsp`: Windows keeps that name.)
+  too; `:reserve` lets keep `$0300`-`$03AB` in main memory and all of page 3 in
+  aux memory, so an `:address` let there is an overlap error. Its arguments are
+  four lets at `$F9`-`$FE`, which the program's other variables never take. A
+  one-byte read takes about 140 cycles with its call (560 before 2026-10-30,
+  when the mover saved the zero page it borrowed), a page about 4100 more.
+  `(auxmem.guard)` makes copies safe while an interrupt handler runs
+  (Interrupts). (Not `aux.tsp`: Windows keeps that name.)
 
 ## Keywords
 
@@ -627,12 +631,16 @@ Added 2026-10-30, for the Mockingboard's timers and the mouse card.
 - The interpreter takes interrupts only where a test asks for them (between two
   steps, when they are on).
 - A `BRK` with the card's ram in runs the handler and returns past it; Tisple
-  code has none. lib/auxmem's mover switches RAMRD and RAMWRT: on a II+ or an
+  code has none. lib/auxmem's mover switches RAMRD and RAMWRT: on an
   unenhanced IIe an interrupt in it would fetch the vector, and with the card
-  in the handler's code, from aux memory. Put `(sei)` and `(cli)` around
-  `auxmem.read` and `auxmem.write` when a handler may run. lib/mouse stays
-  polled (its interrupt modes need SERVEMOUSE in the handler, which our
-  machine's card does not raise).
+  in the handler's code, from aux memory, and with RAMWRT on the handler would
+  write its variables there. Either put `(sei)` and `(cli)` around
+  `auxmem.read` and `auxmem.write` when a handler may run, or call
+  `(auxmem.guard)` once in main: our code in page 3 that the vectors then go
+  through, which runs the handler with main memory in and switches back after
+  (19 cycles a tick, about 65 more for a tick that lands in a copy;
+  docs/mockingboard.md). lib/mouse stays polled (its interrupt modes need
+  SERVEMOUSE in the handler, which our machine's card does not raise).
 
 What it compiles to, and how each Apple II routes the IRQ: design.md,
 "Interrupt handlers".
