@@ -104,6 +104,13 @@ void DotTests(TestResults& results) {
     EditorIndex index = IndexFile("examples/dot/main.tsp");
     CHECK(results, index.errors.empty());
     CHECK(results, index.sources.files.size() == 4);
+
+    // a module in a subfolder opened in the editor loads as part of its program
+    EditorIndex module;
+    tisple::IndexFileInProgram(std::string(TISPLE_SOURCE_DIR) + "/examples/dot/gfx/hgr.tsp",
+                               tisple::LoadOptions(), module);
+    CHECK(results, module.errors.empty());
+    CHECK(results, module.sources.files.size() == 4);
     const char* main = "dot/main.tsp";
     const char* hgr = "gfx/hgr.tsp";
     const Expect expects[] = {
