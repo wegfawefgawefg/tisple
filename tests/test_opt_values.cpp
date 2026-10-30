@@ -231,6 +231,13 @@ void Unswitched(TestResults& results) {
         // run (the test is cheap)
         "(fn f () void (for i u8 0 (& g 7) (if (> h 3) (set (at t i) i) (set (at t 1) 9))))\n"
         "(fn main () void (set h scr) (set g scr) (f))",
+        // no copy collapses, but the test leaves every pass (slice 6)
+        "(fn f () void (for i u8 0 7 (if (> h 3) (set (at t i) i) (set (at t (+ i 1)) 9))))\n"
+        "(fn main () void (set h scr) (f))",
+        // in a for inside (slice 6, seed 359)
+        "(fn f () void (for j u8 0 3 (for i u8 0 6 (match e (E.e0 (set (at t i) j)) (E.e1 (do)) "
+        "(E.e2 (bump))))))\n"
+        "(fn main () void (set e (if (> scr 3) E.e1 E.e0)) (f))",
     };
     const char* kept[] = {
         // the loop writes what the branch reads
@@ -241,8 +248,13 @@ void Unswitched(TestResults& results) {
         // the branch reads the counter
         "(fn f () void (for i u8 0 20 (if (> i h) (set (at t (& i 7)) i))))\n"
         "(fn main () void (set h scr) (f))",
-        // no copy collapses
-        "(fn f () void (for i u8 0 7 (if (> h 3) (set (at t i) i) (set (at t (+ i 1)) 9))))\n"
+        // no copy collapses, and an arm changes an index (the other copy would work the same
+        // address out on every pass)
+        "(fn f () void (let k u8 0) (for i u8 0 7 (if (> h 3) (set k (+ k 1)) (set (at t i) 1))\n"
+        "    (set (at t (& k 7)) i)))\n"
+        "(fn main () void (set h scr) (f))",
+        // no copy collapses, and a call would be copied
+        "(fn f () void (for i u8 0 7 (if (> h 3) (bump)) (set (at t i) i)))\n"
         "(fn main () void (set h scr) (f))",
     };
     for (int pass = 0; pass < 2; pass++) {

@@ -35,6 +35,8 @@ namespace {
 
 // nodes copied in one compile at most (the compile stays fast)
 constexpr std::uint32_t kMaxCopied = 30000;
+// steps down the call tree at each settled round
+constexpr int kMaxSteps = 8;
 
 struct Inliner {
     Pass* p = nullptr;
@@ -263,13 +265,10 @@ std::uint64_t EmptyDeadBodies(Pass& p) {
     return changes;
 }
 
-} // namespace
-
-std::uint64_t InlineCalls(Pass& p) {
+// one step: the calls of the functions picked now copied, but those in a function itself
+// copied in this step (its copies make them calls of their own, counted at the next)
+std::uint64_t InlineStep(Pass& p) {
     const Program& program = *p.program;
-    if (program.main < 0) {
-        return 0;
-    }
     std::size_t count = program.functions.size();
     std::vector<bool> runs = Live(p);
     std::vector<bool> handler = HandlerCode(program);
@@ -303,7 +302,7 @@ std::uint64_t InlineCalls(Pass& p) {
             in.once[f] = !small;
         }
     }
-    // a function copied this round keeps its calls for the next, when the copies count
+    // a function copied in this step keeps its calls for the next, when the copies count
     in.waits = in.copied;
     std::uint32_t budget = in.budget;
     for (std::size_t f = 0; f < count; f++) {
@@ -314,10 +313,29 @@ std::uint64_t InlineCalls(Pass& p) {
         Visit(in, p.program->functions[f].body, false);
     }
     p.inline_copied += budget - in.budget;
-    if (!p.options->keep_bodies) {
-        in.changes += EmptyDeadBodies(p);
-    }
     return in.changes;
+}
+
+} // namespace
+
+std::uint64_t InlineCalls(Pass& p) {
+    if (p.program->main < 0) {
+        return 0;
+    }
+    // the steps go down the call tree, a level each (the summaries still hold: a copy does what
+    // its call did)
+    std::uint64_t changes = 0;
+    for (int step = 0; step < kMaxSteps; step++) {
+        std::uint64_t made = InlineStep(p);
+        changes += made;
+        if (made == 0) {
+            break;
+        }
+    }
+    if (!p.options->keep_bodies) {
+        changes += EmptyDeadBodies(p);
+    }
+    return changes;
 }
 
 } // namespace tisple::opt
