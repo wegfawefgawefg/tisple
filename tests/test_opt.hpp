@@ -42,6 +42,8 @@ void RunOptCollapseTests(TestResults& results);
 void RunOptRangesTests(TestResults& results);
 // slice 5's variable ranges, sets' ranges and unstored elements (test_opt_values.cpp)
 void RunOptValuesTests(TestResults& results);
+// slice 6's inlining and division rules (test_opt_inline.cpp)
+void RunOptInlineTests(TestResults& results);
 // -O0, --opt-bisect and --no-pass (test_opt_flags.cpp)
 void RunOptFlagTests(TestResults& results);
 

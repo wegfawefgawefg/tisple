@@ -197,6 +197,7 @@ void ComputeSummaries(Pass& p) {
     for (Summary& s : p.summaries) {
         s.reads.assign(vars, false);
         s.writes.assign(vars, false);
+        s.effect_reads.assign(vars, false);
         // until its body is seen (a call graph the checker let through with a cycle)
         s.unknown = true;
         s.terminates = false;
@@ -206,6 +207,20 @@ void ComputeSummaries(Pass& p) {
         s.unknown = false;
         ExprId body = program.functions[static_cast<std::size_t>(f)].body;
         Scan(p, s, body);
+        s.effect_reads = s.reads;
+        const Expr& items = At(p, body);
+        if (program.functions[static_cast<std::size_t>(f)].ret != kVoidType &&
+            items.kind == ExprKind::Do && items.count > 0 &&
+            IsPure(p, Item(p, items, items.count - 1))) {
+            // what a call whose value is unused reads: not what only the pure last item does
+            Summary rest;
+            rest.reads.assign(vars, false);
+            rest.writes.assign(vars, false);
+            for (std::uint32_t i = 0; i + 1 < items.count; i++) {
+                Scan(p, rest, Item(p, items, i));
+            }
+            s.effect_reads = rest.reads;
+        }
         s.terminates = CodeTerminates(p, body);
         bool writes = false;
         for (std::size_t v = 0; v < vars && !writes; v++) {

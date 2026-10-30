@@ -40,6 +40,9 @@ inline void OrBits(Bits& into, const Bits& from) {
 struct Summary {
     std::vector<bool> reads;  // by var: globals it reads
     std::vector<bool> writes; // by var: globals it sets
+    // by var: globals it reads but those only its pure last value reads (what a call whose
+    // value is unused reads)
+    std::vector<bool> effect_reads;
     bool loads = false;       // reads through a pointer: address-taken vars, undeclared memory
     bool stores = false;      // writes through a pointer
     bool io = false;          // io_read or io_write

@@ -9,7 +9,8 @@
 // in four a seventh, with steps, sets and elements the round's ranges decide ("(values)"), and
 // one in four an eighth, with calls through function pointers ("(fnptr)"), and one in four a
 // ninth, with an interrupt handler of its own, run with interrupts raised early in main
-// ("(irq)").
+// ("(irq)"), and one in four a tenth, with calls to inline and divisions to work out
+// ("(inline)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -314,6 +315,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string irq = GenerateIrqProgram(seed);
         if (!irq.empty()) {
             FuzzOne(seed, " (irq)", irq, stats, MakeIrqPlan(seed));
+        }
+        std::string inlined = GenerateInlineProgram(seed);
+        if (!inlined.empty()) {
+            FuzzOne(seed, " (inline)", inlined, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

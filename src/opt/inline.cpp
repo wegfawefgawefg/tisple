@@ -287,6 +287,17 @@ void PutValue(Pass& p, ExprId id, std::int32_t var, ExprId value) {
     EachChild(p, e, [&](ExprId child) { PutValue(p, child, var, value); });
 }
 
+// the locals of function that id names (reads, sets, lets and fors), into out
+void Locals(const Pass& p, ExprId id, std::int32_t function, std::vector<std::int32_t>& out) {
+    const Expr& e = At(p, id);
+    bool names = e.kind == ExprKind::VarRef || e.kind == ExprKind::Let || e.kind == ExprKind::For;
+    if (names && VarOf(p, e.ref).kind == VarKind::Local && VarOf(p, e.ref).function == function &&
+        std::find(out.begin(), out.end(), e.ref) == out.end()) {
+        out.push_back(e.ref);
+    }
+    EachChild(p, e, [&](ExprId child) { Locals(p, child, function, out); });
+}
+
 // the copy for a call: its lets of parameters, then the body's items, into out
 void CopyCall(Pass& p, std::int32_t caller, ExprId call, Mode mode, std::int32_t dest,
               std::vector<ExprId>& out) {
@@ -321,6 +332,15 @@ void CopyCall(Pass& p, std::int32_t caller, ExprId call, Mode mode, std::int32_t
         let.a = arg; // the call lets go of it once replaced
         let.loc = At(p, arg).loc;
         out.push_back(NewExpr(p, let));
+    }
+    // every local of the callee the body names gets one of the caller's, a set of one whose
+    // let the passes took away too (in the callee's frame it would share bytes with others)
+    std::vector<std::int32_t> locals;
+    Locals(p, fn.body, e.ref, locals);
+    for (std::int32_t local : locals) {
+        if (c.names.find(local) == c.names.end()) {
+            c.names[local] = CopyLocal(p, caller, local);
+        }
     }
     const Expr& body = At(p, fn.body);
     std::vector<ExprId> items(p.program->lists.begin() + body.first,
