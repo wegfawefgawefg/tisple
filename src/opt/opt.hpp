@@ -23,6 +23,9 @@
 //   interpreter (it runs before consts, which carries the values on)
 // - licm: pure expressions a loop never changes the inputs of, worked out before it
 // - cse: a value worked out again while the first working out holds, kept in a local
+// Once a round changes nothing:
+// - inline: calls the backend would inline become copies of the function's body
+// - then (when nothing is left to inline) unroll and unswitch in collapse's walk
 // Effect summaries (what each function may read and write) feed them all.
 //
 // Nodes the passes do not know count as having every effect, so a new effect (an I/O-like
@@ -41,6 +44,11 @@ struct OptOptions {
     // apply only the first N transformations (in a fixed order); -1: all of them
     std::int64_t bisect = -1;
     std::vector<std::string> disabled; // pass names (--no-pass)
+    // functions never inlined, by qualified name (BuildOptions::no_inline: the race's clock ends)
+    std::vector<std::string> no_inline;
+    // functions no code calls keep their bodies (BuildOptions::keep_all_functions: tests call
+    // them by address); else inlining empties them
+    bool keep_bodies = false;
 };
 
 struct OptReport {

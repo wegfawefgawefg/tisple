@@ -102,6 +102,8 @@ struct Pass {
     // each call tried (the function, then its arguments' bits) with its value, -1 when it
     // could not be worked out
     std::uint64_t eval_steps = 0;
+    // inlining (inline.cpp), over every round: the nodes copied
+    std::uint32_t inline_copied = 0;
     std::map<std::vector<std::uint32_t>, std::int32_t> evaluated;
     // the last transformation made, for --opt-bisect
     const char* last_what = "";
@@ -223,6 +225,10 @@ using Decide = Action (*)(const Pass& p, const Liveness& live, ExprId stmt);
 std::uint64_t EditStatements(Pass& p, std::int32_t function, Decide decide);
 
 // ---- passes
+
+// calls the backend would inline become copies of their function's body (inline.cpp); returns
+// the changes made
+std::uint64_t InlineCalls(Pass& p);
 
 Action DecideDead(const Pass& p, const Liveness& live, ExprId stmt); // dead.cpp
 Action DecideLoop(const Pass& p, const Liveness& live, ExprId stmt); // loops.cpp
