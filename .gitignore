@@ -12,3 +12,5 @@ programs/**/*.bin
 disks/
 races/out/
 __pycache__/
+web/dist/
+web/obj/

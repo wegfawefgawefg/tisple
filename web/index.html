@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d0b">
+<link rel="manifest" href="manifest.json">
+<title>Tisple Player</title>
+<style>
+:root {
+    --bg: #0b0d0b;
+    --panel: #161a16;
+    --key: #222822;
+    --key-down: #3d6b3d;
+    --text: #d8e8d0;
+    --dim: #7f907a;
+    --accent: #7ee07a;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.3 ui-monospace, "DejaVu Sans Mono", monospace;
+    overscroll-behavior: none; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+#bar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel);
+    font-size: 13px; color: var(--dim);
+}
+#bar .name { color: var(--text); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#bar button {
+    background: var(--key); color: var(--text); border: 0; border-radius: 6px;
+    padding: 6px 10px; font: inherit;
+}
+#rec { color: var(--accent); }
+#screen-wrap { position: relative; width: 100%; background: #000; }
+canvas {
+    display: block; width: 100%; aspect-ratio: 560 / 384;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+}
+#start {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.6); color: var(--accent); font-size: 20px;
+}
+#pad {
+    flex: 1; display: grid; gap: 8px; padding: 10px;
+    grid-template-columns: repeat(var(--cols, 5), 1fr); grid-auto-rows: minmax(56px, 92px);
+    align-content: end;
+}
+.key {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    background: var(--key); border-radius: 10px; font-size: 18px; color: var(--text);
+}
+.key.wide { grid-column: span 2; }
+.key.down { background: var(--key-down); }
+.key small { display: block; font-size: 11px; color: var(--dim); }
+#keyboard { display: none; grid-template-columns: repeat(10, 1fr); gap: 4px; padding: 6px; }
+#keyboard.open { display: grid; }
+#keyboard .key { font-size: 14px; min-height: 40px; border-radius: 6px; }
+#status { padding: 2px 10px 6px; font-size: 11px; color: var(--dim); min-height: 1.4em; }
+</style>
+</head>
+<body>
+<div id="bar">
+    <span class="name" id="name">Tisple ][</span>
+    <span id="rec"></span>
+    <button id="look">color</button>
+    <button id="kb">abc</button>
+    <button id="send">send log</button>
+</div>
+<div id="screen-wrap">
+    <canvas id="screen" width="560" height="192"></canvas>
+    <div id="start">tap to start</div>
+</div>
+<div id="keyboard"></div>
+<div id="pad"></div>
+<div id="status"></div>
+<script src="machine.js"></script>
+<script src="player.js"></script>
+</body>
+</html>
