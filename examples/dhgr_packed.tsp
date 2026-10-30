@@ -1,8 +1,7 @@
 ; a double hi-res picture worked out and packed while compiling, kept packed in aux memory,
 ; and unpacked onto page 1 when the program runs: the aux half straight into aux memory, the
-; main half from aux memory into main. Each half is 8 KB; packed, both take 1.7 KB. Working
-; out the 16384 bytes in macro code is most of the 0.7 s this takes to compile; packing them is
-; 10 ms. A key ends it.
+; main half from aux memory into main. Each half is 8 KB; packed, they take under 2 KB. A key
+; ends it.
 
 (import apple2 a2)
 (import dhgr)
@@ -14,7 +13,8 @@
     (let dx (- x 100))
     (let dy (- y 40))
     (let d (+ (* (* dx dx) 335) (* (* dy dy) 100)))
-    (let hill (+ 110 (round (* 18 (sin (/ x (float 9)))))))
+    (let wave (- (% (* x 4) 112) 56))
+    (let hill (+ 100 (/ (* wave wave) 160)))
     (if (< d 22500)
         (if (> d 16900)
             dhgr.WHITE
@@ -41,13 +41,19 @@
         (do
             (let y (+ (* third 64) (+ (* (/ (% i 0x400) 0x80) 8) (/ i 0x400))))
             (let b 0)
+            (let last -1)
+            (let colour 0)
             (for k 0 7
                 (let dot
                     (+ (* col 14)
                         (+ k (if (= half 1)
                             0
                             7))))
-                (if (!= (& (>> (colour_at (/ dot 4) y) (& dot 3)) 1) 0)
+                (if (!= (/ dot 4) last)
+                    (do
+                        (set last (/ dot 4))
+                        (set colour (colour_at last y))))
+                (if (!= (& (>> colour (& dot 3)) 1) 0)
                     (set b (| b (<< 1 k)))))
             b)))
 
