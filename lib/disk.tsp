@@ -31,8 +31,8 @@
 (const DONE u8 0)
 (const MORE u8 1)
 (const NO_CARD u8 2)    ; no disk ii card in the slot the disk booted from
-(const NO_DISK u8 3)    ; no address field for two turns: no disk, or not ours
-(const BAD_SECTOR u8 4) ; a wanted sector did not read in three turns
+(const NO_DISK u8 3)    ; no address field for three turns: no disk, or not ours
+(const BAD_SECTOR u8 4) ; a wanted sector did not read in four turns
 (const BAD_TRACK u8 5)  ; the head did not reach the track in five seeks
 
 ; motor on and the table's record read; MORE, or DONE for nothing to read, or NO_CARD (none

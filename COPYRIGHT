@@ -7,7 +7,8 @@ version. See LICENSE.
 
 Runtime exception: the code the Tisple compiler copies into the programs it
 produces (startup code and runtime routines), and the boot loader `tisple disk`
-writes onto disk images (src/disk/boot_loader.cpp), is additionally available
+writes onto disk images (src/disk/boot_loader.cpp, loader_read.cpp) with lib/disk's
+reader (src/disk/disk_reader.cpp, reader_read.cpp), is additionally available
 under the MIT License below. Programs written in Tisple, and the binaries the
 compiler builds from them, belong to their authors and may use any license.
 That code must be original to Tisple, never derived from GPL sources.

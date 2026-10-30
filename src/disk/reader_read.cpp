@@ -11,7 +11,8 @@ namespace tisple {
 
 namespace {
 
-constexpr int kAddressBudget = 0x3000; // nibbles: about two turns
+// nibbles: about three turns, so a drive that is still coming up to speed has time
+constexpr int kAddressBudget = 0x5000;
 
 } // namespace
 

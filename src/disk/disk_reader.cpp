@@ -17,6 +17,7 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     std::int32_t no_card = c.Label("begin.no_card");
     std::int32_t empty = c.Label("begin.empty");
     c.Place(at.begin);
+    c.Op(Mn::CLD);
     c.Mem(Mn::STX, r.Var(kRvMode));
     c.Mem(Mn::LDA, 0xFC);
     c.Mem(Mn::STA, r.Var(kRvDstLo));
@@ -327,7 +328,7 @@ void EmitNext(Reader& r, const ReaderLabels& at) {
     c.Place(found);
     c.Mem(Mn::INC, r.Var(kRvFields));
     c.Mem(Mn::LDA, r.Var(kRvFields));
-    c.Imm(Mn::CMP, 48); // three turns
+    c.Imm(Mn::CMP, 64); // four turns
     c.Br(Mn::BCS, too_many);
     c.Mem(Mn::LDA, r.Var(kRvField + 2));
     c.Mem(Mn::CMP, r.Var(kRvTrack));

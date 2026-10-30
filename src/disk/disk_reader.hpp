@@ -44,8 +44,8 @@ constexpr int kReaderWork = 0x300; // below the origin: the bounce page and the 
 constexpr std::uint8_t kReaderDone = 0;
 constexpr std::uint8_t kReaderMore = 1;
 constexpr std::uint8_t kReaderNoCard = 2;    // no disk ii card in the slot
-constexpr std::uint8_t kReaderNoDisk = 3;    // no address field read for two turns
-constexpr std::uint8_t kReaderBadSector = 4; // three turns without a wanted sector reading
+constexpr std::uint8_t kReaderNoDisk = 3;    // no address field read for three turns
+constexpr std::uint8_t kReaderBadSector = 4; // four turns without a wanted sector reading
 constexpr std::uint8_t kReaderBadTrack = 5;  // the head did not get to the track in 4 seeks
 
 // the reader's bytes to load at origin (page-aligned, $0400-$BC00)

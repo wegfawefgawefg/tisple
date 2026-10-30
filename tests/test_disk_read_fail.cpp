@@ -44,6 +44,7 @@ struct AtEntry {
     uint16_t entry = 0;
     Upset upset = Upset::kNone;
     bool done = false;
+    uint64_t cycle = 0; // when the program started
 };
 
 void UpsetAtEntry(void* ctx, const tisple::Machine& m) {
@@ -52,6 +53,7 @@ void UpsetAtEntry(void* ctx, const tisple::Machine& m) {
         return;
     }
     e.done = true;
+    e.cycle = m.cycles;
     if (e.upset == Upset::kSlot5) {
         e.a->cpu.mem[kReader + tisple::kReaderSlot] = 0x50;
     } else if (e.upset == Upset::kEject) {
@@ -84,7 +86,7 @@ Outcome Run(const DiskProgram& p, const std::vector<uint8_t>& table, Upset upset
         tisple::RunApple2Traced(*a, tisple::kCyclesPerFrame, UpsetAtEntry, &at);
     }
     Outcome out;
-    out.cycles = tisple::Cycles(*a) - start;
+    out.cycles = tisple::Cycles(*a) - at.cycle;
     out.returned = a->stop_reason == tisple::MachineStop::kReturned;
     out.status = a->cpu.mem[kStatus];
     out.motor_off = !tisple::DriveSpinning(*a, tisple::Cycles(*a) + tisple::kMotorOffDelay);
@@ -136,7 +138,7 @@ void RunDiskReadFailTests(TestResults& results) {
     // no card in the slot
     Outcome slot = Run(p, table, Upset::kSlot5, nullptr, 0);
     CHECK(results, slot.returned && slot.status == tisple::kReaderNoCard);
-    // no disk: the drive reads noise; two turns without an address field, from track 0 too
+    // no disk: the drive reads noise; three turns without an address field, from track 0 too
     Outcome eject = Run(p, table, Upset::kEject, nullptr, 0);
     CHECK(results, eject.returned && eject.status == tisple::kReaderNoDisk && eject.motor_off);
     CHECK(results, eject.cycles < 3 * 1023000);
@@ -166,8 +168,8 @@ void RunDiskReadFailTests(TestResults& results) {
     tisple::RunApple2(*direct, 1000000);
     CHECK(results, direct->stop_reason == tisple::MachineStop::kReturned);
     CHECK(results, direct->cpu.mem[kStatus] == tisple::kReaderNoCard);
-    std::printf("disk read errors: no disk in %.2f s, a bad sector in %.2f s, a wrong track in "
-                "%.2f s\n",
+    std::printf("disk read errors, from the program's start: no disk in %.2f s, a bad sector in "
+                "%.2f s, a wrong track in %.2f s\n",
                 static_cast<double>(eject.cycles) / 1023000.0,
                 static_cast<double>(bad.cycles) / 1023000.0,
                 static_cast<double>(wrong.cycles) / 1023000.0);

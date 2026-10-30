@@ -169,6 +169,7 @@ there. Only the NMOS 6502 is targeted so far. Details in
   ([`docs/phone.md`](docs/phone.md)); `web/pages.py` builds the web demo.
 - **Double hi-res.** `lib/dhgr`: 140 x 192, 15 colours, page flipping, sprites ([`docs/dhgr.md`](docs/dhgr.md)).
 - **Packed data.** `tables.packed` packs tables while compiling (ZX0), `lib/unpack` unpacks them.
+- **Disk tables.** `:on disk` keeps a table on the boot disk; `lib/disk` reads it in while the program runs, 8.9 KB a second, calling back between sectors ([`docs/disks.md`](docs/disks.md)).
 - **Editor support.** VS Code: colours, hover types, go to definition, find references,
   outline, errors as you type, format on save, F5 to run. Neovim syntax too
   ([`editors/`](editors/README.md)).
@@ -214,6 +215,6 @@ hi-res and packed data, [`races.md`](docs/races.md) the compiler races,
 ## License
 
 GPL-3.0-or-later (`LICENSE`), with a runtime exception: the startup and runtime code the
-compiler puts into your programs, and the disk loader, are also MIT, so programs built
-with Tisple can use any license. See `COPYRIGHT`. Code under `third_party/` keeps its own
-license.
+compiler puts into your programs, the disk loader and lib/disk's reader are also MIT, so
+programs built with Tisple can use any license. See `COPYRIGHT`. Code under
+`third_party/` keeps its own license.
