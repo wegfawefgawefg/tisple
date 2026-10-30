@@ -378,20 +378,23 @@
 
 ; runs flags: the runs are in the aux language card (lib/auxcard reaches them), the shape
 ; drawn in white
-(const FROM_CARD u8 0x80)
+(const FROM_CARD u8 0x80)  ; the card's bank 2 ($D000-$FFFF)
+(const FROM_CARD1 u8 0xC0) ; its bank 1 ($D000-$DFFF)
 (const AS_WHITE u8 0x01)
 
 ; a sprite half stored as runs onto the page's bank, its top-left at byte column col (even, as
 ; for masked), h rows: per row, control bytes up to a 0: 1-63 skip that many bytes, $40 + n n
 ; picture bytes copied (opaque), $80 + n n picture bytes then their n masks, each screen byte
 ; (screen & mask) | picture; n is 1-63. The runs are in the bank's memory, or with FROM_CARD
-; in the aux language card for either bank. AS_WHITE draws the shape in white instead.
+; in the aux language card for either bank (FROM_CARD1: in the card's bank 1). AS_WHITE draws the shape in white instead.
 (fn runs ((page u8) (bank u8) (col u8) (top u8) (h u8) (stream (ptr u8)) (flags u8)) void
     (box_at page col top 1 h)
     (set (at auxmem.work 0) flags)
     (set auxmem.from stream)
     (if (!= (& flags FROM_CARD) 0)
-        (auxcard.call RUNS bank)
+        (auxcard.call RUNS bank (if (= (& flags 0x40) 0)
+            auxcard.BANK2
+            auxcard.BANK1))
         (jsr RUNS (x bank))))
 
 (fn aux_rmw ((addr u16) (keep u8) (set_bits u8)) u8

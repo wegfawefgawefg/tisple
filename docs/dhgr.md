@@ -101,17 +101,18 @@ Added 2026-10-30 for Catwiz, whose sprites do not fit as whole boxes of picture 
   Rows are drawn top to bottom from `col` (even, as for `masked`); the runs end themselves.
 - `dhgr.AS_WHITE` draws the shape in white: opaque bytes `$7F`, edged ones
   `screen | (mask ^ $7F)` (a hit flash).
-- `dhgr.FROM_CARD`: the runs are in the aux language card, the extended 80-column card's own
+- `dhgr.FROM_CARD` (bank 2, `$D000`-`$FFFF`) or `dhgr.FROM_CARD1` (bank 1's `$D000`-`$DFFF`):
+  the runs are in the aux language card, the extended 80-column card's own
   16 KB at `$D000`-`$FFFF`, which nothing but code running with ALTZP on reaches. lib/auxcard
-  runs our code that way: it puts the card's bank 2 ram in, copies auxmem's zero page
+  runs our code that way: it puts the card's bank asked for in, copies auxmem's zero page
   arguments to aux memory's zero page, turns interrupts off and ALTZP on; afterwards puts back
   the card's bank (or the rom) and the interrupt flag. Between rows `runs` turns ALTZP off and
   lets interrupts in for a moment (`CLI`, `NOP`, `SEI`), so a tick is late by at most a row's
-  drawing. `unpack.aux_to_card` and `unpack.main_to_card` put bytes there (with interrupts off
+  drawing. `unpack.aux_to_card` and `unpack.main_to_card` (with the bank, `auxcard.BANK2` or `BANK1`) put bytes there (with interrupts off
   throughout: ticks that come meanwhile are lost but one).
 - So a game can keep the main memory halves of its sprites in the aux card (12 KB at `$D000`
-  in bank 2, 4 KB more in bank 1 for code that switches it) and the aux halves in aux memory,
-  and main memory has none of them. tests/test_dhgr_runs.cpp: made-up halves drawn from each
+  in bank 2, 4 KB more in bank 1) and the aux halves there or in aux memory, and main memory
+  has none of them. tests/test_dhgr_runs.cpp: made-up halves drawn from each
   place, plain and white, under the Mockingboard's ticks with the guard, no tick lost, the card
   and the rom put back.
 - examples/dhgr_demo draws a frame on the hidden page and flips at the next vertical blank:

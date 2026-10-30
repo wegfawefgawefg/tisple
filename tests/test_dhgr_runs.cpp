@@ -97,6 +97,7 @@ std::string Program(const Half& aux, const Half& main) {
     std::string nm = std::to_string(main.runs.size());
     return R"(
 (import auxmem)
+(import auxcard)
 (import dhgr)
 (import tables)
 (import unpack)
@@ -123,8 +124,9 @@ std::string Program(const Half& aux, const Half& main) {
     (mb.init)
     (auxmem.guard)
     (mb.play (addr_of (at hum 0)))
-    (unpack.aux_to_card (as (ptr u8) 0xD000) (addr_of (at packed_aux 0)))
-    (unpack.main_to_card (as (ptr u8) 0xE100) (addr_of (at PACKED_MAIN 0)))
+    (unpack.aux_to_card (as (ptr u8) 0xD000) (addr_of (at packed_aux 0)) auxcard.BANK2)
+    (unpack.main_to_card (as (ptr u8) 0xE100) (addr_of (at PACKED_MAIN 0)) auxcard.BANK2)
+    (unpack.aux_to_card (as (ptr u8) 0xD400) (addr_of (at packed_aux 0)) auxcard.BANK1)
     (dhgr.clear dhgr.PAGE1 dhgr.MEDIUM_BLUE)
     (dhgr.clear dhgr.PAGE2 dhgr.ORANGE)
     (for k u8 0 6
@@ -140,6 +142,11 @@ std::string Program(const Half& aux, const Half& main) {
            std::to_string(kH) + R"( (addr_of (at aux_runs 0)) dhgr.AS_WHITE)
         (dhgr.runs dhgr.PAGE1 dhgr.MAIN 26 150 )" +
            std::to_string(kH) + R"( (as (ptr u8) 0xE100) (| dhgr.FROM_CARD dhgr.AS_WHITE)))
+    ; the aux half from the card's bank 1
+    (dhgr.runs dhgr.PAGE2 dhgr.AUX 4 120 )" +
+           std::to_string(kH) + R"( (as (ptr u8) 0xD400) dhgr.FROM_CARD1)
+    (dhgr.runs dhgr.PAGE2 dhgr.MAIN 4 120 )" +
+           std::to_string(kH) + R"( (as (ptr u8) 0xE100) dhgr.FROM_CARD)
     ; from bank 1 of the card and from the rom: each is in again after
     (io_read u8 0xC08B)
     (io_read u8 0xC08B)
@@ -218,6 +225,9 @@ void RunDhgrRunsTests(TestResults& results) {
     for (size_t i = 0; i < main.runs.size(); i++) {
         card = card && a->lc.aux_e000[0x100 + i] == main.runs[i];
     }
+    for (size_t i = 0; i < aux.runs.size(); i++) {
+        card = card && a->lc.aux_bank1_d000[0x400 + i] == aux.runs[i];
+    }
     CHECK(results, card);
     // the backgrounds: medium blue on page 1, orange on page 2 (row 0 is untouched)
     uint8_t blue_aux[2] = {a->aux[0x2000], a->aux[0x2001]};
@@ -227,6 +237,7 @@ void RunDhgrRunsTests(TestResults& results) {
     CHECK(results, PageRight(*a, 0x2000, 4, 10, aux, main, false, blue_aux, blue_main));
     CHECK(results, PageRight(*a, 0x4000, 20, 60, aux, main, false, orange_aux, orange_main));
     CHECK(results, PageRight(*a, 0x2000, 26, 150, aux, main, true, blue_aux, blue_main));
+    CHECK(results, PageRight(*a, 0x4000, 4, 120, aux, main, false, orange_aux, orange_main));
     // no tick lost: interrupts are off while the card's code runs, but for a moment a row
     uint64_t counted = a->cpu.mem[kTicks] | (a->cpu.mem[kTicks + 1] << 8);
     uint64_t due = a->cpu.cycles / kMbTick;
