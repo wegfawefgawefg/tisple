@@ -170,7 +170,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     in.runtime = &runtime;
     in.irq = &irq;
     in.irq_plan = irq_plan;
-    std::vector<bool> source_tables = FindNamedTables(source);
+    std::vector<bool> source_tables = FindAddressedConsts(source);
     in.source_tables = &source_tables;
     // the language card only when the program needs the room: link without it first
     bool card_allowed = options.use_card && CardAllowed(program, be.shapes);

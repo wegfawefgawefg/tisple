@@ -22,7 +22,7 @@ template <typename Fn> bool AnyExpr(const Program& program, ExprId id, Fn fn) {
     }
     switch (e.kind) {
     case ExprKind::Call:
-    case ExprKind::CallPtr: // only before LowerIndirectCalls (FindNamedTables on the source)
+    case ExprKind::CallPtr: // only before LowerIndirectCalls (FindAddressedConsts on the source)
     case ExprKind::StructLit:
     case ExprKind::Do:
         for (std::uint32_t i = 0; i < e.count; i++) {
@@ -269,7 +269,7 @@ std::vector<bool> FindDerefPointers(const Program& program,
                 continue;
             }
             if (pe.kind == ExprKind::VarRef &&
-                program.vars[static_cast<std::size_t>(pe.ref)].kind != VarKind::ConstArray) {
+                program.vars[static_cast<std::size_t>(pe.ref)].kind != VarKind::Const) {
                 deref[static_cast<std::size_t>(pe.ref)] = true;
             }
             break;
@@ -292,7 +292,7 @@ std::vector<bool> FindDerefPointers(const Program& program,
                     continue;
                 }
                 std::size_t var = static_cast<std::size_t>(arg.ref);
-                if (!deref[var] && program.vars[var].kind != VarKind::ConstArray) {
+                if (!deref[var] && program.vars[var].kind != VarKind::Const) {
                     deref[var] = true;
                     changed = true;
                 }
@@ -302,13 +302,34 @@ std::vector<bool> FindDerefPointers(const Program& program,
     return deref;
 }
 
-std::vector<bool> FindNamedTables(const Program& program) {
+void AddSlotTargets(const Program& program, std::vector<bool>& kept) {
+    std::vector<std::int32_t> work;
+    for (std::size_t v = 0; v < kept.size(); v++) {
+        if (kept[v]) {
+            work.push_back(static_cast<std::int32_t>(v));
+        }
+    }
+    while (!work.empty()) {
+        const Var& var = program.vars[static_cast<std::size_t>(work.back())];
+        work.pop_back();
+        for (const AddrSlot& slot : var.addr_slots) {
+            if (slot.var >= 0 && !kept[static_cast<std::size_t>(slot.var)]) {
+                kept[static_cast<std::size_t>(slot.var)] = true;
+                work.push_back(slot.var);
+            }
+        }
+    }
+}
+
+std::vector<bool> FindAddressedConsts(const Program& program) {
     std::size_t count = program.functions.size();
     std::vector<bool> reached(count, program.main < 0);
     std::vector<std::int32_t> work;
-    if (program.main >= 0) {
-        reached[static_cast<std::size_t>(program.main)] = true;
-        work.push_back(program.main);
+    for (std::int32_t root : {program.main, program.handler}) {
+        if (root >= 0) {
+            reached[static_cast<std::size_t>(root)] = true;
+            work.push_back(root);
+        }
     }
     while (!work.empty()) {
         const Function& f = program.functions[static_cast<std::size_t>(work.back())];
@@ -320,20 +341,51 @@ std::vector<bool> FindNamedTables(const Program& program) {
             }
         }
     }
-    std::vector<bool> named(program.vars.size(), false);
+    // what the reached code takes the address of, and the consts it reads, whose addresses
+    // it reads (the slots, followed below)
+    std::vector<bool> addressed(program.vars.size(), false);
+    std::vector<bool> read(program.vars.size(), false);
     for (std::size_t f = 0; f < count; f++) {
         if (!reached[f]) {
             continue;
         }
         AnyExpr(program, program.functions[f].body, [&](const Expr& e) {
-            if (e.kind == ExprKind::VarRef &&
-                program.vars[static_cast<std::size_t>(e.ref)].kind == VarKind::ConstArray) {
-                named[static_cast<std::size_t>(e.ref)] = true;
+            if (e.kind == ExprKind::VarRef) {
+                read[static_cast<std::size_t>(e.ref)] = true;
+            }
+            if (e.kind != ExprKind::AddrOf) {
+                return false;
+            }
+            ExprId place = e.a;
+            while (place >= 0 && (ExprOf(program, place).kind == ExprKind::Index ||
+                                  ExprOf(program, place).kind == ExprKind::Field)) {
+                place = ExprOf(program, place).a;
+            }
+            if (place >= 0 && ExprOf(program, place).kind == ExprKind::VarRef) {
+                addressed[static_cast<std::size_t>(ExprOf(program, place).ref)] = true;
             }
             return false;
         });
     }
-    return named;
+    // what the addresses in those, and in every top-level let, point into
+    std::vector<bool> targets(program.vars.size(), false);
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        const Var& var = program.vars[v];
+        if (!addressed[v] && !read[v] && var.kind != VarKind::Global) {
+            continue;
+        }
+        for (const AddrSlot& slot : var.addr_slots) {
+            if (slot.var >= 0) {
+                targets[static_cast<std::size_t>(slot.var)] = true;
+            }
+        }
+    }
+    AddSlotTargets(program, targets);
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        bool data = program.vars[v].kind == VarKind::Const;
+        addressed[v] = data && (addressed[v] || targets[v]);
+    }
+    return addressed;
 }
 
 } // namespace tisple

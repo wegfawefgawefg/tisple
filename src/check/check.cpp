@@ -60,6 +60,7 @@ TypeId ExprType(const Checker& ck, ExprId id) {
 std::int32_t AddVar(Checker& ck, const Var& var) {
     ck.out->vars.push_back(var);
     ck.global_forms.push_back(nullptr);
+    ck.global_states.push_back(Progress::Done);
     return static_cast<std::int32_t>(ck.out->vars.size() - 1);
 }
 
@@ -152,6 +153,7 @@ void ReadParams(Checker& ck, Function& fn, std::int32_t index, const Node& param
             continue;
         }
         TypeId type = ResolveType(ck, param.items[1]);
+        CheckCallableName(ck, param.items[0], type, "parameter");
         if (!IsParamType(ck, type)) {
             Err(ck, param.items[1],
                 "parameters are 1 or 2 bytes (integers, bool, enums, pointers); pass a (ptr " +
@@ -404,7 +406,7 @@ void CopyConsts(Checker& ck) {
         info.type = cd.type;
         info.value = cd.value;
         info.var = cd.var;
-        info.string = cd.string;
+        info.address = cd.address >= 0;
         ck.names->consts.push_back(info);
     }
 }
@@ -446,9 +448,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
     }
     std::size_t var_count = out.vars.size();
     for (std::size_t i = 0; i < var_count; i++) {
-        if (ck.global_forms[i] != nullptr) {
-            ResolveGlobal(ck, static_cast<std::int32_t>(i));
-        }
+        EnsureGlobal(ck, static_cast<std::int32_t>(i));
     }
     for (std::size_t i = 0; i < out.functions.size(); i++) {
         CheckFunctionBody(ck, static_cast<std::int32_t>(i));

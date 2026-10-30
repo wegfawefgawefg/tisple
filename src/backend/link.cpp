@@ -49,6 +49,13 @@ bool StartupStores(const Backend& be, std::uint32_t start, std::uint32_t end,
         if (a >= start && a + size <= end) {
             continue;
         }
+        if (!var.addr_slots.empty()) {
+            // the startup's stores are made before the layout gives the addresses
+            AddError(errors, var.loc,
+                     var.name + " is outside the program's memory, so its value is numbers "
+                                "only; set its addresses at the start of main");
+            return false;
+        }
         Layout placed = be.shapes;
         placed.vars[v].address = static_cast<std::uint16_t>(a);
         WriteVarInit(program, placed, static_cast<std::int32_t>(v), memory);
@@ -137,8 +144,7 @@ std::vector<AddressRange> FreeStretches(const Backend& be, const BuildOptions& o
         out.insert(out.end(), low.begin(), low.end());
     }
     if (card) {
-        std::vector<AddressRange> high =
-            Subtract(AddressRange{kCardStart, CardEnd(program)}, cuts);
+        std::vector<AddressRange> high = Subtract(AddressRange{kCardStart, CardEnd(program)}, cuts);
         out.insert(out.end(), high.begin(), high.end());
     }
     return out;
@@ -224,9 +230,10 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
     return true;
 }
 
-// by var: a const table (string literals among them) that no kept code names, so it takes
-// no memory; one with an :address stays where it was put, and one the program as written
-// names stays for the interpreter
+// by var: a const (string literals among them) that no kept code names, so it takes no
+// memory; one with an :address stays where it was put, one whose address the program as
+// written may use stays for the interpreter, and one an address in kept data points into
+// stays
 std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
     const Program& program = *be.program;
     std::vector<bool> named(program.vars.size(), false);
@@ -242,14 +249,18 @@ std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
             }
         }
     }
-    std::vector<bool> dropped(program.vars.size(), false);
+    std::vector<bool> kept(program.vars.size(), false);
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const Var& var = program.vars[v];
         // by the program as written: the vars the mid-level passes add come after its own
         bool source =
             in.source_tables != nullptr && v < in.source_tables->size() && (*in.source_tables)[v];
-        dropped[v] =
-            var.kind == VarKind::ConstArray && !var.placement.has_address && !named[v] && !source;
+        kept[v] = var.kind != VarKind::Const || var.placement.has_address || named[v] || source;
+    }
+    AddSlotTargets(program, kept);
+    std::vector<bool> dropped(program.vars.size(), false);
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        dropped[v] = !kept[v];
     }
     return dropped;
 }
@@ -505,8 +516,8 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sp.after_sym)].value);
     out.save_buffer = static_cast<std::uint16_t>(data_end);
     if (sp.irq_entry >= 0) {
-        out.irq_entry = static_cast<std::uint16_t>(
-            be.as.symbols[static_cast<std::size_t>(sp.irq_entry)].value);
+        out.irq_entry =
+            static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sp.irq_entry)].value);
         out.irq_direct = static_cast<std::uint16_t>(
             be.as.symbols[static_cast<std::size_t>(sp.irq_direct)].value);
     }

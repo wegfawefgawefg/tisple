@@ -245,10 +245,20 @@ void FindPointerTargets(const Program& program, ValueRanges& r) {
     r.heap = NoTargets(program);
     // a global pointer's starting value is a number: memory no variable uses, or for 0 no
     // memory at all (going through it before setting it is undefined)
+    // An address in a starting value (an AddrSlot) points into its var: a global pointer's
+    // own, and any in data, which reads of elements and fields (the heap) may give
     for (std::size_t v = 0; v < var_count; v++) {
         const Var& var = program.vars[v];
+        for (const AddrSlot& slot : var.addr_slots) {
+            if (slot.var >= 0) {
+                r.heap.vars[static_cast<std::size_t>(slot.var)] = true;
+            }
+        }
         if (var.kind != VarKind::Global || !IsPointerType(program, var.type)) {
             continue;
+        }
+        for (const AddrSlot& slot : var.addr_slots) {
+            r.var_targets[v].vars[static_cast<std::size_t>(slot.var)] = true;
         }
         for (std::uint8_t byte : var.init) {
             r.var_targets[v].undeclared = r.var_targets[v].undeclared || byte != 0;

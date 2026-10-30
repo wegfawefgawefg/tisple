@@ -5,6 +5,7 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#string" },
+    { "include": "#char" },
     { "include": "#number" },
     { "include": "#keyword" },
     { "include": "#quote" },
@@ -29,6 +30,10 @@
       "patterns": [
         { "name": "constant.character.escape.tisple", "match": "\\\\(?:x[0-9A-Fa-f]{2}|.)" }
       ]
+    },
+    "char": {
+      "name": "constant.character.tisple",
+      "match": "'(?:\\\\(?:x[0-9A-Fa-f]{2}|[ntr0\\\\'\"])|[^\\\\'\\n])'(?=[\\s);]|$)"
     },
     "number": {
       "name": "constant.numeric.tisple",

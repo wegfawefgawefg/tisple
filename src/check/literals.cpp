@@ -16,63 +16,46 @@ std::string FieldList(const StructDecl& sd) {
     return text;
 }
 
-// an element of a const table of function pointers: a function's name, whose address the
-// layout fills in. The table's var does not exist yet, so the slot waits in pending_slots
-bool FunctionSlot(Checker& ck, const Node& item, ExprId element, const std::string& what,
-                  std::uint32_t at) {
-    const Expr& e = ExprAt(ck, element);
-    if (e.type == kErrorType) {
-        return false;
-    }
-    if (e.kind != ExprKind::FnRef) {
-        Err(ck, item, what + " is a function pointer; name a function there");
-        return false;
-    }
-    ck.pending_slots.push_back(FnSlot{at, e.ref});
-    return true;
-}
-
-// (make (array u16 192) 0x2000 0x2400 ...), shortened for a fix
-std::string ArrayLiteralFix(const std::string& type_text) {
-    return "(make " + type_text + " v0 v1 ...)";
-}
-
 } // namespace
 
-ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type) {
+bool OrderStructFields(Checker& ck, const Node& node, TypeId type,
+                       std::vector<const Node*>& ordered) {
     const StructDecl sd = ck.out->structs[static_cast<std::size_t>(TypeOf(*ck.out, type).decl)];
     if (sd.fields.empty()) {
-        return ErrorExpr(ck, node);
+        return false;
     }
     std::vector<std::string> names;
     std::vector<const Node*> values;
     for (std::size_t i = 2; i < node.items.size(); i += 2) {
         const Node& key = node.items[i];
         if (key.kind != NodeKind::Keyword) {
-            return Fail(ck, key,
-                        "struct literals name every field: write (make " + sd.name + " :" +
-                            sd.fields[0].name + " value ...)");
+            Err(ck, key,
+                "struct literals name every field: write (make " + sd.name + " :" +
+                    sd.fields[0].name + " value ...)");
+            return false;
         }
         if (i + 1 >= node.items.size()) {
-            return Fail(ck, key, key.text + " has no value; write " + key.text + " value");
+            Err(ck, key, key.text + " has no value; write " + key.text + " value");
+            return false;
         }
         std::string name = key.text.substr(1);
         std::int32_t field = FindFieldIndex(*ck.out, type, name);
         if (field < 0) {
-            return Fail(ck, key,
-                        sd.name + " has no field " + name + "; its fields are " + FieldList(sd));
+            Err(ck, key, sd.name + " has no field " + name + "; its fields are " + FieldList(sd));
+            return false;
         }
         Note(ck, key, 0, NameUseKind::Field, TypeOf(*ck.out, type).decl, field, false);
         for (const std::string& other : names) {
             if (other == name) {
-                return Fail(ck, key, key.text + " is given twice; give each field once");
+                Err(ck, key, key.text + " is given twice; give each field once");
+                return false;
             }
         }
         names.push_back(name);
         values.push_back(&node.items[i + 1]);
     }
 
-    std::vector<const Node*> ordered(sd.fields.size(), nullptr);
+    ordered.assign(sd.fields.size(), nullptr);
     for (std::size_t i = 0; i < names.size(); i++) {
         ordered[static_cast<std::size_t>(FindFieldIndex(*ck.out, type, names[i]))] = values[i];
     }
@@ -86,24 +69,34 @@ ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type) {
     }
     fix += ")";
     if (!missing.empty()) {
-        return Fail(ck, node,
-                    Show(node) + " is missing " + missing + "; name every field in order: " + fix);
+        Err(ck, node,
+            Show(node) + " is missing " + missing + "; name every field in order: " + fix);
+        return false;
     }
     bool in_order = true;
     for (std::size_t i = 0; i < names.size(); i++) {
         in_order = in_order && names[i] == sd.fields[i].name;
     }
     if (!in_order) {
-        return Fail(ck, node, Show(node) + " fields out of order; write " + fix);
+        Err(ck, node, Show(node) + " fields out of order; write " + fix);
+        return false;
     }
+    return true;
+}
 
+ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type) {
+    const StructDecl sd = ck.out->structs[static_cast<std::size_t>(TypeOf(*ck.out, type).decl)];
+    std::vector<const Node*> ordered;
+    if (!OrderStructFields(ck, node, type, ordered)) {
+        return ErrorExpr(ck, node);
+    }
     std::vector<ExprId> fields;
     for (std::size_t i = 0; i < sd.fields.size(); i++) {
         TypeId field_type = sd.fields[i].type;
         if (Kind(ck, field_type) == TypeKind::Array) {
             fields.push_back(Fail(ck, *ordered[i],
-                                  "array fields start zeroed; leave the struct literal out and "
-                                  "fill " +
+                                  "an array value only starts a const or a top-level let; leave "
+                                  "the struct literal out and fill " +
                                       sd.fields[i].name + " with a for loop"));
             continue;
         }
@@ -143,69 +136,6 @@ ExprId CheckMake(Checker& ck, const Node& node) {
     return Fail(ck, node,
                 "make builds structs and arrays; a " + ShowType(ck, type) +
                     " is written as the value itself");
-}
-
-bool FoldArrayLiteral(Checker& ck, const Node& value, TypeId type, const std::string& name,
-                      std::vector<std::uint8_t>& bytes, std::uint32_t offset) {
-    std::string type_text = ShowType(ck, type);
-    if (HeadName(value) != "make" || value.items.size() < 2) {
-        Err(ck, value,
-            name + " is " + type_text + ", so its value is " + ArrayLiteralFix(type_text));
-        return false;
-    }
-    TypeId made = ResolveType(ck, value.items[1]);
-    if (made == kErrorType) {
-        return false;
-    }
-    if (made != type) {
-        Err(ck, value.items[1],
-            "the value is " + ShowType(ck, made) + " but " + name + " is " + type_text +
-                "; write " + ArrayLiteralFix(type_text));
-        return false;
-    }
-    const Type array = TypeOf(*ck.out, type);
-    std::size_t given = value.items.size() - 2;
-    if (given != array.count) {
-        Err(ck, value,
-            name + " is " + type_text + " but its value has " + std::to_string(given) +
-                " values; give exactly " + std::to_string(array.count));
-        return false;
-    }
-    TypeId elem = array.elem;
-    std::uint32_t elem_size = TypeOf(*ck.out, elem).size;
-    bool ok = true;
-    for (std::size_t i = 0; i < given; i++) {
-        const Node& item = value.items[2 + i];
-        std::uint32_t at = offset + static_cast<std::uint32_t>(i) * elem_size;
-        std::string what = "an element of " + name;
-        if (Kind(ck, elem) == TypeKind::Array) {
-            ok = FoldArrayLiteral(ck, item, elem, what, bytes, at) && ok;
-            continue;
-        }
-        ExprId element = CheckExpr(ck, item, elem);
-        if (!RequireType(ck, item, element, elem, what)) {
-            ok = false;
-            continue;
-        }
-        if (Kind(ck, elem) == TypeKind::Fn) {
-            ok = FunctionSlot(ck, item, element, what, at) && ok;
-            continue;
-        }
-        if (Kind(ck, elem) == TypeKind::Struct && !RequireStructSource(ck, item, element)) {
-            ok = false;
-            continue;
-        }
-        std::size_t before = ck.errors->size();
-        if (!FoldInit(ck, element, bytes, at)) {
-            if (ck.errors->size() == before) {
-                Err(ck, item,
-                    Show(item) + " is not constant; " + what +
-                        " is built from numbers, other constants and operators");
-            }
-            ok = false;
-        }
-    }
-    return ok;
 }
 
 } // namespace tisple

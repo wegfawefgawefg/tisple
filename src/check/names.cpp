@@ -151,4 +151,8 @@ bool IsBuiltinName(std::string_view name) {
            InList(ConstantNames(), name);
 }
 
+bool IsReservedValueName(std::string_view name) {
+    return InList(TypeNames(), name) || InList(ConstantNames(), name) || name == "_" || name == ".";
+}
+
 } // namespace tisple

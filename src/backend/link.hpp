@@ -13,7 +13,7 @@ struct LinkInput {
     const FramePlan* plan = nullptr;
     const std::vector<bool>* kept = nullptr; // by function: its code is in the program
     const std::vector<AsmItem>* runtime = nullptr;
-    const std::vector<bool>* source_tables = nullptr; // by var: FindNamedTables on the source
+    const std::vector<bool>* source_tables = nullptr; // by var: FindAddressedConsts on the source
     // the interrupt handler's entry (irq.hpp), empty without one
     const std::vector<AsmItem>* irq = nullptr;
     IrqPlan irq_plan;

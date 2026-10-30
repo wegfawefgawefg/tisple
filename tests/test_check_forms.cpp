@@ -120,7 +120,8 @@ void PlaceTests(TestResults& results) {
     ExpectError(results, "(fn f ((a u16)) u8 (load a))",
                 "t.tsp:1:26: load goes through a pointer; a is u16; write (as (ptr u8) a)");
     ExpectError(results, "(const K u8 1)\n(fn f () (ptr u8) (addr_of K))",
-                "t.tsp:2:28: constants have no address; use a top-level let");
+                "t.tsp:2:28: K is a number with no address; give it storage with a top-level "
+                "let, or make it a const table");
     ExpectError(results, "(const K u8 1)\n(fn f () void (set K 2))",
                 "t.tsp:2:20: K is a constant; it cannot be set");
     ExpectError(results,

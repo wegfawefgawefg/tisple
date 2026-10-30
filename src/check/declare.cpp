@@ -265,7 +265,7 @@ bool EnsureStruct(Checker& ck, std::int32_t decl, const Node& at) {
             ok = false;
             continue;
         }
-        ok = CheckNewName(ck, name, NameRule::Snake, "field") && ok;
+        ok = CheckNewName(ck, name, NameRule::Snake, NameSlot::Field, "field") && ok;
         TypeId type = ResolveType(ck, item.items[1]);
         const Type& field_type = TypeOf(*ck.out, type);
         if (field_type.kind == TypeKind::Struct && !EnsureStruct(ck, field_type.decl, item)) {
@@ -410,13 +410,14 @@ NameRef LookupName(Checker& ck, const std::vector<std::string>& segments, const 
     return ref;
 }
 
-bool CheckNewName(Checker& ck, const Node& name, NameRule rule, const char* what) {
+bool CheckNewName(Checker& ck, const Node& name, NameRule rule, NameSlot slot, const char* what) {
     if (name.kind != NodeKind::Symbol) {
         Err(ck, name, std::string(what) + " needs a name here, not " + Show(name));
         return false;
     }
     const std::string& text = name.text;
-    if (IsBuiltinName(text)) {
+    bool reserved = slot == NameSlot::Declared ? IsBuiltinName(text) : IsReservedValueName(text);
+    if (slot != NameSlot::Field && reserved) {
         Err(ck, name, text + " is a built-in name; rename this " + what);
         return false;
     }
@@ -447,7 +448,7 @@ bool CheckNewName(Checker& ck, const Node& name, NameRule rule, const char* what
         return false;
     }
     const ModuleScope& scope = ck.modules[static_cast<std::size_t>(ck.at.module)];
-    if (scope.imports.count(text) != 0) {
+    if (slot != NameSlot::Field && scope.imports.count(text) != 0) {
         Err(ck, name,
             text + " is an imported module here, so " + text +
                 ".x would be ambiguous; rename this " + what);
@@ -456,8 +457,18 @@ bool CheckNewName(Checker& ck, const Node& name, NameRule rule, const char* what
     return true;
 }
 
+bool CheckCallableName(Checker& ck, const Node& name, TypeId type, const char* what) {
+    if (type <= kErrorType || KindOf(*ck.out, type) != TypeKind::Fn || !IsBuiltinName(name.text)) {
+        return true;
+    }
+    Err(ck, name,
+        name.text + " is a built-in, so (" + name.text + " ...) could not call this " + what +
+            "; rename it");
+    return false;
+}
+
 bool CheckLocalName(Checker& ck, const Node& name, const char* what) {
-    if (!CheckNewName(ck, name, NameRule::Snake, what)) {
+    if (!CheckNewName(ck, name, NameRule::Snake, NameSlot::Variable, what)) {
         return false;
     }
     for (const ScopeEntry& entry : ck.at.scopes.back().entries) {

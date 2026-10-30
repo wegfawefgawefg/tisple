@@ -216,9 +216,13 @@ std::vector<bool> KeptFunctions(const Backend& be, const BuildOptions& options) 
         kept[static_cast<std::size_t>(handler)] = true;
         work.push_back(handler);
     }
-    // the entries a const table holds: the table is data, not code that names them
+    // the entries data holds (a const table, a let's initial value): data, not code that
+    // names them
     for (const Var& var : be.program->vars) {
-        for (const FnSlot& slot : var.fn_slots) {
+        for (const AddrSlot& slot : var.addr_slots) {
+            if (slot.function < 0) {
+                continue;
+            }
             std::int32_t entry = be.entries[static_cast<std::size_t>(slot.function)];
             if (!kept[static_cast<std::size_t>(entry)]) {
                 kept[static_cast<std::size_t>(entry)] = true;

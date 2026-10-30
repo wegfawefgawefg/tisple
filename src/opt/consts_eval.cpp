@@ -116,7 +116,7 @@ Val ElementValue(const Pass& p, const Expr& index, Val k) {
     }
     const Var& var = VarOf(p, base.ref);
     const Type& array = TypeOf(*p.program, var.type);
-    if (var.kind != VarKind::ConstArray || array.kind != TypeKind::Array || k.bits >= array.count) {
+    if (var.kind != VarKind::Const || array.kind != TypeKind::Array || k.bits >= array.count) {
         return AnyVal();
     }
     std::uint32_t size = TypeOf(*p.program, array.elem).size;

@@ -95,7 +95,7 @@ SymbolKind VarSymbolKind(VarKind kind) {
     switch (kind) {
     case VarKind::Global:
         return SymbolKind::Global;
-    case VarKind::ConstArray:
+    case VarKind::Const:
         return SymbolKind::Constant;
     case VarKind::Param:
         return SymbolKind::Parameter;

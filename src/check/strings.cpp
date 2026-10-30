@@ -22,7 +22,7 @@ std::int32_t StringTable(Checker& ck, const Node& node) {
     }
     Var var;
     var.name = "str#" + std::to_string(ck.string_tables.size());
-    var.kind = VarKind::ConstArray;
+    var.kind = VarKind::Const;
     var.type = ArrayOf(ck, kU8Type, static_cast<std::uint32_t>(node.bytes.size() + 1), node);
     var.module = ck.at.module;
     var.loc = NodeLoc(ck, node);

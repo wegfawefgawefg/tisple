@@ -71,7 +71,7 @@ std::int64_t OnesAbove(std::int64_t v) {
 // the values of a const table's integer elements
 Range TableRange(const Pass& p, const Expr& index, Range type) {
     const Expr& base = At(p, index.a);
-    if (base.kind != ExprKind::VarRef || VarOf(p, base.ref).kind != VarKind::ConstArray) {
+    if (base.kind != ExprKind::VarRef || VarOf(p, base.ref).kind != VarKind::Const) {
         return type;
     }
     const Var& var = VarOf(p, base.ref);
@@ -405,8 +405,8 @@ bool RangedVar(const Pass& p, std::int32_t var) {
     const Var& v = VarOf(p, var);
     TypeKind kind = KindOf(*p.program, v.type);
     bool scalar = IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum;
-    return scalar && v.kind != VarKind::ConstArray && !v.address_taken &&
-           !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve && !v.irq_shared;
+    return scalar && v.kind != VarKind::Const && !v.address_taken && !v.placement.has_address &&
+           !v.placement.in_aux && !v.placement.reserve && !v.irq_shared;
 }
 
 void ShapeRange(const Pass& p, ExprId id, std::int32_t& lo, std::int32_t& hi) {

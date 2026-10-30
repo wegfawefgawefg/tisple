@@ -18,6 +18,7 @@ syn match tispleNumber {\%(^\|[[:space:]()'`,@]\)\@<=-\=\%(0[xX]\x\+\|0[bB][01]\
 syn match tispleKeyword {\%(^\|[[:space:]()'`,@]\)\@<=:[^[:space:]()";'`,]\+{
 syn match tispleQuote {,@\|['`,]{
 syn match tispleParen {[()]{
+syn match tispleChar {'\%(\\\%(x\x\x\|[ntr0\\'"]\)\|[^\\']\)'\%($\|[[:space:]);]\)\@={
 syn match tispleEscape contained {\\\%(x\x\x\|.\){
 syn region tispleString start={"{ skip={\\\\\|\\"{ end={"{ oneline contains=tispleEscape
 syn match tispleComment {;.*${
@@ -29,6 +30,7 @@ hi def link tispleBuiltin Function
 hi def link tispleConstant Boolean
 hi def link tispleSpecial Keyword
 hi def link tispleNumber Number
+hi def link tispleChar Character
 hi def link tispleKeyword Label
 hi def link tispleQuote Special
 hi def link tispleParen Delimiter

@@ -53,7 +53,7 @@ void DeclareImports(Checker& ck, std::int32_t module) {
 
 void DeclareEnum(Checker& ck, const Node& form) {
     const Node& name = form.items[1];
-    if (!CheckNewName(ck, name, NameRule::Type, "enum")) {
+    if (!CheckNewName(ck, name, NameRule::Type, NameSlot::Declared, "enum")) {
         return;
     }
     EnumDecl ed;
@@ -103,7 +103,7 @@ void DeclareEnum(Checker& ck, const Node& form) {
             }
             value = static_cast<std::uint32_t>(item.items[1].value);
         }
-        if (!CheckNewName(ck, *member_name, NameRule::Snake, "member")) {
+        if (!CheckNewName(ck, *member_name, NameRule::Snake, NameSlot::Field, "member")) {
             continue;
         }
         if (value > 255) {
@@ -142,7 +142,7 @@ void DeclareEnum(Checker& ck, const Node& form) {
 
 void DeclareStruct(Checker& ck, const Node& form) {
     const Node& name = form.items[1];
-    if (!CheckNewName(ck, name, NameRule::Type, "struct")) {
+    if (!CheckNewName(ck, name, NameRule::Type, NameSlot::Declared, "struct")) {
         return;
     }
     StructDecl sd;
@@ -159,7 +159,7 @@ void DeclareStruct(Checker& ck, const Node& form) {
 
 void DeclareConst(Checker& ck, const Node& form) {
     const Node& name = form.items[1];
-    if (!CheckNewName(ck, name, NameRule::Constant, "const")) {
+    if (!CheckNewName(ck, name, NameRule::Constant, NameSlot::Declared, "const")) {
         return;
     }
     ConstDecl cd;
@@ -172,7 +172,7 @@ void DeclareConst(Checker& ck, const Node& form) {
 
 void DeclareGlobal(Checker& ck, const Node& form) {
     const Node& name = form.items[1];
-    if (!CheckNewName(ck, name, NameRule::Snake, "let")) {
+    if (!CheckNewName(ck, name, NameRule::Snake, NameSlot::Variable, "let")) {
         return;
     }
     Var var;
@@ -183,12 +183,13 @@ void DeclareGlobal(Checker& ck, const Node& form) {
     var.loc = NodeLoc(ck, name);
     std::int32_t id = AddVar(ck, var);
     ck.global_forms[static_cast<std::size_t>(id)] = &form;
+    ck.global_states[static_cast<std::size_t>(id)] = Progress::Pending;
     AddDecl(ck, name, DeclKind::Var, id);
 }
 
 void DeclareFunction(Checker& ck, const Node& form) {
     const Node& name = form.items[1];
-    if (!CheckNewName(ck, name, NameRule::Snake, "fn")) {
+    if (!CheckNewName(ck, name, NameRule::Snake, NameSlot::Declared, "fn")) {
         return;
     }
     Function fn;

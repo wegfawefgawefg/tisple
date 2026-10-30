@@ -101,7 +101,7 @@ bool Holds(const Pass& p, std::int32_t var, const LoopWrites& w) {
     if (v.placement.has_address || v.placement.in_aux || v.placement.reserve || v.irq_shared) {
         return false;
     }
-    if (v.kind == VarKind::ConstArray) {
+    if (v.kind == VarKind::Const) {
         return true;
     }
     if (w.all ||

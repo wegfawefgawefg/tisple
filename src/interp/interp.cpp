@@ -79,6 +79,21 @@ void WriteValue(Interp& in, Cursor dst, std::int32_t root, TypeId type,
     }
 }
 
+// a const the link left out: read from its initial bytes
+bool LeftOut(const Interp& in, std::int32_t root) {
+    return root >= 0 && static_cast<std::size_t>(root) < in.left_out.size() &&
+           in.layout->vars[static_cast<std::size_t>(root)].dropped;
+}
+
+std::uint16_t ReadLeftOut(const Interp& in, std::int32_t root, Cursor cursor, std::uint32_t size) {
+    const std::vector<std::uint8_t>& from = in.left_out[static_cast<std::size_t>(root)];
+    std::uint16_t value = from[cursor.address];
+    if (size == 2) {
+        value = static_cast<std::uint16_t>(value | (from[cursor.address + 1] << 8));
+    }
+    return value;
+}
+
 // a place, or the target of a Load: where its bytes are
 Cursor EvalPlace(Interp& in, ExprId id, std::int32_t& root) {
     const Expr& e = At(in, id);
@@ -129,6 +144,13 @@ void EvalValue(Interp& in, ExprId id, std::vector<std::uint8_t>& bytes, std::uin
     }
     std::int32_t root = -1;
     Cursor src = EvalPlace(in, id, root);
+    if (LeftOut(in, root)) {
+        const std::vector<std::uint8_t>& from = in.left_out[static_cast<std::size_t>(root)];
+        for (std::uint32_t k = 0; k < t.size; k++) {
+            bytes[offset + k] = from[src.address + k];
+        }
+        return;
+    }
     ReadValue(in, src, e.type, bytes, offset);
 }
 
@@ -296,6 +318,9 @@ std::uint16_t Eval(Interp& in, ExprId id) {
         if (in.flow != Flow::Normal || !IsScalar(in, e.type)) {
             return 0;
         }
+        if (LeftOut(in, root)) {
+            return ReadLeftOut(in, root, cursor, TypeAt(in, e.type).size);
+        }
         return ReadScalar(in, cursor, TypeAt(in, e.type).size);
     }
     case ExprKind::Store: {
@@ -313,7 +338,11 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     }
     case ExprKind::AddrOf: {
         std::int32_t root = -1;
-        return EvalPlace(in, e.a, root).address;
+        std::uint16_t address = EvalPlace(in, e.a, root).address;
+        if (LeftOut(in, root)) {
+            Stop(in, StopKind::Error, "internal: the address of a const the link left out", e.loc);
+        }
+        return address;
     }
     case ExprKind::Unary: {
         std::uint16_t a = Eval(in, e.a);
@@ -438,15 +467,21 @@ void InitInterp(Interp& in, const Program& program, const Layout& layout) {
     in.program = &program;
     in.layout = &layout;
     in.memory.assign(0x10000, 0);
+    in.left_out.assign(program.vars.size(), {});
     for (std::size_t i = 0; i < program.vars.size(); i++) {
         const Var& var = program.vars[i];
+        std::int32_t id = static_cast<std::int32_t>(i);
+        if (var.kind == VarKind::Const && layout.vars[i].dropped) {
+            in.left_out[i] = InitBytes(program, layout, id);
+            in.left_out[i].resize(TypeOf(program, var.type).size, 0);
+            continue;
+        }
         // aux memory is not modelled (only lib/auxmem's jsr reaches it); left-out tables have none
         if (var.init.empty() || var.type == kErrorType || var.placement.in_aux ||
             layout.vars[i].dropped) {
             continue;
         }
-        std::int32_t id = static_cast<std::int32_t>(i);
-        if (var.fn_slots.empty()) {
+        if (var.addr_slots.empty()) {
             WriteValue(in, VarCursor(layout, id), id, var.type, var.init, 0);
         } else {
             WriteValue(in, VarCursor(layout, id), id, var.type, InitBytes(program, layout, id), 0);

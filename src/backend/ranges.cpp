@@ -228,7 +228,7 @@ ValueRanges FindValueRanges(const Program& program) {
     r.candidate.assign(var_count, false);
     for (std::size_t v = 0; v < var_count; v++) {
         const Var& var = program.vars[v];
-        bool data = var.kind == VarKind::Global || var.kind == VarKind::ConstArray ||
+        bool data = var.kind == VarKind::Global || var.kind == VarKind::Const ||
                     (var.kind == VarKind::Local && !var.loop_var);
         if (!data || var.placement.has_address || !IsByteData(program, var.type)) {
             continue;
