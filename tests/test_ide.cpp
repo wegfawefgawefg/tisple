@@ -152,14 +152,14 @@ void DotTests(TestResults& results) {
         // a table a macro made: declared where its name is written, in the macro call
         {hgr, 35, 41, SymbolKind::Constant, "(array u16 192)", hgr, 14, 15},
         {hgr, 14, 9, SymbolKind::Macro, "macro table (name type count f & options)",
-         "lib/tables.tsp", 7, 8},
+         "lib/tables.tsp", 9, 8},
         // the function the table calls while compiling
         {hgr, 14, 27, SymbolKind::Function, "fn row_start ((y u8)) u16", hgr, 8, 5},
         // macro code: parameters inside and outside the template
-        {"lib/tables.tsp", 9, 43, SymbolKind::Parameter, "parameter f of macro table",
-         "lib/tables.tsp", 7, 31},
-        {"lib/tables.tsp", 14, 23, SymbolKind::Parameter, "parameter row of macro sprite_row",
-         "lib/tables.tsp", 13, 20},
+        {"lib/tables.tsp", 11, 43, SymbolKind::Parameter, "parameter f of macro table",
+         "lib/tables.tsp", 9, 31},
+        {"lib/tables.tsp", 16, 23, SymbolKind::Parameter, "parameter row of macro sprite_row",
+         "lib/tables.tsp", 15, 20},
     };
     for (const Expect& expect : expects) {
         CHECK(results, Matches(index, expect));

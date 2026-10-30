@@ -144,8 +144,9 @@ void TestAuxMem(TestResults& results) {
     }
     // buf[699] is 699 % 251 = 197, buf[5] the 77 written to aux and read back
     CHECK(results, (a->cpu.mem[0x03C0] | (a->cpu.mem[0x03C1] << 8)) == 197 + 77);
-    // the mover in page 3 of both memories; all switches off again; zero page as it was
-    CHECK(results, a->cpu.mem[0x0300] == 0x9D && a->aux[0x0300] == 0x9D);
+    // the mover in page 3 of both memories (STA $C005, its copy step, first); all switches
+    // off again; zero page as it was
+    CHECK(results, a->cpu.mem[0x0300] == 0x8D && a->aux[0x0300] == 0x8D);
     CHECK(results, !a->sw.ramrd && !a->sw.ramwrt);
 }
 
