@@ -122,6 +122,9 @@ bool Globals(Writer& w, std::string& text) {
             continue;
         }
         const std::string& name = w.var_names[i];
+        if (!var.addr_slots.empty()) {
+            return w.Fail(var.name + ": addresses in a starting value are not written in C");
+        }
         if (var.placement.has_address) {
             if (!IsScalarKind(KindOf(program, var.type)) || !var.init.empty()) {
                 return w.Fail(var.name + ": only a scalar without a value can have :address");

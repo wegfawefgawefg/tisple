@@ -1765,6 +1765,87 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     parameters are still made by the caller (12 cycles) where a register
     calling convention could pass two bytes; a void function's RTS still
     counts A as read, so a countdown's load before a return stays.
+56. Static data, char literals and built-in names (2026-10-30, docs/language.md
+    "Static data", "Integers" and "Forms"; docs/design.md "Static data"), from
+    writing Witchdog: its content (dice faces, enemies and their moves, the hero,
+    the forest) sat in RAM lets because a const held only scalars, its enemies'
+    names came from a match function because a string could not fill a table,
+    and probes failed on a const array of structs, (addr_of (at CONST i)) and a
+    parameter named at.
+    - One static-data model: a const of any type (structs, arrays of them,
+      arrays in them, make at any depth, a const or part of one copied), and
+      addresses the link knows as constant values in consts and top-level let
+      values: strings, function names, (addr_of x ...) of a let or a const,
+      moved by a constant count, read from const data. One mechanism, AddrSlot
+      (FnSlot generalised), filled in by the layout; only pointer and function
+      pointer values hold one. A const may hold its own address (rings), never
+      read its own value. (addr_of CONST ...) is read-only data. Const tables of
+      structs are split like RAM ones: (at ENEMIES i hp) is one LDA abs,X.
+    - The optimiser: ConstValue reads const data at constant places and loads
+      at constant addresses into it (-O0 too); the constant walk does at places
+      whose indexes it knows; an address read at a constant place becomes the
+      address ((at NAMES 2) the string, a function pointer the function: a
+      direct call); the ranges pass gives a read at unknown indexes the least
+      and most of the values there, and decides (= read k) and match clauses
+      by the values when there are at most 16.
+    - The binary: a const no kept code names was kept anyway when the program
+      as written read it, for the interpreter, which runs that program on the
+      compiled layout (a 200-byte table read at one constant index stayed in;
+      now 0 bytes). Now the interpreter reads such a const from its bytes
+      (const data never changes), and one whose address the program as
+      written may use gets an address inside the code, where the interpreter's
+      memory is free (src/backend/link_data.cpp, split out of link.cpp, which
+      was 525 lines).
+    - Char literals: 'A' is 65, the strings' escapes and \', plain ASCII; a
+      quote mark otherwise. '(' could start a quoted list whose first item is
+      quoted, so a char literal must end its token, and the formatter writes a
+      quote of a list starting with a char literal as (quote ...). Editors'
+      grammars generated as before. lib: the song parser's letters and digits,
+      KEY_RETURN '\r' and KEY_SPACE ' '; the examples and the text demo where
+      a character is meant; byte for byte.
+    - Built-in names head forms only: variables, parameters and fields may be
+      called at, load, make; functions may not, nor variables holding function
+      pointers (called by name); fields and members take any name, a module
+      alias's too.
+    - Two passes adjusted to what folding leaves: an unread parameter's nonzero
+      literal argument becomes 0 (race seed 209 stored #$F8AC for nothing), and
+      a loop known to make 8 or more passes moves out work saving 6 cycles (seed
+      1739's (- K g4), cheap once its table reads folded, went into 12 unrolled
+      copies, 272 to 326 cycles; 272 again).
+    Witchdog (a copy converted, not the game's repo): FACES, MOVES, ENEMIES
+    (with their names as strings), HERO, FOREST and GLYPH consts, char
+    literals for glyphs and keys, the name function gone. Code 14766 to 14733
+    bytes (main 5847 to 5815), zero page 142 to 134, data 54055 to 54064 (the
+    six name pointers; HERO's 8 bytes left out, every read folded; table
+    placement), the disk 68821 to 68797 bytes; the same battle on screen. The
+    game on the new compiler unconverted: code 14773 (blit.sprite 4 bytes more
+    from the loop rule). Examples and programs: dispatch 705 to 691 bytes (a
+    spawn's (at STEPS kind) at a constant kind is the function, stored as a
+    constant); plasma 1218 to 1338 bytes of code, zero page 22 to 62, 243 to
+    253 frames in 10 s (975 to 1015 in 40.92 M cycles; the loop rule); the rest
+    byte for byte, life 56 and 230 generations. Random race, seeds 1-2000:
+    geomean 0.810 to 0.809, wins 69.0% to 69.1%; Tisple's own cycles geomean
+    0.9987, 60 programs faster, 11 slower (at most +3.7%, seed 1874), bytes
+    616861 to 616744. Fuzz: a new shape, tests/fuzz_gen_data.cpp (`seed N
+    (data)`, one seed in four, also `(data -O0)`): const tables of structs with
+    nested arrays, strings, a moved string, copied consts, names read from
+    another table, function pointers, a pointer const into a table and one into
+    a let written through, a let starting at an element, read at constant and
+    computed indexes, through pointers, copied into locals, compared and
+    matched on few-valued fields. On the final code 12 x 9000 seeds (540,926
+    programs), 0 mismatches; ASan and UBSan 8 x 600 seeds (24,091
+    programs and the whole suite each time), clean. Tests:
+    tests/test_check_data.cpp (values in the interpreter, rings, errors,
+    layout), tests/test_backend_data.cpp (agreement at -O1 and -O0, one LDA
+    abs,X a byte field, folds leaving the table out at both levels, the values
+    deciding a compare and a clause, the :address error), char literal reader
+    and formatter tests, built-in names. Not done: struct values to and from
+    functions (the next round); (at T i path) takes field names only, so a
+    nested array is (at (at DICE d faces) f), and two computed indexes into
+    nested arrays multiply one of them (Witchdog keeps its flat FACES rows); a
+    const's value cannot read its own earlier elements; the backend's own
+    ranges (backend/ranges.cpp) still see only byte arrays of a const, not its
+    fields.
 
 ## Gap finder (2026-10-26)
 

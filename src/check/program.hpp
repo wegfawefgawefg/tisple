@@ -6,8 +6,9 @@
 // - Flat arrays indexed by 32-bit ids (types, structs, enums, vars, functions, exprs);
 //   -1 means none. Ids are stable once the checker returns.
 // - Types are interned: two types are equal exactly when their TypeIds are equal.
-// - Every name is resolved. A Var is any storage: a top-level let, a const array, a
-//   parameter or a local (one Var per declaration; code refers to it by id, never by text).
+// - Every name is resolved. A Var is any storage: a top-level let, a const of a struct or
+//   array type, a parameter or a local (one Var per declaration; code refers to it by id,
+//   never by text). Addresses in initial values are AddrSlots beside the bytes.
 //   Scalar constants and enum members are folded into Literal exprs.
 // - Every Expr has its type. Statements are Void; return, break and continue are Never.
 // - A function body is a Do. Calls name a Function id. Pointer arithmetic is PtrAdd/PtrSub

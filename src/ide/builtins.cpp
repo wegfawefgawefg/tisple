@@ -19,7 +19,7 @@ const BuiltinInfo kBuiltinInfo[] = {
     {"let", SymbolKind::SpecialForm, "(let name type value)",
      "a variable; a top-level let may leave out the value"},
     {"const", SymbolKind::SpecialForm, "(const NAME type value)",
-     "a compile-time constant, a scalar or a table of scalars"},
+     "a compile-time constant of any type: a scalar, or read-only data"},
     {"struct", SymbolKind::SpecialForm, "(struct Name ((x u8) (y u8)))", "a struct type"},
     {"enum", SymbolKind::SpecialForm, "(enum Name (a b (c 7)))", "an enum, stored as u8"},
     {"if", SymbolKind::SpecialForm, "(if cond then else)", "both arms are one form"},
