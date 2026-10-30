@@ -109,6 +109,7 @@ bool CompileFor(const DiskBuildArgs& args, Compiled& compiled) {
     if (args.options.opt.bisect >= 0) {
         std::fputs(DescribeOptReport(compiled.opt).c_str(), stderr);
     }
+    std::fputs(FormatDiagnostics(program.sources, compiled.warnings).c_str(), stderr);
     if (args.listing) {
         std::fputs(ListProgram(program, compiled).c_str(), stdout);
     }

@@ -82,6 +82,7 @@ int RunCheckCommand(int argc, char** argv) {
     if (ok) {
         Compiled compiled;
         ok = CompileProgram(program, options, compiled, errors);
+        std::fputs(FormatDiagnostics(program.sources, compiled.warnings).c_str(), stderr);
     }
     if (!ok) {
         std::fputs(FormatDiagnostics(program.sources, errors).c_str(), stderr);

@@ -120,12 +120,33 @@ void TestJsrStays(TestResults& results) {
     CHECK(results, CountMn(c, "t.m", tisple::Mn::JSR) == 1);
 }
 
+// an addr_of into an array of structs stores it packed: one warning, at the first addr_of,
+// counting the others; none for an array of bytes, which is the same either way
+void TestPackedWarning(TestResults& results) {
+    Compiled c = CompileText("(struct A ((x u8) (y u8) (hp u16)))\n"
+                             "(let actors (array A 8))\n(let names (array u8 16))\n"
+                             "(fn f () (ptr u8) (addr_of (at actors 3 x)))\n"
+                             "(fn g () (ptr u8) (addr_of (at actors 4 y)))\n"
+                             "(fn h () (ptr u8) (addr_of (at names 2)))");
+    CHECK(results, c.ok);
+    CHECK(results, c.code.warnings.size() == 1);
+    if (c.code.warnings.size() == 1) {
+        const std::string& m = c.code.warnings[0].message;
+        CHECK(results, m.find("t.actors packed (8 elements of 4 bytes)") != std::string::npos);
+        CHECK(results, m.find("(and 1 more addr_of)") != std::string::npos);
+    }
+    Compiled plain = CompileText("(let names (array u8 16))\n"
+                                 "(fn h () (ptr u8) (addr_of (at names 2)))");
+    CHECK(results, plain.ok && plain.code.warnings.empty());
+}
+
 } // namespace
 
 void RunBackendBuildTests(TestResults& results) {
     TestDroppedFunctions(results);
     TestLibraryKeepsAll(results);
     TestJsrStays(results);
+    TestPackedWarning(results);
 }
 
 } // namespace tisple_tests

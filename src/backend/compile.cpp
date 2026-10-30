@@ -404,6 +404,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     }
     out.as = std::move(be.as);
     out.opt = report;
+    out.warnings = PackedArrayWarnings(source);
     return true;
 }
 
