@@ -122,7 +122,8 @@ void Stays(TestResults& results) {
         "(fn f ((y u8)) u8 (let p (ptr u8) (addr_of (at a 2)))\n"
         "    (for i u8 1 5 (store p i) (set h (+ h (/ (at a 2) y)))) h)",
         "(fn f ((y u8)) u8 (for i u8 1 5 (set h (+ h (/ scr y)))) h)",
-        "(fn f ((y u8)) u8 (let p (ptr u8) (addr_of (at a 2)))\n"
+        // (at an element not known: one known is its read, pointers.cpp)
+        "(fn f ((y u8)) u8 (let p (ptr u8) (addr_of (at a (& y 3))))\n"
         "    (for i u8 1 5 (set h (+ h (/ (load p) y)))) h)",
         "(fn rd ((v u8)) u8 (/ g v))\n"
         "(fn f ((y u8)) u8 (for i u8 1 5 (set h (+ h (rd y))) (set g (+ g i))) h)",

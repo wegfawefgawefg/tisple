@@ -229,6 +229,9 @@ std::uint64_t EditStatements(Pass& p, std::int32_t function, Decide decide);
 
 // ---- passes
 
+// loads and stores through a pointer local set once to a known element, at a literal count
+// from it, become reads and sets of the element (pointers.cpp); returns the changes made
+std::uint64_t PointersToElements(Pass& p);
 // calls the backend would inline become copies of their function's body (inline.cpp); returns
 // the changes made
 std::uint64_t InlineCalls(Pass& p);

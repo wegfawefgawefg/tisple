@@ -66,6 +66,7 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
     bool returns = !Disabled(options, "returns");
     bool vars = !Disabled(options, "vars");
     bool inlines = !Disabled(options, "inline");
+    bool pointers = !Disabled(options, "pointers");
     bool elements = !Disabled(options, "elements");
     // unrolling (in collapse's walk) waits for the other passes to settle: a body they shorten
     // may collapse, and its copies would not
@@ -85,6 +86,9 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
         }
         if (args) {
             changes += opt::DropUnreadArgs(p);
+        }
+        if (pointers) {
+            changes += opt::PointersToElements(p);
         }
         if (returns) {
             changes += opt::DropUnusedReturns(p);
@@ -148,7 +152,7 @@ void Run(Program& program, const OptOptions& options, OptReport& report) {
 const std::vector<std::string>& OptPassNames() {
     static const std::vector<std::string> names = {
         "inline", "dead",   "loops", "args",     "returns", "collapse", "unroll", "unswitch",
-        "consts", "ranges", "vars",  "elements", "licm",    "cse",      "eval"};
+        "consts", "ranges", "vars",  "elements", "licm",    "cse",      "eval",   "pointers"};
     return names;
 }
 

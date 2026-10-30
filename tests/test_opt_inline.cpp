@@ -243,9 +243,33 @@ void FirstPass(TestResults& results) {
     }
 }
 
+// pointers to known elements (pointers.cpp): loads and stores at literal counts from them are
+// the elements' reads and sets, also when the pointer goes elsewhere too
+void KnownElements(TestResults& results) {
+    const std::string arrays =
+        "(let wb (array u8 1024))\n(let pt (array u8 16))\n(let o u8 0)\n"
+        "(fn poke ((p (ptr u8)) (v u8)) void (store p v) (store (+ p 1) v))\n";
+    const char* const bodies[] = {
+        "(let q (ptr u8) (addr_of (at wb 3))) (store (+ q 254) 5) (store q (+ (load q) 1))\n"
+        "    (set o (+ (load (+ q 254)) (at wb 3)))",
+        "(let q (ptr u8) (addr_of (at pt 2))) (let r (ptr u8) q) (store (- r 1) 7)\n"
+        "    (poke q 9) (set o (+ (load (+ r 1)) (at pt 1)))",
+        // past the end: through the pointer as it was (the next variable's bytes)
+        "(let q (ptr u8) (addr_of (at pt 15))) (set o (+ (load q) (load (- q 15))))",
+    };
+    for (const char* body : bodies) {
+        std::string text = arrays + "(fn main () u8 " + body + " o)";
+        CheckMain(results, text);
+    }
+    Opted o = OptimizeInlined(arrays + "(fn main () u8 " + bodies[0] + " o)");
+    CHECK(results, o.ok && CountKind(o, "t.main", ExprKind::Load) == 0 &&
+                       CountKind(o, "t.main", ExprKind::Store) == 0);
+}
+
 } // namespace
 
 void RunOptInlineTests(TestResults& results) {
+    KnownElements(results);
     FirstPass(results);
     Fields(results);
     Copied(results);
