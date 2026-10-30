@@ -2,7 +2,7 @@
 
 Music and sound effects on a Mockingboard: `lib/mockingboard`, its song format
 (`lib/mockingboard_song`), and the card in the built-in IIe. Started
-2026-10-30 for Witchdog.
+2026-10-30 for Catwiz (then called Witchdog).
 
 ## Run it
 
@@ -278,7 +278,7 @@ runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
   mover does), so the handler would `jsr` to it, about 21 cycles more a
   pattern byte. But a `jsr` anywhere in the handler makes the checker count
   every global as shared with the handler (src/check/interrupts.cpp: the
-  routine may change any let), and Witchdog's main code grew 330 bytes from
+  routine may change any let), and Catwiz's main code grew 330 bytes from
   that alone. It needs a way to say a routine changes no let, for instance a
   `jsr` option the handler check honours. Until then songs in aux memory are
   copied into a buffer the size of the largest.

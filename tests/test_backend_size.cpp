@@ -10,7 +10,7 @@ namespace tisple_tests {
 namespace {
 
 // a small function with a loop, called at eight places with constant counts: copied at each
-// call with its loop unrolled, this was 5.6 KB at -O0 (the Witchdog game's sounds)
+// call with its loop unrolled, this was 5.6 KB at -O0 (the Catwiz game's sounds)
 const char* const kNoise =
     "(let seed u16 1)\n"
     "(fn rnd () u8 (set seed (^ seed (<< seed 7))) (set seed (^ seed (>> seed 9)))\n"

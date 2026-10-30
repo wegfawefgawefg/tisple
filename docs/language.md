@@ -829,7 +829,7 @@ knows, so it may fill a const or start a top-level `let` (Static data).
 
 ## Static data
 
-Settled 2026-10-30, from writing Witchdog. One model for what a program's
+Settled 2026-10-30, from writing Catwiz (then called Witchdog). One model for what a program's
 memory starts with: a `const` of any type, and the value of a top-level `let`,
 are worked out while compiling, to the byte.
 
@@ -934,7 +934,7 @@ since removing it would change behaviour. Frame-level waits stay in the library
 ## Planned after the first backend (owner, 2026-10-26)
 
 - Tail calls: a call in tail position compiles to `JMP`, not `JSR` + `RTS`.
-  Backend only, no syntax.
+  Backend only, no syntax. Done: the peephole pass (src/backend/peephole.hpp).
 
 Ideas, in order of cost, taken up when real programs need them:
 
@@ -956,5 +956,7 @@ computing macro can generate the stack if it gets repetitive (owner,
 
 ## Out of the first subset
 
-General recursion, inline assembly. Both planned; none needed to prove the backend. `jsr` (Machine code) calls code
-that already exists; it is not an inline assembler.
+General recursion (the ideas above are what may relax the rule) and an inline
+assembler (owner, 2026-10-26: none; `jsr`, Machine code, calls code that already
+exists). Also out: a heap, closures at run time, floats at run time (macro code
+has them), integers wider than 16 bits, and separate compilation.

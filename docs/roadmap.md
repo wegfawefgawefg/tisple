@@ -8,8 +8,9 @@ as it can be. Then use it to make software and see how fast it can go.
 
 `tisple run game.tsp` compiles, loads the binary straight into RAM and runs it
 in an Apple IIe model built around our cycle-exact CPU (`src/emu/`). No Apple
-ROM and no disk boot: our startup code needs neither, so launch is instant and
-there is nothing copyrighted to ship.
+ROM: our startup code needs none, so launch is instant and there is nothing
+copyrighted to ship. (Disk boots came later, with our own boot ROM: "Accurate
+and instant" below.)
 
 - Window mode: real 1.023 MHz speed, keyboard, speaker audio, close and done.
 - Headless mode: as fast as the host allows (~160x real time), scripted keys
@@ -125,6 +126,12 @@ Each is also a benchmark. Rough order:
 8. 3D wireframe.
 9. Raycaster.
 
+Status (2026-10-30): in `programs/`: plasma, Life, Snake, paint (mouse, hi-res
+lines) and an 80-column text viewer that fills main, aux and language card
+memory; `examples/mockingboard_demo.tsp` plays music. Mandelbrot, sprites and
+hi-res lines are race kernels. Catwiz, a dice roguelike for the 128K IIe, is a
+game of its own (github.com/wegfawefgawefg/catwiz).
+
 ## 3. Proving the output is fast
 
 1. Exact-output tests: each common pattern asserts its instructions, e.g.
@@ -140,11 +147,15 @@ Each is also a benchmark. Rough order:
 Status (2026-10-26): the race against the three C compilers is in (`races/`,
 `docs/races.md`): 13 kernels, timed and checked in our simulator. Tisple wins 1, Oscar64
 8, cc65 3 (with its assembly library), LLVM-MOS 1; `docs/races.md` ranks the backend
-work that closes the gap. No build-failing budgets yet.
+work that closes the gap. 2026-10-27: Tisple wins all 13. The random race
+(`races/random.sh`, 2000 generated programs) went from a geomean of 3.1 times the
+fastest C compiler (2026-10-27) to 0.809, faster on 69.1% of them (2026-10-30),
+through the mid-level passes and backend work logged in docs/dogfood.md. No build-failing budgets yet.
 
 "Optimal" is provable only for small pieces; for whole programs the bar is the
 best hand-written assembly.
 
 ## 4. Use it
 
-Write software with it, measure, and keep pushing the backend.
+Write software with it, measure, and keep pushing the backend. Catwiz is the
+first big one (docs/dogfood.md logs what it needed from the compiler).

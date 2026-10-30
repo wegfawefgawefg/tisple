@@ -4,7 +4,7 @@
     web/publish.py NAME DISK CONFIG [--home ~/.local/share/tisple/phone]
 
 CONFIG is the game's player config, kept with the game, e.g.
-    {"title": "Witchdog", "mockingboard": 4, "columns": 5,
+    {"title": "Catwiz", "mockingboard": 4, "columns": 5,
      "buttons": [{"label": "1", "key": "1"}, {"label": "go", "key": "RETURN", "wide": true}]}
 A key is a character, a number, or RETURN ESC SPACE LEFT RIGHT UP DOWN TAB DELETE.
 The game becomes the default one the player opens.

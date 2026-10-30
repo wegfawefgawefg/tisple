@@ -20,9 +20,10 @@ wins by not having those semantics in the first place:
    struct costs a multiply in C. Tisple stores arrays of structs as one array
    per field by default, so it becomes `LDA sprite_x,X`. Arrays of 256 or fewer
    elements index with `u8`, so every index fits in X or Y.
-3. **Recursion is opt-in.** Non-recursive functions get static frames, and the
-   call graph lets frames that never live at the same time share bytes. Calls
-   become nearly free and zero page goes much further.
+3. **No recursion.** The checker rejects call-graph cycles, so every function
+   gets a static frame, and the call graph lets frames that never live at the
+   same time share bytes. Calls become nearly free and zero page goes much
+   further. (Recursion, if it ever comes, would be opt-in; docs/language.md.)
 4. **Placement facts reach instruction selection.** If the linker guarantees
    `boundary 256`, `LDA table,X` never crosses a page, so its cost is exact. In
    C that knowledge lives in a linker script the optimizer never sees.
@@ -163,7 +164,8 @@ later as a second reader producing the same tree. Not planned.
 - Pointers, address-of, load/store, indexing, field access.
 - Hardware reads/writes the optimizer never drops or reorders (`io_read`,
   `io_write`); reading `$C000` and touching `$C030` both have effects.
-- Inline assembly and ROM-call interop with a declared register/flag ABI.
+- ROM and firmware calls, `(jsr addr (a v) (x v) (y v))`; no inline assembler
+  (docs/language.md, Machine code).
 
 No `malloc` in the language. Fixed arrays and fixed-capacity collections cover
 most programs; arenas and pools are libraries if ever needed. Do not add range
@@ -386,30 +388,37 @@ Now the link decides (src/backend/squeeze.cpp):
 
 ## Target
 
-*Proposed* first target: NMOS 6502 (runs on every Apple II), Apple IIe memory
-map, raw binary loaded at `$0803` or `$6000` by `BRUN`. 65C02 (enhanced IIe,
-IIc) as a later flag; its instructions and timings differ and must not be
-mixed up. ProDOS SYS files later.
+NMOS 6502 (runs on every Apple II), Apple IIe memory map, the extended
+80-column card's aux memory and the language card when a program uses them.
+Output is a raw binary (default origin `$6000`, for `BRUN` under DOS) or a
+self-booting disk with no DOS (docs/disks.md). 65C02 (enhanced IIe, IIc) as a
+later flag; its instructions and timings differ and must not be mixed up.
+ProDOS SYS files later.
 
 ## Implementation
 
 C++20 in the splonks-cpp / Adventures with Chickens style: C+- code, small
-files by domain, splonks `.clang-format`, see `AGENTS.md`. *Proposed* layout:
+files by domain, splonks `.clang-format`, see `AGENTS.md`. Layout:
 
 ```text
-src/main.cpp        tisple command: build, sim, fmt, show, cycles
-src/reader/         tokens, tree, formatter, highlighting
-src/check/          macro expansion, names, types, inference
+src/main.cpp        tisple command and its subcommands (`tisple help`)
+src/reader/         tokens, tree, formatter, highlighting, editor grammars
+src/check/          macro expansion, names, types, layout facts
 src/macro/          macro code: the compile-time evaluator macros run in
 src/interp/         reference interpreter (the correctness oracle)
-src/ir/             lowered program the backend works on
-src/backend/        isel, register/zero-page allocation, frames, cycle costs
+src/opt/            mid-level passes: constants, dead code, CSE, hoisting, inlining (docs/midlevel-optimizer.md)
+src/backend/        isel, register/zero-page allocation, frames, peephole, size budget
 src/link/           placement, constraint checks, binary output
+src/asm/            6502 opcodes and the assembler the backend emits through
+src/gaps/, src/superopt/  profiler and short-sequence search (`tisple gaps`)
+src/ide/            names, types and errors for editors (`tisple index`)
+src/race/           random race programs written in Tisple and C
 src/emu/            cycle-exact 6502 core and test harness
-src/machine/        built-in Apple IIe: soft switches, video, speaker, window, disk ii
-src/disk/           disk images, DOS 3.3, the self-booting disk's loader
+src/machine/        built-in Apple IIe: soft switches, video, sound, mouse, Mockingboard, window
+src/disk/           disk images, DOS 3.3 files, the self-booting disk's loader
 tests/              unit, round-trip, fuzz
 races/              drag racing against other compilers
+web/                the machine as WebAssembly, for phones and the web demo
 ```
 
 ## Testing
@@ -423,13 +432,14 @@ races/              drag racing against other compilers
 - Reference interpreter runs the checked tree. Compiled output must match it on
   every test and on randomly generated programs.
 - Exhaustive tests for small operations (every `u8` pair for add/sub/compare).
-- Full-machine tests later through a headless emulator (izapple2 or MAME):
-  startup, text, hi-res, speaker, ProDOS.
+- Full-machine tests run headless on the built-in IIe (`tisple machine`,
+  `tisple run --frames`): startup, text, lo-res, hi-res, speaker, disk boots,
+  a2audit (docs/disks.md).
 
 ## Drag racing
 
-Contestants: cc65, LLVM-MOS, Oscar64 (if it can target the Apple II), Tisple,
-and handwritten assembly as the time to beat. Events: 16-bit multiply, memcpy,
+Contestants: cc65, LLVM-MOS, Oscar64, Tisple, and handwritten assembly as the
+time to beat. Results and settings: docs/races.md. Events: 16-bit multiply, memcpy,
 sieve, string search, hi-res sprite blit, line drawing, speaker music loop.
 Scored on cycles (exact, from the emulator) and bytes. Publish versions, flags
 and inputs. Showpiece: the same hi-res routine from each compiler running side
@@ -462,14 +472,15 @@ reports come after the compiler works.
 2. 6502 simulator passing SingleStepTests with exact cycle counts; `tisple sim` (done).
 3. Reader, formatter (`tisple fmt`), colored viewer (`tisple show`, editor
    syntax for VS Code and Neovim) (done).
-4. Checker and reference interpreter for the core subset.
+4. Checker and reference interpreter for the core subset (done).
 5. Plain backend: compiled programs run in the simulator and match the
-   interpreter under fuzzing.
-6. Field-split struct arrays, static frames, zero-page allocation.
-7. Computing macros (compile-time evaluation): tables, sprites, generics, unrolling.
-8. `--cycles` reports.
+   interpreter under fuzzing (done; `scripts/fuzz_farm.sh`).
+6. Field-split struct arrays, static frames, zero-page allocation (done).
+7. Computing macros (compile-time evaluation): tables, sprites, generics, unrolling (done).
+8. `--cycles` reports (not yet; `tisple gaps` profiles instead).
 9. First race against cc65, LLVM-MOS and Oscar64 (done: 13 kernels, `docs/races.md`).
-10. Full Apple II: a hi-res demo booting in a headless emulator.
+10. Full Apple II: a hi-res demo booting in a headless emulator (done: the
+    built-in IIe, self-booting disks, programs/paint).
 
 ## Open decisions
 

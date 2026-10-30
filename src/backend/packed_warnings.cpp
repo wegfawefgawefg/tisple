@@ -1,7 +1,7 @@
 // Warnings for arrays an addr_of keeps packed (link/layout.hpp): a pointer sees packed bytes,
 // so one addr_of into an array of multibyte elements stores the whole array packed, and
 // every (at a i) on it works out i times the element's size where the split layout indexes
-// each byte plane by i directly. The Witchdog game's redraw ran about twice as slow from one
+// each byte plane by i directly. The Catwiz game's redraw ran about twice as slow from one
 // such addr_of on an element of an array of structs. One warning per array, at its first
 // addr_of, naming how many more there are.
 
