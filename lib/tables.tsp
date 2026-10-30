@@ -47,7 +47,7 @@
 
 ; packed tables: the bytes ZX0-packed while compiling, (array u8 n) with n the packed count.
 ; With :in aux among the options it is a let in aux memory (for unpack.aux_to_aux and
-; aux_to_main), otherwise a const. lib/unpack puts the bytes back; docs/language.md, Packed data
+; aux_to_main), otherwise a const. lib/unpack puts the bytes back (docs/dhgr.md)
 (macro packed_table (name bytes options)
     (let packed_bytes_now (pack bytes))
     (let n (len packed_bytes_now))

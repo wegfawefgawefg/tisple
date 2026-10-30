@@ -5,8 +5,8 @@
 ;   (unpack.aux_to_main dst src)   packed in aux, out to main
 ;   (unpack.main_to_aux dst src)   packed in main, out to aux
 ; with pointers from addr_of: (unpack.main_to_main (addr_of (at screen 0)) (addr_of (at PIC 0))).
-; The packed bytes say how many come out; dst needs room for all of them. About 45 cycles a
-; byte out on double hi-res pictures (docs/language.md, Packed data). With an interrupt
+; The packed bytes say how many come out; dst needs room for all of them. About 46 cycles a
+; byte out on double hi-res pictures (docs/dhgr.md, Packed data). With an interrupt
 ; handler running, call (auxmem.guard) first, as for lib/auxmem, unless both are main.
 
 (import auxmem)

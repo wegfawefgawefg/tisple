@@ -32,6 +32,17 @@ From a scan of Life, Snake, dot, the other examples and the libraries
    tracking doesn't see through a u8 let the way it does through
    `(let l u16 (as u16 (- x 1)))`.
 
+From lib/dhgr and the packed-data examples (2026-10-30):
+
+10. Macro code runs about 100 ns a step: examples/dhgr_packed works out 16384 picture bytes in
+    macro code (a colour per pixel, 7 dots a byte) and takes 0.47 s to compile, 5.4 s in the
+    debug build, so it is kept out of the debug suite's example checks.
+11. A big list passed to a macro as an argument is copied on every call: a helper given the
+    picture's 192 rows of 140 colours, called once a byte, ran for minutes. Writing the helper
+    to work out what it needs itself was the way round.
+12. examples/ has a keys.tsp of its own, and imports look in the program's folder first, so an
+    example cannot `(import keys)` for lib/keys; examples/dhgr_demo reads the keyboard itself.
+
 ## Fixed
 
 1. `(store p 0)`: the literal gets no type, yet `(as u8 0)` is rejected as

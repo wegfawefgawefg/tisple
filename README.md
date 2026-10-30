@@ -167,6 +167,8 @@ there. Only the NMOS 6502 is targeted so far. Details in
   Apple's; not yet tried on a real machine ([`docs/disks.md`](docs/disks.md)).
 - **Phone and web player.** The machine as WebAssembly, with on-screen buttons per game
   ([`docs/phone.md`](docs/phone.md)); `web/pages.py` builds the web demo.
+- **Double hi-res.** `lib/dhgr`: 140 x 192, 15 colours, page flipping, sprites ([`docs/dhgr.md`](docs/dhgr.md)).
+- **Packed data.** `tables.packed` packs tables while compiling (ZX0), `lib/unpack` unpacks them.
 - **Editor support.** VS Code: colours, hover types, go to definition, find references,
   outline, errors as you type, format on save, F5 to run. Neovim syntax too
   ([`editors/`](editors/README.md)).
@@ -182,12 +184,14 @@ there. Only the NMOS 6502 is targeted so far. Details in
 | Snake | `tisple run programs/snake/main.tsp` |
 | Paint (mouse) | `tisple run programs/paint/main.tsp` |
 | Text viewer (80 columns, 72 KB) | `tisple run programs/text_demo/main.tsp` |
+| Double hi-res with page flipping | `tisple run examples/dhgr_demo.tsp` |
 | Mockingboard music and effects | `tisple run examples/mockingboard_demo.tsp --mockingboard 4 --rom Apple2e.rom` (its interrupts go through Apple's ROM: your own copy) |
 
 Libraries are in `lib/`: the hardware by its Apple names (`apple2`), 40- and 80-column
-text, lo-res and hi-res, aux memory, keyboard, mouse, speaker, frame timing, Mockingboard
-music ([`docs/mockingboard.md`](docs/mockingboard.md)), random numbers, and table and
-unrolling macros. `(import name)` finds them after the program's own folder.
+text, lo-res, hi-res and double hi-res, aux memory, packed tables, keyboard, mouse, speaker,
+frame timing, Mockingboard music ([`docs/mockingboard.md`](docs/mockingboard.md)), random
+numbers, and table and unrolling macros. `(import name)` finds them after the program's own
+folder.
 
 ## Catwiz
 
@@ -202,8 +206,9 @@ logs what it needed. Playable in the [web demo](https://wegfawefgawefg.github.io
 In [`docs/`](docs/): [`design.md`](docs/design.md) why the language looks like this and
 how the backend works, [`language.md`](docs/language.md) the language,
 [`disks.md`](docs/disks.md) disks and the boot ROM, [`phone.md`](docs/phone.md) the web
-player, [`mockingboard.md`](docs/mockingboard.md) sound, [`races.md`](docs/races.md) the
-compiler races, [`benchmarks.md`](docs/benchmarks.md) speed history,
+player, [`mockingboard.md`](docs/mockingboard.md) sound, [`dhgr.md`](docs/dhgr.md) double
+hi-res and packed data, [`races.md`](docs/races.md) the compiler races,
+[`benchmarks.md`](docs/benchmarks.md) speed history,
 [`roadmap.md`](docs/roadmap.md) the plan, [`dogfood.md`](docs/dogfood.md) the working log.
 
 ## License
