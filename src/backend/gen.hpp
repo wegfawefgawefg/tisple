@@ -117,9 +117,11 @@ struct Backend {
     std::int32_t sq_tables = -1;
     std::int32_t rt_sym[kRuntimeCount] = {};
     bool rt_used[kRuntimeCount] = {};
-    // rt.divu8 past its compare of the dividend with the divisor: A holds the dividend, at
-    // least the divisor (also for divisions that make that compare inline, gen_div.cpp)
+    // rt.divu8 and rt.divu16 past their compare of the dividend with the divisor, which is
+    // at most the dividend (for divisions that make that compare inline, gen_div.cpp); divu8's
+    // takes the dividend in A too
     std::int32_t divu8_ge = -1;
+    std::int32_t divu16_ge = -1;
     std::vector<Diagnostic>* errors = nullptr;
 };
 

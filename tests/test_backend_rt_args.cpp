@@ -61,12 +61,42 @@ void TestShapes(TestResults& results) {
     }
 }
 
+// instructions of t.f that name its temporaries
+int TempUses(const Compiled& c) {
+    int n = 0;
+    for (const tisple::FunctionSpan& span : c.code.spans) {
+        for (std::size_t i = span.first; span.name == "t.f" && i < span.end; i++) {
+            const tisple::AsmItem& item = c.code.as.items[i];
+            bool temps =
+                item.kind == tisple::ItemKind::Ins && item.value.sym >= 0 &&
+                c.code.as.symbols[static_cast<std::size_t>(item.value.sym)].name == "t.f.temps";
+            n += temps ? 1 : 0;
+        }
+    }
+    return n;
+}
+
 void TestNoCopies(TestResults& results) {
-    // the divisor's bytes are stored once, into rt_b, not into a temporary first
-    Compiled w = CompileText("(fn f ((x u16) (y u16)) u16 (/ (+ x 1) (| y 1)))");
-    CHECK(results, CountMn(w, "t.f", tisple::Mn::STA) <= 6);
+    // the operands' bytes are stored once, into rt_a and rt_b, not into temporaries first
+    Compiled w = CompileText("(let q u16 0)\n"
+                             "(fn f ((x u16) (y u16)) void (set q (/ (+ x 1) (| y 1))))");
+    CHECK(results, w.ok && TempUses(w) == 0);
     Compiled b = CompileText("(fn f ((x u8) (y u8)) u8 (/ (+ x 1) (| y 1)))");
     CHECK(results, CountMn(b, "t.f", tisple::Mn::STA) == 2);
+}
+
+// an unsigned word division that no other division shares compares inline and calls
+// rt.divu16.ge only for a dividend at least the divisor, with both results right either way
+void TestDivU16Inline(TestResults& results) {
+    for (const char* op : {"/", "%"}) {
+        std::string text = "(fn f ((x u16) (y u16)) u16 (" + std::string(op) + " x y))";
+        Compiled c = CompileText(text);
+        CHECK(results, CountMn(c, "t.f", tisple::Mn::CMP) == 2);
+        CheckPairs(results, text);
+        // into a variable, and with the routine's other entry kept for a / and % pair
+        CheckPairs(results, "(let q u16 0)\n(fn f ((x u16) (y u16)) u16 (set q (" +
+                                std::string(op) + " (+ x 7) (| y 2))) q)");
+    }
 }
 
 std::uint16_t SymbolAt(const tisple::Assembly& as, const std::string& name) {
@@ -149,6 +179,7 @@ void TestDivU8Entry(TestResults& results) {
 void RunBackendRtArgsTests(TestResults& results) {
     TestShapes(results);
     TestNoCopies(results);
+    TestDivU16Inline(results);
     TestDivU8Entry(results);
 }
 

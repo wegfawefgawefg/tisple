@@ -117,6 +117,7 @@ void MakeSymbols(Backend& be) {
         be.rt_sym[r] = NewSym(be, names[r], SymRole::Label, -1);
     }
     be.divu8_ge = NewSym(be, "rt.divu8.ge", SymRole::Label, -1);
+    be.divu16_ge = NewSym(be, "rt.divu16.ge", SymRole::Label, -1);
     be.sq_tables = NewSym(be, "sq_tables", SymRole::Data, -1);
 }
 
@@ -240,6 +241,9 @@ void FindUsedRoutines(Backend& be) {
     }
     if (named[static_cast<std::size_t>(be.divu8_ge)]) {
         be.rt_used[static_cast<int>(Runtime::DivU8)] = true;
+    }
+    if (named[static_cast<std::size_t>(be.divu16_ge)]) {
+        be.rt_used[static_cast<int>(Runtime::DivU16)] = true;
     }
     for (const DivRoutine& r : be.div_routines) {
         if (r.needs >= 0 && named[static_cast<std::size_t>(r.sym)]) {

@@ -168,9 +168,39 @@ Opnd ReuseDiv16(Gen& g, const Expr& e, const Opnd* dst) {
     return d;
 }
 
+// unsigned, when no later division reads the results: a dividend below the divisor is quotient
+// 0 and remainder the dividend without a call; else rt.divu16 past its own compare
+Opnd InlineBelow16(Gen& g, const Expr& e, const Opnd* dst) {
+    AsmValue a = SymValue(g.be->rt_a);
+    AsmValue b = SymValue(g.be->rt_b);
+    std::int32_t below = NewLabel(g);
+    std::int32_t divide = NewLabel(g);
+    std::int32_t done = NewLabel(g);
+    Emit(g, Mn::LDA, Mode::Abs, SymValue(a.sym, 1));
+    Emit(g, Mn::CMP, Mode::Abs, SymValue(b.sym, 1));
+    Branch(g, Mn::BCC, below);
+    Branch(g, Mn::BNE, divide);
+    Emit(g, Mn::LDA, Mode::Abs, a);
+    Emit(g, Mn::CMP, Mode::Abs, b);
+    Branch(g, Mn::BCS, divide);
+    PlaceLabel(g, below);
+    Opnd d = dst ? *dst : NewTemp(g, 2);
+    if (e.op == Op::Div) {
+        CopyOpnd(g, ImmOpnd(0, 2), d);
+    } else {
+        CopyOpnd(g, MemOpnd(a, 2, 1), d);
+    }
+    Jump(g, done);
+    PlaceLabel(g, divide);
+    Emit(g, Mn::JSR, Mode::Abs, SymValue(g.be->divu16_ge));
+    CopyOpnd(g, MemOpnd(e.op == Op::Div ? a : SymValue(g.be->rt_r), 2, 1), d);
+    PlaceLabel(g, done);
+    return d;
+}
+
 // the dividend is a (EvalDiv16 worked it out into rt_a when neither side can call a
 // routine); the divisor goes straight into rt_b when it cannot either
-Opnd RuntimeDiv16(Gen& g, const Expr& e, bool is_signed, Opnd a, const Opnd* dst) {
+Opnd RuntimeDiv16(Gen& g, ExprId id, const Expr& e, bool is_signed, Opnd a, const Opnd* dst) {
     if (MayWriteOpnd(g, e.b, a)) {
         a = Snapshot(g, a);
     }
@@ -184,6 +214,9 @@ Opnd RuntimeDiv16(Gen& g, const Expr& e, bool is_signed, Opnd a, const Opnd* dst
     } else {
         EvalInto(g, e.b, rt_b);
         CopyOpnd(g, a, rt_a);
+    }
+    if (!is_signed && !g.be->div_pairs[static_cast<std::size_t>(id)]) {
+        return InlineBelow16(g, e, dst);
     }
     CallRuntime(g, is_signed ? Runtime::DivS16 : Runtime::DivU16);
     Remember(g, e, true, false);
@@ -305,7 +338,7 @@ Opnd EvalDiv16(Gen& g, ExprId id, const Expr& e, const Opnd* dst) {
         bool direct = !UsesRuntime(*g.program, e.a, g.be->aliases) &&
                       !UsesRuntime(*g.program, e.b, g.be->aliases);
         Opnd a = Eval(g, e.a, direct ? &rt_a : nullptr);
-        return RuntimeDiv16(g, e, is_signed, a, dst);
+        return RuntimeDiv16(g, id, e, is_signed, a, dst);
     }
     Opnd a = Eval(g, e.a, nullptr);
     return DivSmallConst16(g, id, e, a, c, dst);
