@@ -1120,7 +1120,14 @@ void Peephole(const Assembly& as, std::vector<AsmItem>& items,
         bool stores = DropDeadStores(items, scopes);
         bool carry = CarryPass(items);
         bool values = DropDeadValues(as, items);
-        if (!p.changed && !stores && !carry && !values) {
+        if (p.changed || stores || carry || values) {
+            continue;
+        }
+        // settled: the dead steps and the split tests, which need more liveness, then the
+        // rounds again if they changed anything
+        bool steps = DropFaintSteps(as, items, scopes);
+        bool split = SplitZeroTests(as, items);
+        if (!steps && !split) {
             return;
         }
     }
