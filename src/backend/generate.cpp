@@ -6,6 +6,7 @@
 
 #include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
+#include "backend/io_bases.hpp"
 #include "backend/peephole.hpp"
 
 #include <algorithm>
@@ -33,6 +34,17 @@ void MakeSymbols(Backend& be) {
             s.zp = true;
         }
         s.shared = var.irq_shared;
+    }
+    // an I/O base's accesses: I/O to the passes (shared, at $C000) until EmitIoPatches
+    be.io_sym.assign(program.vars.size(), -1);
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        if (be.io_bases.base.empty() || !be.io_bases.base[v]) {
+            continue;
+        }
+        std::int32_t sym = NewSym(be, program.vars[v].name + ".io", SymRole::Data, -1);
+        DefineSymbol(be.as, sym, 0xC000);
+        be.as.symbols[static_cast<std::size_t>(sym)].shared = true;
+        be.io_sym[v] = sym;
     }
     std::size_t fn_count = program.functions.size();
     be.fn_sym.resize(fn_count);
@@ -118,6 +130,8 @@ void GenerateOne(Backend& be, std::size_t f, WeightsAdded& added) {
     std::vector<std::uint64_t> weights = Weights(be);
     if (be.program->functions[f].dispatcher) {
         GenDispatcher(be, static_cast<std::int32_t>(f));
+    } else if (be.program->functions[f].io_patch >= 0) {
+        // made once all code is final (EmitIoPatches)
     } else {
         GenFunction(be, static_cast<std::int32_t>(f));
         Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
@@ -235,6 +249,7 @@ bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, 
                      std::vector<WeightsAdded>& added, std::vector<bool>& kept,
                      SizeChoices& choices, std::vector<Diagnostic>& errors) {
     std::vector<std::int32_t> entries = LowerIndirectCalls(program);
+    IoBases io_bases = LowerIoBases(program);
     std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     std::size_t before = errors.size();
     Backend prepared;
@@ -245,8 +260,12 @@ bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, 
     }
     prepared.counter_literals = counter_literals;
     prepared.entries = entries;
+    prepared.io_bases = io_bases;
     prepared.inlines = FindInlines(program, options.no_inline);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (program.functions[f].io_patch >= 0) {
+            prepared.inlines[f] = InlineKind::None;
+        }
         if (program.functions[f].dispatcher || program.functions[f].interrupt) {
             prepared.inlines[f] = InlineKind::None; // only for the analyses; the IRQ entry calls it
         }

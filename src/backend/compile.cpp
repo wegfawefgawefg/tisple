@@ -1,6 +1,7 @@
 #include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
 #include "backend/generate.hpp"
+#include "backend/io_bases.hpp"
 #include "backend/irq.hpp"
 #include "backend/link.hpp"
 #include "backend/peephole.hpp"
@@ -148,6 +149,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
             DropFunction(be, static_cast<std::int32_t>(f), added[f]);
         }
     }
+    EmitIoPatches(be, kept);
     FindUsedRoutines(be);
     std::vector<AsmItem> runtime;
     EmitRuntime(be, runtime);

@@ -238,6 +238,9 @@ struct Function {
     bool interrupt = false;     // (fn name () void :interrupt): the IRQ handler
     // backend only (backend/dispatch.cpp): jumps to the address in its first parameter
     bool dispatcher = false;
+    // backend only (backend/io_bases.cpp): stores this var's value into the I/O accesses
+    // based on it; -1 for every other function
+    std::int32_t io_patch = -1;
 };
 
 struct ModuleInfo {
