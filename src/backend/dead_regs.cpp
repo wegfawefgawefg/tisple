@@ -149,6 +149,24 @@ Effect EffectOf(const Assembly& as, const AsmItem& item) {
         return Effect{0, kX | kN | kZ, false};
     case Mn::NOP:
         return Effect{0, 0, false};
+    case Mn::JMP:
+        // to a label here: what is read there (Successors); elsewhere, or through a pointer,
+        // a way out, which reads everything
+        if (item.mode == Mode::Abs) {
+            return Effect{0, 0, false};
+        }
+        e.uses = kAll;
+        e.defs = 0;
+        return e;
+    case Mn::JSR:
+        // our own code (a symbol: a function or a runtime routine) never reads the flags it
+        // is called with and leaves its own; the registers may be read, or kept
+        if (item.value.sym >= 0) {
+            return Effect{kA | kX | kY, kN | kZ | kC | kV, false};
+        }
+        e.uses = kAll;
+        e.defs = 0;
+        return e;
     default:
         // calls, returns, jumps, flag and stack instructions: read everything
         e.uses = kAll;
@@ -256,6 +274,53 @@ bool ImmediateTransfer(const AsmItem& load, const AsmItem& transfer, int& to) {
     }
 }
 
+// the register (0 A, 1 X, 2 Y) whose value N and Z show after this instruction, or -1
+int NzReg(const AsmItem& item) {
+    if (item.kind != ItemKind::Ins) {
+        return -1;
+    }
+    switch (item.mn) {
+    case Mn::LDA:
+    case Mn::TXA:
+    case Mn::TYA:
+    case Mn::PLA:
+    case Mn::ADC:
+    case Mn::SBC:
+    case Mn::AND:
+    case Mn::ORA:
+    case Mn::EOR:
+        return 0;
+    case Mn::ASL:
+    case Mn::LSR:
+    case Mn::ROL:
+    case Mn::ROR:
+        return item.mode == Mode::Acc ? 0 : -1;
+    case Mn::LDX:
+    case Mn::TAX:
+    case Mn::INX:
+    case Mn::DEX:
+    case Mn::TSX:
+        return 1;
+    case Mn::LDY:
+    case Mn::TAY:
+    case Mn::INY:
+    case Mn::DEY:
+        return 2;
+    default:
+        return -1;
+    }
+}
+
+// CMP, CPX or CPY #0 of register r: N and Z as the register's own value, the carry set
+bool CompareZero(const AsmItem& item, int& r) {
+    if (item.kind != ItemKind::Ins || item.mode != Mode::Imm || item.value.sym >= 0 ||
+        item.value.part != Part::Whole || (item.value.offset & 0xFF) != 0) {
+        return false;
+    }
+    r = item.mn == Mn::CMP ? 0 : item.mn == Mn::CPX ? 1 : item.mn == Mn::CPY ? 2 : -1;
+    return r >= 0;
+}
+
 // liveness of the registers and flags before and after every item
 void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
               std::vector<std::uint8_t>& live_in, std::vector<std::uint8_t>& live_out) {
@@ -283,9 +348,16 @@ void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
         changed = false;
         for (std::size_t i = items.size(); i-- > 0;) {
             Successors(items, f, i, succ);
+            // a call or tail jump into our own code (a function or a runtime routine, always a
+            // symbol; a jsr to an address may be a ROM routine that takes the carry) reads
+            // registers, never the flags, and nothing reads the flags it returns with
+            const AsmItem& item = items[i];
+            bool call = item.mn == Mn::JSR || (item.mn == Mn::JMP && item.mode == Mode::Abs);
+            bool own = item.kind == ItemKind::Ins && call && item.value.sym >= 0;
+            std::uint8_t leave = own ? static_cast<std::uint8_t>(kA | kX | kY) : kAll;
             std::uint8_t out = 0;
             for (std::size_t s : succ) {
-                out |= s == kNone ? static_cast<std::uint8_t>(kAll) : live_in[s];
+                out |= s == kNone ? leave : live_in[s];
             }
             live_out[i] = out;
             const Effect& e = effects[i];
@@ -333,6 +405,16 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
         const Effect& e = effects[i];
         bool dead = items[i].kind == ItemKind::Ins && e.removable && e.defs != 0 &&
                     (e.defs & live_out[i]) == 0;
+        // a compare with 0 right after an instruction whose N and Z already show that
+        // register (no label between), when nothing reads the carry it sets
+        int r = -1;
+        if (!dead && CompareZero(items[i], r) && (live_out[i] & kC) == 0) {
+            std::size_t prev = i;
+            while (prev > 0 && items[prev - 1].kind == ItemKind::Note) {
+                prev--;
+            }
+            dead = prev > 0 && NzReg(items[prev - 1]) == r;
+        }
         if (dead) {
             dropped = true;
             continue;

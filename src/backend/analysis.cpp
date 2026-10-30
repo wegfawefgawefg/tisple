@@ -85,6 +85,18 @@ bool HasCalls(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) { return e.kind == ExprKind::Call; });
 }
 
+bool UsesRuntime(const Program& program, ExprId id, const std::vector<IndexAlias>& aliases) {
+    return AnyExpr(program, id, [&](const Expr& e) {
+        if (e.kind == ExprKind::VarRef) {
+            const IndexAlias& alias = aliases[static_cast<std::size_t>(e.ref)];
+            return alias.forward && UsesRuntime(program, alias.value, aliases);
+        }
+        bool arith =
+            e.kind == ExprKind::Binary && (e.op == Op::Mul || e.op == Op::Div || e.op == Op::Mod);
+        return arith || e.kind == ExprKind::Call || e.kind == ExprKind::Jsr;
+    });
+}
+
 bool HasLoops(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         return e.kind == ExprKind::While || e.kind == ExprKind::For;

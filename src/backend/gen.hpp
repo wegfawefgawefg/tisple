@@ -117,6 +117,11 @@ struct Backend {
     std::int32_t sq_tables = -1;
     std::int32_t rt_sym[kRuntimeCount] = {};
     bool rt_used[kRuntimeCount] = {};
+    // rt.divu8 and rt.divu16 past their compare of the dividend with the divisor, which is
+    // at most the dividend (for divisions that make that compare inline, gen_div.cpp); divu8's
+    // takes the dividend in A too
+    std::int32_t divu8_ge = -1;
+    std::int32_t divu16_ge = -1;
     std::vector<Diagnostic>* errors = nullptr;
 };
 
@@ -311,7 +316,8 @@ struct Gen {
     ExprId pin_body[2] = {-1, -1};    // the body of that loop
     WideLoop* wide = nullptr;         // the u16 loop var whose low byte is pin[1]
     std::vector<Derived> derived;     // of the loops being generated
-    std::uint32_t lptr_top = 0;       // loop pointer bytes handed out in this function
+    std::uint32_t lptr_top = 0;       // loop pointer bytes taken now in this function
+    std::uint32_t lptr_high = 0;      // the most taken at once so far
     std::vector<CounterRange> ranges; // of the u8 loops being generated
     std::vector<Fact> facts;
     std::vector<WideFixup> wide_fixups; // of the wide while loop being generated
@@ -521,6 +527,9 @@ bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type);
 bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type);
 // each page pointer's low byte, stored where the function starts
 void InitPagePointers(Gen& g);
+// two loop pointer bytes; `above` every byte taken before (for a pointer set at the
+// function's start, which a loop before may have used and given back, GenStmt)
+AsmValue NewLoopPointer(Gen& g, bool above);
 // the derived pointer for base + offset in the loop of counter `loop` (made on first use)
 AsmValue DerivedPointer(Gen& g, std::int32_t loop, AsmValue base, std::int32_t var,
                         std::int32_t offset);
