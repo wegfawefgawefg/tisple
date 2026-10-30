@@ -6,6 +6,7 @@
 
 (import apple2 a2)
 (import dhgr)
+(import dhgr_text2) ; the flip count on text page 2
 (import tables)
 (import timing)
 

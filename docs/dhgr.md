@@ -64,6 +64,7 @@ tisple run examples/dhgr_packed.tsp                # a picture packed while comp
 | `(dhgr.plot page x y colour)` | one pixel | 270 |
 | `(dhgr.aux_rmw addr keep set)` | an aux byte becomes `(byte & keep) \| set`; gives what it was | 110 |
 | `(dhgr.text_row page row codes)` | 80 screen codes onto a text row of the page's text page | 2,500 |
+| `(dhgr.runs page bank col top h runs flags)` | a sprite half stored as runs (below), from its memory or the aux language card | 16 a byte opaque, 26 masked, about 40 a run |
 
 Cycles from `tisple run --sim`, each call about 200 more (2026-10-30). A 4-byte, 22-row
 sprite masked in both memories is about 9,000 cycles.
@@ -75,16 +76,49 @@ sprite masked in both memories is about 9,000 cycles.
   mask and `from` page are in aux memory (lets `:in aux`), for `dhgr.MAIN` in main memory.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
-- Reserved in both memories: both pages (`$2000`-`$5FFF`), text page 2 (`$0800`-`$0BFF`) and
-  `$1E00`-`$1F46` for the code below: about 34 KB of the 128.
+- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1FF0` for the code
+  below: about 33 KB of the 128; in main memory `$1D8A`-`$1DDC` for lib/auxcard. Text page 2
+  (`$0800`-`$0BFF`, both memories) only with `(import dhgr_text2)`, for a program that shows
+  the mixed window's text with page 2 (examples/dhgr_demo); a full-screen one has that 2 KB
+  (2026-10-30).
 - Aux memory is written with RAMWRT and read with RAMRD. With RAMRD on the 6502 fetches its
   instructions from aux memory too, so everything that runs with a switch on is our own 6502
-  code, 327 bytes at `$1E00` in both memories: copied there the first time (main memory's copy
+  code, 497 bytes at `$1E00` in both memories: copied there the first time (main memory's copy
   from a const, aux memory's with `auxmem.write`). The box routines take their arguments in
   auxmem's zero page (`$F2`-`$FE`) and X (the memory); a row's address is worked out once and
   then moved `$400` a row inside each 8-row band. `plot` is Tisple: tables say which byte or
   two each of a group's 7 pixels falls in, and the colour's bits there.
 - An interrupt handler needs `(auxmem.guard)` first, as for lib/auxmem.
+
+### Runs, and the aux language card
+
+Added 2026-10-30 for Catwiz, whose sprites do not fit as whole boxes of picture and mask.
+
+- A sprite half (one memory's bytes) as runs: per row, control bytes up to a 0. 1-63 skips
+  that many bytes; `$40 + n` is followed by n picture bytes, copied (opaque); `$80 + n` by n
+  picture bytes and then their n masks, each screen byte `(screen & mask) | picture`. n is
+  1-63. A row stores only its bytes with something in them, and masks only at the edges.
+  Rows are drawn top to bottom from `col` (even, as for `masked`); the runs end themselves.
+- `dhgr.AS_WHITE` draws the shape in white: opaque bytes `$7F`, edged ones
+  `screen | (mask ^ $7F)` (a hit flash).
+- `dhgr.FROM_CARD` (bank 2, `$D000`-`$FFFF`) or `dhgr.FROM_CARD1` (bank 1's `$D000`-`$DFFF`):
+  the runs are in the aux language card, the extended 80-column card's own
+  16 KB at `$D000`-`$FFFF`, which nothing but code running with ALTZP on reaches. lib/auxcard
+  runs our code that way: it puts the card's bank asked for in, copies auxmem's zero page
+  arguments to aux memory's zero page, turns interrupts off and ALTZP on; afterwards puts back
+  the card's bank (or the rom) and the interrupt flag. Between rows `runs` turns ALTZP off and
+  lets interrupts in for a moment (`CLI`, `NOP`, `SEI`), so a tick is late by at most a row's
+  drawing. `unpack.aux_to_card` and `unpack.main_to_card` (with the bank, `auxcard.BANK2` or `BANK1`) put bytes there (with interrupts off
+  throughout: ticks that come meanwhile are lost but one).
+- lib/dhgr_pixels: `(dhgr_pixels.row page col top groups pixels)` writes a row of colour pixels
+  (a byte each in main memory) as whole bytes in both memories, about 210 cycles a group: for
+  a hud drawn in whole pixels (Catwiz's text in colour pixels, its badges and cards). Its code
+  sits where the layout puts it (RAMRD stays off) and finds its tables the first time.
+- So a game can keep the main memory halves of its sprites in the aux card (12 KB at `$D000`
+  in bank 2, 4 KB more in bank 1) and the aux halves there or in aux memory, and main memory
+  has none of them. tests/test_dhgr_runs.cpp: made-up halves drawn from each
+  place, plain and white, under the Mockingboard's ticks with the guard, no tick lost, the card
+  and the rom put back.
 - examples/dhgr_demo draws a frame on the hidden page and flips at the next vertical blank:
   the ball's old box redrawn as sky (boxes), three stars plotted, the ball masked in both
   memories, the flip count in 80-column text on the page's own text page. That takes a little

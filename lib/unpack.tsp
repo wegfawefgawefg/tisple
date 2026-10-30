@@ -10,6 +10,7 @@
 ; handler running, call (auxmem.guard) first, as for lib/auxmem, unless both are main.
 
 (import auxmem)
+(import auxcard)
 
 ; the unpacker, our own 6502 code: ZX0 (version 2: forward, the offset's high part inverted).
 ; In: X = mode (bit 0: the packed bytes in aux memory, bit 1: out to aux memory), auxmem.from
@@ -150,3 +151,18 @@
 
 (fn main_to_aux ((dst (ptr u8)) (src (ptr u8))) void
     (run dst src MAIN_TO_AUX))
+
+; out to the aux language card: dst at $D000-$FFFF, which ALTZP picks whatever RAMRD and RAMWRT
+; say, so a match is read back from there too. Interrupts are off while it runs: ticks of an
+; interrupt handler that come meanwhile are lost but one
+(fn card ((dst (ptr u8)) (src (ptr u8)) (mode u8) (bank u8)) void
+    (setup mode)
+    (set auxmem.from src)
+    (set auxmem.to dst)
+    (auxcard.call HOME mode bank))
+
+(fn aux_to_card ((dst (ptr u8)) (src (ptr u8)) (bank u8)) void
+    (card dst src AUX_TO_AUX bank))
+
+(fn main_to_card ((dst (ptr u8)) (src (ptr u8)) (bank u8)) void
+    (card dst src MAIN_TO_MAIN bank))
