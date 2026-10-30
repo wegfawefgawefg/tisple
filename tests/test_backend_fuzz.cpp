@@ -13,7 +13,9 @@
 // ("(inline)"), and one in four an eleventh, with copies the size budget weighs, folds around
 // calls and constant indexes ("(size)"), and one in four a twelfth each, with copies whose
 // locals share bytes ("(frames)") and with I/O through bases in globals and helpers that hand
-// their parameters on ("(io)", also at -O0: "(io -O0)").
+// their parameters on ("(io)", also at -O0: "(io -O0)"), and one in four a thirteenth each,
+// with const data ("(data)", also at -O0) and with functions in separate stretches of memory
+// and tail calls between them ("(stretch)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -344,6 +346,10 @@ void RunBackendFuzzTests(TestResults& results) {
             tisple::OptOptions o0;
             o0.level = 0;
             FuzzOne(seed, " (data -O0)", data, stats, IrqPlan(), o0);
+        }
+        std::string stretch = GenerateStretchProgram(seed);
+        if (!stretch.empty()) {
+            FuzzOne(seed, " (stretch)", stretch, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "
