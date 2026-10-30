@@ -16,8 +16,32 @@ namespace tisple::opt {
 
 namespace {
 
+// a byte of [lo, hi) is in [field_lo, field_hi) of some stride-byte element
+bool HitsField(std::uint32_t lo, std::uint32_t hi, const Cell& field) {
+    if (hi - lo >= field.stride) {
+        return true;
+    }
+    for (std::uint32_t b = lo; b < hi; b++) {
+        std::uint32_t at = b % field.stride;
+        if (at >= field.lo && at < field.hi) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Overlap(const Cell& x, const Cell& y) {
-    return x.var == y.var && x.lo < y.hi && y.lo < x.hi;
+    if (x.var != y.var) {
+        return false;
+    }
+    if (x.stride == 0 && y.stride == 0) {
+        return x.lo < y.hi && y.lo < x.hi;
+    }
+    if (x.stride != 0 && y.stride != 0) {
+        // the same field of different elements, or different fields
+        return x.stride != y.stride || (x.lo < y.hi && y.lo < x.hi);
+    }
+    return x.stride == 0 ? HitsField(x.lo, x.hi, y) : HitsField(y.lo, y.hi, x);
 }
 
 // does a pass read a cell some pass writes (the body's own variables aside)

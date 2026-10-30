@@ -195,9 +195,41 @@ void Divisions(TestResults& results) {
     }
 }
 
+// collapse (collapse_scan.cpp, slice 6): a field of an element whose index is not known is
+// that field of every element, apart from the struct's other fields (seed 62)
+void Fields(TestResults& results) {
+    const std::string structs = "(struct S ((a u8) (b i16) (c bool)))\n(let sa (array S 8))\n"
+                                "(let k u8 3)\n(let out u8 0)\n";
+    struct Case {
+        const char* body;
+        bool collapses;
+    };
+    const Case cases[] = {
+        // writes b of element 1, reads a of any: every pass the same
+        {"(for i u8 0 20 (set (at sa 1 b) -7) (set out (+ (at sa (& k 7) a) 1)))", true},
+        // writes a of element 1, reads a of any: may read what it wrote
+        {"(for i u8 0 20 (set (at sa 1 a) (+ out 1)) (set out (+ (at sa (& k 7) a) 1)))", false},
+        // an index that may leave the array: the whole variable
+        {"(for i u8 0 20 (set (at sa 1 b) -7) (set out (+ (at sa (& k 15) a) 1)))", false},
+    };
+    for (const Case& c : cases) {
+        std::string text = structs +
+                           "(fn main () u8 (set k (io_read u8 0xC000)) (set (at sa 3 a) 9) " +
+                           c.body + " out)";
+        Opted o = OptimizeInlined(text);
+        bool loop = CountKind(o, "t.main", ExprKind::For) > 0;
+        if (loop == c.collapses) {
+            std::fprintf(stderr, "the loop %s:\n%s\n", loop ? "stays" : "went", text.c_str());
+        }
+        CHECK(results, o.ok && loop != c.collapses);
+        CheckMain(results, text);
+    }
+}
+
 } // namespace
 
 void RunOptInlineTests(TestResults& results) {
+    Fields(results);
     Copied(results);
     Kept(results);
     Emptied(results);

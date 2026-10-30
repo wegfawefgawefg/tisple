@@ -41,11 +41,13 @@ bool StoresMayReach(const Pass& p, MemoryFacts& m, std::int32_t function, std::i
 
 // ---- what a loop body reads and writes (collapse_scan.cpp)
 
-// bytes [lo, hi) of a variable, in its packed layout
+// bytes [lo, hi) of a variable, in its packed layout; with a stride, bytes [lo, hi) of each
+// stride-byte element (a field of an element whose index is not known, slice 6)
 struct Cell {
     std::int32_t var = -1;
     std::uint32_t lo = 0;
     std::uint32_t hi = 0;
+    std::uint32_t stride = 0;
     bool steady = true; // a write every pass makes to the same place (see Access)
 };
 

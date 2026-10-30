@@ -33,7 +33,9 @@ Cell WholeVar(const Pass& p, std::int32_t var) {
 }
 
 // the cell a place rooted at a variable names: one element or field when every index on the
-// way is a literal in range, else the whole variable; false for a place behind a pointer
+// way is a literal in range, a field of every element when the index of an array of structs
+// (rooted at the variable) stays in range, else the whole variable; false for a place behind
+// a pointer
 bool PlaceCell(const Pass& p, ExprId place, Cell& cell, bool& exact) {
     const Expr& e = At(p, place);
     switch (e.kind) {
@@ -46,23 +48,36 @@ bool PlaceCell(const Pass& p, ExprId place, Cell& cell, bool& exact) {
             return false;
         }
         const Type& array = TypeOf(*p.program, At(p, e.a).type);
+        std::uint32_t size = TypeOf(*p.program, e.type).size;
         std::uint16_t index = 0;
-        if (!exact || !ConstValue(*p.program, e.b, index) || index >= array.count) {
-            exact = false;
-            cell = WholeVar(p, cell.var);
+        if (exact && ConstValue(*p.program, e.b, index) && index < array.count) {
+            cell.lo += index * size;
+            cell.hi = cell.lo + size;
             return true;
         }
-        cell.lo += index * TypeOf(*p.program, e.type).size;
-        cell.hi = cell.lo + TypeOf(*p.program, e.type).size;
+        std::int32_t lo = 0;
+        std::int32_t hi = 0;
+        ShapeRange(p, e.b, lo, hi);
+        bool whole = At(p, e.a).kind == ExprKind::VarRef;
+        bool fields = KindOf(*p.program, e.type) == TypeKind::Struct && whole && lo >= 0 &&
+                      hi < static_cast<std::int32_t>(array.count);
+        exact = false;
+        cell = WholeVar(p, cell.var);
+        if (fields) {
+            cell.stride = size;
+            cell.hi = size;
+        }
         return true;
     }
     case ExprKind::Field:
         if (!PlaceCell(p, e.a, cell, exact)) {
             return false;
         }
-        if (exact) {
+        if (exact || (cell.stride != 0 && cell.lo == 0 && cell.hi == cell.stride)) {
             cell.lo += e.value;
             cell.hi = cell.lo + TypeOf(*p.program, e.type).size;
+        } else if (cell.stride != 0) {
+            cell = WholeVar(p, cell.var);
         }
         return true;
     default:
