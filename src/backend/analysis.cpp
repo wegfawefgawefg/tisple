@@ -77,13 +77,16 @@ std::uint32_t ExprSize(const Program& program, ExprId id) {
 
 bool HasWrites(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
-        return e.kind == ExprKind::Call || e.kind == ExprKind::Store ||
-               e.kind == ExprKind::StoreField || e.kind == ExprKind::Set || e.kind == ExprKind::Jsr;
+        return e.kind == ExprKind::Call || e.kind == ExprKind::CallPtr ||
+               e.kind == ExprKind::Store || e.kind == ExprKind::StoreField ||
+               e.kind == ExprKind::Set || e.kind == ExprKind::Jsr;
     });
 }
 
 bool HasCalls(const Program& program, ExprId id) {
-    return AnyExpr(program, id, [](const Expr& e) { return e.kind == ExprKind::Call; });
+    return AnyExpr(program, id, [](const Expr& e) {
+        return e.kind == ExprKind::Call || e.kind == ExprKind::CallPtr;
+    });
 }
 
 bool UsesRuntime(const Program& program, ExprId id, const std::vector<IndexAlias>& aliases) {
@@ -94,7 +97,8 @@ bool UsesRuntime(const Program& program, ExprId id, const std::vector<IndexAlias
         }
         bool arith =
             e.kind == ExprKind::Binary && (e.op == Op::Mul || e.op == Op::Div || e.op == Op::Mod);
-        return arith || e.kind == ExprKind::Call || e.kind == ExprKind::Jsr;
+        return arith || e.kind == ExprKind::Call || e.kind == ExprKind::CallPtr ||
+               e.kind == ExprKind::Jsr;
     });
 }
 
@@ -108,6 +112,7 @@ bool HasEffects(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         switch (e.kind) {
         case ExprKind::Call:
+        case ExprKind::CallPtr: // FoldConstants runs before LowerIndirectCalls
         case ExprKind::Store:
         case ExprKind::StoreField:
         case ExprKind::Set:
@@ -142,8 +147,9 @@ bool MayWriteVar(const Program& program, ExprId id, std::int32_t var) {
         if (e.kind == ExprKind::Let && e.ref == var) {
             return true;
         }
-        return shared && (e.kind == ExprKind::Call || e.kind == ExprKind::Store ||
-                          e.kind == ExprKind::StoreField || e.kind == ExprKind::Jsr);
+        return shared && (e.kind == ExprKind::Call || e.kind == ExprKind::CallPtr ||
+                          e.kind == ExprKind::Store || e.kind == ExprKind::StoreField ||
+                          e.kind == ExprKind::Jsr);
     });
 }
 
