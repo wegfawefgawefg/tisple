@@ -248,6 +248,10 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     c.Mem(Mn::LDA, 0xC082);  // language card: rom reads, no writes
     c.Imm(Mn::LDX, 0xFF);
     c.Op(Mn::TXS);
+    if (plan.slot_at != 0) {
+        c.Mem(Mn::LDA, kSlot);
+        c.Mem(Mn::STA, plan.slot_at);
+    }
     c.Imm(Mn::LDA, 0);
     c.Op(Mn::TAX);
     c.Op(Mn::TAY);

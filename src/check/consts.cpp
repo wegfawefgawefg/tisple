@@ -190,6 +190,9 @@ void EvalConst(Checker& ck, std::int32_t index) {
         ok = false;
     } else if (ok && done.var >= 0) {
         ck.out->vars[static_cast<std::size_t>(done.var)].placement = holder.placement;
+        if (holder.placement.on_disk || holder.placement.interleave != 0) {
+            ok = MoveToDisk(ck, done, *option);
+        }
     } else if (ok && option) {
         Err(ck, *option,
             "placement options are for const tables and top-level lets; " + done.name +

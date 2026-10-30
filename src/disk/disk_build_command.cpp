@@ -112,8 +112,7 @@ bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
     return args.path != nullptr && (run || !args.disk.empty());
 }
 
-bool CompileFor(const DiskBuildArgs& args, Compiled& compiled) {
-    Program program;
+bool CompileFor(const DiskBuildArgs& args, Program& program, Compiled& compiled) {
     std::vector<Diagnostic> errors;
     if (!BuildProgram(args.path, LoadOptions(), program, errors) ||
         !CompileProgram(program, args.options, compiled, errors)) {
@@ -128,6 +127,26 @@ bool CompileFor(const DiskBuildArgs& args, Compiled& compiled) {
         std::fputs(ListProgram(program, compiled).c_str(), stdout);
     }
     return true;
+}
+
+// what the program adds to its disk: its tables :on disk, and lib/disk's reader where the
+// library keeps room for it (disk.reader, and disk.work for its tables)
+BootExtras ExtrasFor(const Program& program) {
+    BootExtras extras;
+    extras.tables = &program.disk_tables;
+    std::int32_t reader = FindVar(program, "disk.reader");
+    if (reader >= 0) {
+        const Var& var = program.vars[static_cast<std::size_t>(reader)];
+        extras.reader = var.placement.address;
+        extras.reader_room = TypeOf(program, var.type).size;
+    }
+    std::int32_t work = FindVar(program, "disk.work");
+    if (work >= 0) {
+        const Var& var = program.vars[static_cast<std::size_t>(work)];
+        extras.work = var.placement.address;
+        extras.work_room = TypeOf(program, var.type).size;
+    }
+    return extras;
 }
 
 } // namespace
@@ -160,8 +179,9 @@ int RunBuildDiskCommand(int argc, char** argv) {
                      "a tisple.project at the project root lets tisple build run with no file\n");
         return 1;
     }
+    Program program;
     Compiled compiled;
-    if (!CompileFor(args, compiled)) {
+    if (!CompileFor(args, program, compiled)) {
         return 1;
     }
     if (!args.binary.empty() && !compiled.segments.empty()) {
@@ -177,7 +197,8 @@ int RunBuildDiskCommand(int argc, char** argv) {
     BootDiskInfo info;
     std::string error;
     MakeDiskFolder(args.disk);
-    if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error)) {
+    if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error,
+                       ExtrasFor(program))) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -194,8 +215,9 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
                      "a tisple.project at the project root lets tisple run run with no file\n");
         return 1;
     }
+    Program program;
     Compiled compiled;
-    if (!CompileFor(args, compiled)) {
+    if (!CompileFor(args, program, compiled)) {
         return 1;
     }
     if (compiled.main < 0) {
@@ -205,7 +227,8 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     std::unique_ptr<DiskSectors> disk = std::make_unique<DiskSectors>();
     BootDiskInfo info;
     std::string error;
-    if (!MakeBootDisk(ProgramSegments(compiled), compiled.origin, *disk, info, error)) {
+    if (!MakeBootDisk(ProgramSegments(compiled), compiled.origin, *disk, info, error,
+                      ExtrasFor(program))) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }

@@ -24,6 +24,7 @@ void UseBootDiskLayout(BuildOptions& options);
 // a self-booting disk image file for a program's segments (the first holds entry), with a
 // line saying what is on it
 bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& segments,
-                   uint16_t entry, BootDiskInfo& info, std::string& error);
+                   uint16_t entry, BootDiskInfo& info, std::string& error,
+                   const BootExtras& extras = BootExtras());
 
 } // namespace tisple

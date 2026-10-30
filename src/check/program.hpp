@@ -108,7 +108,8 @@ enum class VarKind : std::uint8_t {
     Local,
 };
 
-// :address, :align, :boundary, :in aux and :reserve on a top-level let; 0 means not given
+// :address, :align, :boundary, :in aux and :reserve on a top-level let, :on disk and
+// :interleave on a const table; 0 means not given
 struct Placement {
     bool has_address = false;
     std::uint16_t address = 0;
@@ -116,6 +117,8 @@ struct Placement {
     std::uint32_t boundary = 0;
     bool in_aux = false;  // :in aux: in auxiliary memory, reached only through lib/auxmem
     bool reserve = false; // :reserve: memory the program reaches by address; not a variable
+    bool on_disk = false; // :on disk: the bytes live on the boot disk; the var is their record
+    std::uint8_t interleave = 0; // :interleave n with :on disk: physical sectors apart (0: 2)
 };
 
 // an address the link knows, inside a var's initial bytes (Var::init holds zeros there): a
@@ -262,6 +265,17 @@ struct ModuleInfo {
     std::uint32_t file = 0;
 };
 
+// a const table placed :on disk (docs/disks.md, Disk tables): its bytes go on the boot disk,
+// and its var holds the record lib/disk reads it by (disk/disk_tables.hpp)
+struct DiskTable {
+    std::int32_t var = -1;
+    std::vector<std::uint8_t> bytes;
+    int interleave = 2;
+    // where each 256-byte piece is, in order: the track and the physical sector
+    std::vector<std::uint8_t> tracks;
+    std::vector<std::uint8_t> sectors;
+};
+
 struct Program {
     Sources sources;
     std::vector<ModuleInfo> modules;
@@ -274,9 +288,10 @@ struct Program {
     std::vector<Expr> exprs;
     std::vector<ExprId> lists;
     std::vector<Clause> clauses;
-    std::vector<Signature> signatures; // of (fn ...) types, by Type::decl
-    std::int32_t main = -1;            // main in the entry module, if any
-    std::int32_t handler = -1;         // the function marked :interrupt, if any
+    std::vector<Signature> signatures;  // of (fn ...) types, by Type::decl
+    std::vector<DiskTable> disk_tables; // in declaration order, placed from the disk's end
+    std::int32_t main = -1;             // main in the entry module, if any
+    std::int32_t handler = -1;          // the function marked :interrupt, if any
 };
 
 bool IsIntegerKind(TypeKind kind);
