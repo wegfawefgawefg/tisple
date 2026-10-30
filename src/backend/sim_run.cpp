@@ -32,10 +32,10 @@ bool BySwitch(const SimRunner& run) {
 
 std::uint8_t IoRead(void* ctx, std::uint16_t address) {
     SimRunner& run = *static_cast<SimRunner*>(ctx);
-    // slot rom space, never the program's I/O: with data at $D000 in the card, an index from
+    // slot rom space, not the program's I/O: with data at $D000 in the card, an index from
     // below it ((at a (- i 1)) is a-1,Y) crosses a page, and the NMOS cpu's dummy read of the
     // unfixed address lands in $CF00-$CFFF
-    if (run.card && address >= 0xC100) {
+    if (run.card && address >= 0xCF00) {
         return 0;
     }
     if ((address & 0xFFF0) == 0xC080 && BySwitch(run)) {
