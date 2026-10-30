@@ -135,6 +135,12 @@ EMSCRIPTEN_KEEPALIVE double tp_cycles() {
     return g_player.a ? static_cast<double>(Cycles(*g_player.a)) : 0;
 }
 
+// a byte of memory as the program sees it, without side effects: for headless checks that
+// play a game by its state (the page itself never reads the program's memory)
+EMSCRIPTEN_KEEPALIVE int tp_peek(int addr) {
+    return g_player.a ? PeekMemory(*g_player.a, static_cast<uint16_t>(addr)) : 0;
+}
+
 EMSCRIPTEN_KEEPALIVE int tp_stopped() {
     return g_player.a && g_player.a->stopped ? 1 : 0;
 }

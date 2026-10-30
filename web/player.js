@@ -4,7 +4,8 @@
 // (tisple machine --keys). The game comes from the server (serve.py): games/<name>/game.json
 // names its disk, its Mockingboard slot and its buttons. On a static site (web/pages.py,
 // games/index.json has "static": true) there is no server to take logs: no log, and a
-// games button goes back to the picker.
+// games button goes back to the picker. The buttons, the bar's letters and the layout are
+// pad.js's.
 
 "use strict";
 
@@ -12,14 +13,12 @@ const CPU_HZ = 14318181.8 * 65 / 912;
 const CYCLES_PER_FRAME = 17030;
 const AUDIO_RATE = 44100;
 const LOOKS = ["color", "ntsc", "mono"];
-const KEY_NAMES = { RETURN: 13, ESC: 27, SPACE: 32, LEFT: 8, RIGHT: 21, UP: 11, DOWN: 10,
-                    TAB: 9, DELETE: 127 };
 
 const ui = {
     canvas: document.getElementById("screen"),
     start: document.getElementById("start"),
-    pad: document.getElementById("pad"),
     keyboard: document.getElementById("keyboard"),
+    side: document.getElementById("side"),
     name: document.getElementById("name"),
     look: document.getElementById("look"),
     kb: document.getElementById("kb"),
@@ -45,18 +44,23 @@ const state = {
     logs: true,       // false on a static site: nowhere to post them
 };
 
-function setStatus(text) {
-    ui.status.textContent = text;
+// the bar's and the start's words, in the machine's letters (pad.js)
+const words = {
+    name: makeLabel("Tisple ][", 2),
+    rec: makeLabel("", 2),
+    look: makeLabel(LOOKS[0], 2),
+    kb: makeLabel("abc", 2),
+    send: makeLabel("send log", 2),
+    games: makeLabel("games", 2),
+    start: makeLabel("tap to start", 3),
+    status: makeLabel("", 1),
+};
+for (const key of Object.keys(words)) {
+    ui[key].appendChild(words[key]);
 }
 
-function keyCode(spec) {
-    if (typeof spec === "number") {
-        return spec;
-    }
-    if (KEY_NAMES[spec] !== undefined) {
-        return KEY_NAMES[spec];
-    }
-    return spec.toUpperCase().charCodeAt(0);
+function setStatus(text) {
+    setLabel(words.status, text);
 }
 
 // input: every press and release goes to the machine and the log
@@ -76,7 +80,7 @@ function press(code) {
     state.m._tp_key_down(code);
     state.log.push([state.m._tp_cycles(), code]);
     if (state.logs) {
-        ui.rec.textContent = "rec " + state.log.length;
+        setLabel(words.rec, "rec " + state.log.length);
     }
 }
 
@@ -86,51 +90,6 @@ function release() {
     }
     state.m._tp_key_up();
     state.log.push([state.m._tp_cycles(), -1]);
-}
-
-function makeKey(parent, label, code, sub, wide) {
-    const el = document.createElement("div");
-    el.className = "key" + (wide ? " wide" : "");
-    el.innerHTML = label + (sub ? "<small>" + sub + "</small>" : "");
-    el.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-        el.setPointerCapture(e.pointerId);
-        el.classList.add("down");
-        if (navigator.vibrate) {
-            navigator.vibrate(8);
-        }
-        press(code);
-    });
-    const up = () => {
-        if (el.classList.contains("down")) {
-            el.classList.remove("down");
-            release();
-        }
-    };
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-    parent.appendChild(el);
-}
-
-function buildPad(game) {
-    ui.pad.style.setProperty("--cols", game.columns || 5);
-    for (const b of game.buttons) {
-        makeKey(ui.pad, b.label, keyCode(b.key), b.sub, b.wide);
-    }
-    const rows = ["1234567890", "QWERTYUIOP", "ASDFGHJKL;", "ZXCVBNM,./"];
-    for (const row of rows) {
-        for (const ch of row) {
-            makeKey(ui.keyboard, ch, ch.charCodeAt(0));
-        }
-    }
-    makeKey(ui.keyboard, "esc", 27);
-    makeKey(ui.keyboard, "space", 32, "", true);
-    makeKey(ui.keyboard, "&larr;", 8);
-    makeKey(ui.keyboard, "&rarr;", 21);
-    makeKey(ui.keyboard, "&uarr;", 11);
-    makeKey(ui.keyboard, "&darr;", 10);
-    makeKey(ui.keyboard, "del", 127);
-    makeKey(ui.keyboard, "ret", 13, "", true);
 }
 
 // taps on the screen itself: the game's taps (game.json "taps") are boxes in hi-res pixels,
@@ -173,7 +132,7 @@ ui.canvas.addEventListener("pointerdown", (e) => {
     if (navigator.vibrate) {
         navigator.vibrate(8);
     }
-    press(keyCode(t.key));
+    press(padKeyCode(t.key));
 });
 const tapUp = () => {
     if (held_tap) {
@@ -347,7 +306,7 @@ function tick(now) {
         setStatus("sound is " + state.audio.state + ": tap a button");
     } else if (state.m._tp_stopped()) {
         setStatus("the program stopped");
-    } else if (ui.status.textContent === "loading...") {
+    } else if (words.status.dataset.text === "LOADING...") {
         setStatus("");
     }
 }
@@ -395,9 +354,9 @@ async function boot() {
     }
     state.game = await (await fetch("games/" + name + "/game.json", { cache: "no-store" })).json();
     state.game.name = name;
-    ui.name.textContent = state.game.title || name;
+    setLabel(words.name, state.game.title || name);
     document.title = state.game.title || name;
-    buildPad(state.game);
+    padSetup(state.game, press, release);
     const disk = new Uint8Array(await (await fetch("games/" + name + "/" + state.game.disk,
                                                    { cache: "no-store" })).arrayBuffer());
     state.m = await TispleMachine();
@@ -447,9 +406,13 @@ ui.start.addEventListener("pointerdown", async () => {
 });
 ui.look.addEventListener("click", () => {
     state.look = (state.look + 1) % LOOKS.length;
-    ui.look.textContent = LOOKS[state.look];
+    setLabel(words.look, LOOKS[state.look]);
 });
-ui.kb.addEventListener("click", () => ui.keyboard.classList.toggle("open"));
+ui.kb.addEventListener("click", () => {
+    ui.keyboard.classList.toggle("open");
+    ui.side.classList.toggle("kb", ui.keyboard.classList.contains("open"));
+    layout();
+});
 ui.send.addEventListener("click", () => sendLog(false));
 
 boot().catch((err) => setStatus("could not start: " + err.message));
