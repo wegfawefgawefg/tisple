@@ -8,8 +8,8 @@
 ;   (disk.read_with dst table disk.AUX step)              step, a (fn () void), after each
 ;                                                          sector but the last
 ; each gives disk.DONE (0) when every byte is in, or an error: disk.NO_CARD, NO_DISK,
-; BAD_SECTOR, BAD_TRACK. Exactly the table's bytes are written. About 9 KB a second; step has
-; about 9,000 cycles a sector before the read slows (docs/disks.md, Disk tables). Interrupts
+; BAD_SECTOR, BAD_TRACK. Exactly the table's bytes are written. 8.9 KB a second; step has
+; about 8,700 cycles a sector before the read slows (docs/disks.md, Disk tables). Interrupts
 ; keep running, held off while a sector is read (about 12,000 cycles at a time). Not from
 ; step itself, and not with 80STORE on unless dst is clear of the screens.
 
