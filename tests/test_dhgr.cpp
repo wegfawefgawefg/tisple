@@ -14,6 +14,7 @@ namespace {
 
 const char* kProgram = R"(
 (import dhgr)
+(import dhgr_text2)
 (import tables)
 (macro pic_byte (i) (% (* i 29) 127))
 (macro mask_byte (i) (if (= (% i 3) 0) 0x7F 0x0F))

@@ -20,12 +20,14 @@
 ;   (dhgr.aux_rmw addr keep set)    an aux memory byte becomes (byte & keep) | set; gives what
 ;                                   it was
 ;   (dhgr.text_row page row codes)  80 screen codes onto text row 0-23 of the text page the
-;                                   mixed window shows with that page (page 2 shows text page 2)
+;                                   mixed window shows with that page (page 2 shows text page 2:
+;                                   (import dhgr_text2) keeps it out of the program's layout)
 ; A pixel is 4 dots, its colour the dots as a lo-res colour number; 7 pixels take 4 bytes: aux,
 ; main, aux, main. Sprites go on byte columns, a memory at a time: for bank dhgr.AUX pic, mask
 ; and from are in aux memory (lets :in aux), for dhgr.MAIN in main memory. Nothing is clipped.
-; Both pages in both memories ($2000-$5FFF) and text page 2 ($0800-$0BFF, both) are kept for
-; the screens. Page flipping needs 80STORE off, so this library never turns it on: aux memory
+; Both pages in both memories ($2000-$5FFF) are kept for the screens; text page 2 ($0800-$0BFF,
+; the mixed window's text with page 2) only with (import dhgr_text2), so a program that does not
+; show it there has that 1 KB of each memory. Page flipping needs 80STORE off, so this library never turns it on: aux memory
 ; is written with RAMWRT and read with RAMRD, by our 6502 code at $1E00 in both memories (with
 ; RAMRD on the 6502 fetches its instructions from aux memory too). With an interrupt handler,
 ; call (auxmem.guard) first.
@@ -39,8 +41,6 @@
 (let page1_aux (array u8 8192) :address 0x2000 :in aux :reserve)
 (let page2_main (array u8 8192) :address 0x4000 :reserve)
 (let page2_aux (array u8 8192) :address 0x4000 :in aux :reserve)
-(let text2_main (array u8 1024) :address 0x0800 :reserve)
-(let text2_aux (array u8 1024) :address 0x0800 :in aux :reserve)
 
 (const PAGE1 u8 0x20) ; pages by their high byte
 (const PAGE2 u8 0x40)

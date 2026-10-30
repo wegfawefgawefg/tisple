@@ -76,9 +76,11 @@ sprite masked in both memories is about 9,000 cycles.
   mask and `from` page are in aux memory (lets `:in aux`), for `dhgr.MAIN` in main memory.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
-- Reserved in both memories: both pages (`$2000`-`$5FFF`), text page 2 (`$0800`-`$0BFF`) and
-  `$1E00`-`$1FF0` for the code below: about 34 KB of the 128; in main memory `$1D8A`-`$1DD4`
-  for lib/auxcard.
+- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1FF0` for the code
+  below: about 33 KB of the 128; in main memory `$1D8A`-`$1DD4` for lib/auxcard. Text page 2
+  (`$0800`-`$0BFF`, both memories) only with `(import dhgr_text2)`, for a program that shows
+  the mixed window's text with page 2 (examples/dhgr_demo); a full-screen one has that 2 KB
+  (2026-10-30).
 - Aux memory is written with RAMWRT and read with RAMRD. With RAMRD on the 6502 fetches its
   instructions from aux memory too, so everything that runs with a switch on is our own 6502
   code, 497 bytes at `$1E00` in both memories: copied there the first time (main memory's copy
