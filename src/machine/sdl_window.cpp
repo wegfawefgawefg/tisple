@@ -250,7 +250,8 @@ bool AnyKeyHeld() {
 
 // returns false when the window should close
 bool HandleEvent(WindowState& w, Apple2& a, const WindowOptions& options, const SDL_Event& e) {
-    if (HasMouseCard(a) && HandleMouseEvent(w, a, options, e)) {
+    // the mouse card takes the mouse; so do --taps, with or without a card
+    if ((HasMouseCard(a) || !options.taps.empty()) && HandleMouseEvent(w, a, options, e)) {
         return true;
     }
     switch (e.type) {
