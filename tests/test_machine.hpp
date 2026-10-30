@@ -15,6 +15,7 @@ void RunMachineIoTests(TestResults& results);
 void RunMachineRunTests(TestResults& results);
 void RunMachineVideoTests(TestResults& results);
 void RunMachineMouseTests(TestResults& results);
+void RunMachineMockingboardTests(TestResults& results);
 void RunMachineAuxTests(TestResults& results);
 void RunMachineVideo80Tests(TestResults& results);
 

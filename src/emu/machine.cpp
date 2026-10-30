@@ -4,6 +4,11 @@ namespace tisple {
 
 namespace {
 
+void UpdateIrqDue(Machine& m) {
+    uint64_t listed = m.irq_next < m.irq_count ? m.irq_cycles[m.irq_next] : UINT64_MAX;
+    m.irq_due = listed < m.irq_level_at ? listed : m.irq_level_at;
+}
+
 bool InHook(const Machine& m, uint16_t addr) {
     return static_cast<uint32_t>(addr) - m.io.base < m.io.size;
 }
@@ -83,7 +88,7 @@ void StepInstruction(Machine& m) {
     bool taken = false;
     do {
         DoBusCycle(m);
-        bool irq = m.irq_next < m.irq_count && m.cycles >= m.irq_cycles[m.irq_next];
+        bool irq = m.cycles >= m.irq_due;
         if (irq) {
             m.pins |= M6502_IRQ;
         } else {
@@ -94,8 +99,11 @@ void StepInstruction(Machine& m) {
         // high again
         if (irq && !taken && (m.cpu.brk_flags & M6502_BRK_IRQ) != 0) {
             taken = true;
-            m.irq_next++;
             m.irqs_taken++;
+            if (m.irq_next < m.irq_count && m.cycles >= m.irq_cycles[m.irq_next]) {
+                m.irq_next++;
+                UpdateIrqDue(m);
+            }
         }
     } while ((m.pins & M6502_SYNC) == 0);
 }
@@ -109,7 +117,13 @@ bool RequestIrq(Machine& m, uint64_t cycle) {
         return false;
     }
     m.irq_cycles[m.irq_count++] = cycle;
+    UpdateIrqDue(m);
     return true;
+}
+
+void SetIrqLevel(Machine& m, uint64_t at) {
+    m.irq_level_at = at;
+    UpdateIrqDue(m);
 }
 
 } // namespace tisple

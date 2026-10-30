@@ -65,6 +65,12 @@ struct Machine {
     uint32_t irq_count = 0;
     uint32_t irq_next = 0;
     uint64_t irqs_taken = 0;
+    // a device's IRQ output (the Mockingboard's 6522s), set with SetIrqLevel: the line is low
+    // from this cycle count on, until the device moves it again; UINT64_MAX while it is high.
+    // A level, not a request: the cpu takes it again after its RTI if the device still holds it
+    uint64_t irq_level_at = UINT64_MAX;
+    // the first cycle count either of the two holds the line low: one compare a cycle
+    uint64_t irq_due = UINT64_MAX;
 };
 
 void InitMachine(Machine& m);
@@ -82,5 +88,8 @@ void StepInstruction(Machine& m);
 // kMaxIrqs are waiting. Once every request has been taken the list starts again, so a test
 // can go on asking one at a time
 bool RequestIrq(Machine& m, uint64_t cycle);
+
+// a device's IRQ output: low from cycle count `at` on (0: now; UINT64_MAX: high)
+void SetIrqLevel(Machine& m, uint64_t at);
 
 } // namespace tisple

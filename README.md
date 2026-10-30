@@ -74,8 +74,9 @@ every wasted cycle (`tisple gaps`).
   macros that run at compile time (tables, sprites from ASCII art, unrolling).
   See [`docs/language.md`](docs/language.md).
 - **A built-in Apple IIe.** Cycle-exact 6502 (floooh's chips), text, lo-res and
-  hi-res video, speaker sound, keyboard, AppleMouse, Disk II, snapshots.
-  Launches instantly with no ROM; optionally boots Apple's ROMs if you have them.
+  hi-res video, speaker sound, keyboard, AppleMouse, Disk II, Mockingboard,
+  snapshots. Launches instantly with no ROM; optionally boots Apple's ROMs if
+  you have them.
 - **`tisple run game.tsp`** compiles and opens the window in milliseconds;
   headless with `--frames`, `--keys`, `--mouse`, `--screenshot`, `--wav`.
 - **Self-booting disks.** `tisple build game.tsp --disk game.dsk` makes a
@@ -96,6 +97,22 @@ every wasted cycle (`tisple gaps`).
 | Snake | `tisple run programs/snake/main.tsp` |
 | Paint (mouse) | `tisple run programs/paint/main.tsp` |
 | Text viewer (80 columns, 72 KB) | `tisple run programs/text_demo/main.tsp` |
+| Mockingboard music and effects | `tisple run examples/mockingboard_demo.tsp --mockingboard 4 --rom Apple2e.rom` |
+
+## Libraries
+
+In `lib/`; `(import name)` finds them after the program's own folder.
+
+| Library | What |
+| --- | --- |
+| `apple2` | every hardware address by its Apple name, the key codes |
+| `text40`, `text80` | 40- and 80-column text |
+| `lores`, `hgr` | lo-res and hi-res graphics |
+| `auxmem` | copies to and from aux memory |
+| `keys`, `mouse` | the keyboard; the AppleMouse card |
+| `speaker`, `timing` | clicks and tones; frame waits |
+| `mockingboard`, `mockingboard_song` | Mockingboard music and effects from interrupts, songs written as text ([`docs/mockingboard.md`](docs/mockingboard.md)) |
+| `random`, `tables`, `macros` | xorshift; tables and sprites built while compiling; `inc`, `dec`, `unroll` |
 
 ## Build
 

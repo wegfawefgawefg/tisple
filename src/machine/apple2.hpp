@@ -31,7 +31,7 @@
 // - without a rom, $D000-$FFFF and internal $Cxxx rom read as the address's high byte
 // - BRK and undocumented opcodes stop a direct-loaded program (the chip would vector or
 //   execute them); with a rom and no program loaded, they run as on the chip
-// - no interrupts
+// - interrupts: only the Mockingboard raises them (mockingboard.hpp)
 // - the extended 80-column card is always in (a2audit reports 128K); there is no 64 KB iie
 //   and no plain 80-column card with 1 KB
 // - auxiliary memory (memory_map.cpp): the card's ram as Sather describes it, checked for
@@ -55,9 +55,13 @@
 // - mouse card (mouse.hpp): no interrupts (polled mode only), the 6805 by its protocol as
 //   AppleWin models it, answering at once; our own firmware talks to it through an extra
 //   port the real card lacks
+// - mockingboard (mockingboard.hpp): no speech chip, no 6522 shift register or handshake
+//   lines; the AYs' volume steps a 3 dB curve; its sound is rendered from a log of register
+//   writes outside the machine
 
 #include "emu/machine.hpp"
 #include "link/segment.hpp"
+#include "machine/mockingboard_state.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -184,9 +188,10 @@ struct VideoScan {
 // kind, a state struct field below, and its cases in slots.cpp.
 enum class CardKind : uint8_t {
     kEmpty = 0,
-    kTestCard, // registers and rom bytes the tests fill in
-    kDisk2,    // the disk ii controller and its two drives (disk2.cpp)
-    kMouse,    // the applemouse ii interface card (mouse.cpp)
+    kTestCard,     // registers and rom bytes the tests fill in
+    kDisk2,        // the disk ii controller and its two drives (disk2.cpp)
+    kMouse,        // the applemouse ii interface card (mouse.cpp)
+    kMockingboard, // two 6522s and two AY-3-8910s (mockingboard.cpp)
 };
 
 struct TestCardState {
@@ -302,8 +307,9 @@ struct SlotCards {
     CardKind kind[8] = {};
     uint8_t expansion_slot = 0; // whose $C800 rom is selected; 0 for none
     TestCardState test_card;
-    Disk2State disk2;     // one disk ii card, in disk2.slot
-    MouseCardState mouse; // one mouse card, in mouse.slot
+    Disk2State disk2;               // one disk ii card, in disk2.slot
+    MouseCardState mouse;           // one mouse card, in mouse.slot
+    MockingboardState mockingboard; // one Mockingboard, in mockingboard.slot
 };
 
 enum class MachineStop : uint8_t {
