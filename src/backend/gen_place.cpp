@@ -260,6 +260,25 @@ bool IndexOperand(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& place) {
     return true;
 }
 
+bool Resolve(Gen& g, ExprId id, ExprId later, bool emit, PlaceRef& out);
+
+// a load or store through (addr_of x), x a variable or a field or constant element of one: x
+// itself, plus the offset (addr_of keeps x packed), read and written directly
+bool AddressOfPlace(Gen& g, ExprId pointer, std::uint32_t offset, TypeId type, ExprId later,
+                    PlaceRef& out) {
+    const Expr& pe = At(g, BoundTarget(g, pointer));
+    PlaceRef place;
+    if (pe.kind != ExprKind::AddrOf || !Resolve(g, pe.a, later, false, place) || place.pointer ||
+        place.has_index || place.root < 0 || place.cursor.split || place.cursor.stride != 1) {
+        return false;
+    }
+    out = place;
+    out.cursor.address = static_cast<std::uint16_t>((place.cursor.address + offset) & 0xFFFF);
+    out.cursor.root = false;
+    out.type = type;
+    return true;
+}
+
 // what a pointer points at, plus a constant offset; (load (+ p i)) keeps i as an index
 bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, TypeId type,
                     ExprId later, bool emit, PlaceRef& out) {
@@ -270,6 +289,9 @@ bool ResolvePointer(Gen& g, ExprId pointer, bool plain, std::uint32_t offset, Ty
     out.cursor.split = false;
     out.cursor.root = false;
     out.type = type;
+    if (AddressOfPlace(g, pointer, offset, type, later, out)) {
+        return true;
+    }
     const Expr& pe = At(g, pointer);
     std::uint16_t c = 0;
     if (plain && pe.kind == ExprKind::PtrAdd && ConstOf(g, pe.b, c)) {

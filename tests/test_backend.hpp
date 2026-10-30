@@ -128,6 +128,8 @@ void RunBackendRtArgsTests(TestResults& results);
 void RunBackendZeroCmpTests(TestResults& results);
 // loop pointers given back after their loops (test_backend_loop_ptrs.cpp)
 void RunBackendLoopPtrsTests(TestResults& results);
+// places reached through known addresses (test_backend_places.cpp)
+void RunBackendPlacesTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);

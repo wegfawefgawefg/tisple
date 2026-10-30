@@ -30,6 +30,17 @@ void Leaves(const Gen& g, const PlaceRef& place, TypeId type, std::vector<Leaf>&
     }
 }
 
+// the scalars of a struct at a place, in packed order, each readable later
+void CollectPlace(Gen& g, const PlaceRef& source, TypeId type, bool snapshot,
+                  std::vector<Opnd>& out) {
+    std::vector<Leaf> leaves;
+    Leaves(g, source, type, leaves);
+    for (const Leaf& leaf : leaves) {
+        Opnd o = PlaceOpnd(g, leaf.place, leaf.type);
+        out.push_back(snapshot ? Snapshot(g, o) : o);
+    }
+}
+
 // the value's scalars in packed order, each readable later
 void CollectValue(Gen& g, ExprId id, TypeId type, bool snapshot, std::vector<Opnd>& out) {
     const Expr& e = ExprOf(*g.program, id);
@@ -56,12 +67,57 @@ void CollectValue(Gen& g, ExprId id, TypeId type, bool snapshot, std::vector<Opn
         return;
     }
     NormalizePlace(g, source, type);
-    std::vector<Leaf> leaves;
-    Leaves(g, source, type, leaves);
-    for (const Leaf& leaf : leaves) {
-        Opnd o = PlaceOpnd(g, leaf.place, leaf.type);
-        out.push_back(snapshot ? Snapshot(g, o) : o);
+    CollectPlace(g, source, type, snapshot, out);
+}
+
+// a struct copy this big or bigger that would read its value before it writes (through
+// pointers, which may name the same place) goes by a loop: 16 cycles a byte through two
+// pointers, against 21 for each byte read into zero page and stored from there, and a few
+// bytes of code instead of ten a byte
+constexpr std::uint32_t kMinLoopCopy = 6;
+constexpr std::uint32_t kMaxLoopCopy = 128; // Y counts down to 0 with BPL
+
+// every byte at base + 0 to size - 1 with Y: a static place, or a pointer with no offset
+bool LoopPlace(Gen& g, PlaceRef& place) {
+    if (place.has_index || place.cursor.split || place.cursor.stride != 1 || place.delta != 0) {
+        return false;
     }
+    if (place.pointer && place.ptr2.sym >= 0) {
+        return false;
+    }
+    if (place.pointer && place.cursor.address != 0) {
+        PlaceToPointer(g, place);
+    }
+    return true;
+}
+
+AsmValue LoopAddress(const PlaceRef& place) {
+    if (place.pointer) {
+        return place.ptr;
+    }
+    AsmValue address = place.base;
+    address.offset = static_cast<std::int32_t>((address.offset + place.cursor.address) & 0xFFFF);
+    return address;
+}
+
+// the copy as a loop, down from the last byte. Two places of one struct type either are the
+// same or do not overlap: a pointer reaches only inside the variable it was made from
+// (docs/language.md, Pointer provenance), and a struct holds no struct of its own type
+void LoopCopy(Gen& g, const PlaceRef& src, const PlaceRef& dst, std::uint32_t size) {
+    g.loop_factors.resize(static_cast<std::size_t>(g.loop_depth));
+    g.loop_factors.push_back(std::min<std::uint32_t>(size, kMaxWeighedTrips));
+    g.loop_runs.resize(static_cast<std::size_t>(g.loop_depth));
+    g.loop_runs.push_back(size);
+    Emit(g, Mn::LDY, Mode::Imm, Num(static_cast<std::uint16_t>(size - 1)));
+    std::int32_t top = NewLabel(g);
+    PlaceLabel(g, top);
+    g.loop_depth++;
+    Emit(g, Mn::LDA, src.pointer ? Mode::IndY : Mode::AbsY, LoopAddress(src));
+    Emit(g, Mn::STA, dst.pointer ? Mode::IndY : Mode::AbsY, LoopAddress(dst));
+    Emit(g, Mn::DEY, Mode::Imp);
+    Branch(g, Mn::BPL, top);
+    g.loop_depth--;
+    ForgetRegs(g);
 }
 
 } // namespace
@@ -73,8 +129,24 @@ void CopyStruct(Gen& g, ExprId value, const PlaceRef& dst_in, TypeId type) {
     // read everything first whenever the source could overlap the destination
     bool snapshot = HasWrites(program, value) || HasLoads(program, value) || dst.pointer ||
                     dst.root < 0 || ReadsVar(program, value, dst.root);
+    std::uint32_t size = TypeOf(program, type).size;
     std::vector<Opnd> values;
-    CollectValue(g, value, type, snapshot, values);
+    bool loop = snapshot && size >= kMinLoopCopy && size <= kMaxLoopCopy && g.pin[1] < 0 &&
+                !g.wide && ExprOf(program, value).kind != ExprKind::StructLit;
+    if (!loop) {
+        CollectValue(g, value, type, snapshot, values);
+    } else {
+        PlaceRef source;
+        if (!ResolvePlace(g, value, -1, source)) {
+            return;
+        }
+        NormalizePlace(g, source, type);
+        if (LoopPlace(g, source) && LoopPlace(g, dst)) {
+            LoopCopy(g, source, dst, size);
+            return;
+        }
+        CollectPlace(g, source, type, snapshot, values);
+    }
     std::vector<Leaf> leaves;
     Leaves(g, dst, type, leaves);
     if (values.size() != leaves.size()) {

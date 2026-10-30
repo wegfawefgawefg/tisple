@@ -1,3 +1,10 @@
+// Pointers to known places. A global pointer nothing sets, whose start value is the address of a
+// variable (or an element of an array) of its element type, is that address wherever it is
+// read: (let ptr_glob (ptr Rec) (addr_of glob_rec)) ... (load ptr_glob int_comp) is
+// (load (addr_of glob_rec) int_comp), which the backend reads directly (Dhrystone). So is a
+// pointer local one let sets to the address of a variable of its element type (an inlined
+// call's pointer parameter).
+//
 // Pointers to known elements (docs/midlevel-optimizer.md, slice 6): a pointer local one let
 // sets to the address of an element of a global array at a literal index, never set again nor
 // its address taken, names that element; a load or store through it, or through it plus or
@@ -29,8 +36,9 @@ struct Element {
 struct Pointers {
     Pass* p = nullptr;
     std::int32_t function = -1;
-    std::unordered_map<std::int32_t, Element> named; // by pointer local
-    std::unordered_map<std::int32_t, int> writes;    // by local: its lets and sets
+    std::unordered_map<std::int32_t, Element> named;      // by pointer local
+    std::unordered_map<std::int32_t, int> writes;         // by local: its lets and sets
+    std::unordered_map<std::int32_t, std::int32_t> whole; // by pointer local: the var it names
     std::uint64_t changes = 0;
 };
 
@@ -44,6 +52,13 @@ void NoteLet(Pointers& ps, const Expr& e) {
         return;
     }
     const Expr& value = At(p, e.a);
+    // (let q (ptr t) (addr_of x)), x a variable of type t: q is that address everywhere
+    if (value.kind == ExprKind::AddrOf && At(p, value.a).kind == ExprKind::VarRef &&
+        At(p, value.a).type == TypeOf(*p.program, v.type).elem &&
+        !Hardware(VarOf(p, At(p, value.a).ref))) {
+        ps.whole[e.ref] = At(p, value.a).ref;
+        return;
+    }
     if (value.kind == ExprKind::VarRef) {
         auto from = ps.named.find(value.ref);
         if (from != ps.named.end() && VarOf(p, value.ref).type == v.type) {
@@ -168,6 +183,104 @@ void Rewrite(Pointers& ps, ExprId id, bool shared) {
     EachChild(p, e, [&](ExprId child) { Rewrite(ps, child, shared); });
 }
 
+// a global pointer nothing ever sets, whose start value is the address of a variable of its
+// element type, or of an element of an array of them: the address of that place
+struct FixedPointer {
+    std::int32_t target = -1;
+    bool element = false;
+    std::uint32_t index = 0;
+};
+
+void CountGlobalSets(const Pass& p, ExprId id, std::vector<bool>& set) {
+    const Expr& e = At(p, id);
+    if (e.kind == ExprKind::Set) {
+        std::int32_t root = PlaceRoot(p, e.a);
+        if (root >= 0) {
+            set[static_cast<std::size_t>(root)] = true;
+        }
+    }
+    EachChild(p, e, [&](ExprId child) { CountGlobalSets(p, child, set); });
+}
+
+// by var: where each fixed pointer points (target -1 for the rest). Only with a main (with none,
+// any global may be written between calls from outside) and no machine code
+std::vector<FixedPointer> FindFixedPointers(const Pass& p) {
+    const Program& program = *p.program;
+    std::vector<FixedPointer> out(program.vars.size());
+    if (program.main < 0) {
+        return out;
+    }
+    for (const Summary& s : p.summaries) {
+        if (s.jsr || s.unknown) {
+            return out;
+        }
+    }
+    std::vector<bool> set(program.vars.size(), false);
+    for (const Function& fn : program.functions) {
+        if (fn.body >= 0) {
+            CountGlobalSets(p, fn.body, set);
+        }
+    }
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        const Var& var = program.vars[v];
+        if (var.kind != VarKind::Global || KindOf(program, var.type) != TypeKind::Ptr || set[v] ||
+            var.address_taken || Hardware(var) || var.addr_slots.size() != 1 ||
+            var.addr_slots[0].offset != 0 || var.addr_slots[0].var < 0) {
+            continue;
+        }
+        const AddrSlot& slot = var.addr_slots[0];
+        TypeId elem = TypeOf(program, var.type).elem;
+        const Var& target = program.vars[static_cast<std::size_t>(slot.var)];
+        const Type& t = TypeOf(program, target.type);
+        if (target.type == elem && slot.at == 0) {
+            out[v].target = slot.var;
+            continue;
+        }
+        std::uint32_t size = TypeOf(program, elem).size;
+        if (t.kind == TypeKind::Array && t.elem == elem && size > 0 && slot.at % size == 0 &&
+            slot.at / size < t.count) {
+            out[v] = FixedPointer{slot.var, true, slot.at / size};
+        }
+    }
+    return out;
+}
+
+// reads of the fixed pointers become (addr_of x) or (addr_of (at a k)), which the backend
+// reads and writes directly
+void RewriteFixed(Pass& p, const std::vector<FixedPointer>& fixed, ExprId id, bool shared,
+                  std::uint64_t& changes) {
+    shared = shared || Shared(p, id);
+    Expr e = At(p, id);
+    if (e.kind == ExprKind::VarRef && !shared &&
+        fixed[static_cast<std::size_t>(e.ref)].target >= 0 &&
+        Allow(p, "read of a pointer that never changes", id, e.ref)) {
+        const FixedPointer& f = fixed[static_cast<std::size_t>(e.ref)];
+        ExprId place = -1;
+        if (f.element) {
+            place = ElementPlace(p, Element{f.target, f.index}, e.loc);
+        } else {
+            Expr root;
+            root.kind = ExprKind::VarRef;
+            root.type = VarOf(p, f.target).type;
+            root.ref = f.target;
+            root.loc = e.loc;
+            place = NewExpr(p, root);
+        }
+        Expr addr;
+        addr.kind = ExprKind::AddrOf;
+        addr.type = e.type;
+        addr.a = place;
+        addr.loc = e.loc;
+        ExprId made = NewExpr(p, addr);
+        Retain(p, made);
+        ReplaceWith(p, id, made);
+        Release(p, made);
+        changes++;
+        return;
+    }
+    EachChild(p, e, [&](ExprId child) { RewriteFixed(p, fixed, child, shared, changes); });
+}
+
 } // namespace
 
 std::uint64_t PointersToElements(Pass& p) {
@@ -185,6 +298,31 @@ std::uint64_t PointersToElements(Pass& p) {
         FindLets(ps, body);
         if (!ps.named.empty()) {
             Rewrite(ps, body, false);
+        }
+    }
+    // the fixed pointers: the globals, then each function's locals too
+    std::vector<FixedPointer> fixed = FindFixedPointers(p);
+    for (std::size_t f = 0; f < p.program->functions.size(); f++) {
+        ExprId body = p.program->functions[f].body;
+        if (body < 0) {
+            continue;
+        }
+        ps.named.clear();
+        ps.writes.clear();
+        ps.whole.clear();
+        CountWrites(ps, body);
+        FindLets(ps, body);
+        std::vector<FixedPointer> here = fixed;
+        bool any = false;
+        for (const FixedPointer& g : fixed) {
+            any = any || g.target >= 0;
+        }
+        for (const auto& [local, target] : ps.whole) {
+            here[static_cast<std::size_t>(local)].target = target;
+            any = true;
+        }
+        if (any) {
+            RewriteFixed(p, here, body, false, ps.changes);
         }
     }
     return ps.changes;

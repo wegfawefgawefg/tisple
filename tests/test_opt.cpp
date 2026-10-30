@@ -145,9 +145,10 @@ void DeadLets(TestResults& results) {
     // read later: kept
     ExpectCount(results, With("(fn f ((x u8)) u8 (let d u8 (/ x 3)) (+ d 1))"), "t.f",
                 ExprKind::Let, 1);
-    // a local whose address is taken is read through the pointer
+    // a local whose address is taken is read through the pointer, which is that address
+    // wherever it is read (pointers.cpp): its let goes
     std::string pointed = With("(fn f () u8 (let d u8 5) (let p (ptr u8) (addr_of d)) (load p))");
-    ExpectCount(results, pointed, "t.f", ExprKind::Let, 2);
+    ExpectCount(results, pointed, "t.f", ExprKind::Let, 1);
     CheckProgram(results, pointed, "t.f", {});
 }
 
