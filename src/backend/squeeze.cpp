@@ -2,6 +2,8 @@
 
 #include "backend/squeeze.hpp"
 
+#include "backend/card_bank.hpp"
+
 #include <algorithm>
 
 namespace tisple {
@@ -44,7 +46,55 @@ Squeezed NoteSqueezed(const Backend& be, const std::vector<bool>& kept, const Si
         out.bytes += kept[f] ? Bytes(be.as, be.code[f]) : 0;
     }
     out.bytes += Bytes(be.as, runtime) + (out.quarter ? 1024 : 0);
+    constexpr std::uint64_t kMax = std::uint64_t(1) << 56;
+    for (std::size_t f = 0; f < be.code.size(); f++) {
+        std::uint64_t runs = be.fn_runs[f];
+        std::uint64_t cost = be.fn_cost[f];
+        if (kept[f] && runs > 0 && cost > 0) {
+            out.cycles = cost > kMax / runs ? kMax : std::min(kMax, out.cycles + cost * runs);
+        }
+    }
     return out;
+}
+
+Diagnostic Bank1Note(const Program& program, const Squeezed& banked, const Squeezed* other,
+                     bool chose_bank1) {
+    std::uint64_t stubs = banked.crossings * kStubCycles;
+    std::string names;
+    for (std::size_t i = 0; i < banked.bank1.size() && i < 8; i++) {
+        names += (i == 0 ? "" : ", ") +
+                 program.functions[static_cast<std::size_t>(banked.bank1[i])].name;
+    }
+    if (banked.bank1.size() > 8) {
+        names += ", and " + std::to_string(banked.bank1.size() - 8) + " more";
+    }
+    std::string text;
+    std::string bank = Count(banked.bank1.size(), "function", "functions") + " (" +
+                       std::to_string(banked.bank1_bytes) + " bytes: " + names +
+                       ") from the language card's bank 1, called through stubs";
+    std::string cost = "about " + std::to_string(stubs) + " cycles a run in bank switches (" +
+                       std::to_string(banked.crossings) +
+                       " crossings, loops weighed as for "
+                       "code choices)";
+    if (chose_bank1) {
+        text = "the program does not fit main memory and the language card with the usual size "
+               "budget, so it runs " +
+               bank + ": " + cost + ".";
+        if (other != nullptr) {
+            text += " Without bank 1 it would fit with squeeze " + std::to_string(other->squeeze) +
+                    " and run about " +
+                    std::to_string(other->cycles - std::min(other->cycles, banked.cycles)) +
+                    " cycles a run slower, the switches counted.";
+        } else {
+            text += " Without bank 1, a tighter size budget would not fit or would run slower.";
+        }
+    } else {
+        text = "code in the language card's bank 1 would fit the program too: " + bank + ", " +
+               cost + "; the tighter size budget costs less, so it is not used.";
+    }
+    Diagnostic note;
+    note.message = text;
+    return note;
 }
 
 Diagnostic SqueezeNote(const Program& program, const Squeezed& usual, const Squeezed& squeezed) {

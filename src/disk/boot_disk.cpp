@@ -40,6 +40,10 @@ bool CheckSegment(const MemorySegment& segment, std::string& error) {
         error = "a language card segment loads in $D000-$FFFF, not " + SegmentRange(segment);
         return false;
     }
+    if (segment.bank == MemoryBank::kCardBank1 && (start < 0xD000 || end > 0xE000)) {
+        error = "a language card bank 1 segment loads in $D000-$DFFF, not " + SegmentRange(segment);
+        return false;
+    }
     if (segment.bank == MemoryBank::kAux && (start < 0x0200 || end > 0xC000)) {
         error = "an aux segment loads in $0200-$BFFF, not " + SegmentRange(segment);
         return false;
@@ -53,6 +57,8 @@ LoaderBank BankFor(MemoryBank bank) {
         return LoaderBank::kCard;
     case MemoryBank::kAux:
         return LoaderBank::kAux;
+    case MemoryBank::kCardBank1:
+        return LoaderBank::kCardBank1;
     default:
         return LoaderBank::kMain;
     }

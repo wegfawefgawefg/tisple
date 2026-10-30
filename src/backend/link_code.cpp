@@ -81,27 +81,39 @@ std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& sp
     return size;
 }
 
-// spans in order, each whole in the first stretch from the current one on that holds it; the
-// last span is followed by the memory frames. False when they do not fit
 bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
                 const std::vector<AddressRange>& stretches, std::uint32_t mem_frames,
-                std::vector<CodePlace>& places, std::uint32_t& frames_at) {
+                std::vector<CodePlace>& places, std::uint32_t& frames_at, std::size_t first_bank1) {
     places.assign(spans.size(), CodePlace());
+    std::size_t last = first_bank1 < spans.size() ? first_bank1 : spans.size();
+    std::size_t count = first_bank1 < spans.size() ? stretches.size() - 1 : stretches.size();
     std::size_t k = 0;
     std::uint32_t pc = stretches.empty() ? 0 : stretches[0].start;
-    for (std::size_t s = 0; s < spans.size(); s++) {
-        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == spans.size() ? mem_frames : 0);
-        while (k < stretches.size() && pc + need > stretches[k].end) {
+    for (std::size_t s = 0; s < last; s++) {
+        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == last ? mem_frames : 0);
+        while (k < count && pc + need > stretches[k].end) {
             k++;
-            pc = k < stretches.size() ? stretches[k].start : 0;
+            pc = k < count ? stretches[k].start : 0;
         }
-        if (k == stretches.size() || (s == 0 && k != 0)) {
+        if (k == count || (s == 0 && k != 0)) {
             return false; // the startup must be at the origin
         }
         places[s] = CodePlace{k, pc};
         pc += SpanSize(items, spans[s]);
     }
     frames_at = pc;
+    // the language card's bank 1: the last stretch, its own
+    if (last < spans.size()) {
+        k = stretches.size() - 1;
+        pc = stretches[k].start;
+        for (std::size_t s = last; s < spans.size(); s++) {
+            places[s] = CodePlace{k, pc};
+            pc += SpanSize(items, spans[s]);
+        }
+        if (pc > stretches[k].end) {
+            return false;
+        }
+    }
     return true;
 }
 

@@ -1,5 +1,8 @@
 #include "backend/sim_run.hpp"
 
+#include <algorithm>
+#include <utility>
+
 namespace tisple {
 
 namespace {
@@ -7,16 +10,43 @@ namespace {
 // the return address the harness pushes; reaching it means the code returned
 constexpr std::uint16_t kSentinel = 0xFFF0;
 
+// the language card's $D000 bank: the flat memory holds the one switched in, the runner the
+// other. Its switches are the program's own business, not I/O to compare
+void SwitchBank(SimRunner& run, bool bank2) {
+    if (bank2 == run.bank2) {
+        return;
+    }
+    std::uint8_t* d000 = run.machine->mem + 0xD000;
+    for (std::size_t i = 0; i < run.other_bank.size(); i++) {
+        std::swap(d000[i], run.other_bank[i]);
+    }
+    run.bank2 = bank2;
+}
+
+// an access by one of the build's card switches: an absolute operand, read with the
+// instruction's three bytes fetched
+bool BySwitch(const SimRunner& run) {
+    std::uint16_t at = static_cast<std::uint16_t>(run.machine->cpu.PC - 3);
+    return run.card && run.switch_at[at];
+}
+
 std::uint8_t IoRead(void* ctx, std::uint16_t address) {
-    std::vector<IoAccess>& log = *static_cast<std::vector<IoAccess>*>(ctx);
-    std::uint8_t value = IoReadValue(address, log.size());
-    log.push_back(IoAccess{address, value, false});
+    SimRunner& run = *static_cast<SimRunner*>(ctx);
+    if ((address & 0xFFF0) == 0xC080 && BySwitch(run)) {
+        SwitchBank(run, (address & 0x08) == 0);
+        return 0;
+    }
+    if (address == 0xC011 && BySwitch(run)) {
+        return run.bank2 ? 0x80 : 0x00; // RDLCBNK2
+    }
+    std::uint8_t value = IoReadValue(address, run.io.size());
+    run.io.push_back(IoAccess{address, value, false});
     return value;
 }
 
 void IoWrite(void* ctx, std::uint16_t address, std::uint8_t value) {
-    std::vector<IoAccess>& log = *static_cast<std::vector<IoAccess>*>(ctx);
-    log.push_back(IoAccess{address, value, true});
+    SimRunner& run = *static_cast<SimRunner*>(ctx);
+    run.io.push_back(IoAccess{address, value, true});
 }
 
 // JSR from nowhere: the next RTS lands on the sentinel
@@ -31,12 +61,22 @@ void PushReturn(Machine& m, Regs& regs) {
 void Load(SimRunner& run, const Compiled& compiled) {
     run.machine = std::make_unique<Machine>();
     run.io.clear();
+    run.card = compiled.card_ram;
+    run.bank2 = true;
+    run.other_bank.assign(0x1000, 0);
+    run.switch_at.assign(0x10000, false);
+    for (std::uint16_t at : compiled.card_switches) {
+        run.switch_at[at] = true;
+    }
     InitMachine(*run.machine);
     LoadBytes(*run.machine, compiled.origin, compiled.image.data(), compiled.image.size());
-    // the flat memory has no banks: main and language card segments load where they run;
-    // aux data is out of reach here, as it is for code without lib/auxmem
+    // the flat memory holds main ram and the language card with bank 2 at $D000 (the runner
+    // keeps bank 1); aux data is out of reach here, as it is for code without lib/auxmem
     for (const MemorySegment& segment : compiled.segments) {
-        if (segment.bank != MemoryBank::kAux) {
+        if (segment.bank == MemoryBank::kCardBank1) {
+            std::copy(segment.bytes.begin(), segment.bytes.end(),
+                      run.other_bank.begin() + (segment.address - 0xD000));
+        } else if (segment.bank != MemoryBank::kAux) {
             LoadBytes(*run.machine, segment.address, segment.bytes.data(), segment.bytes.size());
         }
     }
@@ -45,7 +85,7 @@ void Load(SimRunner& run, const Compiled& compiled) {
     hook.size = 0x1000;
     hook.read = IoRead;
     hook.write = IoWrite;
-    hook.ctx = &run.io;
+    hook.ctx = &run;
     SetIoHook(*run.machine, hook);
 }
 

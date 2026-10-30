@@ -24,7 +24,14 @@ std::uint8_t IoReadValue(std::uint16_t address, std::size_t index);
 
 struct SimRunner {
     std::unique_ptr<Machine> machine;
-    std::vector<IoAccess> io;
+    std::vector<IoAccess> io; // but the language card's switches, when the program uses it
+    // the language card (Compiled::card_ram): the build's own reads of $C080-$C08F switch the
+    // $D000 bank and of $C011 say which is in (Compiled::card_switches, by the instruction's
+    // address). The flat memory holds that bank, other_bank the other (4 KB)
+    bool card = false;
+    bool bank2 = true;
+    std::vector<std::uint8_t> other_bank;
+    std::vector<bool> switch_at; // by address: an instruction of card_switches
 };
 
 // a fresh machine with the image loaded and the startup run up to JSR main

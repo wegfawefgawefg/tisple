@@ -105,11 +105,12 @@ struct LoaderLabels {
 };
 
 // each segment from the table: first page, pages and bank; 0 pages ends the table. the
-// language card's bank 2 is switched in for writes (two reads of $C083)
+// language card's bank 1 or bank 2 is switched in for writes (two reads of $C08B or $C083)
 void EmitSegmentStart(Loader& l, const LoaderLabels& at, std::int32_t segment, std::int32_t track,
                       std::int32_t finish) {
     Code6502& c = l.c;
     std::int32_t go = c.Label("segment.go");
+    std::int32_t card = c.Label("segment.card");
     c.Place(segment);
     c.Mem(Mn::LDX, kSegment);
     c.MemLabelX(Mn::LDA, at.table, 1);
@@ -125,6 +126,11 @@ void EmitSegmentStart(Loader& l, const LoaderLabels& at, std::int32_t segment, s
     c.Op(Mn::INX);
     c.Op(Mn::INX);
     c.Mem(Mn::STX, kSegment);
+    c.Imm(Mn::CMP, static_cast<int>(LoaderBank::kCardBank1));
+    c.Br(Mn::BNE, card);
+    c.Mem(Mn::BIT, 0xC08B);
+    c.Mem(Mn::BIT, 0xC08B);
+    c.Place(card);
     c.Imm(Mn::CMP, static_cast<int>(LoaderBank::kCard));
     c.Br(Mn::BNE, track);
     c.Mem(Mn::LDA, 0xC083);

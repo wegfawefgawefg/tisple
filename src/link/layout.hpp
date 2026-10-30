@@ -50,6 +50,10 @@ struct LayoutOptions {
     std::vector<AddressRange> reserved;
     // by var id: left out, no address and no bytes (const tables no kept code reaches)
     std::vector<bool> dropped;
+    // by var id: automatic placement keeps it out of `avoid` (the language card's
+    // $D000-$DFFF, for what code in the card's bank 1 reads: backend/card_bank.hpp)
+    std::vector<bool> avoiders;
+    AddressRange avoid;
 };
 
 struct VarPlace {

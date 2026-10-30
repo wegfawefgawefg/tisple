@@ -38,8 +38,13 @@ struct IrqPlan {
 std::vector<bool> HandlerFunctions(const Program& program);
 
 // the entry's items, saving what the kept code of the handler's functions (and the runtime
-// routines it calls) may use of the scratch bytes; the plan's labels
+// routines it calls) may use of the scratch bytes; the plan's labels. With code in the
+// language card's bank 1 (card_bank.hpp) banked has the same entry that also saves which bank
+// is in ($C011), runs the handler with bank 2 in and puts bank 1 back when it was in:
+//
+//                LDA $C011, PHA, BIT $C083     after the CLD
+//                PLA, BMI +3, BIT $C08B        before the LDA $45
 void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<AsmItem>& runtime,
-                  IrqPlan& plan, std::vector<AsmItem>& out);
+                  IrqPlan& plan, std::vector<AsmItem>& out, std::vector<AsmItem>& banked);
 
 } // namespace tisple

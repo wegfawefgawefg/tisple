@@ -1,5 +1,7 @@
 #include "backend/irq.hpp"
 
+#include "backend/card_bank.hpp"
+
 #include <algorithm>
 #include <utility>
 
@@ -125,7 +127,7 @@ std::vector<bool> HandlerFunctions(const Program& program) {
 }
 
 void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<AsmItem>& runtime,
-                  IrqPlan& plan, std::vector<AsmItem>& out) {
+                  IrqPlan& plan, std::vector<AsmItem>& out, std::vector<AsmItem>& banked) {
     const Program& program = *be.program;
     std::vector<bool> handler = HandlerFunctions(program);
     std::vector<Byte> bytes;
@@ -182,11 +184,26 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
         out.push_back(MakeIns(Mn::PLA, Mode::Imp));
         out.push_back(MakeIns(Mn::TAX, Mode::Imp));
     }
+    std::size_t restore = out.size();
     out.push_back(MakeIns(Mn::LDA, Mode::Zp, Num(kIrqSaveA)));
     out.push_back(MakeIns(Mn::RTI, Mode::Imp));
     out.push_back(MakeLabel(plan.saved_sym));
     out.push_back(MakeByte(Num(0)));
     out.push_back(MakeByte(Num(0)));
+
+    // the same with the card's bank saved: after irq.direct, irq.entry and the CLD
+    std::int32_t bank2 = NewSym(be, "irq.bank2", SymRole::Label, -1);
+    banked.assign(out.begin(), out.begin() + 4);
+    banked.push_back(MakeIns(Mn::LDA, Mode::Abs, Num(kBankStatus)));
+    banked.push_back(MakeIns(Mn::PHA, Mode::Imp));
+    banked.push_back(MakeIns(Mn::BIT, Mode::Abs, Num(kBank2Switch)));
+    banked.insert(banked.end(), out.begin() + 4,
+                  out.begin() + static_cast<std::ptrdiff_t>(restore));
+    banked.push_back(MakeIns(Mn::PLA, Mode::Imp));
+    banked.push_back(MakeIns(Mn::BMI, Mode::Rel, SymValue(bank2)));
+    banked.push_back(MakeIns(Mn::BIT, Mode::Abs, Num(kBank1Switch)));
+    banked.push_back(MakeLabel(bank2));
+    banked.insert(banked.end(), out.begin() + static_cast<std::ptrdiff_t>(restore), out.end());
 }
 
 } // namespace tisple

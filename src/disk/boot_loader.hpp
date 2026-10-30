@@ -23,7 +23,8 @@
 // clear of the vectors at $03F0) and zero page $DB-$EF. an aux sector is read to the first
 // page of a main segment, which loads after every aux one. it switches 80store off first,
 // shows text page 1 cleared to spaces but for LOADING in the middle (the screen holes are
-// left alone; nothing loads there), and the language card's bank 2 in to write its segments. then
+// left alone; nothing loads there), and the language card's bank 2 (or bank 1) in to write its
+// segments. then
 // it sets the stack to $FF, A = X = Y = 0, interrupts off, the language card to $C082 (rom
 // reads, as a direct load starts), turns the motor off and calls the origin. if the program
 // returns, the loader shows the text screen and enters the monitor ($FF69); the emulator
@@ -39,8 +40,8 @@
 namespace tisple {
 
 // main memory segments load in $0B00-$BFFF: the loader is at $0800-$0AFF while it runs and
-// uses $0200-$07FF. language card segments load in $D000-$FFFF (bank 2 at $D000), aux ones
-// in $0200-$BFFF of aux memory
+// uses $0200-$07FF. language card segments load in $D000-$FFFF (bank 2 at $D000), the card's
+// bank 1 ones in $D000-$DFFF, aux ones in $0200-$BFFF of aux memory
 constexpr uint32_t kBootLoadLow = 0x0B00;
 constexpr int kBootLoaderSectors = 3; // $0800-$0AFF
 constexpr uint32_t kBootLoadHigh = 0xC000;
@@ -74,8 +75,9 @@ bool FindBootLoader(const DiskTrack& track0, uint16_t& return_pc);
 // the loader itself (boot_loader.cpp): its table names each segment's pages and bank
 enum class LoaderBank : uint8_t {
     kMain = 0,
-    kCard = 1, // the language card's bank 2, switched in for writes
-    kAux = 2,  // read to the bounce page, then copied with RAMWRT on
+    kCard = 1,      // the language card's bank 2, switched in for writes
+    kAux = 2,       // read to the bounce page, then copied with RAMWRT on
+    kCardBank1 = 3, // the language card's bank 1 at $D000-$DFFF, switched in for writes
 };
 
 struct LoaderSegment {

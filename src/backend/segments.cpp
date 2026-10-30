@@ -44,15 +44,17 @@ void AuxSegments(const Program& program, const Layout& layout, const std::vector
     }
 }
 
-std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address) {
+std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address, bool bank1) {
     std::uint32_t at = address - static_cast<std::uint32_t>(compiled.origin);
     if (address >= compiled.origin && at < compiled.image.size()) {
         return compiled.image[at];
     }
     for (const MemorySegment& segment : compiled.segments) {
         std::uint32_t offset = address - static_cast<std::uint32_t>(segment.address);
-        if (segment.bank != MemoryBank::kAux && address >= segment.address &&
-            offset < segment.bytes.size()) {
+        bool memory =
+            bank1 ? segment.bank == MemoryBank::kCardBank1
+                  : segment.bank != MemoryBank::kAux && segment.bank != MemoryBank::kCardBank1;
+        if (memory && address >= segment.address && offset < segment.bytes.size()) {
             return segment.bytes[offset];
         }
     }
