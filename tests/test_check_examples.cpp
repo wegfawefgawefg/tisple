@@ -30,6 +30,7 @@ void RunCheckExampleTests(TestResults& results) {
         "examples/dhgr_demo.tsp",
         "lib/dhgr.tsp",
         "lib/unpack.tsp",
+        "lib/disk.tsp",
     };
     for (const char* file : files) {
         Built built = BuildFile(file);

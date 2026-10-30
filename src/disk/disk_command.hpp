@@ -21,9 +21,14 @@ bool HasDiskFlag(int argc, char** argv);
 // origin; tisple check --disk lays a program out this way too
 void UseBootDiskLayout(BuildOptions& options);
 
+// what a checked program adds to its boot disk: its tables :on disk, and lib/disk's reader
+// where the library keeps room for it (disk.reader and disk.work)
+BootExtras BootExtrasFor(const Program& program);
+
 // a self-booting disk image file for a program's segments (the first holds entry), with a
 // line saying what is on it
 bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& segments,
-                   uint16_t entry, BootDiskInfo& info, std::string& error);
+                   uint16_t entry, BootDiskInfo& info, std::string& error,
+                   const BootExtras& extras = BootExtras());
 
 } // namespace tisple

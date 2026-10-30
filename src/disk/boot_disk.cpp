@@ -3,6 +3,8 @@
 // (boot_loader.hpp)
 
 #include "disk/boot_loader.hpp"
+#include "disk/disk_reader.hpp"
+#include "disk/disk_tables.hpp"
 #include "disk/dos33.hpp"
 
 #include <algorithm>
@@ -121,6 +123,29 @@ std::vector<MemorySegment> DiskSegments(const std::vector<MemorySegment>& segmen
     return out;
 }
 
+// the tables :on disk on their tracks, which the program's must stay below
+bool PutDiskTables(const BootExtras& extras, DiskSectors& disk, BootDiskInfo& info,
+                   std::string& error) {
+    if (extras.tables == nullptr || extras.tables->empty()) {
+        return true;
+    }
+    int first = DiskTablesFirstTrack(*extras.tables);
+    if (first <= info.last_track) {
+        error = "the program takes " + BootTracksText(info) + " and its tables :on disk tracks " +
+                std::to_string(first) + "-" + std::to_string(kBootLastTrack) +
+                "; together they do not fit the disk";
+        return false;
+    }
+    WriteDiskTables(*extras.tables, disk);
+    for (const DiskTable& table : *extras.tables) {
+        for (uint8_t track : table.tracks) {
+            DosReserveTrack(disk, track);
+        }
+    }
+    info.table_track = first;
+    return true;
+}
+
 int NextTrack(int track) {
     track++;
     return track == kBootCatalogTrack ? track + 1 : track;
@@ -128,11 +153,31 @@ int NextTrack(int track) {
 
 } // namespace
 
-bool MakeBootDisk(const std::vector<MemorySegment>& program, uint16_t entry, DiskSectors& disk,
-                  BootDiskInfo& info, std::string& error) {
-    if (program.empty()) {
+bool MakeBootDisk(const std::vector<MemorySegment>& segments_in, uint16_t entry, DiskSectors& disk,
+                  BootDiskInfo& info, std::string& error, const BootExtras& extras) {
+    if (segments_in.empty()) {
         error = "the program is empty";
         return false;
+    }
+    std::vector<MemorySegment> program = segments_in;
+    if (extras.reader != 0) {
+        MemorySegment reader;
+        reader.bank = MemoryBank::kMain;
+        reader.address = extras.reader;
+        if (!BuildDiskReader(extras.reader, reader.bytes, error)) {
+            return false;
+        }
+        if (extras.work + kReaderWork != extras.reader || extras.work_room < kReaderWork) {
+            error = "lib/disk's disk.work must be the 768 bytes just below disk.reader";
+            return false;
+        }
+        if (reader.bytes.size() > extras.reader_room) {
+            error = "lib/disk's reader is " + std::to_string(reader.bytes.size()) +
+                    " bytes, more than the " + std::to_string(extras.reader_room) +
+                    " disk.reader keeps for it";
+            return false;
+        }
+        program.push_back(reader);
     }
     for (size_t i = 0; i < program.size(); i++) {
         if (!CheckSegment(program[i], error)) {
@@ -155,6 +200,7 @@ bool MakeBootDisk(const std::vector<MemorySegment>& program, uint16_t entry, Dis
     }
     LoaderPlan plan;
     plan.entry = entry;
+    plan.slot_at = extras.reader != 0 ? static_cast<uint16_t>(extras.reader + kReaderSlot) : 0;
     info = BootDiskInfo();
     for (const MemorySegment& segment : segments) {
         if (segment.bank == MemoryBank::kMain) {
@@ -206,7 +252,7 @@ bool MakeBootDisk(const std::vector<MemorySegment>& program, uint16_t entry, Dis
     }
     info.first_page = static_cast<uint16_t>(program[0].address >> 8);
     info.segments = segments.size();
-    return true;
+    return PutDiskTables(extras, disk, info, error);
 }
 
 bool MakeBootDisk(const std::vector<uint8_t>& program, uint16_t origin, DiskSectors& disk,

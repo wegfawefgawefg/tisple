@@ -30,6 +30,7 @@
 // returns, the loader shows the text screen and enters the monitor ($FF69); the emulator
 // stops there instead.
 
+#include "check/program.hpp"
 #include "disk/nibble.hpp"
 #include "link/segment.hpp"
 
@@ -56,6 +57,19 @@ struct BootDiskInfo {
     uint32_t pages = 0; // in every segment
     int last_track = 0;
     size_t segments = 0;
+    int table_track = 0; // the first track of the disk tables, 0 without
+};
+
+// what a program that reads its disk adds to the disk (docs/disks.md, Disk tables)
+struct BootExtras {
+    // the program's tables :on disk, placed (disk_tables.hpp): on the last tracks
+    const std::vector<DiskTable>* tables = nullptr;
+    // lib/disk's reader (disk_reader.hpp): loaded there with the program, and the loader
+    // writes the boot slot into it; 0 without. reader_room is what the library keeps for it
+    uint16_t reader = 0;
+    uint32_t reader_room = 0;
+    uint16_t work = 0; // and the room for its bounce page and tables, just below it
+    uint32_t work_room = 0;
 };
 
 // one stretch of main memory from origin: the program's entry
@@ -64,7 +78,7 @@ bool MakeBootDisk(const std::vector<uint8_t>& program, uint16_t origin, DiskSect
 // any number of segments, up to kMaxBootSegments; each starts on a track of its own, loaded
 // in order, then the loader calls entry
 bool MakeBootDisk(const std::vector<MemorySegment>& segments, uint16_t entry, DiskSectors& disk,
-                  BootDiskInfo& info, std::string& error);
+                  BootDiskInfo& info, std::string& error, const BootExtras& extras = BootExtras());
 
 // "track 1" or "tracks 1-3"
 std::string BootTracksText(const BootDiskInfo& info);
@@ -90,6 +104,8 @@ struct LoaderPlan {
     uint16_t entry = 0;
     // where aux sectors are read before their copy: a main memory page loaded after them
     uint8_t bounce_page = 0x0B;
+    // where the loader writes slot * 16 before it calls the entry (lib/disk's reader), 0: none
+    uint16_t slot_at = 0;
     std::vector<LoaderSegment> segments; // from track 1 on, each on a track of its own
 };
 

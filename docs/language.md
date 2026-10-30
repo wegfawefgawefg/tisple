@@ -123,7 +123,7 @@ Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
 `KEY_RETURN`, `KEY_ESC`, `KEY_SPACE`, `KEY_DELETE`). Write `(import apple2 a2)`
 and `a2.SPKR`; never type an I/O address or key code by hand.
 
-### lib/text80, lib/text40, lib/auxmem, lib/dhgr and lib/unpack
+### lib/text80, lib/text40, lib/auxmem, lib/dhgr, lib/unpack and lib/disk
 
 - `lib/text80`: 80-column text on the extended 80-column card. `(text80.on)`,
   `(text80.print "Hello")` (a macro: a `put` call a character),
@@ -153,14 +153,17 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
   flipping, boxes, sprites, pixels and the mixed window's 80-column text.
   `lib/unpack`: tables packed while compiling (`tables.packed`) back to bytes,
   in main or aux memory. Both in [`dhgr.md`](dhgr.md).
+- `lib/disk`: tables placed `:on disk` read into main or aux memory while the
+  program runs, with a step function called between sectors
+  ([`disks.md`](disks.md), Disk tables). Its reader keeps `$1400`-`$1BFF`.
 
 ## Keywords
 
 `:name` does two things only:
 
 1. Placement options on a top-level `let` or a `const` table, after the value:
-   `:address`, `:align`, `:boundary`, and on a `let` `:in aux` and `:reserve`
-   (see Placement). `:reserve` is the one option without a value. On a `fn`,
+   `:address`, `:align`, `:boundary`, on a `let` `:in aux` and `:reserve`, and on a
+   `const` table `:on disk` and `:interleave` (see Placement). `:reserve` is the one option without a value. On a `fn`,
    after the return type, `:interrupt` (see Interrupts), also without one.
 2. Field names in struct values: `(make Sprite :x 10 :y 20 :active true)`.
    Every field, in declared order, none left out. The names exist so a swapped
@@ -763,9 +766,11 @@ The linker checks them and fails the build if one can't hold.
 | `:boundary 256` | whole object inside one 256-byte block; for a split table, each byte table |
 | `:in aux` | a `let` in aux memory, reached only through `lib/auxmem` (2026-10-27) |
 | `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
+| `:on disk` | a const `(array u8 n)` that lives on the boot disk, not in memory; its name holds where, for `lib/disk` (2026-10-30, [`disks.md`](disks.md), Disk tables) |
+| `:interleave 2` | with `:on disk`: how many physical sectors apart its sectors go round a track, 1 to 15, 2 when not given |
 
 Placement goes on top-level `let`s and `const` tables, after the value; `:in`
-and `:reserve` on `let`s only. An explicit `:address` may point anywhere, a
+and `:reserve` on `let`s only, `:on` and `:interleave` on `const` tables only. An explicit `:address` may point anywhere, a
 hi-res page included (`(let screen (array u8 8192) :address 0x2000)`);
 automatic placement never uses zero page, the stack, text page 1 or `$C000`
 and up, and fills the rest by the memory map below.

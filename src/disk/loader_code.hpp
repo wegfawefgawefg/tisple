@@ -38,10 +38,21 @@ constexpr int kSegment = 0xDE; // the next segment's offset in the table
 constexpr int kMode = 0xDD;    // this segment's bank: 0 main, 1 language card, 2 aux
 constexpr int kDest = 0xDB;    // and $DC: an aux sector's page
 
+// where the seek and wait routines keep their bytes: the boot loader's zero page, or lib/disk's
+// reader's own memory (disk_reader.cpp)
+struct SeekPlaces {
+    int slot = kSlot;
+    int head = kHead;
+    int target = kTarget;
+    int next = kNext;
+    int wait = kWait;
+};
+
 struct Loader {
     Code6502 c;
     std::vector<std::int32_t> latch_reads; // LDX $C08C+slot instructions to patch
     int bounce = 0x0B00; // where an aux sector is read before its copy (LoaderPlan)
+    SeekPlaces at;
 
     // LDX latch: the address is patched at boot
     void ReadLatch(std::int32_t loop) {
@@ -55,7 +66,7 @@ struct Loader {
     void PhaseIndex() {
         c.Imm(Mn::AND, 3);
         c.OpA(Mn::ASL);
-        c.Mem(Mn::ORA, kSlot);
+        c.Mem(Mn::ORA, at.slot);
         c.Op(Mn::TAX);
     }
 };

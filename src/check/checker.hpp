@@ -202,6 +202,12 @@ int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value);
 void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_value);
 const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& holder);
 
+// const tables :on disk (disk_consts.cpp). MoveToDisk takes a folded table's bytes into
+// Program::disk_tables and leaves its var the record's size; PlaceDiskConsts, once every const
+// is folded, puts the tables on the disk in declaration order and writes their records
+bool MoveToDisk(Checker& ck, ConstDecl& cd, const Node& option);
+void PlaceDiskConsts(Checker& ck);
+
 // expressions (expr.cpp)
 ExprId CheckExpr(Checker& ck, const Node& node, TypeId hint);
 ExprId CheckIntLiteral(Checker& ck, const Node& node, TypeId hint);
