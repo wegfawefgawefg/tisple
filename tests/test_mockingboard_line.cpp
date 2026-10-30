@@ -55,7 +55,7 @@ uint64_t HumTick(const tisple::Apple2& a) {
 
 // the first tick from from on where voice v plays the note
 int Find(const Voices& v, int voice, int from, uint16_t period) {
-    for (int t = from; t < static_cast<int>(v.period[voice].size()); t++) {
+    for (int t = from < 0 ? 0 : from; t < static_cast<int>(v.period[voice].size()); t++) {
         if (v.period[voice][t] == period && v.volume[voice][t] != 0) {
             return t;
         }
@@ -94,7 +94,10 @@ void LineTests(TestResults& results) {
     uint16_t c7 = Period(Note('c', false, 7));
     // one, two and three fired together: one after another, no tick between
     int t = Find(v, 5, 0, c6);
-    CHECK(results, t > 0);
+    CHECK(results, t > 0 && t < 40);
+    if (t <= 0 || t >= 40) {
+        return;
+    }
     CHECK(results, Holds(v, 5, t, 2, c6) && Holds(v, 5, t + 2, 2, d6));
     CHECK(results, Holds(v, 2, t + 4, 2, e6) && Holds(v, 2, t + 6, 2, f6));
     CHECK(results, Holds(v, 5, t + 8, 2, g6) && Holds(v, 5, t + 10, 2, a6));
@@ -105,11 +108,14 @@ void LineTests(TestResults& results) {
     int again = Find(v, 5, t + 14, c6);
     int cut = Find(v, 5, again, b6);
     CHECK(results, again > 0 && cut > again && cut < again + 4);
+    if (again <= 0 || cut <= again || cut >= again + 4) {
+        return;
+    }
     CHECK(results, Holds(v, 5, cut, 2, b6) && Holds(v, 5, cut + 2, 2, c7));
     CHECK(results, Holds(v, 5, cut + 4, 2, e6) && Holds(v, 5, cut + 6, 2, f6));
     // the music under it all
     bool hum = true;
-    for (int k = 0; k < cut + 8; k++) {
+    for (int k = 0; k < cut + 8 && k < static_cast<int>(v.period[0].size()); k++) {
         hum = hum && v.period[0][k] == Period(Note('c', false, 3));
     }
     CHECK(results, hum);
