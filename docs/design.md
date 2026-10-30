@@ -193,7 +193,10 @@ names. Details in `docs/language.md`.
 ## Backend
 
 - A/X/Y pressure with each instruction's register restrictions.
-- Whole-program zero-page allocation and static frame overlap.
+- Whole-program zero-page allocation and static frame overlap. Locals the
+  mid-level passes make (inlined copies') get bytes by liveness over the
+  finished code, a copy's in the frame of the function it came from
+  (src/backend/frame_share.hpp).
 - Carry and other flags as live values.
 - Instruction selection over the addressing modes.
 - Page-crossing costs, branch layout, alignment.
