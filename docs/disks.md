@@ -42,7 +42,7 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   the page holding its start and from a track of its own, 16 pages a track,
   track 17 skipped. The loader's table gives each one's first page, pages and
   memory: main memory, the language card's bank 2 (switched in for writes, two
-  reads of `$C083`), or aux memory (each sector read to the first page of a main
+  reads of `$C083`), its bank 1 (`$D000-$DFFF`, two reads of `$C08B`), or aux memory (each sector read to the first page of a main
   segment, then copied over with RAMWRT on; the aux segments load first, so that
   page is loaded again after them). The loader writes whole pages, so segments of
   one memory that share a page are one on the disk, with zeros between them
