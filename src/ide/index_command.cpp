@@ -1,4 +1,5 @@
 #include "ide/index.hpp"
+#include "project/project_file.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -27,6 +28,18 @@ std::string ProgramEntry(const std::filesystem::path& file) {
     return "";
 }
 
+// the program of the nearest tisple.project in the file's folder or above; empty when there
+// is none or it does not read
+std::string ProjectEntry(const std::filesystem::path& file) {
+    std::string found = FindProjectFile(file.parent_path());
+    ProjectFile project;
+    std::string error;
+    if (found.empty() || !LoadProjectFile(found, project, error)) {
+        return "";
+    }
+    return std::filesystem::path(project.program).lexically_normal().string();
+}
+
 bool HasFile(const EditorIndex& index, const std::string& path) {
     for (const SourceFile& file : index.sources.files) {
         if (std::filesystem::path(file.path).lexically_normal() == path) {
@@ -40,14 +53,23 @@ bool HasFile(const EditorIndex& index, const std::string& path) {
 
 void IndexFileInProgram(const std::string& path, const LoadOptions& options, EditorIndex& out) {
     std::string file = std::filesystem::absolute(path).lexically_normal().string();
+    // the project's program first, then the nearest main.tsp
+    std::string project = ProjectEntry(file);
+    if (!project.empty()) {
+        IndexProgram(project, options, out);
+        if (HasFile(out, file)) {
+            return;
+        }
+    }
     std::string entry = ProgramEntry(file);
-    if (!entry.empty()) {
+    if (!entry.empty() && entry != project) {
         IndexProgram(entry, options, out);
+        if (HasFile(out, file)) {
+            return;
+        }
     }
-    // no program, or one that doesn't import this file: the file is its own program
-    if (entry.empty() || !HasFile(out, file)) {
-        IndexProgram(file, options, out);
-    }
+    // no program imports this file: the file is its own program
+    IndexProgram(file, options, out);
 }
 
 int RunIndexCommand(int argc, char** argv) {
@@ -67,8 +89,9 @@ int RunIndexCommand(int argc, char** argv) {
         std::fprintf(stderr, "usage: tisple index file.tsp [--stdin]\n"
                              "  --stdin: file.tsp's text comes from stdin (an unsaved buffer);\n"
                              "           its imports still come from disk\n"
-                             "  a file is indexed as part of the program of the nearest main.tsp\n"
-                             "  in its folder or above that imports it, else on its own\n");
+                             "  a file is indexed as part of the program of the nearest\n"
+                             "  tisple.project or main.tsp in its folder or above that imports\n"
+                             "  it, else on its own\n");
         return 1;
     }
     std::string file = std::filesystem::absolute(path).lexically_normal().string();

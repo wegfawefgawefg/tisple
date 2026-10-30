@@ -74,9 +74,10 @@ struct EditorIndex {
 // load (reading past syntax errors), expand and check entry_path and its imports
 void IndexProgram(const std::string& entry_path, const LoadOptions& options, EditorIndex& out);
 
-// what tisple index runs: path as part of the program of the nearest main.tsp in its folder
-// or above (a module's imports name paths from the program's folder), or on its own when no
-// such program imports it. options.files' paths must be absolute and normal.
+// what tisple index runs: path as part of the program of the nearest tisple.project in its
+// folder or above, else of the nearest main.tsp (a module's imports name paths from the
+// program's folder), or on its own when no such program imports it. options.files' paths must be
+// absolute and normal.
 void IndexFileInProgram(const std::string& path, const LoadOptions& options, EditorIndex& out);
 
 // The JSON tisple index prints. Lines and columns are 1-based, columns count UTF-16 code
