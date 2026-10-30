@@ -209,7 +209,8 @@ std::int64_t TrimFunction(Trim& t, std::int32_t function) {
 
 } // namespace
 
-bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& choices) {
+bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& choices,
+                std::vector<SizeItem>& gone) {
     Trim t;
     t.be = &be;
     t.items = GatherItems(be, kept);
@@ -252,6 +253,7 @@ bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& c
             total -= t.items[key].growth;
         }
     }
+    gone = t.gone;
     return !t.gone.empty();
 }
 

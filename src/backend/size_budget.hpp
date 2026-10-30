@@ -69,8 +69,9 @@ struct SizeChoices {
 };
 
 // by function, the functions whose code is in the binary (KeptFunctions); true when the
-// notes of the generation in be go over a budget, with more kept in choices
-bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& choices);
+// notes of the generation in be go over a budget, with more kept in choices: the items in gone
+bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& choices,
+                std::vector<SizeItem>& gone);
 
 // by function: one copy at each of its calls, as the mid-level makes them, would go over the
 // item budget (be: a generation with no choices made)
