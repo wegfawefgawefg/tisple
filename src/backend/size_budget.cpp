@@ -83,6 +83,16 @@ bool Hot(const SizeBudget& budget, const Item& item) {
     return item.benefit >= Times(budget.hot_cycles, bytes);
 }
 
+// the calls of a function over kMaxInlineExprs, copied because it runs often (FindWarmInlines):
+// its copies must pay for their bytes
+bool Warm(const Program& program, const SizeItem& key) {
+    if (key.first) {
+        return false;
+    }
+    const Function& fn = program.functions[static_cast<std::size_t>(key.second)];
+    return CountExprs(program, fn.body) > kMaxInlineExprs;
+}
+
 // cycles saved per byte added: a's fewer than b's (growths positive)
 bool Cheaper(const Item& a, const Item& b) {
     long double x = static_cast<long double>(a.benefit) * static_cast<long double>(b.growth);
@@ -145,6 +155,12 @@ bool Nested(const Trim& t, const SizeItem& a, const SizeItem& b) {
     return t.nested.count({a, b}) > 0 || t.nested.count({b, a}) > 0;
 }
 
+// a hot item no function or program budget counts; a warm one counts, so the copies of
+// functions that only pay because they run often cannot grow the code without bound
+bool Free(const Trim& t, const SizeItem& key) {
+    return Hot(t.be->budget, t.items.at(key)) && !Warm(*t.be->program, key);
+}
+
 // false when it waits for the next round
 bool TurnDown(Trim& t, const SizeItem& key, const char* why) {
     if (Kept(*t.choices, key)) {
@@ -193,11 +209,9 @@ std::int64_t TrimFunction(Trim& t, std::int32_t function) {
     std::int64_t growth = 0;
     for (const auto& [key, bytes] : parts) {
         // hot items pay for their bytes: the budgets are for the rest
-        growth += Kept(*t.choices, key) || Hot(t.be->budget, t.items.at(key)) ? 0 : bytes;
+        growth += Kept(*t.choices, key) || Free(t, key) ? 0 : bytes;
     }
-    auto in_function = [&](const SizeItem& key) {
-        return parts.count(key) > 0 && !Hot(t.be->budget, t.items.at(key));
-    };
+    auto in_function = [&](const SizeItem& key) { return parts.count(key) > 0 && !Free(t, key); };
     for (const SizeItem& key : CheapestFirst(t, in_function)) {
         if (growth <= t.be->budget.function) {
             break;
@@ -234,8 +248,13 @@ bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& c
             t.nested.insert({outer, note.item});
         }
     }
-    // one item
+    // one item; warm copies that do not pay for their bytes
     const SizeBudget& budget = be.budget;
+    for (const auto& [key, item] : t.items) {
+        if (item.growth > 0 && Warm(*be.program, key) && !Hot(budget, item)) {
+            TurnDown(t, key, "warm, does not pay: ");
+        }
+    }
     auto over = [&](const SizeItem& key) {
         return t.items[key].growth > budget.item && !Hot(budget, t.items[key]);
     };
@@ -254,12 +273,12 @@ bool TrimGrowth(const Backend& be, const std::vector<bool>& kept, SizeChoices& c
     // the whole program; the bodies of functions copied everywhere are not in it
     for (const auto& [key, item] : t.items) {
         if (!key.first && !kept[static_cast<std::size_t>(key.second)] && !Kept(choices, key) &&
-            !Hot(budget, item)) {
+            !Free(t, key)) {
             total -= CodeBytes(be, static_cast<std::size_t>(key.second));
         }
     }
     std::int64_t program = budget.program + ((code - total) >> budget.code_share);
-    auto cold = [&](const SizeItem& key) { return !Hot(budget, t.items[key]); };
+    auto cold = [&](const SizeItem& key) { return !Free(t, key); };
     for (const SizeItem& key : CheapestFirst(t, cold)) {
         if (total <= program) {
             break;

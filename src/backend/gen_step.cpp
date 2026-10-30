@@ -299,7 +299,9 @@ void EndStepped(Gen& g, ExprId loop, std::size_t mark, std::size_t at) {
         }
         std::size_t before = g.out->size();
         for (const Derived& d : used) {
-            if (d.loop == f.var) {
+            if (d.loop == f.var && f.reset) {
+                SetStepPointer(g, d);
+            } else if (d.loop == f.var) {
                 MoveStepPointer(g, d, f.step);
             }
         }
@@ -377,6 +379,18 @@ void NoteSet(Gen& g, ExprId place, ExprId value) {
         return;
     }
     Fail(g, At(g, place).loc, "internal: a stepped variable set another way");
+}
+
+void NoteReset(Gen& g, std::int32_t var) {
+    if (!FindStepped(g, var)) {
+        return;
+    }
+    StepFixup f;
+    f.label = NewLabel(g);
+    f.var = var;
+    f.reset = true;
+    g.step_fixups.push_back(f);
+    PlaceLabel(g, f.label);
 }
 
 void NoteStep(Gen& g, std::int32_t var, std::uint16_t step) {

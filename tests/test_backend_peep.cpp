@@ -262,7 +262,55 @@ void TestIndexedReuse(TestResults& results) {
     }
 }
 
+// lz4's match copy: m is read only through its step pointer and dead after the loop, so its
+// own steps go (dead_stores.cpp); read after the loop, they stay. The count down tests len's
+// high byte only when its low byte is zero (zero_tests.cpp)
+void TestFaintStepsAndCounts(TestResults& results) {
+    const char* text = "(let out (array u8 700))\n"
+                       "(fn setup () void (for i u16 0 700 (set (at out i) (as u8 (* i 7)))))\n"
+                       "(fn f ((o u16) (off u16) (n u16)) u16\n"
+                       "    (let m u16 (- o off))\n"
+                       "    (let len u16 n)\n"
+                       "    (while (!= len 0)\n"
+                       "        (set (at out o) (at out m))\n"
+                       "        (set o (+ o 1))\n"
+                       "        (set m (+ m 1))\n"
+                       "        (set len (- len 1)))\n"
+                       "    o)\n"
+                       "(fn g ((o u16) (off u16) (n u16)) u16\n"
+                       "    (let m u16 (- o off))\n"
+                       "    (let len u16 n)\n"
+                       "    (while (!= len 0)\n"
+                       "        (set (at out o) (+ (at out m) 1))\n"
+                       "        (set o (+ o 1))\n"
+                       "        (set m (+ m 1))\n"
+                       "        (set len (- len 1)))\n"
+                       "    (+ o (* m 3)))\n";
+    Compiled c = CompileText(text);
+    // o and both pointers stepped, m not
+    CHECK(results, c.ok && CountMn(c, "t.f", tisple::Mn::INC) == 6);
+    CHECK(results, c.ok && CountMn(c, "t.f", tisple::Mn::ORA) <= 1);
+    Diff d;
+    bool ok = StartDiff(d, c);
+    for (int n : {0, 1, 2, 255, 256, 257, 300}) {
+        for (int o : {200, 255, 256, 300}) {
+            for (int off : {1, 4, 199}) {
+                std::vector<std::uint16_t> args = {static_cast<std::uint16_t>(o),
+                                                   static_cast<std::uint16_t>(off),
+                                                   static_cast<std::uint16_t>(n)};
+                ok = ok && DiffCall(d, "t.setup", {}) && DiffCall(d, "t.f", args) &&
+                     DiffCall(d, "t.g", args);
+            }
+        }
+    }
+    if (!ok) {
+        std::fprintf(stderr, "faint steps:\n%s\n  %s\n", text, d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
 void RunBackendPeepTests(TestResults& results) {
+    TestFaintStepsAndCounts(results);
     TestDeadValues(results);
     TestIndexedReuse(results);
     TestLabelMerges(results);

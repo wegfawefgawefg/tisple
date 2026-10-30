@@ -98,6 +98,11 @@ std::uint32_t BinaryMax(const Program& program, const ValueRanges& r, const Expr
     switch (e.op) {
     case Op::Add:
         return a + b <= limit ? a + b : limit;
+    case Op::Sub: {
+        // no wrap when a is never below b's largest (8 - (& x 7) is 1 to 8)
+        std::uint32_t a_min = ExprMin(program, r, e.a);
+        return a_min >= b ? a - ExprMin(program, r, e.b) : limit;
+    }
     case Op::Mul:
         return a * b <= limit ? a * b : limit;
     case Op::And:
@@ -219,6 +224,131 @@ bool RangeRound(const Program& program, ValueRanges& r) {
     return grew;
 }
 
+// the smallest a binary expression can be, as raw bits: what holds without a wrap (from the
+// largest values) and 0 otherwise
+std::uint32_t BinaryMin(const Program& program, const ValueRanges& r, const Expr& e,
+                        std::uint32_t limit) {
+    std::uint32_t a = ExprMin(program, r, e.a);
+    std::uint32_t b = ExprMin(program, r, e.b);
+    std::uint32_t a_max = ExprMax(program, r, e.a);
+    std::uint32_t b_max = ExprMax(program, r, e.b);
+    bool is_signed = IsSignedKind(ExprKindOf(program, e.a));
+    std::uint16_t c = 0;
+    bool fixed = ConstValue(program, e.b, c);
+    switch (e.op) {
+    case Op::Add:
+        return a_max + b_max <= limit ? a + b : 0;
+    case Op::Sub:
+        return a >= b_max ? a - b_max : 0;
+    case Op::Mul:
+        return a_max * b_max <= limit ? a * b : 0;
+    case Op::Or:
+        return std::max(a, b);
+    case Op::Shr:
+        return fixed && !is_signed && c < 16 ? a >> c : 0;
+    case Op::Div:
+        return fixed && c != 0 && !is_signed ? a / c : 0;
+    default:
+        return 0;
+    }
+}
+
+// one round over every write to a ranged variable; true if a smallest value fell
+bool MinRound(const Program& program, ValueRanges& r) {
+    bool fell = false;
+    auto lower = [&](std::size_t v, std::uint32_t m) {
+        std::uint8_t byte = static_cast<std::uint8_t>(std::min<std::uint32_t>(m, 0xFF));
+        if (r.candidate[v] && byte < r.var_min[v]) {
+            r.var_min[v] = byte;
+            fell = true;
+        }
+    };
+    auto lower_targets = [&](const Targets& t, std::uint32_t m) {
+        for (std::size_t v = 0; v < program.vars.size(); v++) {
+            if (t.vars[v] || (t.any && program.vars[v].address_taken)) {
+                lower(v, m);
+            }
+        }
+    };
+    for (const Function& fn : program.functions) {
+        auto visit = [&](ExprId, const Expr& e) {
+            switch (e.kind) {
+            case ExprKind::Let:
+                if (e.a >= 0) {
+                    lower(static_cast<std::size_t>(e.ref), ExprMin(program, r, e.a));
+                }
+                return;
+            case ExprKind::Set: {
+                std::int32_t root = RootVar(program, e.a);
+                if (root >= 0) {
+                    lower(static_cast<std::size_t>(root),
+                          ExprSize(program, e.a) == 1 ? ExprMin(program, r, e.b) : 0);
+                }
+                return;
+            }
+            case ExprKind::Store:
+            case ExprKind::StoreField:
+                lower_targets(PointsTo(program, r, e.a),
+                              ExprSize(program, e.b) == 1 ? ExprMin(program, r, e.b) : 0);
+                return;
+            case ExprKind::Jsr:
+            case ExprKind::IoWrite:
+                for (std::size_t v = 0; v < program.vars.size(); v++) {
+                    if (program.vars[v].function < 0 || program.vars[v].address_taken) {
+                        lower(v, 0);
+                    }
+                }
+                return;
+            default:
+                return;
+            }
+        };
+        Walk(program, fn.body, visit);
+    }
+    return fell;
+}
+
+// var_min, once var_max has settled: a global's or constant's from its start bytes, a
+// local's from its lets and sets only
+void FindMinimums(const Program& program, ValueRanges& r) {
+    std::size_t var_count = program.vars.size();
+    r.var_min.assign(var_count, 0);
+    for (std::size_t v = 0; v < var_count; v++) {
+        const Var& var = program.vars[v];
+        if (!r.candidate[v]) {
+            continue;
+        }
+        if (var.kind == VarKind::Local) {
+            r.var_min[v] = 0xFF; // nothing written yet
+            continue;
+        }
+        std::size_t size = TypeOf(program, var.type).size;
+        std::uint8_t m = var.init.size() < size ? 0 : 0xFF;
+        for (std::uint8_t byte : var.init) {
+            m = std::min(m, byte);
+        }
+        r.var_min[v] = m;
+    }
+    for (int round = 0;; round++) {
+        std::vector<std::uint8_t> before = r.var_min;
+        if (!MinRound(program, r)) {
+            break;
+        }
+        if (round >= kMaxRounds) {
+            for (std::size_t v = 0; v < var_count; v++) {
+                if (r.var_min[v] != before[v]) {
+                    r.var_min[v] = 0;
+                }
+            }
+            break;
+        }
+    }
+    // (a local nothing writes)
+    for (std::size_t v = 0; v < var_count; v++) {
+        r.var_min[v] = std::min(r.var_min[v], r.var_max[v]);
+    }
+}
+
 } // namespace
 
 ValueRanges FindValueRanges(const Program& program) {
@@ -255,7 +385,43 @@ ValueRanges FindValueRanges(const Program& program) {
             }
         }
     }
+    FindMinimums(program, r);
     return r;
+}
+
+std::uint32_t ExprMin(const Program& program, const ValueRanges& r, ExprId id) {
+    std::uint32_t limit = Limit(program, id);
+    const Expr& e = ExprOf(program, id);
+    switch (e.kind) {
+    case ExprKind::Literal:
+        return e.value & limit;
+    case ExprKind::VarRef:
+    case ExprKind::Index: {
+        std::int32_t root = RootVar(program, id);
+        if (root < 0 || limit != 0xFF || r.var_min.empty() ||
+            !r.candidate[static_cast<std::size_t>(root)]) {
+            return 0;
+        }
+        return r.var_min[static_cast<std::size_t>(root)];
+    }
+    case ExprKind::Binary:
+        return BinaryMin(program, r, e, limit);
+    case ExprKind::Convert: {
+        std::uint32_t from = ExprSize(program, e.a);
+        std::uint32_t a = ExprMin(program, r, e.a);
+        if (from == 2 && limit == 0xFF) {
+            return ExprMax(program, r, e.a) <= 0xFF ? a : 0;
+        }
+        if (from == 1 && limit == 0xFFFF && IsSignedKind(ExprKindOf(program, e.a))) {
+            return ExprMax(program, r, e.a) <= 0x7F ? a : 0;
+        }
+        return a;
+    }
+    case ExprKind::Do:
+        return e.count == 0 ? 0 : ExprMin(program, r, ListItem(program, e, e.count - 1));
+    default:
+        return 0;
+    }
 }
 
 std::uint32_t ExprMax(const Program& program, const ValueRanges& r, ExprId id) {

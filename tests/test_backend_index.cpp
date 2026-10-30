@@ -353,6 +353,60 @@ void TestPagePointers(TestResults& results) {
     CHECK(results, ok);
 }
 
+// page pointers again: a second place of the same table and index reads through the pointer
+// the first set up (a read, then its store), but not after a write to the index's high byte,
+// a call, or a label; u16 elements of split arrays through one page pointer a plane
+void TestPagePointerReuse(TestResults& results) {
+    const char* text = "(let pad (array u8 77))\n"
+                       "(let tab (array u8 600))\n"
+                       "(let words (array u16 600))\n"
+                       "(let gi u16 0)\n"
+                       "(let sum u16 0)\n"
+                       "(fn setup () void\n"
+                       "    (for i u16 0 600 (set (at tab i) (as u8 (+ (* i 3) (>> i 8))))\n"
+                       "        (set (at words i) (* i 77))))\n"
+                       "(fn bump () void (set gi (+ gi 255)))\n"
+                       "(fn far () void (for k u8 0 3 (set gi (+ gi 1))))\n"
+                       "(fn g ((x u16)) u16\n"
+                       "    (let i u16 (& x 255))\n"
+                       "    (let s u16 (as u16 (at tab i)))\n"
+                       "    (set i (+ i 256))\n"
+                       "    (set s (+ s (as u16 (at tab i))))\n"
+                       "    (set gi (& x 255))\n"
+                       "    (set s (+ s (at words gi)))\n"
+                       "    (bump)\n"
+                       "    (+ s (at words gi)))\n"
+                       "(fn f ((x u16) (z u16)) u16\n"
+                       "    (let i u16 x)\n"
+                       "    (if (!= (at tab i) 7) (set (at tab i) (+ (at tab i) 1)))\n"
+                       "    (set (at words i) (+ (at words i) z))\n"
+                       "    (set i (+ i 255))\n"
+                       "    (if (< i 600) (set (at tab i) (^ (at tab i) 1)))\n"
+                       "    (set gi z)\n"
+                       "    (set sum (+ sum (at words gi)))\n"
+                       "    (bump)\n"
+                       "    (if (< gi 600) (set (at words gi) (+ (at words gi) 1)))\n"
+                       "    (set gi z)\n"
+                       "    (let a u16 (at words gi))\n"
+                       "    (far)\n"
+                       "    (set (at words gi) a)\n"
+                       "    (+ sum (as u16 (at tab z))))\n";
+    Compiled c = CompileText(text);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.setup", {});
+    for (int x : {0, 1, 100, 255, 256, 257, 344, 345, 599}) {
+        for (int z : {0, 1, 255, 256, 594}) {
+            ok = ok &&
+                 DiffCall(d, "t.f", {static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(z)});
+        }
+        ok = ok && DiffCall(d, "t.g", {static_cast<std::uint16_t>(x)});
+    }
+    if (!ok) {
+        std::fprintf(stderr, "page pointer reuse:\n%s\n  %s\n", text, d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
 // a u16 index plus or minus constants: the constants move into the address (an index stays
 // inside its array), for byte, split u16 and struct arrays, with the rest of the index a
 // parameter, a byte, a u16 loop counter in Y and a stepped variable
@@ -407,6 +461,7 @@ void RunBackendIndexTests(TestResults& results) {
     TestChains(results);
     TestShortCount(results);
     TestPagePointers(results);
+    TestPagePointerReuse(results);
     TestFoldedIndices(results);
 }
 

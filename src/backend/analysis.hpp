@@ -56,12 +56,23 @@ void AddSlotTargets(const Program& program, std::vector<bool>& kept);
 
 // functions this small (in expressions, CountExprs) are inlined at every call (gen_call.cpp)
 constexpr std::uint32_t kMaxInlineExprs = 24;
+// and functions up to this size that run often for their size (warm, FindWarmInlines), where
+// the size budget keeps only copies that pay for their bytes (size_budget.hpp)
+constexpr std::uint32_t kMaxWarmInlineExprs = 48;
+// and whose copies past the first add this many expressions at most
+constexpr std::uint64_t kMaxWarmCopiedExprs = 160;
 
 enum class InlineKind : std::uint8_t {
     None,
-    Always, // at every call: at most kMaxInlineExprs expressions
+    Always, // at every call: at most kMaxInlineExprs expressions, or warm
     Once,   // the program calls it in one place: there, the first time that call is made
 };
+
+// by function: over kMaxInlineExprs expressions but at most kMaxWarmInlineExprs, no loops or
+// calls in it, called in more than one place, its copies past the first adding at most
+// kMaxWarmCopiedExprs expressions, and run (FindRunCounts, whole trip counts) at least as
+// many times as they add: copying it at every call may pay
+std::vector<bool> FindWarmInlines(const Program& program);
 
 // by function: how its calls are inlined. never names functions that stay functions
 // (qualified names; the race's t.init and t.checksum, whose entries time the work)

@@ -207,6 +207,30 @@ std::uint32_t CountExprs(const Program& program, ExprId id) {
     return count;
 }
 
+std::vector<bool> FindWarmInlines(const Program& program) {
+    std::size_t count = program.functions.size();
+    std::vector<std::uint64_t> calls(count, 0);
+    for (std::size_t f = 0; f < count; f++) {
+        AnyExpr(program, program.functions[f].body, [&](const Expr& e) {
+            if (e.kind == ExprKind::Call) {
+                calls[static_cast<std::size_t>(e.ref)]++;
+            }
+            return false;
+        });
+    }
+    std::vector<std::uint64_t> runs = FindRunCounts(program, kMaxRunTrips);
+    std::vector<bool> warm(count, false);
+    for (std::size_t f = 0; f < count; f++) {
+        std::uint64_t size = CountExprs(program, program.functions[f].body);
+        ExprId body = program.functions[f].body;
+        std::uint64_t copied = (calls[f] - 1) * size;
+        warm[f] = size > kMaxInlineExprs && size <= kMaxWarmInlineExprs && calls[f] > 1 &&
+                  copied <= kMaxWarmCopiedExprs && runs[f] >= copied && !HasLoops(program, body) &&
+                  !HasCalls(program, body);
+    }
+    return warm;
+}
+
 std::vector<InlineKind> FindInlines(const Program& program, const std::vector<std::string>& never) {
     std::size_t count = program.functions.size();
     std::vector<std::uint32_t> calls(count, 0);
@@ -221,12 +245,13 @@ std::vector<InlineKind> FindInlines(const Program& program, const std::vector<st
         });
     }
     std::vector<InlineKind> out(count, InlineKind::None);
+    std::vector<bool> warm = FindWarmInlines(program);
     for (std::size_t f = 0; f < count; f++) {
         const Function& fn = program.functions[f];
         if (std::find(never.begin(), never.end(), fn.name) != never.end()) {
             continue;
         }
-        if (CountExprs(program, fn.body) <= kMaxInlineExprs) {
+        if (CountExprs(program, fn.body) <= kMaxInlineExprs || warm[f]) {
             out[f] = InlineKind::Always;
         }
     }

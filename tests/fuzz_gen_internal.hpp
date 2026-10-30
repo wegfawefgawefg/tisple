@@ -179,6 +179,14 @@ struct Gen {
     // its own (fuzz_gen_stretch.cpp); only in GenerateStretchProgram's programs
     Rng stretch_rng;
     bool stretch_shapes = false;
+    // Hoare's partition loops, from a stream of their own (fuzz_gen_partition.cpp); only in
+    // GeneratePartitionProgram's programs
+    Rng partition_rng;
+    bool partition_shapes = false;
+    // places reached through known addresses, from a stream of their own
+    // (fuzz_gen_places.cpp); only in GeneratePlacesProgram's programs
+    Rng places_rng;
+    bool places_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -293,6 +301,14 @@ struct Gen {
     // a CRC's bit steps on a u8 or u16 local, and masks of its bits tested
     std::string BitSteps(int depth);
     std::string LoopShape(int depth);
+    // Hoare's partition: inner whiles move two u16 indexes, then stores through them
+    // (fuzz_gen_partition.cpp)
+    std::string PartitionLoop(int depth);
+    // ---- places through known addresses (fuzz_gen_places.cpp)
+    std::string PlacesHelpers();
+    std::string PlacesPointer();
+    std::string PlacesShape(int depth);
+    std::string PageShape();
     // ---- loops entered by a jump (fuzz_gen_entries.cpp)
     // a test that can never hold, on a variable in scope
     std::string NeverTrue();

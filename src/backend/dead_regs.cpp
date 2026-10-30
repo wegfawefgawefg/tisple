@@ -1,6 +1,7 @@
 #include "backend/peephole.hpp"
 
 #include <map>
+#include <set>
 
 // Loads and ALU results nothing reads: liveness of A, X, Y and the N, Z, C, V flags runs
 // backwards over the function's items until it settles, and an instruction whose only
@@ -15,13 +16,14 @@ namespace {
 
 constexpr std::size_t kNone = static_cast<std::size_t>(-1);
 
+// (kLiveA and the others in peephole.hpp are the same bits)
 enum : std::uint8_t {
-    kA = 1,
+    kA = kLiveA,
     kX = 2,
     kY = 4,
-    kN = 8,
-    kZ = 16,
-    kC = 32,
+    kN = kLiveN,
+    kZ = kLiveZ,
+    kC = kLiveC,
     kV = 64,
     kAll = 127,
 };
@@ -389,6 +391,13 @@ void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
 
 } // namespace
 
+std::vector<std::uint8_t> LiveRegsIn(const Assembly& as, const std::vector<AsmItem>& items) {
+    std::vector<std::uint8_t> live_in;
+    std::vector<std::uint8_t> live_out;
+    Liveness(as, items, live_in, live_out);
+    return live_in;
+}
+
 std::vector<bool> FlagsDeadIn(const Assembly& as, const std::vector<AsmItem>& items) {
     std::vector<std::uint8_t> live_in;
     std::vector<std::uint8_t> live_out;
@@ -410,6 +419,12 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
             effects[i] = EffectOf(as, items[i]);
         }
     }
+    std::set<std::int32_t> named; // symbols some item other than a label names
+    for (const AsmItem& item : items) {
+        if (item.kind != ItemKind::Label && item.value.sym >= 0) {
+            named.insert(item.value.sym);
+        }
+    }
     std::vector<AsmItem> kept;
     bool dropped = false;
     for (std::size_t i = 0; i < items.size(); i++) {
@@ -428,10 +443,13 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
         }
         // a load right after an INC or DEC of the byte it reads, its register unread after:
         // N and Z already show the byte (a read with no effect: RAM the program owns)
+        // (past labels nothing names: only the fall reaches them)
         int loaded = items[i].kind == ItemKind::Ins ? LoadedReg(items[i].mn) : -1;
         if (!dead && loaded >= 0 && e.removable && (live_out[i] & RegBit(loaded)) == 0) {
             std::size_t prev = i;
-            while (prev > 0 && items[prev - 1].kind == ItemKind::Note) {
+            while (prev > 0 && (items[prev - 1].kind == ItemKind::Note ||
+                                (items[prev - 1].kind == ItemKind::Label &&
+                                 !named.count(items[prev - 1].value.sym)))) {
                 prev--;
             }
             dead = prev > 0 && StepsSameByte(items[prev - 1], items[i]);

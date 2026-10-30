@@ -72,18 +72,22 @@ void ShiftConst8(Gen& g, Op op, bool is_signed, std::uint16_t c) {
 }
 
 // A shifted by the count operand, or (in_reg) by the count already in the counter register;
-// count_max: no count is larger
+// no count is larger than count_max or smaller than count_min (one never 0 needs no test for
+// it). A count of 8 or more skips the loop, 8 too: the loop would shift every bit out, but
+// with seven passes more than the test costs
 void ShiftLoop8(Gen& g, Op op, bool is_signed, const Opnd& count, std::uint32_t count_max,
-                bool in_reg) {
+                std::uint32_t count_min, bool in_reg) {
     int r = CounterReg(g);
     std::int32_t loop = NewLabel(g);
     std::int32_t done = NewLabel(g);
-    if (in_reg) {
-        Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(0));
-    } else {
+    if (!in_reg) {
         LoadCount(g, r, count);
+    } else if (count_min == 0) {
+        Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(0));
     }
-    Branch(g, Mn::BEQ, done);
+    if (count_min == 0) {
+        Branch(g, Mn::BEQ, done);
+    }
     if (count_max >= 8) {
         // 8 or more: every bit is out
         Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(8));
@@ -114,10 +118,11 @@ void EvalShift8(Gen& g, const Expr& e) {
         return;
     }
     std::uint32_t count_max = MaxOf(g, e.b);
+    std::uint32_t count_min = MinOf(g, e.b);
     Opnd count = TrySimple(g, e.b);
     if (CountReady(count)) {
         EvalA(g, e.a);
-        ShiftLoop8(g, e.op, is_signed, count, count_max, false);
+        ShiftLoop8(g, e.op, is_signed, count, count_max, count_min, false);
         return;
     }
     Opnd value = TrySimple(g, e.a);
@@ -128,7 +133,7 @@ void EvalShift8(Gen& g, const Expr& e) {
         EvalA(g, e.b);
         Emit(g, CounterReg(g) == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);
         LoadA(g, value, 0);
-        ShiftLoop8(g, e.op, is_signed, Opnd(), count_max, true);
+        ShiftLoop8(g, e.op, is_signed, Opnd(), count_max, count_min, true);
         return;
     }
     EvalA(g, e.a);
@@ -136,7 +141,7 @@ void EvalShift8(Gen& g, const Expr& e) {
     EvalA(g, e.b);
     count = SpillA(g);
     LoadA(g, value, 0);
-    ShiftLoop8(g, e.op, is_signed, count, count_max, false);
+    ShiftLoop8(g, e.op, is_signed, count, count_max, count_min, false);
 }
 
 } // namespace tisple

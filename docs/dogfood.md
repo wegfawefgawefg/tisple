@@ -1991,6 +1991,41 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     race, seeds 1-2000: geomean 0.809, wins 69.1%, every program's cycles and
     bytes as on main.
 
+59. Program race fixes (2026-10-30, branch program-race-fixes; docs/races.md "After the
+    fixes"). The program race's miscompile, then its losses, each a general rule.
+    - Miscompile: an outer loop's step pointer (gen_step.cpp) did not follow its variable
+      through an inner while that kept it in Y; sort's quicksort never ended. The inner
+      loop notes a reset where it stores the variable back. Test in
+      tests/test_backend_loop_ptrs.cpp; fuzz shape tests/fuzz_gen_partition.cpp
+      (`seed N (partition)`, also -O0): 68 mismatches in 400 seeds before the fix.
+    - Warm inlining (analysis.cpp FindWarmInlines, size_budget.cpp): 25 to 48 nodes, no
+      loops or calls, more than one call, run at least as often as the extra copies add
+      nodes; kept only when the copies save the budget's hot cycles a byte, and counted
+      against the function and program budgets.
+    - Peephole (dead_stores.cpp, zero_tests.cpp): steps of bytes nothing reads after go;
+      a u16 count down tests its high byte only at zero. The dead-store liveness is in
+      flat arrays now (13% of a Catwiz build before).
+    - Known addresses (opt/pointers.cpp, gen_place.cpp, gen_struct.cpp): fixed pointers
+      read as their addr_of, loads and stores through addr_of are direct, struct copies
+      through pointers are a loop. Fuzz shape tests/fuzz_gen_places.cpp (`(places)`,
+      also -O0), with tables at u16 indexes in memory.
+    - Ranges with smallest values (backend/ranges.cpp): no test for a shift by 0 when the
+      count never is.
+    - Page pointers (gen_page.cpp, split out of gen_index.cpp): reused while the high byte
+      holds, one a plane for u16 split elements, 6 a function.
+    - `(set x (+ x (as u16 b)))`: BCC / INC for the high byte (gen_stmt.cpp).
+
+    | Measure | main (b0bbfae) | after |
+    | --- | --- | --- |
+    | program race, Tisple / best other | 1.070 (9 of 10) | 0.981 (10 of 10) |
+    | random race, seeds 1-2000 | 0.809, wins 69.1% | 0.804, wins 69.5% |
+    | kernels | all 13 won | the same; mandel 4177022 to 4180008 (a branch now crosses a page) |
+    | Catwiz | squeeze 3, code 19668, 1.14 s | squeeze 3, code 19664, 1.14 s |
+
+    Fuzz: 6 shards x 2500-seed chunks after each change, 3,284,368 programs in all; the
+    last, on the final code, 779,682 programs (120,000 seeds in 6 shards from 1100000000), 0
+    mismatches, 0 invalid.
+
 ## Gap finder (2026-10-26)
 
 `tisple gaps prog.tsp` finds where the output is worse than it could be,

@@ -232,11 +232,20 @@ struct Derived {
 
 // the pointer of one (at table i) with a u16 i: its low byte is the table's, stored once where
 // the function starts, its high byte the table's plus i's, and Y holds i's low byte
-// (gen_index.cpp, UsePagePointer)
+// (gen_page.cpp, UsePagePointer)
 struct PagePointer {
     ExprId site = -1;
     AsmValue base; // the table's address, with the place's offset
     AsmValue ptr;
+};
+
+// a page pointer whose high byte now is its base's plus the index high byte `high` (a byte in
+// memory or a number), from the code generated so far up to a label, a call or a write to
+// either (gen_index.cpp): another (at table i) of the same table and index reads through it
+struct PageKnown {
+    AsmValue ptr;
+    AsmValue base;
+    ByteRef high;
 };
 
 // a u16 variable a while loop steps only by one, whose page pointers keep their high bytes up
@@ -261,6 +270,7 @@ struct StepFixup {
     std::int32_t label = -1;
     std::int32_t var = -1;
     std::uint16_t step = 0;
+    bool reset = false; // set some other way (an inner loop kept it in Y): pointers made again
 };
 
 // the u16 loop counter in Y (low byte) and memory (high byte)
@@ -344,6 +354,7 @@ struct Gen {
     std::vector<SteppedVar> stepped;
     std::vector<StepFixup> step_fixups;
     std::vector<PagePointer> page_ptrs;
+    std::vector<PageKnown> page_known;
     std::vector<Follow> follows; // of the while loop being generated
     // u16 for counters replaced by a let of their body (ReplacedLoop): counter, let, and the
     // let minus the counter
@@ -411,6 +422,8 @@ bool CarryClearNow(const Gen& g);
 bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
+// the smallest value id can have (backend/ranges.hpp), 0 when nothing better is known
+std::uint32_t MinOf(const Gen& g, ExprId id);
 // id's value as a constant (ConstValue), variables bound to constants included (an unrolled
 // counter, gen_unroll.cpp)
 bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value);
@@ -554,10 +567,11 @@ bool DeltaFits(const Gen& g, std::int32_t counter, std::uint8_t delta);
 // the place as (derived),Y in the loop whose counter is in Y; no code now, the pointer is
 // set before the loop. False if the place is not one.
 bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type);
-// a byte of a table at a u16 index in memory as (page pointer),Y: the pointer's high byte
-// worked out now, Y the index's low byte. False if the place is not one.
+// a byte (or a u16 of a split array) of a table at a u16 index in memory as (page
+// pointer),Y: the pointer's high byte worked out now unless it is known, Y the index's low
+// byte (gen_page.cpp). False if the place is not one.
 bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type);
-// each page pointer's low byte, stored where the function starts
+// each page pointer's low byte, stored where the function starts (gen_page.cpp)
 void InitPagePointers(Gen& g);
 // two loop pointer bytes; `above` every byte taken before (for a pointer set at the
 // function's start, which a loop before may have used and given back, GenStmt)
@@ -591,6 +605,8 @@ bool IsSteppedIndex(const Gen& g, const Opnd& index);
 void NoteStep(Gen& g, std::int32_t var, std::uint16_t step);
 // (set place value) just ran: a step of a stepped variable moves its pointers
 void NoteSet(Gen& g, ExprId place, ExprId value);
+// var was just stored back by a loop that kept it in a register: its pointers are made again
+void NoteReset(Gen& g, std::int32_t var);
 // a for loop's own step of its u16 counter in memory, after the body: its pointers move
 void StepOwnPointers(Gen& g, ExprId loop, std::int32_t var, std::uint16_t step);
 

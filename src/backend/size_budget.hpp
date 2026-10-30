@@ -18,6 +18,10 @@
 // - The budgets: kMaxItemGrowth bytes for one item, kMaxFunctionGrowth for one function's
 //   code, kMaxProgramGrowth plus an eighth of the code for the whole program. Items that save
 //   kHotCycles (32) cycles or more a byte pay for themselves: no budget counts them.
+// - Warm items: the calls of a function over kMaxInlineExprs that is copied only because it
+//   runs often for its size (FindWarmInlines, analysis.hpp). One that does not pay for itself
+//   as above goes; one that does is still counted by the function and program budgets (not
+//   the item budget), so they cannot grow the code without bound. The mid-level copies none.
 // - The mid-level passes copy small functions too (opt/inline.cpp), and their copies are
 //   plain code here. So the program as the mid-level leaves it before it inlines is
 //   measured first, and a function whose copies at its calls would go over the item budget

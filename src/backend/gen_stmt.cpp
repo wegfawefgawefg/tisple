@@ -176,6 +176,51 @@ void GenReturn(Gen& g, const Expr& e) {
     Emit(g, Mn::RTS, Mode::Imp);
 }
 
+// (set x (+ x (as u16 b))), x a u16 in memory and b an unsigned byte: the low byte added and
+// the high byte stepped only on a carry, BCC / INC x+1, 3 cycles most of the time instead of
+// LDA / ADC #0 / STA's 8 (a checksum's sum of bytes)
+bool AddByteToWord(Gen& g, ExprId place, ExprId value) {
+    const Expr& p = At(g, place);
+    const Expr& v = At(g, value);
+    if (p.kind != ExprKind::VarRef || v.kind != ExprKind::Binary || v.op != Op::Add ||
+        TypeOf(*g.program, p.type).size != 2 || !g.follows.empty() ||
+        g.program->vars[static_cast<std::size_t>(p.ref)].placement.has_address) {
+        return false;
+    }
+    auto is_x = [&](ExprId id) {
+        const Expr& e = At(g, id);
+        return e.kind == ExprKind::VarRef && e.ref == p.ref;
+    };
+    ExprId other = is_x(v.a) ? v.b : is_x(v.b) ? v.a : -1;
+    if (other < 0) {
+        return false;
+    }
+    const Expr& o = At(g, other);
+    if (o.kind != ExprKind::Convert || ExprSize(*g.program, o.a) != 1 ||
+        IsSignedKind(ExprKindOf(*g.program, o.a)) || MayWriteVarIn(g, other, p.ref)) {
+        return false;
+    }
+    Opnd x = TrySimple(g, place);
+    if (x.size != 2 || x.in_a || x.b[0].kind != ByteKind::Mem || x.b[1].kind != ByteKind::Mem) {
+        return false;
+    }
+    Opnd b = Eval(g, o.a, nullptr);
+    if (b.in_a) {
+        Emit(g, Mn::CLC, Mode::Imp);
+        OpA(g, Mn::ADC, x, 0);
+    } else {
+        LoadA(g, x, 0);
+        Emit(g, Mn::CLC, Mode::Imp);
+        OpA(g, Mn::ADC, b, 0);
+    }
+    StoreA(g, x, 0);
+    std::int32_t skip = NewLabel(g);
+    Branch(g, Mn::BCC, skip);
+    RmwByte(g, Mn::INC, x, 1);
+    PlaceLabel(g, skip);
+    return true;
+}
+
 } // namespace
 
 bool IsStepByOne(const Gen& g, ExprId place, ExprId value) {
@@ -195,6 +240,10 @@ void GenSet(Gen& g, ExprId place, ExprId value) {
         return;
     }
     if (SetPinnedVar(g, place, value)) {
+        return;
+    }
+    if (AddByteToWord(g, place, value)) {
+        NoteSet(g, place, value);
         return;
     }
     bool up = false;

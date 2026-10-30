@@ -1,5 +1,6 @@
 // the zero-page loop pointers a loop hands out are free again after it (gen_stmt.cpp): a
-// function of many loops in a row fits, and loops after a page pointer leave it alone
+// function of many loops in a row fits, and loops after a page pointer leave it alone; an
+// outer loop's step pointers follow a variable an inner loop kept in Y
 
 #include "test_backend.hpp"
 
@@ -117,9 +118,65 @@ void TestPagePointerInlinedAgain(TestResults& results) {
     CHECK(results, ok);
 }
 
+// Hoare's partition (races/programs/sort): the outer loop steps i and j, so (at keys j) is
+// a step pointer of it, and the inner whiles keep i and j in Y; the store after them went
+// through the pointer of j from before the inner loop (quicksort never ended)
+void TestStepPointerAfterInnerLoops(TestResults& results) {
+    const char* text = "(let keys (array u16 300))\n"
+                       "(let bytes (array u8 600))\n"
+                       "(fn setup () void\n"
+                       "    (for i u16 0 300 (set (at keys i) (& (* i 97) 0x3FF)))\n"
+                       "    (for i u16 0 600 (set (at bytes i) (as u8 (* i 7)))))\n"
+                       "(fn f ((hi u16)) u16\n"
+                       "    (let i u16 0)\n"
+                       "    (let j u16 hi)\n"
+                       "    (while true\n"
+                       "        (while (< (at keys i) 500)\n"
+                       "            (set i (+ i 1)))\n"
+                       "        (while (> (at keys j) 500)\n"
+                       "            (set j (- j 1)))\n"
+                       "        (if (>= i j)\n"
+                       "            (return j))\n"
+                       "        (set (at keys j) 0xFFFF)\n"
+                       "        (set (at keys i) (+ (at keys i) 1))\n"
+                       "        (set j (- j 1)))\n"
+                       "    j)\n"
+                       "(fn g ((lo u16) (hi u16)) u16\n"
+                       "    (let i u16 lo)\n"
+                       "    (let n u16 0)\n"
+                       "    (while (< i hi)\n"
+                       "        (while (and (< i hi) (< (at bytes i) 128))\n"
+                       "            (set i (+ i 1)))\n"
+                       "        (set (at bytes i) (+ (at bytes i) 1))\n"
+                       "        (set n (+ n (as u16 (at bytes (+ i 1)))))\n"
+                       "        (set i (+ i 3)))\n"
+                       "    n)\n";
+    for (int level = 0; level < 2; level++) {
+        tisple::OptOptions opt;
+        opt.level = level;
+        Compiled c = CompileText(text, opt);
+        Diff d;
+        bool ok = StartDiff(d, c);
+        for (int hi : {299, 298, 255, 256, 257, 100, 1}) {
+            ok = ok && DiffCall(d, "t.setup", {}) &&
+                 DiffCall(d, "t.f", {static_cast<std::uint16_t>(hi)});
+        }
+        for (int lo : {0, 1, 200, 254, 255, 256}) {
+            ok = ok && DiffCall(d, "t.setup", {}) &&
+                 DiffCall(d, "t.g", {static_cast<std::uint16_t>(lo), 598});
+        }
+        if (!ok) {
+            std::fprintf(stderr, "step pointers, -O%d:\n%s\n  %s\n", level, text,
+                         d.message.c_str());
+        }
+        CHECK(results, ok);
+    }
+}
+
 } // namespace
 
 void RunBackendLoopPtrsTests(TestResults& results) {
+    TestStepPointerAfterInnerLoops(results);
     TestPagePointerInlinedAgain(results);
     TestManyLoops(results);
     TestPagePointerAfterLoops(results);
