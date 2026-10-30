@@ -187,10 +187,12 @@ chips' data sheets and the card's documented wiring, not from other emulators.
   write with its cycle; the WAV and window replay the log, so the machine
   itself does no sound work.
 
-Machine speed (release build, `tisple run ... --frames 3000`): Life 218x real
-time and plasma 237x before the card, the same within noise after, without
-the flag or with the card idle. The demo with the card playing runs at about
-212x; with `--wav` the two AYs' synthesis brings it to about 150x.
+Machine speed (release build, `tisple run ... --frames 3000`, three runs
+each, before and after): plasma 232-239x real time before, 232-234x after;
+Life 220-222x before, 217x after, 216-218x with an idle card in slot 5. About
+1-2% for the IRQ line's compare each cycle. The demo with the card playing
+runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
+150x.
 
 ## What is left
 

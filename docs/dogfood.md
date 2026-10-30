@@ -1430,8 +1430,8 @@ From a scan of Life, Snake, dot, the other examples and the libraries
       every register changing every tick. First versions took 3238 on average:
       a pass comparing all 28 registers every tick, and the computed writes.
       The rest is per-voice counting in compiled code.
-    Every program and example builds byte for byte as before; machine speed
-    the same within noise with no card or an idle one.
+    Every program and example builds byte for byte as before; the machine is
+    1-2% slower with no card or an idle one (Life 221x real time to 217x).
 
 ## Gap finder (2026-10-26)
 

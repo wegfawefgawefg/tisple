@@ -135,6 +135,7 @@
         (return))
     (io_write u16 (+ (slot_page slot) player.T1L_L) (- rate 2)))
 
+; main's copy of player.word
 (fn header_word ((p (ptr u8))) u16
     (| (as u16 (load p)) (<< (as u16 (load (+ p 1))) 8)))
 

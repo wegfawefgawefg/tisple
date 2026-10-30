@@ -55,6 +55,9 @@
 // - mouse card (mouse.hpp): no interrupts (polled mode only), the 6805 by its protocol as
 //   AppleWin models it, answering at once; our own firmware talks to it through an extra
 //   port the real card lacks
+// - mockingboard (mockingboard.hpp): no speech chip, no 6522 shift register or handshake
+//   lines; the AYs' volume steps a 3 dB curve; its sound is rendered from a log of register
+//   writes outside the machine
 
 #include "emu/machine.hpp"
 #include "link/segment.hpp"
