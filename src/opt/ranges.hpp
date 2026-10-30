@@ -61,6 +61,12 @@ void ForgetCallWrites(Ranger& g, const Expr& call);
 // (set x v) or (let x v): x holds v's range after it, for the do around it to keep
 void Wrote(Ranger& g, ExprId id, std::int32_t var, ExprId value);
 
+// a read of const data at places its indexes' ranges allow (const_data.cpp): the least and the
+// most of the values there, and into values (when given) the values themselves when there are
+// at most 16 (else it is left empty); false when the read is not such a place
+bool ConstDataRange(const Pass& p, const Counters& counters, ExprId read, Range& range,
+                    std::vector<std::int64_t>* values);
+
 // the sets of arrays and structs one walk of the program saw (ranges_elements.cpp)
 struct ElementStores {
     std::vector<std::vector<Range>> stored; // by var: packed byte ranges a set may write

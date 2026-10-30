@@ -179,9 +179,45 @@ bool ConstValue(const Program& program, ExprId id, std::uint16_t& value) {
         }
         return InitBits(program.vars[static_cast<std::size_t>(var)], offset, type.size, value);
     }
+    case ExprKind::Load:
+    case ExprKind::LoadField: {
+        std::int32_t var = -1;
+        std::uint32_t offset = 0;
+        const Type& type = TypeOf(program, e.type);
+        if (!IsScalarKind(type.kind) || !ConstAddress(program, e.a, var, offset)) {
+            return false;
+        }
+        const Var& v = program.vars[static_cast<std::size_t>(var)];
+        offset += e.value;
+        if (offset + type.size > TypeOf(program, v.type).size) {
+            return false;
+        }
+        return InitBits(v, offset, type.size, value);
+    }
     default:
         return false;
     }
+}
+
+bool ConstAddress(const Program& program, ExprId id, std::int32_t& var, std::uint32_t& offset) {
+    const Expr& e = program.exprs[static_cast<std::size_t>(id)];
+    if (e.kind == ExprKind::AddrOf) {
+        return ConstPlace(program, e.a, var, offset);
+    }
+    std::uint16_t count = 0;
+    if ((e.kind != ExprKind::PtrAdd && e.kind != ExprKind::PtrSub) ||
+        !ConstAddress(program, e.a, var, offset) || !ConstValue(program, e.b, count)) {
+        return false;
+    }
+    std::int64_t step = static_cast<std::int64_t>(count) * e.value;
+    std::int64_t at =
+        static_cast<std::int64_t>(offset) + (e.kind == ExprKind::PtrAdd ? step : -step);
+    std::int64_t size = TypeOf(program, program.vars[static_cast<std::size_t>(var)].type).size;
+    if (at < 0 || at > size) {
+        return false;
+    }
+    offset = static_cast<std::uint32_t>(at);
+    return true;
 }
 
 bool ConstPlace(const Program& program, ExprId place, std::int32_t& var, std::uint32_t& offset) {

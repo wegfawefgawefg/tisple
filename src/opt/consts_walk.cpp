@@ -10,7 +10,8 @@
 //   this file does not know make every global unknown. An unknown node makes every variable
 //   unknown, and may break or continue to any loop around it.
 // - Stores through pointers never reach a tracked variable (pointer provenance).
-// - A const array read at a known index is known.
+// - A read of const data at known indexes is known, and a load from it at a constant
+//   address.
 // - Every value is masked to its type, as the interpreter and the 6502 hold it.
 
 #include "check/arith.hpp"
@@ -126,26 +127,29 @@ void Learn(Walker& w, ExprId cond, bool truth, Env& env) {
     }
 }
 
-// the index expressions of a place (its root is neither read nor written here)
-void WalkPlace(Walker& w, ExprId id, Env& env) {
+// the index expressions of a place (its root is neither read nor written here); where in const
+// data it lies when its indexes are known
+ConstAt WalkPlace(Walker& w, ExprId id, Env& env) {
     const Expr& e = At(*w.p, id);
     switch (e.kind) {
     case ExprKind::VarRef:
-        return;
-    case ExprKind::Index:
-        WalkPlace(w, e.a, env);
-        Walk(w, e.b, env);
-        return;
-    case ExprKind::Field:
-        WalkPlace(w, e.a, env);
-        return;
+        return ConstRoot(*w.p, e.ref);
+    case ExprKind::Index: {
+        ConstAt base = WalkPlace(w, e.a, env);
+        return ElementAt(*w.p, e, base, Walk(w, e.b, env));
+    }
+    case ExprKind::Field: {
+        ConstAt base = WalkPlace(w, e.a, env);
+        base.offset += e.value;
+        return base;
+    }
     case ExprKind::Load:
     case ExprKind::LoadField:
         Walk(w, e.a, env);
-        return;
+        return ConstAt();
     default:
         Walk(w, id, env);
-        return;
+        return ConstAt();
     }
 }
 
@@ -339,7 +343,7 @@ void WalkChildren(Walker& w, const Expr& e, Env& env) {
     Walk(w, e.c, env);
 }
 
-Val WalkNode(Walker& w, const Expr& e, Env& env) {
+Val WalkNode(Walker& w, ExprId id, const Expr& e, Env& env) {
     const Pass& p = *w.p;
     switch (e.kind) {
     case ExprKind::Literal:
@@ -351,12 +355,9 @@ Val WalkNode(Walker& w, const Expr& e, Env& env) {
         }
         return env.vals[static_cast<std::size_t>(bit)];
     }
-    case ExprKind::Index: {
-        WalkPlace(w, e.a, env);
-        Val k = Walk(w, e.b, env);
-        return ElementValue(p, e, k);
-    }
+    case ExprKind::Index:
     case ExprKind::Field:
+        return ConstReadValue(p, e, WalkPlace(w, id, env));
     case ExprKind::AddrOf:
         WalkPlace(w, e.a, env);
         return AnyVal();
@@ -371,6 +372,9 @@ Val WalkNode(Walker& w, const Expr& e, Env& env) {
         return WalkShortCircuit(w, e, env);
     case ExprKind::Load:
     case ExprKind::LoadField:
+        // through a constant address into const data
+        WalkChildren(w, e, env);
+        return LoadValue(p, id);
     case ExprKind::Store:
     case ExprKind::StoreField:
     case ExprKind::PtrAdd:
@@ -454,7 +458,7 @@ Val Walk(Walker& w, ExprId id, Env& env) {
     }
     // a copy: the walk never edits the tree, but the vector may not move under a reference
     Expr e = At(*w.p, id);
-    Val v = WalkNode(w, e, env);
+    Val v = WalkNode(w, id, e, env);
     if (!env.reached) {
         v = Val();
     }
@@ -463,18 +467,6 @@ Val Walk(Walker& w, ExprId id, Env& env) {
 }
 
 } // namespace
-
-bool ConstType(const Program& program, TypeId type) {
-    TypeKind kind = KindOf(program, type);
-    return IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum;
-}
-
-Val ValueOf(const ConstFacts& facts, ExprId id) {
-    if (id < 0 || static_cast<std::size_t>(id) >= facts.values.size()) {
-        return Val();
-    }
-    return facts.values[static_cast<std::size_t>(id)];
-}
 
 void FindConstants(const Pass& p, std::int32_t function, ConstFacts& facts) {
     const Program& program = *p.program;

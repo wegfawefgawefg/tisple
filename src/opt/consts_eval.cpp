@@ -56,6 +56,18 @@ bool WithComplement(const Pass& p, const Expr& e, Val& v) {
 
 } // namespace
 
+bool ConstType(const Program& program, TypeId type) {
+    TypeKind kind = KindOf(program, type);
+    return IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum;
+}
+
+Val ValueOf(const ConstFacts& facts, ExprId id) {
+    if (id < 0 || static_cast<std::size_t>(id) >= facts.values.size()) {
+        return Val();
+    }
+    return facts.values[static_cast<std::size_t>(id)];
+}
+
 Val AnyVal() {
     Val v;
     v.kind = Val::Any;
@@ -107,28 +119,38 @@ bool Steady(const Pass& p, ExprId id) {
     }
 }
 
-// (at TABLE k) for a const array and a known k
-Val ElementValue(const Pass& p, const Expr& index, Val k) {
-    const Expr& base = At(p, index.a);
-    if (base.kind != ExprKind::VarRef || k.kind != Val::Const ||
-        !ConstType(*p.program, index.type)) {
+ConstAt ConstRoot(const Pass& p, std::int32_t var) {
+    ConstAt at;
+    at.var = VarOf(p, var).kind == VarKind::Const ? var : -1;
+    return at;
+}
+
+ConstAt ElementAt(const Pass& p, const Expr& index, ConstAt base, Val k) {
+    const Type& array = TypeOf(*p.program, At(p, index.a).type);
+    if (base.var < 0 || k.kind != Val::Const || array.kind != TypeKind::Array ||
+        k.bits >= array.count) {
+        return ConstAt();
+    }
+    base.offset += static_cast<std::uint32_t>(k.bits) * TypeOf(*p.program, array.elem).size;
+    return base;
+}
+
+Val ConstReadValue(const Pass& p, const Expr& read, ConstAt at) {
+    std::uint16_t bits = 0;
+    if (at.var < 0 || !ConstType(*p.program, read.type) ||
+        !InitBits(VarOf(p, at.var), at.offset, TypeOf(*p.program, read.type).size, bits)) {
         return AnyVal();
     }
-    const Var& var = VarOf(p, base.ref);
-    const Type& array = TypeOf(*p.program, var.type);
-    if (var.kind != VarKind::Const || array.kind != TypeKind::Array || k.bits >= array.count) {
+    return ConstOf(p, read.type, bits);
+}
+
+Val LoadValue(const Pass& p, ExprId load) {
+    std::uint16_t bits = 0;
+    TypeId type = At(p, load).type;
+    if (!ConstType(*p.program, type) || !ConstValue(*p.program, load, bits)) {
         return AnyVal();
     }
-    std::uint32_t size = TypeOf(*p.program, array.elem).size;
-    std::size_t at = static_cast<std::size_t>(k.bits) * size;
-    if (!var.init.empty() && at + size > var.init.size()) {
-        return AnyVal();
-    }
-    std::uint32_t bits = 0;
-    for (std::uint32_t i = 0; i < size && !var.init.empty(); i++) {
-        bits |= static_cast<std::uint32_t>(var.init[at + i]) << (8 * i);
-    }
-    return ConstOf(p, index.type, bits);
+    return ConstOf(p, type, bits);
 }
 
 Val UnaryValue(const Pass& p, const Expr& e, Val a) {

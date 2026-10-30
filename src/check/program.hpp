@@ -300,6 +300,9 @@ bool ConstValue(const Program& program, ExprId id, std::uint16_t& value);
 // a place (VarRef, Index and Field) rooted at a Const var with every index constant and in
 // range: the var and the place's packed byte offset in it
 bool ConstPlace(const Program& program, ExprId place, std::int32_t& var, std::uint32_t& offset);
+// a pointer into const data whose value is constant: (addr_of place) as ConstPlace, moved by
+// a constant count inside the var; the var and the byte offset it points at
+bool ConstAddress(const Program& program, ExprId id, std::int32_t& var, std::uint32_t& offset);
 // the address slot of var whose bytes overlap [offset, offset + size), or null
 const AddrSlot* SlotOverlapping(const Var& var, std::uint32_t offset, std::uint32_t size);
 // a scalar of size bytes (1 or 2) at offset in var's initial bytes, low byte first; false when

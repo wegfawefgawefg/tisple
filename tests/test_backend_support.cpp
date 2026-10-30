@@ -86,6 +86,10 @@ bool SameGlobals(const Diff& d, std::string& message) {
             continue;
         }
         const tisple::VarPlace& place = layout.vars[v];
+        // a const only the interpreter has: inside the code on the 6502
+        if (place.interp_only) {
+            continue;
+        }
         for (std::uint32_t i = 0; i < place.size; i++) {
             std::uint16_t at = static_cast<std::uint16_t>(place.address + i);
             std::uint8_t want = d.in.memory[at];

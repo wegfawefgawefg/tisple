@@ -58,6 +58,9 @@ struct VarPlace {
     bool split = false;
     std::uint32_t plane_stride = 0; // split arrays: distance between planes
     bool dropped = false;           // LayoutOptions::dropped: not in memory at all
+    // a const only the interpreter reads, at an address inside the code: no bytes in the
+    // binary (backend/link_data.hpp)
+    bool interp_only = false;
 };
 
 struct Layout {

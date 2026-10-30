@@ -68,32 +68,6 @@ std::int64_t OnesAbove(std::int64_t v) {
     return ones;
 }
 
-// the values of a const table's integer elements
-Range TableRange(const Pass& p, const Expr& index, Range type) {
-    const Expr& base = At(p, index.a);
-    if (base.kind != ExprKind::VarRef || VarOf(p, base.ref).kind != VarKind::Const) {
-        return type;
-    }
-    const Var& var = VarOf(p, base.ref);
-    const Type& array = TypeOf(*p.program, var.type);
-    std::uint32_t size = TypeOf(*p.program, array.elem).size;
-    TypeKind kind = KindOf(*p.program, array.elem);
-    if (!IsIntegerKind(kind) || var.init.size() < array.count * size || array.count == 0) {
-        return type;
-    }
-    Range r{type.hi, type.lo};
-    for (std::uint32_t i = 0; i < array.count; i++) {
-        std::uint32_t bits = 0;
-        for (std::uint32_t b = 0; b < size; b++) {
-            bits |= static_cast<std::uint32_t>(var.init[i * size + b]) << (8 * b);
-        }
-        std::int64_t v = SignedValue(kind, static_cast<std::uint16_t>(bits));
-        r.lo = std::min(r.lo, v);
-        r.hi = std::max(r.hi, v);
-    }
-    return r;
-}
-
 Range BinaryRange(const Pass& p, const Counters& counters, const Expr& e, Range type) {
     Range a = ValueRange(p, counters, e.a);
     Range b = ValueRange(p, counters, e.b);
@@ -180,12 +154,11 @@ Range VarRange(const Pass& p, const Counters& counters, std::int32_t var, Range 
 }
 
 // a read of an element or a field: a const table's, or what no store reaches still holds
-Range ElementRange(const Pass& p, const Counters& counters, const Expr& e, Range type) {
-    if (e.kind == ExprKind::Index) {
-        Range table = TableRange(p, e, type);
-        if (table.lo != type.lo || table.hi != type.hi) {
-            return table;
-        }
+Range ElementRange(const Pass& p, const Counters& counters, ExprId id, Range type) {
+    const Expr& e = At(p, id);
+    Range data;
+    if (ConstDataRange(p, counters, id, data, nullptr)) {
+        return Within(data, type) ? data : type;
     }
     ExprId index = ReadIndex(p, e);
     Range at = index >= 0 ? ValueRange(p, counters, index) : Range{0, 0};
@@ -233,7 +206,7 @@ Range WorkOut(const Pass& p, const Counters& counters, ExprId id) {
     }
     case ExprKind::Index:
     case ExprKind::Field:
-        return ElementRange(p, counters, e, type);
+        return ElementRange(p, counters, id, type);
     case ExprKind::Binary:
         return IsIntegerKind(kind) ? BinaryRange(p, counters, e, type) : type;
     case ExprKind::If: {

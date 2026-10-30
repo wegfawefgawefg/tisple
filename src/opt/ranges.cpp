@@ -11,9 +11,12 @@
 //   (or does I/O or jsr), io_write and jsr for globals, a node not known here; a loop forgets
 //   from its start what it writes anywhere in it. (set g (% g 9)) (set g (/ g 9)) is g = 0.
 // - Variables: what the round's ranges (ranges_vars.cpp) say each may ever hold.
-// - A compare whose operands' ranges decide it becomes a literal; a value whose range is one
-//   value becomes it; a match clause no value in the range reaches goes, and a match left with
-//   only its wildcard becomes that clause; an and or or with a literal on its right is
+// - Const data: a read at places its indexes' ranges allow holds the least to the most of the
+//   values there, and when they are few, only those (const_data.cpp).
+// - A compare whose operands' ranges decide it becomes a literal, and (= x k) of a const read x
+//   none of whose few values is k; a value whose range is one value becomes it; a match clause
+//   no value in the range (or of the few) reaches goes, and a match left with only its
+//   wildcard becomes that clause; an and or or with a literal on its right is
 //   decided by it. (~ (~ x)) and (not (not x)) are x, which leaves (set g (~ (~ g))) a store
 //   of g itself.
 //   Only when the operands are pure and read no hardware (:address, aux, loads), which may
@@ -48,6 +51,41 @@ int Decide(Op op, Range a, Range b) {
     }
 }
 
+// the few values a read of const data may give (ConstDataRange); empty when it is not one,
+// or there are many
+std::vector<std::int64_t> DataValues(const Ranger& g, ExprId id) {
+    Range unused;
+    std::vector<std::int64_t> values;
+    if (!ConstDataRange(*g.p, g.counters, id, unused, &values)) {
+        values.clear();
+    }
+    return values;
+}
+
+bool Among(const std::vector<std::int64_t>& values, std::int64_t v) {
+    for (std::int64_t w : values) {
+        if (w == v) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// (= read k) or (!= read k) with read's few values not holding k, k one value
+int DecideByValues(const Ranger& g, const Expr& e, Range a, Range b) {
+    if (e.op != Op::Eq && e.op != Op::Ne) {
+        return -1;
+    }
+    for (int side = 0; side < 2; side++) {
+        Range other = side == 0 ? b : a;
+        std::vector<std::int64_t> values = DataValues(g, side == 0 ? e.a : e.b);
+        if (!values.empty() && other.lo == other.hi && !Among(values, other.lo)) {
+            return e.op == Op::Eq ? 0 : 1;
+        }
+    }
+    return -1;
+}
+
 void FoldCompare(Ranger& g, ExprId id) {
     Pass& p = *g.p;
     const Expr& e = At(p, id);
@@ -56,7 +94,12 @@ void FoldCompare(Ranger& g, ExprId id) {
     if (!ordered || !Quiet(p, e.a) || !Quiet(p, e.b)) {
         return;
     }
-    int known = Decide(e.op, ValueRange(p, g.counters, e.a), ValueRange(p, g.counters, e.b));
+    Range a = ValueRange(p, g.counters, e.a);
+    Range b = ValueRange(p, g.counters, e.b);
+    int known = Decide(e.op, a, b);
+    if (known < 0) {
+        known = DecideByValues(g, e, a, b);
+    }
     if (known < 0 || !Allow(p, "compare decided by ranges", id, -1)) {
         return;
     }
@@ -111,12 +154,14 @@ bool CutClauses(Ranger& g, ExprId id) {
         return false;
     }
     Range r = ValueRange(p, g.counters, e.a);
+    std::vector<std::int64_t> values = DataValues(g, e.a);
     std::vector<Clause> kept;
     bool wildcard = false;
     for (std::uint32_t i = 0; i < e.count; i++) {
         const Clause& clause = p.program->clauses[e.first + i];
         std::int64_t v = SignedValue(kind, clause.value);
-        if (clause.wildcard || (v >= r.lo && v <= r.hi)) {
+        bool reached = v >= r.lo && v <= r.hi && (values.empty() || Among(values, v));
+        if (clause.wildcard || reached) {
             kept.push_back(clause);
             wildcard = wildcard || clause.wildcard;
         }

@@ -6,6 +6,7 @@
 
 #include "backend/link.hpp"
 
+#include "backend/link_data.hpp"
 #include "backend/runtime.hpp"
 #include "link/image.hpp"
 
@@ -16,8 +17,6 @@ namespace tisple {
 
 namespace {
 
-// explicit-address initial values that are not in the file are stored by the startup
-constexpr std::uint32_t kMaxStartupStores = 256;
 constexpr std::uint32_t kCardStart = 0xD000;
 constexpr std::uint32_t kCardEnd = 0x10000;
 
@@ -30,47 +29,6 @@ std::string Hex(std::uint32_t value) {
     char text[16];
     std::snprintf(text, sizeof(text), "$%04X", value);
     return text;
-}
-
-// explicit-address globals with initial values outside [start, end): the startup writes them.
-// Aux ones are in the aux segment instead
-bool StartupStores(const Backend& be, std::uint32_t start, std::uint32_t end,
-                   std::vector<std::pair<std::uint16_t, std::uint8_t>>& stores,
-                   std::vector<Diagnostic>& errors) {
-    const Program& program = *be.program;
-    std::vector<std::uint8_t> memory(0x10000, 0);
-    for (std::size_t v = 0; v < program.vars.size(); v++) {
-        const Var& var = program.vars[v];
-        if (!var.placement.has_address || var.init.empty() || var.placement.in_aux) {
-            continue;
-        }
-        std::uint32_t a = var.placement.address;
-        std::uint32_t size = be.shapes.vars[v].size;
-        if (a >= start && a + size <= end) {
-            continue;
-        }
-        if (!var.addr_slots.empty()) {
-            // the startup's stores are made before the layout gives the addresses
-            AddError(errors, var.loc,
-                     var.name + " is outside the program's memory, so its value is numbers "
-                                "only; set its addresses at the start of main");
-            return false;
-        }
-        Layout placed = be.shapes;
-        placed.vars[v].address = static_cast<std::uint16_t>(a);
-        WriteVarInit(program, placed, static_cast<std::int32_t>(v), memory);
-        for (std::uint32_t i = 0; i < size; i++) {
-            std::uint16_t at = static_cast<std::uint16_t>((a + i) & 0xFFFF);
-            stores.push_back({at, memory[at]});
-        }
-    }
-    if (stores.size() > kMaxStartupStores) {
-        AddError(errors, Loc(),
-                 "more than 256 bytes of initial values live outside the binary (explicit "
-                 ":address); give those globals no value and fill them in main");
-        return false;
-    }
-    return true;
 }
 
 // the origin itself must be ordinary memory
@@ -230,41 +188,6 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
     return true;
 }
 
-// by var: a const (string literals among them) that no kept code names, so it takes no
-// memory; one with an :address stays where it was put, one whose address the program as
-// written may use stays for the interpreter, and one an address in kept data points into
-// stays
-std::vector<bool> UnreachedTables(const Backend& be, const LinkInput& in) {
-    const Program& program = *be.program;
-    std::vector<bool> named(program.vars.size(), false);
-    for (std::size_t f = 0; f < be.code.size(); f++) {
-        if (!(*in.kept)[f]) {
-            continue;
-        }
-        for (const AsmItem& item : be.code[f]) {
-            std::int32_t sym = item.value.sym;
-            if (sym >= 0 && be.info[static_cast<std::size_t>(sym)].role == SymRole::Var) {
-                named[static_cast<std::size_t>(be.info[static_cast<std::size_t>(sym)].owner)] =
-                    true;
-            }
-        }
-    }
-    std::vector<bool> kept(program.vars.size(), false);
-    for (std::size_t v = 0; v < program.vars.size(); v++) {
-        const Var& var = program.vars[v];
-        // by the program as written: the vars the mid-level passes add come after its own
-        bool source =
-            in.source_tables != nullptr && v < in.source_tables->size() && (*in.source_tables)[v];
-        kept[v] = var.kind != VarKind::Const || var.placement.has_address || named[v] || source;
-    }
-    AddSlotTargets(program, kept);
-    std::vector<bool> dropped(program.vars.size(), false);
-    for (std::size_t v = 0; v < program.vars.size(); v++) {
-        dropped[v] = !kept[v];
-    }
-    return dropped;
-}
-
 // a segment's extent grows to cover [start, end)
 void Cover(std::uint32_t& low, std::uint32_t& high, std::uint32_t start, std::uint32_t end) {
     low = std::min(low, start);
@@ -414,12 +337,24 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             lo.preset[v] = static_cast<std::int32_t>(sym.value);
         }
     }
-    lo.dropped = UnreachedTables(be, in);
+    // consts only the interpreter reads go inside the code, so the binary has no bytes of them
+    TableUse use = FindTableUse(be, in);
+    std::vector<VarPlace> interp_places;
+    bool interp_fits = PlaceInterpOnly(be, use.interp_only, runs, interp_places);
+    lo.dropped = use.dropped;
+    for (std::size_t v = 0; v < program.vars.size() && interp_fits; v++) {
+        lo.dropped[v] = lo.dropped[v] || use.interp_only[v];
+    }
     lo.reserved = runs;
     lo.reserved.push_back(AddressRange{frames_at, frames_end});
     lo.reserved.push_back(AddressRange{data_end, options.limit});
     if (!LayoutProgram(program, lo, out.layout, errors)) {
         return out.layout.no_room ? LinkResult::kNoRoom : LinkResult::kError;
+    }
+    for (std::size_t v = 0; v < program.vars.size() && interp_fits; v++) {
+        if (use.interp_only[v]) {
+            out.layout.vars[v] = interp_places[v];
+        }
     }
     // a function's name as a value is its entry's address (dispatch.hpp), in the code and in
     // the const tables below
@@ -464,6 +399,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             DefineSymbol(be.as, sym, place.address);
         }
         const Var& var = program.vars[v];
+        if (place.interp_only) {
+            continue;
+        }
         WriteVarInit(program, out.layout, static_cast<std::int32_t>(v),
                      var.placement.in_aux ? aux : memory);
         // an :address global with no value is left as memory holds it, like a screen
