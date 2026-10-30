@@ -80,6 +80,24 @@ void TestGuard(TestResults& results) {
     // at the type's top the compare is decided: (< 255 b) never, (>= 255 b) always
     Compiled e = CompileText("(fn f ((x u8)) u8 (if (< 255 (+ x x)) 1 2))");
     CHECK(results, CountMn(e, "t.f", tisple::Mn::CMP) == 0);
+    // unsigned 0 < n is n != 0: a load's flags, for bytes and words
+    for (const char* t : {"u8", "u16"}) {
+        std::string ty = t;
+        Compiled z = CompileText("(let n " + ty + " 0) (let s " + ty +
+                                 " 0)\n(fn f () void (for i " + ty + " 0 n (set s (+ s i))))");
+        CHECK(results, CountMn(z, "t.f", tisple::Mn::CMP) <= (ty == "u8" ? 0 : 1));
+        CheckAll(results,
+                 "(let n " + ty + " 0) (let s " + ty + " 0)\n(fn f ((x u16)) u16 (set n (as " + ty +
+                     " (& x 7))) (set s 0) (for i " + ty + " 0 n (set s (+ s i))) (as u16 s))");
+    }
+    // a word goes left even from memory: signed 0 < g is g >= 1, by bytes, no subtraction
+    Compiled w = CompileText("(let g i16 0)\n(fn f () u8 (if (< 0 g) 1 2))");
+    CHECK(results, CountMn(w, "t.f", tisple::Mn::SBC) == 0);
+    // a byte in memory against another number keeps the number in A: (< 3 n) is LDA #3 /
+    // CMP n, the carry clear past it for the loop's adds
+    Compiled m = CompileText("(let n u8 0) (let s u8 0)\n"
+                             "(fn f () void (for i u8 3 n (set s (+ s i))))");
+    CHECK(results, CountMn(m, "t.f", tisple::Mn::CLC) == 0);
 }
 
 } // namespace
