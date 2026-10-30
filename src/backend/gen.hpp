@@ -412,6 +412,8 @@ bool CarryClearNow(const Gen& g);
 bool AHoldsByte(const Gen& g, const Opnd& o, int k);
 // the largest value id can have (ranges.hpp)
 std::uint32_t MaxOf(const Gen& g, ExprId id);
+// the smallest value id can have (backend/ranges.hpp), 0 when nothing better is known
+std::uint32_t MinOf(const Gen& g, ExprId id);
 // id's value as a constant (ConstValue), variables bound to constants included (an unrolled
 // counter, gen_unroll.cpp)
 bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value);

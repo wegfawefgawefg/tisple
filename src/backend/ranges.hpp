@@ -27,6 +27,7 @@ struct Targets {
 
 struct ValueRanges {
     std::vector<std::uint8_t> var_max; // by var: no byte of it holds more (255: anything)
+    std::vector<std::uint8_t> var_min; // by var: no byte of it holds less (0: anything)
     std::vector<bool> candidate;       // by var: var_max is worked out from its writes
     std::vector<Targets> var_targets;  // by var, for pointer variables
     std::vector<Targets> ret_targets;  // by function returning a pointer
@@ -44,5 +45,8 @@ Targets AnyTargets(const Program& program);
 
 // the largest value id can have, as raw bits: up to 255 for 8-bit types, 65535 for 16-bit
 std::uint32_t ExprMax(const Program& program, const ValueRanges& ranges, ExprId id);
+// the smallest, as raw bits (0 when nothing better is known): a shift by a count never 0
+// needs no test for 0
+std::uint32_t ExprMin(const Program& program, const ValueRanges& ranges, ExprId id);
 
 } // namespace tisple

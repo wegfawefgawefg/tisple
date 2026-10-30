@@ -140,9 +140,36 @@ void TestConstShifts16(TestResults& results) {
     }
 }
 
+// counts the ranges know are never 0 (backend/ranges.cpp, ExprMin): blit's (- 8 (& x 7)), 1 to
+// 8, in a local, and (| n 1); no test for 0 then, and a count of 8 still shifts everything out
+void TestCountsNeverZero(TestResults& results) {
+    std::vector<std::uint16_t> xs = {0, 1, 0x7F, 0x80, 0x81, 0xAA, 0xFF};
+    std::vector<std::uint16_t> ns;
+    for (std::uint16_t n = 0; n <= 17; n++) {
+        ns.push_back(n);
+    }
+    ns.push_back(255);
+    for (const char* type : {"u8", "i8"}) {
+        std::string t = type;
+        for (const char* op : {">>", "<<"}) {
+            std::string o = op;
+            CheckPairs(results,
+                       "(fn f ((x " + t + ") (n u8)) " + t + " (let back u8 (- 8 (& n 7))) (" + o +
+                           " x back))",
+                       xs, ns);
+            CheckPairs(results, "(fn f ((x " + t + ") (n u8)) " + t + " (" + o + " x (| n 1)))", xs,
+                       ns);
+        }
+    }
+    // only the compare against 8 is left
+    Compiled c = CompileText("(fn f ((x u8) (n u8)) u8 (let back u8 (- 8 (& n 7))) (<< x back))");
+    CHECK(results, c.ok && CountMn(c, "t.f", tisple::Mn::BEQ) == 0);
+}
+
 } // namespace
 
 void RunBackendShiftTests(TestResults& results) {
+    TestCountsNeverZero(results);
     TestConstShifts8(results);
     TestConstShifts16(results);
     TestCountShifts(results);

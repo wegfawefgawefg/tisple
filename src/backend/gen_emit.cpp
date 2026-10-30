@@ -314,6 +314,14 @@ std::uint32_t MaxOf(const Gen& g, ExprId id) {
     return ExprMax(*g.program, g.be->ranges, id);
 }
 
+std::uint32_t MinOf(const Gen& g, ExprId id) {
+    std::uint16_t c = 0;
+    if (!g.bound.empty() && ConstOf(g, id, c)) {
+        return c;
+    }
+    return ExprMin(*g.program, g.be->ranges, id);
+}
+
 bool ConstOf(const Gen& g, ExprId id, std::uint16_t& value) {
     const Program& program = *g.program;
     if (g.bound.empty()) {
