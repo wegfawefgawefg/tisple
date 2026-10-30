@@ -127,6 +127,57 @@ function buildPad(game) {
     makeKey(ui.keyboard, "ret", 13, "", true);
 }
 
+// taps on the screen itself: the game's taps (game.json "taps") are boxes in hi-res pixels,
+// 280 x 192, each with the key it presses
+let held_tap = null;
+
+function tapAt(e) {
+    const r = ui.canvas.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width * 280;
+    const y = (e.clientY - r.top) / r.height * 192;
+    for (const t of state.game.taps || []) {
+        if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) {
+            return t;
+        }
+    }
+    return null;
+}
+
+function flashTap(t) {
+    const r = ui.canvas.getBoundingClientRect();
+    const box = document.createElement("div");
+    box.className = "flash";
+    box.style.left = (t.x / 280 * r.width) + "px";
+    box.style.top = (t.y / 192 * r.height) + "px";
+    box.style.width = (t.w / 280 * r.width) + "px";
+    box.style.height = (t.h / 192 * r.height) + "px";
+    ui.canvas.parentElement.appendChild(box);
+    setTimeout(() => box.remove(), 150);
+}
+
+ui.canvas.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const t = tapAt(e);
+    if (!t) {
+        return;
+    }
+    ui.canvas.setPointerCapture(e.pointerId);
+    held_tap = t;
+    flashTap(t);
+    if (navigator.vibrate) {
+        navigator.vibrate(8);
+    }
+    press(keyCode(t.key));
+});
+const tapUp = () => {
+    if (held_tap) {
+        held_tap = null;
+        release();
+    }
+};
+ui.canvas.addEventListener("pointerup", tapUp);
+ui.canvas.addEventListener("pointercancel", tapUp);
+
 // a desktop keyboard works too, for trying the page out
 window.addEventListener("keydown", (e) => {
     if (e.repeat || e.ctrlKey || e.metaKey) {

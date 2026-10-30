@@ -16,4 +16,6 @@ buttons into key presses.
 - Logs: the page records every key press and release with its machine cycle and posts
   them to `.../phone/logs/<game>-<session>.json` every 30 s and when it goes to the
   background, so a playtest can be replayed on the desktop against the disk it was made on.
+- A game's config may list `taps`: boxes in hi-res pixels (280 x 192) with the key each
+  presses, so the screen itself takes taps (Witchdog: the dice, the enemies, BARK, END).
 - `?autostart` runs without the tap and without sound, for headless checks.
