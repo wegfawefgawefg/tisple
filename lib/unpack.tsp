@@ -26,8 +26,8 @@
 ; byte with the low 7 bits; the length's first bit is that byte's bit 0).
 (const HOME u16 0x1C00)
 (const CODE_SIZE u16 394)
-(let home_main (array u8 512) :address 0x1C00 :reserve)
-(let home_aux (array u8 512) :address 0x1C00 :in aux :reserve)
+(let home_main (array u8 CODE_SIZE) :address 0x1C00 :reserve)
+(let home_aux (array u8 CODE_SIZE) :address 0x1C00 :in aux :reserve)
 
 (const CODE (array u8 394)
     (make (array u8 394)

@@ -178,8 +178,8 @@
 (const RMW u16 0x1E0C)
 (const TEXT_ROW u16 0x1E0F)
 (const KIT_SIZE u16 327)
-(let home_main (array u8 512) :address 0x1E00 :reserve)
-(let home_aux (array u8 512) :address 0x1E00 :in aux :reserve)
+(let home_main (array u8 KIT_SIZE) :address 0x1E00 :reserve)
+(let home_aux (array u8 KIT_SIZE) :address 0x1E00 :in aux :reserve)
 
 (const KIT (array u8 327)
     (make (array u8 327)

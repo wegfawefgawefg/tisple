@@ -76,7 +76,7 @@ sprite masked in both memories is about 9,000 cycles.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
 - Reserved in both memories: both pages (`$2000`-`$5FFF`), text page 2 (`$0800`-`$0BFF`) and
-  `$1E00`-`$1FFF` for the code below: 34 KB of the 128.
+  `$1E00`-`$1F46` for the code below: about 34 KB of the 128.
 - Aux memory is written with RAMWRT and read with RAMRD. With RAMRD on the 6502 fetches its
   instructions from aux memory too, so everything that runs with a switch on is our own 6502
   code, 327 bytes at `$1E00` in both memories: copied there the first time (main memory's copy
@@ -114,7 +114,7 @@ sprite masked in both memories is about 9,000 cycles.
   bytes end themselves; `dst` needs room for all of them. RAMWRT stays on the output's memory,
   RAMRD on the packed bytes' and on the output's while a match is copied, so packed bytes in
   aux memory can come out in main and the other way.
-- The unpacker is our own 394 bytes at `$1C00` in both memories (`$1C00`-`$1DFF` reserved),
+- The unpacker is our own 394 bytes at `$1C00` in both memories (`$1C00`-`$1D89` reserved),
   copied there the first time, aux memory's copy only once a mode needs it. It borrows
   auxmem's zero page. About 46 cycles a byte out on double hi-res pictures: 0.75 s for a whole
   16 KB screen. With an interrupt handler, `(auxmem.guard)` first.
@@ -153,4 +153,6 @@ offset and one past), noise, our own sources, a PNG and made-up double hi-res pi
 streams refused without reading or writing outside; `(pack ...)` and the table macros.
 tests/test_unpack.cpp: the 6502 unpacker in all four modes on 16 pictures, 48 random samples up
 to 9 KB and 16 KB runs, every byte out and the one after checked. tests/test_dhgr.cpp: lib/dhgr's
-switches, pixels and bytes on both pages.
+switches, pixels and bytes on both pages. tests/test_unpack_irq.cpp: unpacking and a sprite
+into aux memory again and again under the Mockingboard's ticks with `(auxmem.guard)`, ticks
+landing while RAMRD and RAMWRT are on, none lost, every byte right.
