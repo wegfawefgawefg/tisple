@@ -16,6 +16,8 @@ buttons into key presses.
 - Logs: the page records every key press and release with its machine cycle and posts
   them to `.../phone/logs/<game>-<session>.json` every 30 s and when it goes to the
   background, so a playtest can be replayed on the desktop against the disk it was made on.
+- A game's config may set `"look": "ntsc"` (or `color`, `mono`): the screen look it was drawn
+  for, which the player starts in; the look button still cycles.
 - A game's config (`game.json`) names its buttons in `pad`: rows top to bottom, each
   `{"size": "small" | "medium" | "big", "keys": [...]}`, a key `{"label": "END TURN", "key":
   "E", "look": "white", "span": 2}` (looks: `card`, `white`, `violet`, `orange`, `green`;

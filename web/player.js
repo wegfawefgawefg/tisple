@@ -355,6 +355,11 @@ async function boot() {
     state.game = await (await fetch("games/" + name + "/game.json", { cache: "no-store" })).json();
     state.game.name = name;
     setLabel(words.name, state.game.title || name);
+    // "look": the colour look the game was drawn for, until the viewer changes it
+    if (LOOKS.indexOf(state.game.look) >= 0) {
+        state.look = LOOKS.indexOf(state.game.look);
+        setLabel(words.look, LOOKS[state.look]);
+    }
     document.title = state.game.title || name;
     padSetup(state.game, press, release);
     const disk = new Uint8Array(await (await fetch("games/" + name + "/" + state.game.disk,
