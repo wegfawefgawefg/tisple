@@ -11,12 +11,11 @@
 // one that appears twice is small and steady, so both readings give the same value.
 // Seeds 1241, 1407 and 1551 of the race; 150 of 2000 programs divide x by (| x 1).
 
+#include "backend/analysis.hpp"
+#include "check/arith.hpp"
 #include "opt/collapse.hpp"
 #include "opt/consts.hpp"
 #include "opt/ranges.hpp"
-
-#include "backend/analysis.hpp"
-#include "check/arith.hpp"
 
 namespace tisple::opt {
 
@@ -136,8 +135,8 @@ ExprId Rewrite(Ranger& g, ExprId id, const char*& what) {
         if (div) {
             return odd;
         }
-        ExprId mask = NewNode(p, ExprKind::Binary, Op::Sub, e.type, odd,
-                              NewLit(p, e.type, 1, e.loc), e.loc);
+        ExprId mask =
+            NewNode(p, ExprKind::Binary, Op::Sub, e.type, odd, NewLit(p, e.type, 1, e.loc), e.loc);
         return NewNode(p, ExprKind::Binary, Op::And, e.type, CloneExpr(p, e.a), mask, e.loc);
     }
     const Expr& inner = At(p, e.a);

@@ -39,7 +39,8 @@ std::string Gen::InlineHelpers() {
     text += "    (if (= (& p 3) " + Num(r.Below(4)) + ") (return) (set ig (+ ig 1)))\n";
     text += "    (for i u8 0 (& ig 3) (set ih (+ ih (as u16 i))))\n";
     if (r.Chance(50)) {
-        text += "    (if (> ih " + Num(static_cast<int>(r.Next() % 65536)) + ") (do (set ig 7) (return)))\n";
+        text += "    (if (> ih " + Num(static_cast<int>(r.Next() % 65536)) +
+                ") (do (set ig 7) (return)))\n";
     }
     text += "    (set ig (- ig 2)))\n";
     // tiny: reads what its callers just set
@@ -62,7 +63,8 @@ T Gen::InlineInt() {
 std::string Gen::InlineDivision() {
     T t = InlineInt();
     std::vector<const VarInfo*> vars = VarsOf(t, true);
-    std::string g = vars[static_cast<std::size_t>(inline_rng.Below(static_cast<int>(vars.size())))]->name;
+    std::string g =
+        vars[static_cast<std::size_t>(inline_rng.Below(static_cast<int>(vars.size())))]->name;
     std::string v = Var(t);
     std::string w = Var(t);
     std::string value;

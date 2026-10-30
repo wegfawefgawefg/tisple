@@ -14,8 +14,7 @@ namespace {
 constexpr std::int32_t kMinSaving = 12;
 
 bool PlainVar(const Var& v) {
-    return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve &&
-           !v.irq_shared;
+    return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve && !v.irq_shared;
 }
 
 bool Stable(const Pass& p, ExprId id, CseEntry& e);
@@ -116,6 +115,14 @@ bool Candidate(const Pass& p, ExprId id) {
     }
     switch (x.kind) {
     case ExprKind::Binary:
+        // a widened byte times a constant: the backend works it out in A and one byte, but
+        // into a local's two bytes with shifts of memory (the life kernel's row addresses,
+        // once the row function is inlined): worked out twice it costs no more
+        if (x.op == Op::Mul && Wide(p, x) && At(p, x.a).kind == ExprKind::Convert &&
+            !Wide(p, At(p, At(p, x.a).a)) && At(p, x.b).kind == ExprKind::Literal) {
+            return false;
+        }
+        break;
     case ExprKind::Unary:
     case ExprKind::Call:
         break;

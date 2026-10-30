@@ -18,6 +18,13 @@ bool HasSpan(const tisple::Compiled& c, const std::string& name) {
     return false;
 }
 
+// the backend's own inlining: the mid level's (src/opt/inline.cpp) would copy f first
+tisple::OptOptions NoMidInline() {
+    tisple::OptOptions options;
+    options.disabled = {"inline"};
+    return options;
+}
+
 // main's result and globals on the simulator are the interpreter's
 void CheckMain(TestResults& results, const Compiled& c, const std::string& text) {
     CHECK(results, c.ok);
@@ -93,9 +100,11 @@ void TestOnceInLoop(TestResults& results) {
         "    (for i u8 0 (& x 7) (set s (+ s (f i))) (set c (^ c (<< s 1))))\n"
         "    (+ (+ s a) (- c b)))\n"
         "(fn main () u8 (for i u8 0 (& g 7) (set out (+ out (h out)))) out)";
-    Compiled c = CompileMainText(looping);
+    // (the mid level copies h, and the passes then see through it)
+    Compiled c = CompileMainText(looping, NoMidInline());
     CheckMain(results, c, looping);
     CHECK(results, HasSpan(c.code, "t.h"));
+    CheckMain(results, CompileMainText(looping), looping);
     std::string plain = "(let g u8 0)\n(let out u8 0)\n" + Big("f") +
                         "(fn main () u8 (for i u8 0 (& g 7) (set out (+ out (f out)))) out)";
     Compiled d = CompileMainText(plain);
@@ -113,13 +122,6 @@ void TestOnceInSmall(TestResults& results) {
     CHECK(results, HasSpan(c.code, "t.f"));
     CHECK(results, !HasSpan(c.code, "t.s"));
     CHECK(results, CountMn(c, "t.main", tisple::Mn::JSR) == 2);
-}
-
-// the backend's own inlining: the mid level's (src/opt/inline.cpp) would copy f first
-tisple::OptOptions NoMidInline() {
-    tisple::OptOptions options;
-    options.disabled = {"inline"};
-    return options;
 }
 
 void TestOnceInUnrolled(TestResults& results) {

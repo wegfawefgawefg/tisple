@@ -72,7 +72,8 @@ void Copied(TestResults& results) {
         "(fn f ((x u8)) u8 (+ x g))\n(fn k ((x u8) (y u8)) u8 (set g (^ g y)) (- x y))\n"
         "(fn main () u8 (let a u8 (k (f 3) (f g))) (set h (+ a (k g (f a)))) (+ h g))",
         // in a loop, and in a while's condition
-        "(fn f ((x u8)) u8 (+ x g))\n(fn main () u8 (for i u8 0 5 (set w (+ w (as u16 (f i)))))\n"
+        "(fn f ((x u8)) u8 (+ x g))\n(fn main () u8 (for i u8 0 5 (set w (+ w (as u16 (f (+ i "
+        "1))))))\n"
         "    (while (< (f h) 50) (set h (+ h 1))) (+ h (as u8 w)))",
         // a local of the callee whose let the passes took away (fuzz seed 10010645: its set went
         // to the callee's frame, which shares bytes with f's parameters)
@@ -158,13 +159,20 @@ void Divisions(TestResults& results) {
         bool gone;         // no division left
     };
     const Case cases[] = {
-        {"u8", "(/ x 1)", true},          {"u8", "(% x 1)", true},
-        {"i16", "(/ x 1)", true},         {"i8", "(% x 1)", true},
-        {"u8", "(% x (- g g))", true},    {"i16", "(% x (- x x))", true},
-        {"u16", "(/ x (- x x))", true},   {"i8", "(/ x (- x x))", false},
-        {"u8", "(/ x (| x 1))", true},    {"u16", "(% x (| x 1))", true},
-        {"i8", "(/ x (| x 1))", false},   {"u8", "(/ (% x (| g 1)) (| g 1))", true},
-        {"u16", "(/ x x)", true},         {"i16", "(/ x x)", false},
+        {"u8", "(/ x 1)", true},
+        {"u8", "(% x 1)", true},
+        {"i16", "(/ x 1)", true},
+        {"i8", "(% x 1)", true},
+        {"u8", "(% x (- g g))", true},
+        {"i16", "(% x (- x x))", true},
+        {"u16", "(/ x (- x x))", true},
+        {"i8", "(/ x (- x x))", false},
+        {"u8", "(/ x (| x 1))", true},
+        {"u16", "(% x (| x 1))", true},
+        {"i8", "(/ x (| x 1))", false},
+        {"u8", "(/ (% x (| g 1)) (| g 1))", true},
+        {"u16", "(/ x x)", true},
+        {"i16", "(/ x x)", false},
         {"u8", "(/ (& x 7) (| (& g 15) 8))", true},
         {"u8", "(% (& x 7) (| (& g 15) 8))", true},
     };

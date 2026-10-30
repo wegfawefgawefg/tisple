@@ -43,13 +43,13 @@ struct Summary {
     // by var: globals it reads but those only its pure last value reads (what a call whose
     // value is unused reads)
     std::vector<bool> effect_reads;
-    bool loads = false;       // reads through a pointer: address-taken vars, undeclared memory
-    bool stores = false;      // writes through a pointer
-    bool io = false;          // io_read or io_write
-    bool jsr = false;         // machine code: may read and write any global
-    bool unknown = false;     // a node this analysis does not know: every effect
-    bool terminates = true;   // every loop in it provably ends
-    bool pure = false;        // none of the effects above, and it ends: see PureFunction
+    bool loads = false;     // reads through a pointer: address-taken vars, undeclared memory
+    bool stores = false;    // writes through a pointer
+    bool io = false;        // io_read or io_write
+    bool jsr = false;       // machine code: may read and write any global
+    bool unknown = false;   // a node this analysis does not know: every effect
+    bool terminates = true; // every loop in it provably ends
+    bool pure = false;      // none of the effects above, and it ends: see PureFunction
 };
 
 // ---- value ranges of variables (ranges_vars.cpp)
