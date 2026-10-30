@@ -262,16 +262,34 @@ bool FindStart(const Placer& pl, const Region& region, const VarPlace& place, co
     return false;
 }
 
-// the regions automatic placement fills, in order
-std::vector<Region> DataRegions(const Placer& pl, bool aux) {
-    if (aux) {
+// the regions automatic placement fills, in order; a var that avoids a range gets them less it
+std::vector<Region> DataRegions(const Placer& pl, std::int32_t id) {
+    if (InAux(pl, id)) {
         return {Region{kAuxDataStart, kAuxDataEnd, true}};
     }
     std::vector<Region> regions = {Region{pl.options->data_start, pl.options->data_end, false}};
     for (const AddressRange& range : pl.options->more_data) {
         regions.push_back(Region{range.start, range.end, false});
     }
-    return regions;
+    std::size_t v = static_cast<std::size_t>(id);
+    if (v >= pl.options->avoiders.size() || !pl.options->avoiders[v]) {
+        return regions;
+    }
+    const AddressRange& avoid = pl.options->avoid;
+    std::vector<Region> out;
+    for (const Region& r : regions) {
+        if (avoid.end <= r.start || avoid.start >= r.end) {
+            out.push_back(r);
+            continue;
+        }
+        if (avoid.start > r.start) {
+            out.push_back(Region{r.start, avoid.start, false});
+        }
+        if (avoid.end < r.end) {
+            out.push_back(Region{avoid.end, r.end, false});
+        }
+    }
+    return out;
 }
 
 void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
@@ -288,7 +306,7 @@ void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
     // per plane, only one table has to stay inside a block
     std::uint32_t inside = per_plane ? TypeOf(*pl.program, var.type).count : place.size;
     Tables tables = PageTables(pl, id, place, per_plane);
-    std::vector<Region> regions = DataRegions(pl, InAux(pl, id));
+    std::vector<Region> regions = DataRegions(pl, id);
     for (const Region& region : regions) {
         std::uint32_t first = AlignUp(region.start, align);
         for (bool paged : {true, false}) {
@@ -304,7 +322,7 @@ void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
         }
     }
     std::string where = regions.size() == 1 ? " in the data region " : " in the data regions ";
-    if (regions[0].aux) {
+    if (!regions.empty() && regions[0].aux) {
         where = " in aux memory ";
     }
     for (std::size_t i = 0; i < regions.size(); i++) {

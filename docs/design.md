@@ -385,6 +385,11 @@ Now the link decides (src/backend/squeeze.cpp):
   call, the loops left rolled, the multiply routines.
 - `--no-inline` names must be functions; the error says what the names look like
   (`draw/text.start`), or the one meant.
+- Before a tighter budget, the link tries the card's bank 1 for whole cold functions behind
+  bank-switching stubs, 20 cycles a call across (docs/overlays.md, Built). A program that
+  fits that way is also built with the tighter budgets without it, and the one with fewer
+  cycles a run, about, is kept; the warning says what was traded. Catwiz: squeeze 3 became
+  squeeze 0 with 3.3 KB in bank 1, its loops 3-4% faster.
 
 ## Target
 

@@ -158,8 +158,9 @@ bool LoadSegment(Apple2& a, const MemorySegment& segment, std::string& error) {
     uint32_t start = segment.address;
     uint32_t end = start + static_cast<uint32_t>(segment.bytes.size());
     bool card = segment.bank == MemoryBank::kCard;
-    uint32_t low = card ? 0xD000 : 0x0000;
-    uint32_t high = card ? 0x10000 : 0xC000;
+    bool bank1 = segment.bank == MemoryBank::kCardBank1;
+    uint32_t low = card || bank1 ? 0xD000 : 0x0000;
+    uint32_t high = card ? 0x10000 : bank1 ? 0xE000 : 0xC000;
     if (start < low || end > high) {
         char text[128];
         std::snprintf(text, sizeof(text), "%zu bytes at $%04X do not fit %s memory",
@@ -173,6 +174,8 @@ bool LoadSegment(Apple2& a, const MemorySegment& segment, std::string& error) {
             a.cpu.mem[addr] = value;
         } else if (segment.bank == MemoryBank::kAux) {
             a.aux[addr] = value;
+        } else if (bank1) {
+            a.lc.bank1_d000[addr - 0xD000] = value;
         } else if (addr >= 0xE000) {
             a.lc.e000[addr - 0xE000] = value;
         } else {

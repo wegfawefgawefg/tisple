@@ -12,12 +12,12 @@ std::string Hex4(std::uint32_t value) {
     return text;
 }
 
-std::string BytesText(const Compiled& c, const AsmItem& item) {
+std::string BytesText(const Compiled& c, const AsmItem& item, bool bank1) {
     std::string text;
     for (std::uint32_t i = 0; i < item.size && i < 3; i++) {
         char byte[4];
         std::snprintf(byte, sizeof(byte), "%02X ",
-                      CompiledByte(c, static_cast<std::uint16_t>(item.address + i)));
+                      CompiledByte(c, static_cast<std::uint16_t>(item.address + i), bank1));
         text += byte;
     }
     if (item.size > 3) {
@@ -61,7 +61,8 @@ std::string ListProgram(const Program& program, const Compiled& c) {
         if (bytes == 0) {
             continue;
         }
-        text += "\n" + span.name + "  $" + Hex4(start) + ", " + std::to_string(bytes) + " bytes\n";
+        text += "\n" + span.name + "  $" + Hex4(start) + ", " + std::to_string(bytes) + " bytes" +
+                (span.card_bank1 ? " in the language card's bank 1\n" : "\n");
         for (std::size_t i = span.first; i < span.end; i++) {
             const AsmItem& item = as.items[i];
             if (item.kind == ItemKind::Note) {
@@ -79,7 +80,8 @@ std::string ListProgram(const Program& program, const Compiled& c) {
                 }
                 continue;
             }
-            text += "  " + Hex4(item.address) + "  " + BytesText(c, item) + ItemText(as, item);
+            text += "  " + Hex4(item.address) + "  " + BytesText(c, item, span.card_bank1) +
+                    ItemText(as, item);
             int cycles = ItemCycles(as, item);
             if (cycles > 0) {
                 text += "    (" + std::to_string(cycles) + ")";

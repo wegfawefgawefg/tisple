@@ -50,6 +50,8 @@ bool Loaded(const tisple::Apple2& a, const MemorySegment& s) {
             got = a.cpu.mem[at];
         } else if (s.bank == MemoryBank::kAux) {
             got = a.aux[at];
+        } else if (s.bank == MemoryBank::kCardBank1) {
+            got = a.lc.bank1_d000[at - 0xD000];
         } else {
             got = at >= 0xE000 ? a.lc.e000[at - 0xE000] : a.lc.bank2_d000[at - 0xD000];
         }
@@ -107,6 +109,29 @@ void TestSegmentsBoot(TestResults& results) {
                        std::string::npos);
 }
 
+// both of the card's $D000 banks: bank 2's segment and bank 1's, each where it belongs
+void TestBank1Boot(TestResults& results) {
+    std::vector<MemorySegment> segments;
+    segments.push_back(Noise(MemoryBank::kMain, 0x6000, 0x0100, 7));
+    segments[0].bytes[0] = 0x60; // RTS at the entry
+    segments.push_back(Noise(MemoryBank::kCard, 0xD000, 0x1800, 8));
+    segments.push_back(Noise(MemoryBank::kCardBank1, 0xD000, 0x0F00, 9));
+    auto disk = std::make_unique<tisple::DiskSectors>();
+    tisple::BootDiskInfo info;
+    std::string error;
+    CHECK(results, tisple::MakeBootDisk(segments, 0x6000, *disk, info, error));
+    CHECK(results, info.segments == 3);
+    std::unique_ptr<tisple::Apple2> a = MachineWithDisk(*disk);
+    BootToStop(*a, info.return_pc);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    for (const MemorySegment& s : segments) {
+        CHECK(results, Loaded(*a, s));
+    }
+    std::vector<MemorySegment> high = {segments[0],
+                                       Noise(MemoryBank::kCardBank1, 0xDF00, 0x200, 5)};
+    CHECK(results, !tisple::MakeBootDisk(high, 0x6000, *disk, info, error));
+}
+
 const char* const kRegions = R"(
 ; data in every region a disk can load: after the code, below the origin, in the language
 ; card and in aux memory
@@ -126,8 +151,9 @@ const char* const kRegions = R"(
         (+ (as u16 (at c 8999)) (as u16 (at d 2999))))))
 )";
 
-// a compiled program in four regions boots and runs as it does loaded straight in
-void TestCompiledRegionsBoot(TestResults& results) {
+// a compiled program in four regions boots and runs as it does loaded straight in; with bank1,
+// its function in the card's bank 1 too (BuildOptions::bank1_test)
+void TestCompiledRegionsBoot(TestResults& results, int bank1) {
     // checked only: the test layout's one region could not hold it
     Built built;
     tisple::LoadOptions load;
@@ -141,6 +167,7 @@ void TestCompiledRegionsBoot(TestResults& results) {
     tisple::BuildOptions options; // as tisple build --disk: no DOS, the loader below $0B00
     options.limit = 0xC000;
     options.low_start = tisple::kBootLoadLow;
+    options.bank1_test = bank1;
     tisple::Compiled code;
     std::vector<tisple::Diagnostic> errors;
     bool ok = tisple::CompileProgram(built.program, options, code, errors);
@@ -154,12 +181,15 @@ void TestCompiledRegionsBoot(TestResults& results) {
     bool card = false;
     bool aux = false;
     bool low = false;
+    bool banked = false;
     for (const MemorySegment& s : segments) {
+        banked = banked || s.bank == MemoryBank::kCardBank1;
         card = card || s.bank == MemoryBank::kCard;
         aux = aux || s.bank == MemoryBank::kAux;
         low = low || (s.bank == MemoryBank::kMain && s.address < code.origin);
     }
     CHECK(results, card && aux && low && code.card_ram);
+    CHECK(results, banked == (bank1 > 0));
 
     auto disk = std::make_unique<tisple::DiskSectors>();
     tisple::BootDiskInfo info;
@@ -200,7 +230,7 @@ void TestCompiledRegionsBoot(TestResults& results) {
     CHECK(results, (booted->cpu.mem[0x0300] | (booted->cpu.mem[0x0301] << 8)) == want);
     CHECK(results, std::memcmp(booted->cpu.mem + 0x0300, direct->cpu.mem + 0x0300, 2) == 0);
     for (const MemorySegment& s : segments) {
-        if (s.bank == MemoryBank::kAux) {
+        if (s.bank == MemoryBank::kAux || s.bank == MemoryBank::kCardBank1) {
             CHECK(results, Loaded(*booted, s));
             CHECK(results, apple == nullptr || Loaded(*apple, s));
         }
@@ -267,7 +297,9 @@ void TestSharedPagesBoot(TestResults& results) {
 
 void RunDiskSegmentTests(TestResults& results) {
     TestSegmentsBoot(results);
-    TestCompiledRegionsBoot(results);
+    TestBank1Boot(results);
+    TestCompiledRegionsBoot(results, 0);
+    TestCompiledRegionsBoot(results, 1);
     TestSharedPagesBoot(results);
 }
 

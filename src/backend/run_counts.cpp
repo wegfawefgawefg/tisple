@@ -116,4 +116,25 @@ std::vector<std::uint64_t> FindRunCounts(const Program& program, std::uint32_t m
     return runs;
 }
 
+std::vector<std::vector<std::pair<std::int32_t, std::uint64_t>>>
+FindCallWeights(const Program& program, const std::vector<std::uint64_t>& runs,
+                std::uint32_t most) {
+    std::size_t count = program.functions.size();
+    std::vector<std::vector<std::pair<std::int32_t, std::uint64_t>>> out(count);
+    std::vector<std::uint64_t> calls(count, 0);
+    for (std::size_t f = 0; f < count && f < runs.size(); f++) {
+        if (runs[f] == 0) {
+            continue;
+        }
+        std::fill(calls.begin(), calls.end(), 0);
+        AddCalls(program, program.functions[f].body, runs[f], most, calls);
+        for (std::size_t g = 0; g < count; g++) {
+            if (calls[g] > 0) {
+                out[f].push_back({static_cast<std::int32_t>(g), calls[g]});
+            }
+        }
+    }
+    return out;
+}
+
 } // namespace tisple

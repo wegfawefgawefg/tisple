@@ -131,9 +131,54 @@ void Optimize(Program& program, const BuildOptions& options, OptOptions opt, Opt
     }
 }
 
-// one build at options.squeeze; what it gave up for room in squeezed
+// the link with code in the card's bank 1: the fewest of the cheapest functions that make the
+// program fit (more of them only ever free more room, but for what they keep out of
+// $D000-$DFFF: a search on the count). be is the unlinked backend; the linked one replaces it
+LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& facts, Compiled& out,
+                     std::vector<Diagnostic>& errors, Bank1Plan& chosen) {
+    std::size_t most = 0;
+    std::uint32_t bytes = 0;
+    while (most < facts.order.size()) {
+        std::uint32_t size = facts.bytes[static_cast<std::size_t>(facts.order[most])];
+        // far branches make code a little bigger in its own stretch
+        if (bytes + size + size / 8 > kBank1End - kBank1Start) {
+            break;
+        }
+        bytes += size + size / 8;
+        most++;
+    }
+    const Backend unlinked = be;
+    auto attempt = [&](std::size_t count, std::vector<Diagnostic>& errs) {
+        Bank1Plan plan = PlanBank1(unlinked, facts, count);
+        in.bank1 = &plan;
+        be = unlinked;
+        LinkResult result = LinkProgram(be, in, true, out, errs);
+        chosen = plan;
+        return result;
+    };
+    if (most == 0) {
+        return LinkResult::kNoRoom;
+    }
+    std::vector<Diagnostic> errs;
+    LinkResult full = attempt(most, errs);
+    if (full != LinkResult::kOk) {
+        errors.insert(errors.end(), errs.begin(), errs.end());
+        return full;
+    }
+    std::size_t low = 0; // does not fit
+    std::size_t high = most;
+    while (high - low > 1) {
+        std::size_t mid = low + (high - low) / 2;
+        std::vector<Diagnostic> ignored;
+        (attempt(mid, ignored) == LinkResult::kOk ? high : low) = mid;
+    }
+    return attempt(high, errors);
+}
+
+// one build at options.squeeze; what it gave up for room in squeezed. With bank1, code may go
+// in the language card's bank 1 when the program does not fit without
 LinkResult CompileAt(const Program& source, const BuildOptions& options, Compiled& out,
-                     std::vector<Diagnostic>& errors, Squeezed& squeezed) {
+                     std::vector<Diagnostic>& errors, Squeezed& squeezed, bool bank1) {
     // the same program with its constant arithmetic folded and the mid-level passes run on
     // it: what the code is made from. The interpreter keeps running the program as written
     Program program = source;
@@ -165,9 +210,10 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
     EmitRuntime(be, runtime);
     EmitDivRoutines(be, runtime);
     std::vector<AsmItem> irq;
+    std::vector<AsmItem> irq_banked;
     IrqPlan irq_plan;
     if (program.handler >= 0) {
-        EmitIrqEntry(be, kept, runtime, irq_plan, irq);
+        EmitIrqEntry(be, kept, runtime, irq_plan, irq, irq_banked);
     }
     FramePlan plan;
     if (!AllocateFrames(be, plan)) {
@@ -180,30 +226,99 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
     in.kept = &kept;
     in.runtime = &runtime;
     in.irq = &irq;
+    in.irq_banked = &irq_banked;
     in.irq_plan = irq_plan;
     std::vector<bool> source_tables = FindAddressedConsts(source);
     in.source_tables = &source_tables;
-    // the language card only when the program needs the room: link without it first
+    // the language card only when the program needs the room: link without it first, then
+    // with it, then with code in its bank 1
     bool card_allowed = options.use_card && CardAllowed(program, be.shapes);
+    bool bank1_allowed = card_allowed && options.use_bank1 && (bank1 || options.bank1_test > 0);
     Backend unlinked;
     if (card_allowed) {
         unlinked = be;
     }
     std::vector<Diagnostic> link_errors;
-    LinkResult result = LinkProgram(be, in, false, out, link_errors);
-    if (result == LinkResult::kNoRoom && card_allowed) {
-        be = unlinked;
-        link_errors.clear();
+    LinkResult result = LinkResult::kNoRoom;
+    Bank1Plan banks;
+    if (bank1_allowed && options.bank1_test > 0) {
+        Bank1Facts facts = FindBank1Facts(be, kept, runtime);
+        banks = PlanBank1Test(be, facts, options.bank1_test);
+        in.bank1 = &banks;
         result = LinkProgram(be, in, true, out, link_errors);
+    } else {
+        result = LinkProgram(be, in, false, out, link_errors);
+        if (result == LinkResult::kNoRoom && card_allowed) {
+            be = unlinked;
+            link_errors.clear();
+            result = LinkProgram(be, in, true, out, link_errors);
+        }
+        if (result == LinkResult::kNoRoom && bank1_allowed) {
+            be = unlinked;
+            std::vector<Diagnostic> bank1_errors;
+            Bank1Facts facts = FindBank1Facts(be, kept, runtime);
+            LinkResult banked = LinkBank1(be, in, facts, out, bank1_errors, banks);
+            if (banked != LinkResult::kNoRoom || !bank1_errors.empty()) {
+                result = banked;
+                link_errors = bank1_errors;
+            }
+        }
     }
     errors.insert(errors.end(), link_errors.begin(), link_errors.end());
     if (result != LinkResult::kOk) {
         return result;
     }
+    for (std::size_t f = 0; f < banks.functions.size() && out.card_ram; f++) {
+        if (banks.functions[f]) {
+            squeezed.bank1.push_back(static_cast<std::int32_t>(f));
+        }
+    }
+    if (!squeezed.bank1.empty()) {
+        squeezed.bank1_bytes = banks.bytes;
+        squeezed.crossings = banks.crossings;
+        squeezed.cycles += banks.crossings * kStubCycles;
+    }
     out.as = std::move(be.as);
     out.opt = report;
     out.warnings = PackedArrayWarnings(source);
     return LinkResult::kOk;
+}
+
+// a build that fits with code in bank 1 (banked, at its level of squeeze) against the
+// tighter budgets without it: the first that fits, unless the cycles a run, about, already
+// pass the bank 1 build's. The faster goes to out, and the note says what was traded
+void ChooseBank1OrSqueeze(const Program& source, const BuildOptions& options, const Squeezed& usual,
+                          const Squeezed& banked, Compiled& out, std::vector<Diagnostic>& errors) {
+    BuildOptions tighter = options;
+    while (tighter.squeeze < kMaxSqueeze) {
+        tighter.squeeze++;
+        Compiled other;
+        std::vector<Diagnostic> tried;
+        Squeezed squeezed;
+        LinkResult result = CompileAt(source, tighter, other, tried, squeezed, false);
+        bool slower = squeezed.cycles >= banked.cycles;
+        if (result == LinkResult::kOk && !slower) {
+            out = std::move(other);
+            errors.insert(errors.end(), tried.begin(), tried.end());
+            out.warnings.push_back(SqueezeNote(source, usual, squeezed));
+            out.warnings.push_back(Bank1Note(source, banked, &squeezed, false));
+            return;
+        }
+        if (result == LinkResult::kOk) {
+            if (banked.squeeze != usual.squeeze) {
+                out.warnings.push_back(SqueezeNote(source, usual, banked));
+            }
+            out.warnings.push_back(Bank1Note(source, banked, &squeezed, true));
+            return;
+        }
+        if (slower || result != LinkResult::kNoRoom) {
+            break;
+        }
+    }
+    if (banked.squeeze != usual.squeeze) {
+        out.warnings.push_back(SqueezeNote(source, usual, banked));
+    }
+    out.warnings.push_back(Bank1Note(source, banked, nullptr, true));
 }
 
 } // namespace
@@ -219,9 +334,15 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     for (;;) {
         std::vector<Diagnostic> tried;
         Squeezed squeezed;
-        LinkResult result = CompileAt(source, tighter, out, tried, squeezed);
+        LinkResult result = CompileAt(source, tighter, out, tried, squeezed, true);
         if (tighter.squeeze == options.squeeze) {
             usual = squeezed;
+        }
+        if (result == LinkResult::kOk && !squeezed.bank1.empty() && options.bank1_test == 0) {
+            // bank 1, or a tighter budget without it: the one that runs faster
+            ChooseBank1OrSqueeze(source, tighter, usual, squeezed, out, tried);
+            errors.insert(errors.end(), tried.begin(), tried.end());
+            return true;
         }
         bool again = result == LinkResult::kNoRoom && tighter.squeeze < kMaxSqueeze;
         if (!again) {

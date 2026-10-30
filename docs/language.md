@@ -787,7 +787,11 @@ order:
    startup switches its RAM in (`BIT $C083` twice) and the ROM back before it
    returns (`BIT $C082`). A computed `jsr` or pointer is not checked: it is
    taken to reach slot firmware (as the mouse library's `jsr` does) or the
-   program's own memory, never the ROM. Bank 1's 4 KB is not used.
+   program's own memory, never the ROM.
+5. Bank 1 of the language card, `$D000`-`$DFFF` (4 KB), for code only (2026-10-30), when the
+   program still does not fit: whole functions, the coldest for their bytes, called through
+   stubs that switch banks, and nothing bank 1 code reads kept in bank 2's `$D000`-`$DFFF`
+   (docs/overlays.md, Built).
 4. Lets `:in aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
    above; an `:address` there must lie in `$0200`-`$BFFF`.
 
@@ -802,8 +806,8 @@ what the program's frames take:
 | Build | Main memory | Language card | Aux memory | In all |
 | --- | --- | --- | --- | --- |
 | `tisple build -o`, a DOS 3.3 BRUN file | `$6000`-`$94FF` from the default origin, 13.25 KB, one stretch | no | no | 13.25 KB |
-| `tisple run` | `$0800`-`$94FF` less text page 1, 35.25 KB | 12 KB | 46 KB | 93 KB |
-| `tisple build --disk`, self-booting | `$0B00`-`$BEFF`, 45 KB | 12 KB | 46 KB | 103 KB |
+| `tisple run` | `$0800`-`$94FF` less text page 1, 35.25 KB | 12 KB, and 4 KB of code in bank 1 | 46 KB | 97 KB |
+| `tisple build --disk`, self-booting | `$0B00`-`$BEFF`, 45 KB | 12 KB, and 4 KB of code in bank 1 | 46 KB | 107 KB |
 
 The page after main memory's last byte (`$9500` or `$BF00`) holds the saved
 zero page. A disk holds at most 10 segments in 528 pages, each segment

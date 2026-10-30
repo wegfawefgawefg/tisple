@@ -6,6 +6,7 @@
 #include "check/program.hpp"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tisple {
@@ -96,6 +97,12 @@ std::uint32_t LoopTrips(const Program& program, ExprId loop, std::uint32_t most 
 // function main never reaches)
 std::vector<std::uint64_t> FindRunCounts(const Program& program,
                                          std::uint32_t most = kMaxWeighedTrips);
+// by caller: each callee and how many times the caller's code calls it in one run of the
+// program (the caller's runs, from FindRunCounts with the same `most`, times the loops around
+// each call)
+std::vector<std::vector<std::pair<std::int32_t, std::uint64_t>>>
+FindCallWeights(const Program& program, const std::vector<std::uint64_t>& runs,
+                std::uint32_t most = kMaxWeighedTrips);
 
 // by var: locals every let and set gives 1 or -1 (unit_steps.cpp)
 std::vector<bool> FindUnitSteps(const Program& program);

@@ -3,6 +3,7 @@
 // The link stage of CompileProgram (link.cpp): startup, code placement, the layout of every
 // variable, and the program's bytes as segments.
 
+#include "backend/card_bank.hpp"
 #include "backend/frames.hpp"
 #include "backend/irq.hpp"
 
@@ -14,9 +15,13 @@ struct LinkInput {
     const std::vector<bool>* kept = nullptr; // by function: its code is in the program
     const std::vector<AsmItem>* runtime = nullptr;
     const std::vector<bool>* source_tables = nullptr; // by var: FindAddressedConsts on the source
-    // the interrupt handler's entry (irq.hpp), empty without one
+    // the interrupt handler's entry (irq.hpp), empty without one; the same that saves the
+    // card's bank, for code in bank 1
     const std::vector<AsmItem>* irq = nullptr;
+    const std::vector<AsmItem>* irq_banked = nullptr;
     IrqPlan irq_plan;
+    // the functions in the language card's bank 1 (card_bank.hpp), or none; with the card
+    const Bank1Plan* bank1 = nullptr;
 };
 
 enum class LinkResult : std::uint8_t {

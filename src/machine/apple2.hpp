@@ -364,7 +364,7 @@ bool LoadRom(Apple2& a, const uint8_t* bytes, size_t size, std::string& error);
 // copies a raw binary to origin and starts there with $FFFE pushed as the return address
 bool LoadProgram(Apple2& a, const uint8_t* bytes, size_t size, uint16_t origin, std::string& error);
 // more of a program, before LoadProgram: main ram below $C000, the main language card's
-// $D000-$FFFF with bank 2 at $D000, or auxiliary ram below $C000
+// $D000-$FFFF with bank 2 at $D000, its bank 1 at $D000-$DFFF, or auxiliary ram below $C000
 bool LoadSegment(Apple2& a, const MemorySegment& segment, std::string& error);
 // the reset line: soft switches to their reset state, pc from $FFFC
 void ResetApple2(Apple2& a);

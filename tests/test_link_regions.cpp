@@ -78,9 +78,11 @@ bool SegmentApart(const Compiled& c, const std::vector<tisple::MemorySegment>& a
         end > 0x10000) {
         return false;
     }
+    // aux memory, the card's bank 1, and main memory with the card as the startup leaves it
+    auto ram = [](MemoryBank bank) { return bank == MemoryBank::kCard ? MemoryBank::kMain : bank; };
     for (std::size_t j = 0; j < all.size(); j++) {
         const tisple::MemorySegment& o = all[j];
-        bool same_ram = (o.bank == MemoryBank::kAux) == (s.bank == MemoryBank::kAux);
+        bool same_ram = ram(o.bank) == ram(s.bank);
         std::uint32_t o_end = o.address + static_cast<std::uint32_t>(o.bytes.size());
         if (j != i && same_ram && Overlaps(start, end, o.address, o_end)) {
             return false;
@@ -91,7 +93,8 @@ bool SegmentApart(const Compiled& c, const std::vector<tisple::MemorySegment>& a
         const tisple::Placement& place = program.vars[v].placement;
         std::uint32_t r_start = c.code.layout.vars[v].address;
         std::uint32_t r_end = r_start + c.code.layout.vars[v].size;
-        bool same_ram = place.in_aux == (s.bank == MemoryBank::kAux);
+        bool same_ram =
+            place.in_aux ? s.bank == MemoryBank::kAux : ram(s.bank) == MemoryBank::kMain;
         if (i > 0 && place.reserve && same_ram && Overlaps(start, end, r_start, r_end)) {
             return false;
         }

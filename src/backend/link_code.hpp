@@ -11,6 +11,8 @@
 
 #include "backend/link.hpp"
 
+#include <cstdint>
+
 namespace tisple {
 
 constexpr std::uint32_t kCardStart = 0xD000;
@@ -38,10 +40,13 @@ struct CodePlace {
 std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& span);
 
 // spans in order, each whole in the first stretch from the current one on that holds it; the
-// last span is followed by the memory frames. False when they do not fit
+// last span is followed by the memory frames. False when they do not fit. The spans from
+// first_bank1 on are the language card's bank 1 code (card_bank.hpp): they go one after
+// another in the last stretch, which no other span uses, and the frames follow the span before
 bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
                 const std::vector<AddressRange>& stretches, std::uint32_t mem_frames,
-                std::vector<CodePlace>& places, std::uint32_t& frames_at);
+                std::vector<CodePlace>& places, std::uint32_t& frames_at,
+                std::size_t first_bank1 = SIZE_MAX);
 
 // every branch whose target is not a label of its own run (the spans in one stretch) becomes
 // far; true when one did, and then the sizes have changed and the spans must be placed again

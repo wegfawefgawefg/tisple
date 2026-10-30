@@ -56,6 +56,22 @@ void Cover(std::uint32_t& low, std::uint32_t& high, std::uint32_t start, std::ui
     high = std::max(high, end);
 }
 
+// with code in the card's bank 1, the stubs, the interrupt entry (the spans after the
+// startup, before `resident`) and the frames in memory stay out of $D000-$DFFF
+bool Bank1Resident(const std::vector<CodePlace>& places, std::size_t resident,
+                   std::uint32_t frames_at, std::uint32_t frames_end,
+                   std::vector<Diagnostic>& errors) {
+    bool clear = frames_end <= kBank1Start || frames_at >= kBank1End || frames_at == frames_end;
+    for (std::size_t s = 1; s < resident && s < places.size(); s++) {
+        clear = clear && (places[s].address < kBank1Start || places[s].address >= kBank1End);
+    }
+    if (!clear) {
+        AddError(errors, Loc(),
+                 "no room for the language card's bank stubs and the frames outside $D000-$DFFF");
+    }
+    return clear;
+}
+
 } // namespace
 
 bool CardAllowed(const Program& program, const Layout& shapes) {
@@ -124,16 +140,38 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         zp_image.push_back(MakeByte(Num(0)));
     }
 
+    // code in the card's bank 1: its calls through stubs, which go right after the startup with
+    // the interrupt entry (neither may be in $D000-$DFFF), and its own code last
+    const Bank1Plan* bank1 =
+        card && in.bank1 != nullptr && in.bank1->bytes > 0 ? in.bank1 : nullptr;
+    auto in_bank1 = [&](std::size_t f) { return bank1 != nullptr && bank1->functions[f]; };
+    std::vector<AsmItem> runtime = *in.runtime;
+    std::vector<AsmItem> irq;
+    if (sp.irq_entry >= 0) {
+        irq = bank1 != nullptr ? *in.irq_banked : *in.irq;
+    }
+    std::vector<AsmItem> stubs;
+    std::vector<std::int32_t> forward;
+    if (bank1 != nullptr) {
+        RouteBank1(be, *bank1, *in.kept, startup, runtime, irq, stubs, forward);
+    }
     std::vector<AsmItem>& items = be.as.items;
     Append(items, startup, out, -1, "startup");
+    if (bank1 != nullptr) {
+        Append(items, stubs, out, -1, "bank stubs");
+        if (!irq.empty()) {
+            Append(items, irq, out, -1, "interrupt entry");
+        }
+    }
+    std::size_t resident_spans = out.spans.size();
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if ((*in.kept)[f]) {
+        if ((*in.kept)[f] && !in_bank1(f)) {
             Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
         }
     }
-    Append(items, *in.runtime, out, -1, "runtime");
-    if (sp.irq_entry >= 0) {
-        Append(items, *in.irq, out, -1, "interrupt entry");
+    Append(items, runtime, out, -1, "runtime");
+    if (!irq.empty() && bank1 == nullptr) {
+        Append(items, irq, out, -1, "interrupt entry");
     }
     std::vector<AsmItem> tables;
     EmitRuntimeTables(be, tables);
@@ -141,10 +179,23 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         Append(items, tables, out, -1, "runtime tables");
     }
     Append(items, zp_image, out, -1, "zero-page image");
+    std::size_t image_span = out.spans.size() - 1;
+    std::size_t first_bank1 = bank1 != nullptr ? out.spans.size() : SIZE_MAX;
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if ((*in.kept)[f] && in_bank1(f)) {
+            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+            out.spans.back().card_bank1 = true;
+        }
+    }
 
     // the code where it fits: one run from the origin when it can be. A branch to another
     // stretch's code is made far, and the code placed again with its bigger size
     std::vector<AddressRange> stretches = FreeStretches(be, options, data_end, card);
+    if (bank1 != nullptr) {
+        stretches.push_back(AddressRange{kBank1Start, kBank1End});
+    }
+    // the stretches main memory and the card's bank 2 have, which data may fill too
+    std::size_t shared = stretches.size() - (bank1 != nullptr ? 1 : 0);
     std::vector<CodePlace> places;
     std::uint32_t frames_at = 0;
     std::uint32_t code_end = 0;
@@ -158,7 +209,8 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
                          "-" + Hex(startup_end - 1) + "); move it or pick another --origin");
             return LinkResult::kError;
         }
-        if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at)) {
+        if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at,
+                        first_bank1)) {
             std::string where;
             for (const AddressRange& stretch : stretches) {
                 where +=
@@ -186,6 +238,14 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         DefineSymbol(be.as, item.first, frames_at + item.second);
     }
     std::uint32_t frames_end = frames_at + plan.mem_frames;
+    AddressRange bank1_run;
+    if (bank1 != nullptr) {
+        bank1_run = runs.back();
+        runs.pop_back();
+        if (!Bank1Resident(places, resident_spans, frames_at, frames_end, errors)) {
+            return LinkResult::kNoRoom;
+        }
+    }
 
     LayoutOptions lo;
     lo.data_start = spilled ? options.origin : frames_end;
@@ -211,6 +271,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     std::vector<VarPlace> interp_places;
     bool interp_fits = PlaceInterpOnly(be, use.interp_only, runs, interp_places);
     lo.dropped = use.dropped;
+    if (bank1 != nullptr) {
+        lo.avoiders = bank1->avoiders;
+        lo.avoid = AddressRange{kBank1Start, kBank1End};
+    }
     for (std::size_t v = 0; v < program.vars.size() && interp_fits; v++) {
         lo.dropped[v] = lo.dropped[v] || use.interp_only[v];
     }
@@ -249,7 +313,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             file_end = std::max(file_end, end);
             return;
         }
-        for (std::size_t k = 0; k < stretches.size(); k++) {
+        for (std::size_t k = 0; k < shared; k++) {
             if (start >= stretches[k].start && end <= stretches[k].end) {
                 Cover(low[k], high[k], start, end);
             }
@@ -280,7 +344,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
     // the zero-page image holds the zero-page globals' starting values
-    std::size_t image_at = out.spans.back().first + 1;
+    std::size_t image_at = out.spans[image_span].first + 1;
     for (std::uint32_t i = 0; i < sp.zp_count; i++) {
         items[image_at + i].value = Num(memory[sp.zp_base + i]);
     }
@@ -292,29 +356,51 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         AddError(errors, Loc(), "internal: " + error);
         return LinkResult::kError;
     }
+    std::vector<std::uint8_t> bank1_memory(bank1 != nullptr ? 0x10000 : 0, 0);
+    std::size_t bank1_items = bank1 != nullptr ? out.spans[first_bank1].first : items.size();
     std::size_t at = 0;
-    for (const AsmItem& item : items) {
+    for (std::size_t n = 0; n < items.size(); n++) {
+        const AsmItem& item = items[n];
+        std::vector<std::uint8_t>& to = n < bank1_items ? memory : bank1_memory;
         for (std::uint32_t i = 0; i < item.size; i++) {
-            memory[(item.address + i) & 0xFFFF] = code[at++];
+            to[(item.address + i) & 0xFFFF] = code[at++];
         }
     }
     std::fill(memory.begin() + frames_at, memory.begin() + frames_end, 0);
 
     out.image.assign(memory.begin() + options.origin, memory.begin() + file_end);
-    for (std::size_t k = 0; k < stretches.size(); k++) {
+    for (std::size_t k = 0; k < shared; k++) {
         if (low[k] < high[k]) {
             MemoryBank bank =
                 stretches[k].start >= kCardStart ? MemoryBank::kCard : MemoryBank::kMain;
             out.segments.push_back(SegmentOf(memory, bank, low[k], high[k]));
         }
     }
+    if (bank1 != nullptr && bank1_run.start < bank1_run.end) {
+        out.segments.push_back(
+            SegmentOf(bank1_memory, MemoryBank::kCardBank1, bank1_run.start, bank1_run.end));
+    }
     AuxSegments(program, out.layout, aux, out.segments);
 
+    // a bank 1 function is called through its forward stub (none: only bank 1 calls it)
     out.function_address.resize(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if ((*in.kept)[f]) {
-            out.function_address[f] = static_cast<std::uint16_t>(
-                be.as.symbols[static_cast<std::size_t>(be.fn_sym[f])].value);
+        std::int32_t sym = in_bank1(f) ? forward[f] : be.fn_sym[f];
+        if ((*in.kept)[f] && sym >= 0) {
+            out.function_address[f] =
+                static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sym)].value);
+        }
+    }
+    // the card's switches in the code the link itself writes (not the program's own I/O)
+    for (const FunctionSpan& span : out.spans) {
+        for (std::size_t i = span.first; i < span.end && span.function < 0; i++) {
+            const AsmItem& item = items[i];
+            std::uint32_t address = static_cast<std::uint32_t>(item.value.offset);
+            bool card_io = (address & 0xFFF0) == 0xC080 || address == kBankStatus;
+            if (item.kind == ItemKind::Ins && item.value.sym < 0 && item.mode == Mode::Abs &&
+                card_io) {
+                out.card_switches.push_back(item.address);
+            }
         }
     }
     out.entry_ready =

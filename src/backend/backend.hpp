@@ -38,6 +38,11 @@ struct BuildOptions {
     std::uint32_t limit = 0x9600;     // one past the last byte code and data may use
     std::uint32_t low_start = 0x0800; // the memory below the origin, from here, when needed
     bool use_card = true;             // the language card's ram, when needed and allowed
+    // its bank 1 for code, when the program does not fit without (card_bank.hpp)
+    bool use_bank1 = true;
+    // tests: put functions in bank 1 whether or not the program needs it, every one that may
+    // go for 1, a half picked by the number otherwise (the fuzzer's "(bank1 n)")
+    int bank1_test = 0;
     // keep the code of functions main never calls (tests call them by address)
     bool keep_all_functions = false;
     // functions never inlined, by qualified name (the race times from t.init's return to
@@ -55,6 +60,7 @@ struct FunctionSpan {
     std::string name;
     std::size_t first = 0;
     std::size_t end = 0;
+    bool card_bank1 = false; // in the language card's bank 1 (card_bank.hpp)
 };
 
 struct Compiled {
@@ -63,6 +69,9 @@ struct Compiled {
     // the rest of a program that did not fit: below the origin, the language card, aux memory
     std::vector<MemorySegment> segments;
     bool card_ram = false; // the startup switches the language card's ram in
+    // where the startup, the bank stubs and the interrupt entry read $C080-$C08F or $C011:
+    // their switches of the card's banks, which the simulator follows (sim_run.hpp)
+    std::vector<std::uint16_t> card_switches;
     Layout layout;         // every var's address; run the interpreter on it too
     Assembly as;           // items with addresses, for listings
     std::vector<FunctionSpan> spans;
@@ -97,8 +106,8 @@ std::vector<Diagnostic> PackedArrayWarnings(const Program& program);
 std::string ListProgram(const Program& program, const Compiled& compiled);
 
 // a byte of the built program as the cpu sees it with the program's memory switched in:
-// the file or a main or language card segment; 0 outside them
-std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address);
+// the file or a main or language card segment (bank 1's with bank1); 0 outside them
+std::uint8_t CompiledByte(const Compiled& compiled, std::uint16_t address, bool bank1 = false);
 
 // every piece of the program: the file at its origin first, then the other segments
 std::vector<MemorySegment> ProgramSegments(const Compiled& compiled);
