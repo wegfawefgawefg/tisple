@@ -27,6 +27,10 @@ namespace {
 
 constexpr int kMaxNodes = 120;
 constexpr std::uint32_t kMaxCopies = 4;
+// more copies (a match's clauses, most of them empty: their copies go) while all of them come
+// to at most this many nodes
+constexpr std::uint32_t kMaxMoreCopies = 6;
+constexpr int kMaxCopiedNodes = 300;
 // the cycles a condition may cost when the loop may make no pass, which it then costs for
 // nothing (a compare of variables, not a division)
 constexpr std::int32_t kMaxGamble = 30;
@@ -207,7 +211,8 @@ bool Plain(const Pass& p, ExprId loop, const Expr& branch) {
 bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
                   std::vector<ExprId>& out) {
     Expr e = At(p, loop); // a copy: the copies move every expression
-    if (e.kind != ExprKind::For || Size(p, loop, kMaxNodes + 1) > kMaxNodes) {
+    int size = Size(p, loop, kMaxNodes + 1);
+    if (e.kind != ExprKind::For || size > kMaxNodes) {
         return false;
     }
     ExprId index = FindSwitch(p, loop, e.c);
@@ -216,7 +221,8 @@ bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
     }
     Expr branch = At(p, index);
     std::uint32_t copies = branch.kind == ExprKind::If ? 2 : branch.count + 1;
-    if (copies > kMaxCopies) {
+    bool more = copies <= kMaxMoreCopies && static_cast<int>(copies) * size <= kMaxCopiedNodes;
+    if (copies > kMaxCopies && !more) {
         return false;
     }
     // the copies, one per arm or clause (and one without the item for a match with no
