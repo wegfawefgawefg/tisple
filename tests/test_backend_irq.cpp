@@ -2,8 +2,9 @@
 // (the handler run between two steps), through the vector at $FFFE straight to the entry and
 // through a ROM-like routine to $3FE; the handler clobbering nothing of the code it stops;
 // the mid-level passes leaving what the handler shares alone; the machine with Apple's roms;
-// the checker's rules
+// examples/ticks.tsp on the emulated Mockingboard; the checker's rules
 
+#include "machine/mockingboard.hpp"
 #include "test_backend.hpp"
 #include "test_check.hpp"
 #include "test_disk.hpp"
@@ -383,8 +384,10 @@ void CardTests(TestResults& results) {
     }
 }
 
-// examples/ticks.tsp with a Mockingboard's timer: an interrupt every 17045 cycles until the
-// program has counted ten seconds and returned
+// examples/ticks.tsp with a Mockingboard's timer: an interrupt every 17047 cycles (its latch
+// and 2) until the program has counted ten seconds and returned. The simulator has no card, so
+// there the interrupts are asked for at those cycles; the machine has the emulated card in slot
+// 4, through the card's ram vector and through Apple's IIe rom
 void ExampleTests(TestResults& results) {
     Compiled c = CompileFile("examples/ticks.tsp");
     CHECK(results, c.ok);
@@ -400,29 +403,47 @@ void ExampleTests(TestResults& results) {
     m.mem[0xFFFE] = static_cast<std::uint8_t>(c.code.irq_direct & 0xFF);
     m.mem[0xFFFF] = static_cast<std::uint8_t>(c.code.irq_direct >> 8);
     for (int k = 1; k <= 700; k++) {
-        tisple::RequestIrq(m, m.cycles + static_cast<std::uint64_t>(k) * 17045);
+        tisple::RequestIrq(m, m.cycles + static_cast<std::uint64_t>(k) * 17047);
     }
     tisple::SimCall call =
         tisple::CallCompiled(sim, c.built.program, c.code, c.built.program.main, {}, 20000000);
     CHECK(results, call.returned && m.irqs_taken >= 600 && m.irqs_taken < 610);
     // "10" in the top left corner, normal text
     CHECK(results, m.mem[0x400] == 0xB1 && m.mem[0x401] == 0xB0);
-    // the machine, through Apple's IIe rom
-    std::vector<std::uint8_t> rom = OwnerRom("Apple2e.rom");
-    if (rom.empty()) {
-        return;
+    // the machine with the card: no rom, the vector in the card's ram; then Apple's IIe rom
+    for (const char* name : {"", "Apple2e.rom"}) {
+        std::vector<std::uint8_t> rom = OwnerRom(name);
+        if (*name != 0 && rom.empty()) {
+            continue;
+        }
+        std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
+        if (!rom.empty()) {
+            CHECK(results, tisple::LoadRom(*a, rom.data(), rom.size(), error));
+        }
+        CHECK(results, tisple::LoadProgram(*a, c.code.image.data(), c.code.image.size(),
+                                           c.code.origin, error));
+        if (rom.empty()) {
+            a->lc.read_ram = true;
+            a->lc.e000[0x1FFE] = static_cast<std::uint8_t>(c.code.irq_direct & 0xFF);
+            a->lc.e000[0x1FFF] = static_cast<std::uint8_t>(c.code.irq_direct >> 8);
+        }
+        tisple::InsertMockingboard(*a, 4);
+        tisple::RunOutcome out = tisple::RunApple2(*a, 20000000);
+        CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+        // 600 ticks of 17047 cycles, and the time to clear the screen and show the seconds
+        bool counted = a->cpu.irqs_taken == 600 && out.cycles > 600 * 17047 &&
+                       out.cycles < 600 * 17047 + 40000;
+        if (!counted) {
+            std::fprintf(stderr, "ticks (%s): %llu interrupts in %llu cycles\n",
+                         *name ? name : "no rom",
+                         static_cast<unsigned long long>(a->cpu.irqs_taken),
+                         static_cast<unsigned long long>(out.cycles));
+        }
+        CHECK(results, counted);
+        CHECK(results, a->cpu.mem[0x400] == 0xB1 && a->cpu.mem[0x401] == 0xB0);
+        // the program turned the timer's interrupt off at the end
+        CHECK(results, a->cpu.irq_level_at == UINT64_MAX);
     }
-    std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
-    CHECK(results, tisple::LoadRom(*a, rom.data(), rom.size(), error));
-    CHECK(results,
-          tisple::LoadProgram(*a, c.code.image.data(), c.code.image.size(), c.code.origin, error));
-    for (int k = 1; k <= 700; k++) {
-        tisple::RequestIrq(a->cpu, a->cpu.cycles + static_cast<std::uint64_t>(k) * 17045);
-    }
-    tisple::RunApple2(*a, 20000000);
-    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
-    CHECK(results, a->cpu.irqs_taken >= 600 && a->cpu.irqs_taken < 610);
-    CHECK(results, a->cpu.mem[0x400] == 0xB1 && a->cpu.mem[0x401] == 0xB0);
 }
 
 void CheckerTests(TestResults& results) {

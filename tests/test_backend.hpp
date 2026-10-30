@@ -64,6 +64,8 @@ void CheckSegmentsApart(TestResults& results, const Compiled& c);
 void RunLinkRegionTests(TestResults& results);
 // lib/text80, lib/text40 and lib/auxmem on the machine (test_text_libs.cpp)
 void RunTextLibTests(TestResults& results);
+// lib/mockingboard with the emulated card (test_mockingboard_lib.cpp)
+void RunMockingboardLibTests(TestResults& results);
 // programs/text_demo run, then booted from its disk (test_text_demo.cpp)
 void RunTextDemoTests(TestResults& results);
 
