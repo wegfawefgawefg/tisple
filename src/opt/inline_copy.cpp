@@ -322,6 +322,17 @@ void Locals(const Pass& p, ExprId id, std::int32_t function, std::vector<std::in
     EachChild(p, e, [&](ExprId child) { Locals(p, child, function, out); });
 }
 
+// a new local of the caller for a parameter or local of the callee, marked with the function
+// it came from (a copy of a copy keeps the innermost), whose frame may hold it (frame_share.cpp)
+std::int32_t CopyOfCallee(Pass& p, std::int32_t caller, std::int32_t callee, std::int32_t var) {
+    std::int32_t local = CopyLocal(p, caller, var);
+    Var& made = p.program->vars[static_cast<std::size_t>(local)];
+    if (made.copied_from < 0) {
+        made.copied_from = callee;
+    }
+    return local;
+}
+
 } // namespace
 
 // may the body become a copy with no returns (looked at without building one)
@@ -365,7 +376,7 @@ void CopyCall(Pass& p, std::int32_t caller, ExprId call, CopyMode mode, std::int
             }
             continue;
         }
-        std::int32_t local = CopyLocal(p, caller, param);
+        std::int32_t local = CopyOfCallee(p, caller, e.ref, param);
         p.program->vars[static_cast<std::size_t>(local)].kind = VarKind::Local;
         c.names[param] = local;
         Expr let;
@@ -382,7 +393,7 @@ void CopyCall(Pass& p, std::int32_t caller, ExprId call, CopyMode mode, std::int
     Locals(p, fn.body, e.ref, locals);
     for (std::int32_t local : locals) {
         if (c.names.find(local) == c.names.end()) {
-            c.names[local] = CopyLocal(p, caller, local);
+            c.names[local] = CopyOfCallee(p, caller, e.ref, local);
         }
     }
     const Expr& body = At(p, fn.body);

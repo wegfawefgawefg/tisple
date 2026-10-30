@@ -305,6 +305,7 @@ std::int32_t NewLocal(Pass& p, std::int32_t function, TypeId type, const Loc& lo
     var.module = fn.module;
     var.function = function;
     var.loc = loc;
+    var.made = true;
     std::int32_t id = static_cast<std::int32_t>(p.program->vars.size());
     p.program->vars.push_back(var);
     fn.locals.push_back(id);

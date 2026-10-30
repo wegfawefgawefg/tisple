@@ -7,6 +7,12 @@
 // live together share bytes. There are two such stacks: one in zero page, one in memory. The
 // interrupt handler's functions share none with the rest: an IRQ comes at any time.
 //
+// The locals the mid-level passes make (inlined copies' above all) share slots by where the
+// finished code holds their values, a copy's in the frame of the function it was copied from
+// (frame_share.hpp); a made local no code names gets no bytes. Inside a frame the program's
+// variables come first, then what only the code uses, and over that the variables no code
+// names (only the interpreter, which runs the program as written on this layout, reads them).
+//
 // Zero page gets, in order: the runtime scratch bytes, every dereferenced pointer and
 // pointer temporary (forced), then frame items and small globals by uses per byte (each
 // use counts 4x per enclosing loop) while they fit. Explicit :address placements in zero
