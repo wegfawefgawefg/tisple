@@ -303,8 +303,10 @@ bool TryCollapse(Collapser& c, ExprId loop, ExprId before, std::vector<ExprId>& 
     }
     // (if x (continue)) items first become elses (collapse_continue.cpp)
     c.changes += ContinuesToElse(*c.p, loop);
-    return At(*c.p, loop).kind == ExprKind::For ? CollapseFor(c, loop, out)
-                                                : CollapseWhile(c, loop, before, out);
+    if (At(*c.p, loop).kind == ExprKind::For) {
+        return CollapseFor(c, loop, out);
+    }
+    return CollapseWhile(c, loop, before, out) || ScanToEnd(*c.p, loop, before, out);
 }
 
 void Visit(Collapser& c, ExprId id, bool shared);

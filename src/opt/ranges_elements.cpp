@@ -143,12 +143,28 @@ bool UnstoredRead(const Pass& p, const Expr& read, Range index, Range& out) {
         index = Range{0, 0};
     }
     if (var < 0 || static_cast<std::size_t>(var) >= r.unstored.size() ||
-        !r.unstored[static_cast<std::size_t>(var)] || index.hi - index.lo >= kMaxElements) {
+        !r.unstored[static_cast<std::size_t>(var)]) {
         return false;
     }
     TypeKind kind = KindOf(*p.program, read.type);
     std::int64_t width = TypeOf(*p.program, read.type).size;
     const Var& v = VarOf(p, var);
+    if (index.hi - index.lo >= kMaxElements) {
+        // (slice 6) many elements, all zero to begin with, no store reaching the bytes between
+        // the first and the last (seed 841's scan of wb at an index from a counter)
+        std::int64_t first = index.lo * size + offset;
+        std::int64_t last = index.hi * size + offset + width - 1;
+        for (const Range& b : r.stored[static_cast<std::size_t>(var)]) {
+            if (b.lo <= last && first <= b.hi) {
+                return false;
+            }
+        }
+        if (!v.init.empty()) {
+            return false;
+        }
+        out = Range{0, 0};
+        return true;
+    }
     bool seen = false;
     for (std::int64_t k = index.lo; k <= index.hi; k++) {
         std::int64_t at = k * size + offset;

@@ -274,9 +274,50 @@ void KnownElements(TestResults& results) {
                        CountKind(o, "t.main", ExprKind::Store) == 0);
 }
 
+// scans (collapse_exit.cpp, ranges_values.cpp's counter, ranges_elements.cpp): a while
+// stepping its counter by 1 while (< c k) and what never changes hold ends at k; elements of a
+// counter's range no store reaches are their initial bytes, many of them too (seed 841)
+void Scans(TestResults& results) {
+    const std::string globals = "(let wb (array u8 1024))\n(let g0 u8 0)\n(let g2 u8 0)\n";
+    struct Case {
+        const char* body;
+        bool gone; // no while left
+    };
+    const Case cases[] = {
+        {"(let n u16 (+ (as u16 g0) 109))\n"
+         "(while (and (< n 999) (!= (at wb (+ n 15)) g2)) (set n (+ n 1))) n",
+         true},
+        // the scan stores where it reads: kept
+        {"(let n u16 (+ (as u16 g0) 109))\n"
+         "(while (and (< n 999) (!= (at wb (+ n 15)) g2)) (set (at wb (+ n 16)) g2) (set n (+ n "
+         "1))) n",
+         false},
+        // an element some store reaches stops the scan where it is
+        {"(set (at wb 700) g2) (let n u16 (+ (as u16 g0) 109))\n"
+         "(while (and (< n 999) (!= (at wb (+ n 15)) g2)) (set n (+ n 1))) n",
+         false},
+        // no other test: to the bound, or where it starts past it
+        {"(let n u16 (* (as u16 g0) 5)) (while (< n 600) (set n (+ n 1))) n", true},
+    };
+    for (const Case& c : cases) {
+        std::string text = globals +
+                           "(fn main () u16 (set g0 (io_read u8 0xC000)) (set g2 "
+                           "(& (io_read u8 0xC001) 1)) (set (at wb 0) 3)\n    " +
+                           c.body + ")";
+        Opted o = OptimizeInlined(text);
+        bool gone = CountKind(o, "t.main", ExprKind::While) == 0;
+        if (gone != c.gone) {
+            std::fprintf(stderr, "the scan %s:\n%s\n", gone ? "went" : "stays", text.c_str());
+        }
+        CHECK(results, o.ok && gone == c.gone);
+        CheckMain(results, text);
+    }
+}
+
 } // namespace
 
 void RunOptInlineTests(TestResults& results) {
+    Scans(results);
     KnownElements(results);
     FirstPass(results);
     Fields(results);

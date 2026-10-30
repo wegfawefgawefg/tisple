@@ -142,6 +142,9 @@ bool CountWillDo(const BodyPlan& plan);
 bool CountableBounds(const Pass& p, ExprId loop);
 ExprId CountLet(Pass& p, std::int32_t function, ExprId loop, std::int32_t& var);
 
+// a while that only steps its counter by 1 while (< c k) and what the loop never changes hold,
+// as (if test (set c k)) (collapse_exit.cpp); false when it stays
+bool ScanToEnd(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
 // a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
 // nobody yet; false when it stays. before: the item before it, for a counting while
 bool UnrollLoop(Pass& p, std::int32_t function, ExprId loop, ExprId before,
