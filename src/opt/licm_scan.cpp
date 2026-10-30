@@ -261,6 +261,7 @@ namespace {
 struct Finder {
     const Pass* p = nullptr;
     const LoopWrites* w = nullptr;
+    std::int64_t trips = -1;
     std::vector<ExprId>* out = nullptr;
 };
 
@@ -311,7 +312,7 @@ void Candidates(Finder& f, ExprId id, bool shared, bool sometimes) {
     const Pass& p = *f.p;
     shared = shared || Shared(p, id);
     const Expr& e = At(p, id);
-    if (!shared && !sometimes && Invariant(p, id, *f.w) && IsPure(p, id) && Worth(p, id)) {
+    if (!shared && !sometimes && Invariant(p, id, *f.w) && IsPure(p, id) && Worth(p, id, f.trips)) {
         f.out->push_back(id);
         return;
     }
@@ -407,11 +408,13 @@ LoopWrites FindLoopWrites(const Pass& p, ExprId loop) {
     return w;
 }
 
-void FindInvariants(const Pass& p, ExprId loop, const LoopWrites& w, Invariants& out) {
+void FindInvariants(const Pass& p, ExprId loop, const LoopWrites& w, std::int64_t trips,
+                    Invariants& out) {
     const Expr& e = At(p, loop);
     Finder f;
     f.p = &p;
     f.w = &w;
+    f.trips = trips;
     if (e.kind == ExprKind::While) {
         f.out = &out.head;
         Candidates(f, e.a, false, false);
