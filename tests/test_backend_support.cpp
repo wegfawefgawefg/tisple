@@ -6,7 +6,7 @@ namespace tisple_tests {
 
 namespace {
 
-Compiled Finish(Built built, bool keep_all_functions, const tisple::OptOptions& opt = {}) {
+Compiled FinishWith(Built built, const tisple::BuildOptions& options) {
     Compiled c;
     c.built = std::move(built);
     if (!c.built.ok) {
@@ -14,14 +14,18 @@ Compiled Finish(Built built, bool keep_all_functions, const tisple::OptOptions& 
         return c;
     }
     std::vector<tisple::Diagnostic> errors;
-    tisple::BuildOptions options;
-    options.keep_all_functions = keep_all_functions;
-    options.opt = opt;
     c.ok = tisple::CompileProgram(c.built.program, options, c.code, errors);
     if (!c.ok) {
         c.errors = tisple::FormatDiagnostics(c.built.program.sources, errors);
     }
     return c;
+}
+
+Compiled Finish(Built built, bool keep_all_functions, const tisple::OptOptions& opt = {}) {
+    tisple::BuildOptions options;
+    options.keep_all_functions = keep_all_functions;
+    options.opt = opt;
+    return FinishWith(std::move(built), options);
 }
 
 std::string Hex(std::uint32_t value) {
@@ -46,6 +50,10 @@ Compiled CompileMainText(const std::string& text) {
 
 Compiled CompileMainText(const std::string& text, const tisple::OptOptions& opt) {
     return Finish(BuildText(text, {}), false, opt);
+}
+
+Compiled CompileMainWith(const std::string& text, const tisple::BuildOptions& options) {
+    return FinishWith(BuildText(text, {}), options);
 }
 
 Compiled CompileFile(const std::string& path) {

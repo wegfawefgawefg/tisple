@@ -28,6 +28,8 @@ Compiled CompileFile(const std::string& path);
 Compiled CompileMainText(const std::string& text);
 // the same with these mid-level pass options (-O0, --opt-bisect N, --no-pass NAME)
 Compiled CompileMainText(const std::string& text, const tisple::OptOptions& opt);
+// with these build options (a squeeze, say)
+Compiled CompileMainWith(const std::string& text, const tisple::BuildOptions& options);
 
 // the interpreter and the simulator side by side, calls made on both
 struct Diff {

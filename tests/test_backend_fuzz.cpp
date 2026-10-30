@@ -15,8 +15,10 @@
 // locals share bytes ("(frames)") and with I/O through bases in globals and helpers that hand
 // their parameters on ("(io)", also at -O0: "(io -O0)"), and one in four a thirteenth each,
 // with const data ("(data)", also at -O0) and with functions in separate stretches of memory
-// and tail calls between them ("(stretch)").
+// and tail calls between them ("(stretch)"); and a seed in four's own program with a tighter
+// size budget ("(squeeze N)", N from 1 to 10 by the seed).
 
+#include "backend/size_budget.hpp"
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
 #include "test_backend.hpp"
@@ -113,7 +115,7 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
 }
 
 void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats,
-             const IrqPlan& irqs = IrqPlan(), const tisple::OptOptions& opt = {}) {
+             const IrqPlan& irqs = IrqPlan(), const tisple::OptOptions& opt = {}, int squeeze = 0) {
     stats.programs++;
     // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
     if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
@@ -122,7 +124,10 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
                         text.c_str());
         }
     }
-    Compiled c = CompileMainText(text, opt);
+    tisple::BuildOptions options;
+    options.opt = opt;
+    options.squeeze = squeeze;
+    Compiled c = CompileMainWith(text, options);
     if (!c.built.ok) {
         stats.invalid++;
         Report("program does not check", seed, variant, text, c.errors, stats.invalid);
@@ -284,7 +289,15 @@ void RunBackendFuzzTests(TestResults& results) {
     std::uint64_t first = EnvNumber("TISPLE_FUZZ_SEED", 1);
     FuzzStats stats;
     for (std::uint64_t seed = first; seed < first + count; seed++) {
-        FuzzOne(seed, "", GenerateProgram(seed), stats);
+        std::string program = GenerateProgram(seed);
+        FuzzOne(seed, "", program, stats);
+        // a seed in four: its program again with a tighter size budget, as a program that does
+        // not fit is built (squeeze 1 to 10 by the seed)
+        if (seed % 4 == 1) {
+            int squeeze = 1 + static_cast<int>((seed / 4) % tisple::kMaxSqueeze);
+            std::string variant = " (squeeze " + std::to_string(squeeze) + ")";
+            FuzzOne(seed, variant.c_str(), program, stats, IrqPlan(), {}, squeeze);
+        }
         std::string entries = GenerateEntryProgram(seed);
         if (!entries.empty()) {
             FuzzOne(seed, " (entries)", entries, stats);
