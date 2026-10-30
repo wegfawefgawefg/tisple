@@ -7,6 +7,7 @@
 #include "ide/index.hpp"
 #include "interp/interp_command.hpp"
 #include "machine/machine_command.hpp"
+#include "project/new_command.hpp"
 #include "project/project_file.hpp"
 #include "race/race_command.hpp"
 #include "race/race_gen.hpp"
@@ -29,6 +30,7 @@ void PrintUsage() {
     std::printf("Tisple ][ 0.1\n"
                 "usage: tisple <command> [args]\n"
                 "  help    show this\n"
+                "  new     tisple new NAME: a folder with a starter project (init: here)\n"
                 "  sim     run a 6502 binary in the simulator\n"
                 "  fmt     format .tsp files (-w rewrites, --check fails if unformatted)\n"
                 "  show    print a .tsp file with line numbers and colors\n"
@@ -78,6 +80,9 @@ int main(int argc, char** argv) {
         argv = project_argv.data();
     }
 
+    if (std::strcmp(argv[1], "new") == 0 || std::strcmp(argv[1], "init") == 0) {
+        return tisple::RunNewCommand(argc, argv);
+    }
     if (std::strcmp(argv[1], "sim") == 0) {
         return tisple::RunSimCommand(argc - 2, argv + 2);
     }

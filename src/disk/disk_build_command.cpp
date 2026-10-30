@@ -12,11 +12,25 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace tisple {
+
+namespace {
+
+// the disk's folder, made when missing (a project's build/), as other build tools do
+void MakeDiskFolder(const std::string& path) {
+    std::filesystem::path folder = std::filesystem::path(path).parent_path();
+    std::error_code ec;
+    if (!folder.empty()) {
+        std::filesystem::create_directories(folder, ec);
+    }
+}
+
+} // namespace
 
 namespace {
 
@@ -162,6 +176,7 @@ int RunBuildDiskCommand(int argc, char** argv) {
     std::fputs(DescribeSegments(compiled).c_str(), stdout);
     BootDiskInfo info;
     std::string error;
+    MakeDiskFolder(args.disk);
     if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
@@ -193,6 +208,9 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     if (!MakeBootDisk(ProgramSegments(compiled), compiled.origin, *disk, info, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
+    }
+    if (!args.disk.empty()) {
+        MakeDiskFolder(args.disk);
     }
     if (!args.disk.empty() && !WriteDiskSectorsFile(args.disk, *disk, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());

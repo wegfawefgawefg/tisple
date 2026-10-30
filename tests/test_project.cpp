@@ -1,6 +1,7 @@
 #include "test_project.hpp"
 
 #include "ide/index.hpp"
+#include "project/new_command.hpp"
 #include "project/project_file.hpp"
 
 #include <filesystem>
@@ -155,12 +156,29 @@ void IndexTests(TestResults& results, const fs::path& root) {
 
 } // namespace
 
+// tisple new: the starter project loads, and a second one into the same folder writes nothing
+void NewTests(TestResults& results, const fs::path& root) {
+    fs::path dir = root / "starter";
+    std::string error;
+    CHECK(results, tisple::WriteStarterProject(dir, "starter", error));
+    tisple::ProjectFile project;
+    CHECK(results, tisple::LoadProjectFile((dir / "tisple.project").string(), project, error));
+    CHECK(results, project.program == (dir / "main.tsp").string());
+    CHECK(results, project.disk == (dir / "build/starter.dsk").string());
+    tisple::EditorIndex index;
+    tisple::IndexFileInProgram((dir / "main.tsp").string(), tisple::LoadOptions(), index);
+    CHECK(results, index.errors.empty());
+    CHECK(results, !tisple::WriteStarterProject(dir, "starter", error));
+    CHECK(results, Contains(error, "already exists"));
+}
+
 void RunProjectTests(TestResults& results) {
     fs::path root = MakeProject();
     LoadTests(results, root);
     FindTests(results, root);
     WordsTests(results);
     IndexTests(results, root);
+    NewTests(results, root);
     fs::remove_all(root);
 }
 

@@ -110,6 +110,10 @@ form per command-line flag, paths from the file's folder.
   its line. Nothing else goes in the file.
 - The editor index loads a file as part of the project's program when that
   program imports it, before trying the nearest `main.tsp`.
+- `tisple new NAME` makes the folder NAME with a `tisple.project`, a `main.tsp`
+  that says hello on the text screen, and a `.gitignore` for `build/`;
+  `tisple init` writes the same into the current folder. Neither overwrites a
+  file. Build makes the disk's folder when it is missing.
 
 ### lib/apple2
 
