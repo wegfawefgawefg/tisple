@@ -77,7 +77,7 @@ sprite masked in both memories is about 9,000 cycles.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
 - Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1FF0` for the code
-  below: about 33 KB of the 128; in main memory `$1D8A`-`$1DD4` for lib/auxcard. Text page 2
+  below: about 33 KB of the 128; in main memory `$1D8A`-`$1DDC` for lib/auxcard. Text page 2
   (`$0800`-`$0BFF`, both memories) only with `(import dhgr_text2)`, for a program that shows
   the mixed window's text with page 2 (examples/dhgr_demo); a full-screen one has that 2 KB
   (2026-10-30).
@@ -110,6 +110,10 @@ Added 2026-10-30 for Catwiz, whose sprites do not fit as whole boxes of picture 
   lets interrupts in for a moment (`CLI`, `NOP`, `SEI`), so a tick is late by at most a row's
   drawing. `unpack.aux_to_card` and `unpack.main_to_card` (with the bank, `auxcard.BANK2` or `BANK1`) put bytes there (with interrupts off
   throughout: ticks that come meanwhile are lost but one).
+- lib/dhgr_pixels: `(dhgr_pixels.row page col top groups pixels)` writes a row of colour pixels
+  (a byte each in main memory) as whole bytes in both memories, about 210 cycles a group: for
+  a hud drawn in whole pixels (Catwiz's text in colour pixels, its badges and cards). Its code
+  sits where the layout puts it (RAMRD stays off) and finds its tables the first time.
 - So a game can keep the main memory halves of its sprites in the aux card (12 KB at `$D000`
   in bank 2, 4 KB more in bank 1) and the aux halves there or in aux memory, and main memory
   has none of them. tests/test_dhgr_runs.cpp: made-up halves drawn from each

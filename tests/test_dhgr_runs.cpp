@@ -99,6 +99,7 @@ std::string Program(const Half& aux, const Half& main) {
 (import auxmem)
 (import auxcard)
 (import dhgr)
+(import dhgr_pixels)
 (import tables)
 (import unpack)
 (import mockingboard mb)
@@ -115,6 +116,8 @@ std::string Program(const Half& aux, const Half& main) {
 (tables.packed_bytes PACKED_MAIN ()" +
            Bytes(main.runs) + R"())
 (let ticks u16 0 :address 0x03C0)
+(macro pixel_colour (i) (% (+ (* i 7) (/ i 3)) 16))
+(tables.table PIXELS u8 140 pixel_colour)
 (fn irq () void :interrupt
     (mb.service)
     (set ticks (+ ticks 1)))
@@ -142,6 +145,9 @@ std::string Program(const Half& aux, const Half& main) {
            std::to_string(kH) + R"( (addr_of (at aux_runs 0)) dhgr.AS_WHITE)
         (dhgr.runs dhgr.PAGE1 dhgr.MAIN 26 150 )" +
            std::to_string(kH) + R"( (as (ptr u8) 0xE100) (| dhgr.FROM_CARD dhgr.AS_WHITE)))
+    ; a row of colour pixels: 20 groups at row 190, 3 groups from column 10 at row 191
+    (dhgr_pixels.row dhgr.PAGE1 0 190 20 (addr_of (at PIXELS 0)))
+    (dhgr_pixels.row dhgr.PAGE1 10 191 3 (addr_of (at PIXELS 0)))
     ; the aux half from the card's bank 1
     (dhgr.runs dhgr.PAGE2 dhgr.AUX 4 120 )" +
            std::to_string(kH) + R"( (as (ptr u8) 0xD400) dhgr.FROM_CARD1)
@@ -165,6 +171,20 @@ std::string Program(const Half& aux, const Half& main) {
 
 int RowAddress(int page, int y) {
     return page + (y & 7) * 0x400 + ((y >> 3) & 7) * 0x80 + (y >> 6) * 0x28;
+}
+
+// the colour of pixel x of row y on page: its 4 dots as a lo-res number
+int PixelAt(const tisple::Apple2& a, int page, int x, int y) {
+    int colour = 0;
+    for (int k = 0; k < 4; k++) {
+        int dot = x * 4 + k;
+        int col = dot / 14;
+        int bit = dot % 14;
+        uint8_t b =
+            bit < 7 ? a.aux[RowAddress(page, y) + col] : a.cpu.mem[RowAddress(page, y) + col];
+        colour |= ((b >> (bit % 7)) & 1) << k;
+    }
+    return colour;
 }
 
 // every byte of page's rows: inside the box at col, top the sprite over the background byte
@@ -238,6 +258,18 @@ void RunDhgrRunsTests(TestResults& results) {
     CHECK(results, PageRight(*a, 0x4000, 20, 60, aux, main, false, orange_aux, orange_main));
     CHECK(results, PageRight(*a, 0x2000, 26, 150, aux, main, true, blue_aux, blue_main));
     CHECK(results, PageRight(*a, 0x4000, 4, 120, aux, main, false, orange_aux, orange_main));
+    // the pixel rows: every pixel its colour; the short one only its 21 pixels from 35
+    bool pixels = true;
+    for (int x = 0; x < 140; x++) {
+        pixels = pixels && PixelAt(*a, 0x2000, x, 190) == (x * 7 + x / 3) % 16;
+        int want =
+            x >= 35 && x < 56 ? ((x - 35) * 7 + (x - 35) / 3) % 16 : PixelAt(*a, 0x2000, x, 189);
+        pixels = pixels && PixelAt(*a, 0x2000, x, 191) == want;
+        if (PixelAt(*a, 0x2000, x, 190) != (x * 7 + x / 3) % 16 || PixelAt(*a, 0x2000, x, 191) != want) {
+            std::printf("pixel %d: %d %d want %d %d\n", x, PixelAt(*a, 0x2000, x, 190), PixelAt(*a, 0x2000, x, 191), (x * 7 + x / 3) % 16, want);
+        }
+    }
+    CHECK(results, pixels);
     // no tick lost: interrupts are off while the card's code runs, but for a moment a row
     uint64_t counted = a->cpu.mem[kTicks] | (a->cpu.mem[kTicks + 1] << 8);
     uint64_t due = a->cpu.cycles / kMbTick;
