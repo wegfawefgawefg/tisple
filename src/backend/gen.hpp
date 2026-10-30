@@ -261,6 +261,7 @@ struct StepFixup {
     std::int32_t label = -1;
     std::int32_t var = -1;
     std::uint16_t step = 0;
+    bool reset = false; // set some other way (an inner loop kept it in Y): pointers made again
 };
 
 // the u16 loop counter in Y (low byte) and memory (high byte)
@@ -591,6 +592,8 @@ bool IsSteppedIndex(const Gen& g, const Opnd& index);
 void NoteStep(Gen& g, std::int32_t var, std::uint16_t step);
 // (set place value) just ran: a step of a stepped variable moves its pointers
 void NoteSet(Gen& g, ExprId place, ExprId value);
+// var was just stored back by a loop that kept it in a register: its pointers are made again
+void NoteReset(Gen& g, std::int32_t var);
 // a for loop's own step of its u16 counter in memory, after the body: its pointers move
 void StepOwnPointers(Gen& g, ExprId loop, std::int32_t var, std::uint16_t step);
 

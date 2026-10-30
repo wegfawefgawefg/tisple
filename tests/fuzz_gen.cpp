@@ -448,6 +448,9 @@ std::string Gen::Stmt(int depth) {
     if (late_shapes && late_rng.Chance(10)) {
         return LateWait();
     }
+    if (partition_shapes && depth > 0 && partition_rng.Chance(15)) {
+        return PartitionLoop(depth);
+    }
     if (loop_shapes && depth > 0 && loops_rng.Chance(12)) {
         return LoopShape(depth);
     }
@@ -839,6 +842,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.stretch_rng.Next();
     }
+    g.partition_rng.s = seed * 0xBF58476D1CE4E5B9ull + 0x3C6EF373ull;
+    if (g.partition_rng.s == 0) {
+        g.partition_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.partition_rng.Next();
+    }
 }
 
 } // namespace
@@ -996,6 +1006,16 @@ std::string GenerateStretchProgram(std::uint64_t seed) {
         return "";
     }
     g.stretch_shapes = true;
+    return g.Program();
+}
+
+std::string GeneratePartitionProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.partition_rng.Chance(kPartitionPercent)) {
+        return "";
+    }
+    g.partition_shapes = true;
     return g.Program();
 }
 

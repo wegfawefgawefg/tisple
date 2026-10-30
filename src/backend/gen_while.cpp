@@ -539,6 +539,12 @@ bool LoopWith(Gen& g, ExprId id, const WhileRegs& regs) {
         OpA(g, Mn::SBC, start, 1);
         Emit(g, Mn::STA, Mode::Abs, wide.high);
     }
+    // an outer loop's step pointers of a variable kept in Y here did not move with it
+    for (int r = 0; r < 2; r++) {
+        if (regs.var[r] >= 0 && regs.written[r]) {
+            NoteReset(g, regs.var[r]);
+        }
+    }
     for (int r = 0; r < 2; r++) {
         if (spilled[r] < 0) {
             continue;
