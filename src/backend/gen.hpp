@@ -232,7 +232,7 @@ struct Derived {
 
 // the pointer of one (at table i) with a u16 i: its low byte is the table's, stored once where
 // the function starts, its high byte the table's plus i's, and Y holds i's low byte
-// (gen_index.cpp, UsePagePointer)
+// (gen_page.cpp, UsePagePointer)
 struct PagePointer {
     ExprId site = -1;
     AsmValue base; // the table's address, with the place's offset
@@ -567,10 +567,11 @@ bool DeltaFits(const Gen& g, std::int32_t counter, std::uint8_t delta);
 // the place as (derived),Y in the loop whose counter is in Y; no code now, the pointer is
 // set before the loop. False if the place is not one.
 bool UseLoopPointer(Gen& g, PlaceRef& place, TypeId type);
-// a byte of a table at a u16 index in memory as (page pointer),Y: the pointer's high byte
-// worked out now, Y the index's low byte. False if the place is not one.
+// a byte (or a u16 of a split array) of a table at a u16 index in memory as (page
+// pointer),Y: the pointer's high byte worked out now unless it is known, Y the index's low
+// byte (gen_page.cpp). False if the place is not one.
 bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type);
-// each page pointer's low byte, stored where the function starts
+// each page pointer's low byte, stored where the function starts (gen_page.cpp)
 void InitPagePointers(Gen& g);
 // two loop pointer bytes; `above` every byte taken before (for a pointer set at the
 // function's start, which a loop before may have used and given back, GenStmt)
