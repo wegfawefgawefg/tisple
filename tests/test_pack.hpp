@@ -13,6 +13,8 @@ namespace tisple_tests {
 void RunPackTests(TestResults& results);
 // lib/unpack's 6502 code on the machine, every mode, against the plain decoder
 void RunUnpackLibTests(TestResults& results);
+// the same and lib/dhgr's code under the Mockingboard's interrupts, with auxmem's guard
+void RunUnpackIrqTests(TestResults& results);
 
 // a small deterministic generator
 struct TestRandom {
