@@ -1564,8 +1564,9 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     stores all of state.actors packed (8 elements of 12 bytes), so every
     element access multiplies its index by 12 instead of indexing split byte
     planes (and 2 more addr_of)". A warning, not a language change; the game
-    as it is has none. Fuzz on the final code: FUZZ_FINAL, 0 mismatches; ASan
-    and UBSan ASAN_FINAL, clean. Fuzz shape tests/fuzz_gen_size.cpp (`seed N
+    as it is has none. Fuzz on the final code: 8 x 15000 seeds (450,176
+    programs), 0 mismatches; ASan and UBSan 8 x 600 seeds (17,729 programs
+    and the whole suite each time), clean. Fuzz shape tests/fuzz_gen_size.cpp (`seed N
     (size)`, one seed in four): noise-like helpers, heavy small helpers,
     unrollable loops of every kind, absorbing operations around calls with
     effects and through pointers, constant-plus-byte indexes; 46 of its first
