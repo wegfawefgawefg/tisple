@@ -268,9 +268,8 @@ bool FoldExpr(Checker& ck, ExprId id, std::uint16_t& value) {
         }
         if (std::find(ck.folding.begin(), ck.folding.end(), var) != ck.folding.end()) {
             AddError(*ck.errors, e.loc,
-                     ck.out->vars[static_cast<std::size_t>(var)].name +
-                         " reads its own value while it is being built; only its address, "
-                         "(addr_of ...), may be used in it");
+                     DataName(ck, var) + " reads its own value while it is being built; only "
+                                         "its address, (addr_of ...), may be used in it");
             return false;
         }
         return InitBits(ck.out->vars[static_cast<std::size_t>(var)], offset, type.size, value);

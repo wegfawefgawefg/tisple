@@ -331,12 +331,23 @@ bool FormsEqual(const std::vector<Node>& a, const std::vector<Node>& b) {
     return true;
 }
 
+bool ShowsMark(const Node& node) {
+    if (node.mark == QuoteMark::None || node.items.size() != 2) {
+        return false;
+    }
+    const Node& form = node.items[1];
+    bool starts_with_char = form.kind == NodeKind::List && form.mark == QuoteMark::None &&
+                            !form.items.empty() && form.items[0].kind == NodeKind::Integer &&
+                            !form.items[0].text.empty() && form.items[0].text[0] == '\'';
+    return node.mark != QuoteMark::Quote || !starts_with_char;
+}
+
 void PrintFlatNode(const Node& node, std::string& out) {
     if (node.kind != NodeKind::List) {
         out += node.text;
         return;
     }
-    if (node.mark != QuoteMark::None && node.items.size() == 2) {
+    if (ShowsMark(node)) {
         out += QuoteMarkText(node.mark);
         PrintFlatNode(node.items[1], out);
         return;

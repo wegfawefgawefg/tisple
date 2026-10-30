@@ -73,6 +73,8 @@ void RunAsmTests(TestResults& results);
 // exact delays on the simulator (test_wait.cpp)
 void RunWaitTests(TestResults& results);
 void RunBackendTests(TestResults& results);
+// const data on the 6502 (test_backend_data.cpp)
+void RunBackendDataTests(TestResults& results);
 void RunBackendOpTests(TestResults& results);
 void RunBackendProgramTests(TestResults& results);
 void RunBackendIndexTests(TestResults& results);

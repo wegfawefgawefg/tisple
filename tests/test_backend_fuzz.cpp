@@ -338,6 +338,13 @@ void RunBackendFuzzTests(TestResults& results) {
             o0.level = 0;
             FuzzOne(seed, " (io -O0)", io, stats, IrqPlan(), o0);
         }
+        std::string data = GenerateDataProgram(seed);
+        if (!data.empty()) {
+            FuzzOne(seed, " (data)", data, stats);
+            tisple::OptOptions o0;
+            o0.level = 0;
+            FuzzOne(seed, " (data -O0)", data, stats, IrqPlan(), o0);
+        }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "
                 "%llu invalid, %llu unsupported, %llu mismatches\n",

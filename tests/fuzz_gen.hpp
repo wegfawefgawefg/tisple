@@ -93,6 +93,13 @@ std::string GenerateFramesProgram(std::uint64_t seed);
 constexpr int kIoPercent = 25;
 std::string GenerateIoProgram(std::uint64_t seed);
 
+// for one seed in kDataPercent hundred, the seed's program with const data (fuzz_gen_data.cpp)
+// among its statements: tables of structs with arrays inside them, strings and addresses in
+// them, read at constant and computed indexes, through pointers and function pointers; "" for
+// the others. The fuzzer runs these at -O0 too
+constexpr int kDataPercent = 25;
+std::string GenerateDataProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

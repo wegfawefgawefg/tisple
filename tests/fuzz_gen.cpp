@@ -436,6 +436,9 @@ std::string Gen::Stmt(int depth) {
     if (io_shapes && io_rng.Chance(25)) {
         return IoShape(depth);
     }
+    if (data_shapes && data_rng.Chance(25)) {
+        return DataShape(depth);
+    }
     if (entry_shapes && depth > 0 && entry_rng.Chance(15)) {
         return EntryLoop(depth);
     }
@@ -667,6 +670,9 @@ std::string Gen::Program() {
     if (io_shapes) {
         text += IoHelpers();
     }
+    if (data_shapes) {
+        text += DataHelpers();
+    }
     int fn_count = 2 + rng.Below(4);
     for (int f = 0; f < fn_count; f++) {
         FnInfo fn;
@@ -813,6 +819,13 @@ void SeedGen(fuzz::Gen& g, std::uint64_t seed) {
     for (int i = 0; i < 4; i++) {
         g.io_rng.Next();
     }
+    g.data_rng.s = seed * 0xC6A4A7935BD1E995ull + 0xF1E2D3C4ull;
+    if (g.data_rng.s == 0) {
+        g.data_rng.s = 1;
+    }
+    for (int i = 0; i < 4; i++) {
+        g.data_rng.Next();
+    }
 }
 
 } // namespace
@@ -950,6 +963,16 @@ std::string GenerateIoProgram(std::uint64_t seed) {
         return "";
     }
     g.io_shapes = true;
+    return g.Program();
+}
+
+std::string GenerateDataProgram(std::uint64_t seed) {
+    fuzz::Gen g;
+    SeedGen(g, seed);
+    if (!g.data_rng.Chance(kDataPercent)) {
+        return "";
+    }
+    g.data_shapes = true;
     return g.Program();
 }
 

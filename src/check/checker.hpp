@@ -274,6 +274,8 @@ bool FoldScalarValue(Checker& ck, ExprId value, TypeId type, std::vector<std::ui
                      std::uint32_t offset);
 // a pointer or function pointer whose value the link knows: the slot (its offset left 0)
 bool FoldAddress(Checker& ck, ExprId id, AddrSlot& slot);
+// a top-level let's or const's name as written (T for main.T), "the string" for a string's
+std::string DataName(const Checker& ck, std::int32_t var);
 // a copy of a checked expression tree (a constant pointer's value), its nodes at `at`
 ExprId CloneExpr(Checker& ck, ExprId id, const Node& at);
 ExprId CheckIoRead(Checker& ck, const Node& node);

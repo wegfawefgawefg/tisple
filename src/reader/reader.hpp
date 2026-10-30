@@ -63,6 +63,9 @@ std::string PrintFlat(const std::vector<Node>& forms);
 void PrintFlatNode(const Node& node, std::string& out);
 
 const char* QuoteMarkText(QuoteMark mark);
+// the node prints as its quote mark and its form: 'x for (quote x). Not a quote of a list that
+// starts with a char literal, which would read back as one ('(' ' ...): (quote (' ' x))
+bool ShowsMark(const Node& node);
 const char* QuoteMarkName(QuoteMark mark);
 
 } // namespace tisple

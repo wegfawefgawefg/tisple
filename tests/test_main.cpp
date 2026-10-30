@@ -52,6 +52,7 @@ int main() {
     tisple_tests::RunMacroTests(results);
     tisple_tests::RunIndexTests(results);
     tisple_tests::RunLayoutTests(results);
+    tisple_tests::RunCheckDataTests(results);
     tisple_tests::RunInterpTests(results);
     tisple_tests::RunInterpArithTests(results);
     tisple_tests::RunAsmTests(results);
@@ -90,6 +91,7 @@ int main() {
     tisple_tests::RunBackendIrqTests(results);
     tisple_tests::RunBackendWaitTests(results);
     tisple_tests::RunBackendStringTests(results);
+    tisple_tests::RunBackendDataTests(results);
     tisple_tests::RunBackendWhileTests(results);
     tisple_tests::RunBackendMulTests(results);
     tisple_tests::RunBackendBytewiseTests(results);

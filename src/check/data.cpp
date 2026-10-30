@@ -78,10 +78,9 @@ bool ReadsItsOwnValue(Checker& ck, std::int32_t var, Loc loc) {
     if (std::find(ck.folding.begin(), ck.folding.end(), var) == ck.folding.end()) {
         return false;
     }
-    const Var& v = ck.out->vars[static_cast<std::size_t>(var)];
     AddError(*ck.errors, loc,
-             v.name + " reads its own value while it is being built; only its address, "
-                      "(addr_of ...), may be used in it");
+             DataName(ck, var) + " reads its own value while it is being built; only its "
+                                 "address, (addr_of ...), may be used in it");
     return true;
 }
 
@@ -249,6 +248,15 @@ bool FoldValue(Checker& ck, const Node& node, TypeId type, const std::string& wh
     return false;
 }
 
+std::string DataName(const Checker& ck, std::int32_t var) {
+    const std::string& name = ck.out->vars[static_cast<std::size_t>(var)].name;
+    if (name.rfind("str#", 0) == 0) {
+        return "the string";
+    }
+    std::size_t dot = name.rfind('.');
+    return dot == std::string::npos ? name : name.substr(dot + 1);
+}
+
 ExprId CloneExpr(Checker& ck, ExprId id, const Node& at) {
     if (id < 0) {
         return -1;
@@ -294,7 +302,8 @@ bool FoldAddress(Checker& ck, ExprId id, AddrSlot& slot) {
         std::int64_t size = TypeOf(*ck.out, target.type).size;
         if (at < 0 || at > size) {
             AddError(*ck.errors, e.loc,
-                     "this pointer is outside " + target.name + " (" + std::to_string(size) +
+                     "this pointer is outside " + DataName(ck, slot.var) + " (" +
+                         std::to_string(size) +
                          " bytes); a constant pointer stays inside what it points to");
             return false;
         }

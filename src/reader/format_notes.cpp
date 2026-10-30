@@ -157,7 +157,7 @@ void ComputeFlat(Formatter& fm, const Node& node) {
     for (const Node& item : node.items) {
         ComputeFlat(fm, item);
     }
-    if (node.mark != QuoteMark::None && node.items.size() == 2) {
+    if (ShowsMark(node)) {
         const NodeNotes& inner = fm.notes[&node.items[1]];
         notes.flat_ok = inner.flat_ok;
         notes.flat_width = inner.flat_width +
@@ -226,8 +226,8 @@ int BodyHeaderCount(const Node& node) {
             return -1;
         }
         // (fn name (params) type :interrupt body ...): the option stays on the head line
-        bool option = !anonymous && node.items.size() > 4 &&
-                      node.items[4].kind == NodeKind::Keyword;
+        bool option =
+            !anonymous && node.items.size() > 4 && node.items[4].kind == NodeKind::Keyword;
         return anonymous ? 1 : option ? 4 : 3;
     }
     if (head == "macro") {
