@@ -21,7 +21,9 @@
 // with a tighter size budget ("(squeeze N)", N from 1 to 10 by the seed); and another seed in
 // four's own program, (fnptr), (irq) and (stretch) ones with functions in the language card's
 // bank 1 behind stubs ("(bank1 N)": every function that may go for 1, a half picked by N
-// otherwise), as a program that does not fit main memory and the card is built.
+// otherwise), as a program that does not fit main memory and the card is built; for odd N in
+// 2.5 KB of main memory ("(bank1 N tight)"), so the data spills into the card, $D000-$DFFF
+// too, where bank 1 code must not look (one that does not fit then is not counted).
 
 #include "backend/size_budget.hpp"
 #include "fuzz_gen.hpp"
@@ -107,7 +109,22 @@ struct FuzzStats {
     std::uint64_t mismatches = 0;
     std::uint64_t cycles = 0;
     std::uint64_t bank1 = 0; // programs built with code in the card's bank 1
+    std::uint64_t bank1_d000 = 0; // of those, with data in bank 2's $D000-$DFFF
+    std::uint64_t no_room = 0;    // tight ones that did not fit
 };
+
+// some var of the program at $D000-$DFFF in main memory's card (bank 2)
+bool DataInD000(const Compiled& c) {
+    const tisple::Program& program = c.built.program;
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        const tisple::VarPlace& place = c.code.layout.vars[v];
+        bool inside = place.address >= 0xD000 && place.address < 0xE000 && place.size > 0;
+        if (inside && !place.interp_only && !program.vars[v].placement.in_aux) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // every failing seed gets a line; the first three get their program too. `variant` is "" for
 // the seed's program, " (entries)", " (dead)", " (motion)" or " (common)" for the others
@@ -122,7 +139,7 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
 
 void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats,
              const IrqPlan& irqs = IrqPlan(), const tisple::OptOptions& opt = {}, int squeeze = 0,
-             int bank1 = 0) {
+             int bank1 = 0, bool tight = false) {
     stats.programs++;
     // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
     if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
@@ -135,7 +152,17 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
     options.opt = opt;
     options.squeeze = squeeze;
     options.bank1_test = bank1;
+    if (tight) {
+        options.limit = options.origin + 0x0A00;
+        options.low_start = options.origin;
+    }
     Compiled c = CompileMainWith(text, options);
+    if (tight && c.built.ok && !c.ok &&
+        (c.errors.find("no room") != std::string::npos ||
+         c.errors.find("do not fit") != std::string::npos)) {
+        stats.no_room++;
+        return;
+    }
     if (!c.built.ok) {
         stats.invalid++;
         Report("program does not check", seed, variant, text, c.errors, stats.invalid);
@@ -147,7 +174,9 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
         return;
     }
     for (const tisple::MemorySegment& segment : c.code.segments) {
-        stats.bank1 += segment.bank == tisple::MemoryBank::kCardBank1 ? 1 : 0;
+        bool banked = segment.bank == tisple::MemoryBank::kCardBank1;
+        stats.bank1 += banked ? 1 : 0;
+        stats.bank1_d000 += banked && DataInD000(c) ? 1 : 0;
     }
     Diff d;
     d.in.max_steps = 300000;
@@ -231,6 +260,11 @@ bool DiffFile(TestResults& results) {
     tisple::BuildOptions options;
     options.opt = opt;
     options.bank1_test = static_cast<int>(EnvNumber("TISPLE_FUZZ_BANK1", 0));
+    // TISPLE_FUZZ_TIGHT=1: in 2.5 KB of main memory, as "(bank1 n tight)"
+    if (EnvNumber("TISPLE_FUZZ_TIGHT", 0) != 0) {
+        options.limit = options.origin + 0x0A00;
+        options.low_start = options.origin;
+    }
     Compiled c = CompileMainWith(file.text, options);
     Diff d;
     d.in.max_steps = 300000;
@@ -316,9 +350,10 @@ void RunBackendFuzzTests(TestResults& results) {
         // another seed in four: functions in the card's bank 1, calls between banks through
         // stubs (the seed picks which)
         int bank1 = seed % 4 == 3 ? 1 + static_cast<int>((seed / 4) % 8) : 0;
-        std::string bank1_variant = " (bank1 " + std::to_string(bank1) + ")";
+        bool tight = bank1 % 2 == 1;
+        std::string bank1_variant = " (bank1 " + std::to_string(bank1) + (tight ? " tight)" : ")");
         if (bank1 > 0) {
-            FuzzOne(seed, bank1_variant.c_str(), program, stats, IrqPlan(), {}, 0, bank1);
+            FuzzOne(seed, bank1_variant.c_str(), program, stats, IrqPlan(), {}, 0, bank1, tight);
         }
         std::string entries = GenerateEntryProgram(seed);
         if (!entries.empty()) {
@@ -353,7 +388,7 @@ void RunBackendFuzzTests(TestResults& results) {
             FuzzOne(seed, " (fnptr)", fnptr, stats);
             if (bank1 > 0) {
                 FuzzOne(seed, (" (fnptr)" + bank1_variant).c_str(), fnptr, stats, IrqPlan(), {}, 0,
-                        bank1);
+                        bank1, tight);
             }
         }
         std::string irq = GenerateIrqProgram(seed);
@@ -361,7 +396,7 @@ void RunBackendFuzzTests(TestResults& results) {
             FuzzOne(seed, " (irq)", irq, stats, MakeIrqPlan(seed));
             if (bank1 > 0) {
                 FuzzOne(seed, (" (irq)" + bank1_variant).c_str(), irq, stats, MakeIrqPlan(seed), {},
-                        0, bank1);
+                        0, bank1, tight);
             }
         }
         std::string inlined = GenerateInlineProgram(seed);
@@ -395,7 +430,7 @@ void RunBackendFuzzTests(TestResults& results) {
             FuzzOne(seed, " (stretch)", stretch, stats);
             if (bank1 > 0) {
                 FuzzOne(seed, (" (stretch)" + bank1_variant).c_str(), stretch, stats, IrqPlan(), {},
-                        0, bank1);
+                        0, bank1, tight);
             }
         }
         std::string partition = GeneratePartitionProgram(seed);
@@ -414,7 +449,8 @@ void RunBackendFuzzTests(TestResults& results) {
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "
-                "%llu invalid, %llu unsupported, %llu with code in bank 1, %llu mismatches\n",
+                "%llu invalid, %llu unsupported, %llu with code in bank 1 (%llu with data in "
+                "$D000-$DFFF, %llu tight ones without room), %llu mismatches\n",
                 static_cast<unsigned long long>(stats.programs),
                 static_cast<unsigned long long>(stats.ran),
                 static_cast<unsigned long long>(stats.cycles),
@@ -422,6 +458,8 @@ void RunBackendFuzzTests(TestResults& results) {
                 static_cast<unsigned long long>(stats.invalid),
                 static_cast<unsigned long long>(stats.unsupported),
                 static_cast<unsigned long long>(stats.bank1),
+                static_cast<unsigned long long>(stats.bank1_d000),
+                static_cast<unsigned long long>(stats.no_room),
                 static_cast<unsigned long long>(stats.mismatches));
     CHECK(results, stats.invalid == 0);
     CHECK(results, stats.unsupported == 0);
