@@ -2,7 +2,9 @@
 // screen, plays its sound, turns the game's buttons into key presses, and records every
 // press with its machine cycle so a playtest can be replayed exactly on the desktop
 // (tisple machine --keys). The game comes from the server (serve.py): games/<name>/game.json
-// names its disk, its Mockingboard slot and its buttons.
+// names its disk, its Mockingboard slot and its buttons. On a static site (web/pages.py,
+// games/index.json has "static": true) there is no server to take logs: no log, and a
+// games button goes back to the picker.
 
 "use strict";
 
@@ -22,6 +24,7 @@ const ui = {
     look: document.getElementById("look"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
+    games: document.getElementById("games"),
     rec: document.getElementById("rec"),
     status: document.getElementById("status"),
 };
@@ -39,6 +42,7 @@ const state = {
     log: [],          // [cycle, code] presses, [cycle, -1] releases
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
+    logs: true,       // false on a static site: nowhere to post them
 };
 
 function setStatus(text) {
@@ -71,7 +75,9 @@ function press(code) {
     wakeAudio();
     state.m._tp_key_down(code);
     state.log.push([state.m._tp_cycles(), code]);
-    ui.rec.textContent = "rec " + state.log.length;
+    if (state.logs) {
+        ui.rec.textContent = "rec " + state.log.length;
+    }
 }
 
 function release() {
@@ -349,7 +355,7 @@ function tick(now) {
 // playtest logs go to the server, which keeps them for replay
 
 async function sendLog(final) {
-    if (state.log.length === state.logSent) {
+    if (!state.logs || state.log.length === state.logSent) {
         return;
     }
     const body = JSON.stringify({
@@ -382,6 +388,11 @@ async function boot() {
     const params = new URLSearchParams(location.search);
     const index = await (await fetch("games/index.json", { cache: "no-store" })).json();
     const name = params.get("game") || index.default;
+    if (index.static) {
+        state.logs = false;
+        ui.send.hidden = true;
+        ui.games.hidden = false;
+    }
     state.game = await (await fetch("games/" + name + "/game.json", { cache: "no-store" })).json();
     state.game.name = name;
     ui.name.textContent = state.game.title || name;

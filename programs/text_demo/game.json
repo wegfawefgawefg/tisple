@@ -1,0 +1,5 @@
+{"title": "Book", "about": "A 72 KB book in 80 columns, across main, aux and the language card.",
+ "columns": 4,
+ "buttons": [{"label": "&uarr;", "key": "UP", "sub": "line"}, {"label": "&darr;", "key": "DOWN", "sub": "line"},
+             {"label": "&larr;", "key": "LEFT", "sub": "page"}, {"label": "&rarr;", "key": "RIGHT", "sub": "page"},
+             {"label": "top", "key": "T", "wide": true}, {"label": "next", "key": "RETURN", "sub": "chapter", "wide": true}]}
