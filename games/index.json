@@ -1,0 +1,11 @@
+{
+ "games": [
+  "catwiz",
+  "plasma",
+  "life",
+  "snake",
+  "book"
+ ],
+ "default": "catwiz",
+ "static": true
+}

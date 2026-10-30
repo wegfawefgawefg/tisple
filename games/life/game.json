@@ -1,0 +1,13 @@
+{
+ "title": "Life",
+ "about": "Conway's Life on the lo-res screen, 40 x 48 cells.",
+ "columns": 1,
+ "buttons": [
+  {
+   "label": "new world",
+   "key": "SPACE"
+  }
+ ],
+ "disk": "disk-ff0ab3dc.dsk",
+ "version": "ff0ab3dc"
+}

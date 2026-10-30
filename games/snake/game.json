@@ -1,0 +1,25 @@
+{
+ "title": "Snake",
+ "about": "Lo-res snake: steer to the orange food, miss the walls.",
+ "columns": 4,
+ "buttons": [
+  {
+   "label": "&larr;",
+   "key": "LEFT"
+  },
+  {
+   "label": "&uarr;",
+   "key": "UP"
+  },
+  {
+   "label": "&darr;",
+   "key": "DOWN"
+  },
+  {
+   "label": "&rarr;",
+   "key": "RIGHT"
+  }
+ ],
+ "disk": "disk-9b362050.dsk",
+ "version": "9b362050"
+}

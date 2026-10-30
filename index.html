@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d0b">
+<link rel="manifest" href="manifest.json">
+<title>Tisple ][ demos</title>
+<style>
+:root { --bg: #0b0d0b; --panel: #161a16; --text: #d8e8d0; --dim: #7f907a; --accent: #7ee07a; }
+* { box-sizing: border-box; }
+body {
+    margin: 0 auto; max-width: 960px; padding: 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.45 ui-monospace, "DejaVu Sans Mono", monospace;
+}
+h1 { font-size: 20px; margin: 0 0 4px; }
+p { color: var(--dim); margin: 0 0 16px; }
+a { color: var(--accent); }
+#games { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.game {
+    display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 8px;
+    background: var(--panel); color: var(--text); text-decoration: none;
+}
+.game img { width: 100%; height: auto; image-rendering: pixelated; background: #000; }
+.game span { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Tisple ][</h1>
+<p>Disks built by the <a href="https://github.com/wegfawefgawefg/tisple">Tisple ][</a> compiler, booting on its Apple IIe emulator
+compiled to WebAssembly, with its own boot rom (no Apple rom). Tap a game, then tap the screen
+to start. The on-screen buttons and a keyboard (arrows, return, letters) both work.</p>
+<div id="games">
+<a class="game" href="play.html?game=catwiz"><img src="games/catwiz/shot.png" alt="Catwiz" width="280" height="192"><b>Catwiz</b><span></span></a>
+<a class="game" href="play.html?game=plasma"><img src="games/plasma/shot.png" alt="Plasma" width="280" height="192"><b>Plasma</b><span>Three sine waves summed for every lo-res block, about 24 fps.</span></a>
+<a class="game" href="play.html?game=life"><img src="games/life/shot.png" alt="Life" width="280" height="192"><b>Life</b><span>Conway&#x27;s Life on the lo-res screen, 40 x 48 cells.</span></a>
+<a class="game" href="play.html?game=snake"><img src="games/snake/shot.png" alt="Snake" width="280" height="192"><b>Snake</b><span>Lo-res snake: steer to the orange food, miss the walls.</span></a>
+<a class="game" href="play.html?game=book"><img src="games/book/shot.png" alt="Book" width="280" height="192"><b>Book</b><span>A 72 KB book in 80 columns, across main, aux and the language card.</span></a>
+</div>
+</body>
+</html>
