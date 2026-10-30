@@ -70,7 +70,7 @@ cycle-exact simulator, each output checked. Tisple is fastest on all 13. Cycles,
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 8-bit multiply | 80,903 | 101,512 | 63,165 | **29,331** | 0.46 |
 | 16-bit multiply | 101,818 | 90,156 | 65,477 | **31,296** | 0.48 |
-| Mandelbrot | 11,216,044 | 9,969,128 | 7,601,337 | **4,177,022** | 0.55 |
+| Mandelbrot | 11,216,044 | 9,969,128 | 7,601,337 | **4,180,008** | 0.55 |
 | memcpy 4 KB | 59,878 | 153,449 | 65,824 | **38,151** | 0.64 |
 | fill 8 KB | 63,996 | 238,896 | 90,467 | **43,022** | 0.67 |
 | Life step | 1,333,565 | 232,244 | 238,566 | **161,089** | 0.69 |
@@ -86,8 +86,8 @@ cc65 V2.19, llvm-mos-sdk v23.4.0, Oscar64 v1.32.273, each at its fastest setting
 NMOS 6502. Fill and memcpy use Tisple's `unroll` macro.
 
 On 2000 random programs from the fuzz generator, each also written in C and raced the same
-way (`races/random.sh`), Tisple's cycles are a geometric mean of 0.809 of the fastest other
-compiler's, and it is the fastest on 69.1% of them (2026-10-30, `docs/dogfood.md`).
+way (`races/random.sh`), Tisple's cycles are a geometric mean of 0.804 of the fastest other
+compiler's, and it is the fastest on 69.5% of them (2026-10-30, `docs/dogfood.md`).
 
 Kernels and generated programs flatter it. On ten program-shaped benchmarks (100-450 lines
 each, written plainly in both languages: BYTE sieve, Dhrystone, a sort, a text-adventure
@@ -96,21 +96,21 @@ scores; `races/run.sh --programs`) it is about even with the best C compiler, Os
 
 | Program | cc65 | LLVM-MOS | Oscar64 | Tisple | vs best other |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| decimal scores | 10,148,189 | 6,656,057 | 3,365,122 | **1,699,799** | 0.51 |
-| bytecode VM | 12,676,676 | 7,360,089 | 5,628,776 | **4,471,198** | 0.79 |
-| parser | 8,244,051 | 1,782,671 | 2,280,481 | **1,436,999** | 0.81 |
+| decimal scores | 10,148,189 | 6,656,057 | 3,365,122 | **1,691,976** | 0.50 |
+| bytecode VM | 12,676,676 | 7,360,089 | 5,628,776 | **4,463,209** | 0.79 |
+| parser | 8,244,051 | 1,782,671 | 2,280,481 | **1,433,490** | 0.80 |
 | BYTE sieve | 20,598,829 | 22,068,852 | 14,349,970 | **12,090,810** | 0.84 |
-| sprite blitter | 6,688,330 | 4,499,903 | **2,186,965** | 2,365,823 | 1.08 |
-| LZ4 | 3,199,397 | 1,212,242 | **901,828** | 1,183,148 | 1.31 |
-| tile scroller | 45,569,306 | 12,854,461 | **8,869,763** | 12,642,268 | 1.43 |
-| BFS | 10,098,451 | 5,643,078 | **3,157,011** | 4,818,412 | 1.53 |
-| Dhrystone | 2,205,531 | 951,470 | **391,865** | 858,590 | 2.19 |
-| sort | 3,820,411 | 2,192,144 | **1,202,552** | miscompiled | - |
+| sprite blitter | 6,688,330 | 4,499,903 | **2,186,965** | 2,306,473 | 1.05 |
+| tile scroller | 45,569,306 | 12,854,461 | **8,869,763** | 9,448,752 | 1.07 |
+| BFS | 10,098,451 | 5,643,078 | **3,157,011** | 3,413,444 | 1.08 |
+| sort | 3,820,411 | 2,192,144 | **1,202,552** | 1,317,925 | 1.10 |
+| LZ4 | 3,199,397 | 1,212,242 | **901,828** | 1,032,306 | 1.14 |
+| Dhrystone | 2,205,531 | 951,470 | **391,865** | 782,966 | 2.00 |
 
-Geometric mean over the nine it runs: 1.07 of the fastest other. The losses are mostly the
-inliner's limits, induction variables kept after pointers replace them, and struct copies
-through zero page; the sort is a Tisple miscompile being fixed. Details and the reduced
-bugs (ours and Oscar64's) in [`docs/races.md`](docs/races.md).
+Geometric mean: 0.981 of the fastest other. Dhrystone is the outlier: Oscar64 inlines all of
+it into main and folds what the calls know (a local whose address is taken is 3 every time
+`Proc_8` runs). Details and the bugs the race found (ours, fixed, and Oscar64's) in
+[`docs/races.md`](docs/races.md).
 
 How: whole-program compilation; no recursion, so every function has a static frame,
 frames of functions that never run together share bytes, and they live in zero page where
