@@ -433,7 +433,7 @@ inputs; before, gaps ran them on zeroed buffers, where strlen's string was empty
 ## Program race
 
 Started 2026-10-30. The kernels are single loops, so this race takes ten programs of 24 to
-450 lines, each written once in C and once in Tisple the way a programmer of that language
+447 lines, each written once in C and once in Tisple the way a programmer of that language
 would write it: globals and `uint8_t` indexes in the C as cc65 users write it, the C
 library where a C programmer would reach for it (`strcpy`, `strcmp`, `memcmp`, `memset`),
 `match`, macros for tables and split struct arrays in the Tisple, and nothing in either
@@ -599,7 +599,8 @@ Tisple is fastest on four programs (bignum 0.51, vm 0.79, parser 0.81, bytesieve
 behind Oscar64 on five (blit 1.08, lz4 1.31, scroll 1.43, bfs 1.53, dhrystone 2.19), and
 miscompiles sort. The geometric mean of Tisple over the fastest other compiler is 1.07 on
 the nine it runs: the kernels' 0.6 to 0.9 does not carry over to whole programs. Oscar64 is
-again the compiler to beat; cc65 is 2x to 5x behind everyone. From `tisple race --profile`
+again the compiler to beat; cc65 is 1.7x to 5.6x behind the fastest (3.7x in the
+geometric mean). From `tisple race --profile`
 and the listings:
 
 - **dhrystone 2.19.** Oscar64 inlines every procedure into main and then sees that
@@ -611,7 +612,8 @@ and the listings:
   (37 bytes) costs Tisple 797 cycles a run, 19% of its time: it loads every byte into zero
   page and then stores every byte through the pointer, 21 cycles a byte; Oscar64 copies
   with `LDA abs,Y / STA abs,Y` at 14. Tisple's `str_copy` loop (16 cycles a byte) is as good
-  as a library `strcpy`; the C compilers fold the constant strings' copies instead.
+  as a library `strcpy`; the C compilers turn the copies of constant strings into
+  fixed-length copies (Oscar64 inline, LLVM-MOS a `memcpy` call).
 - **bfs 1.53.** `visit` (4 calls a cell) is 57% of the time and is not inlined: it is over
   the 24-node limit for every-call inlining (`kMaxInlineExprs`). Each call pays the JSR, the
   RTS, its arguments, and sets up its own pointers from scratch (the zero low bytes of three
@@ -632,7 +634,7 @@ and the listings:
 - **blit 1.08** (`pointer.tsp`; 1.31 with u16 indexes into the screen). The variable shifts
   are the same loops as Oscar64's, but every `(<< x back)` also tests for a count of 8 or
   more (Tisple defines a shift by the width as 0, and `back` is 1 to 8, which the backend
-  does not know): 6 more cycles a shift, three shifts a byte.
+  does not know): 6 more cycles a shift, four such shifts a sprite row.
 
 The common thread is the inliner. Oscar64 inlines small procedures into the hot loop and
 then folds what the call site knows; Tisple's limit (24 nodes, no small function in a for's
