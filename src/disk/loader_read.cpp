@@ -12,13 +12,13 @@ void EmitWait(Loader& l, std::int32_t wait) {
     std::int32_t outer = c.Label("wait.outer");
     std::int32_t inner = c.Label("wait.inner");
     c.Place(wait);
-    c.Mem(Mn::STA, kWait);
+    c.Mem(Mn::STA, l.at.wait);
     c.Place(outer);
     c.Imm(Mn::LDY, 199);
     c.Place(inner);
     c.Op(Mn::DEY);
     c.Br(Mn::BNE, inner);
-    c.Mem(Mn::DEC, kWait);
+    c.Mem(Mn::DEC, l.at.wait);
     c.Br(Mn::BNE, outer);
     c.Op(Mn::RTS);
 }
@@ -31,10 +31,10 @@ void EmitSeek(Loader& l, std::int32_t seek, std::int32_t wait) {
     std::int32_t step = c.Label("seek.step");
     std::int32_t there = c.Label("seek.there");
     c.Place(seek);
-    c.Mem(Mn::STA, kTarget);
+    c.Mem(Mn::STA, l.at.target);
     c.Place(loop);
-    c.Mem(Mn::LDA, kHead);
-    c.Mem(Mn::CMP, kTarget);
+    c.Mem(Mn::LDA, l.at.head);
+    c.Mem(Mn::CMP, l.at.target);
     c.Br(Mn::BEQ, there);
     c.Br(Mn::BCC, up);
     c.Imm(Mn::SBC, 1); // carry is set: head - 1
@@ -42,23 +42,23 @@ void EmitSeek(Loader& l, std::int32_t seek, std::int32_t wait) {
     c.Place(up);
     c.Imm(Mn::ADC, 1); // carry is clear: head + 1
     c.Place(step);
-    c.Mem(Mn::STA, kNext);
+    c.Mem(Mn::STA, l.at.next);
     l.PhaseIndex();
     c.MemX(Mn::LDA, 0xC081); // the next phase on
     c.Imm(Mn::LDA, 3);
     c.Jump(Mn::JSR, wait);
-    c.Mem(Mn::LDA, kHead);
+    c.Mem(Mn::LDA, l.at.head);
     l.PhaseIndex();
     c.MemX(Mn::LDA, 0xC080); // the old one off
-    c.Mem(Mn::LDA, kNext);
-    c.Mem(Mn::STA, kHead);
+    c.Mem(Mn::LDA, l.at.next);
+    c.Mem(Mn::STA, l.at.head);
     c.Imm(Mn::LDA, 2);
     c.Jump(Mn::JSR, wait);
     c.Jump(Mn::JMP, loop);
     c.Place(there);
     c.Imm(Mn::LDA, 25); // let the head settle on its phase, then let go
     c.Jump(Mn::JSR, wait);
-    c.Mem(Mn::LDA, kHead);
+    c.Mem(Mn::LDA, l.at.head);
     l.PhaseIndex();
     c.MemX(Mn::LDA, 0xC080);
     c.Op(Mn::RTS);

@@ -252,9 +252,10 @@ int DiskBoot(int argc, char** argv) {
 } // namespace
 
 bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& segments,
-                   uint16_t entry, BootDiskInfo& info, std::string& error) {
+                   uint16_t entry, BootDiskInfo& info, std::string& error,
+                   const BootExtras& extras) {
     std::unique_ptr<DiskSectors> disk = std::make_unique<DiskSectors>();
-    if (!MakeBootDisk(segments, entry, *disk, info, error) ||
+    if (!MakeBootDisk(segments, entry, *disk, info, error, extras) ||
         !WriteDiskSectorsFile(path, *disk, error)) {
         return false;
     }
@@ -267,6 +268,10 @@ bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& se
     std::printf("%s: boots %zu bytes%s from $%04X (%s); %u sectors free for DOS 3.3 files\n",
                 path.c_str(), bytes, pieces.c_str(), entry, BootTracksText(info).c_str(),
                 DosFreeSectors(*disk));
+    if (info.table_track != 0) {
+        std::printf("%s: %zu tables :on disk in tracks %d-%d\n", path.c_str(),
+                    extras.tables->size(), info.table_track, kBootLastTrack);
+    }
     return true;
 }
 

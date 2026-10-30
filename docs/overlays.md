@@ -22,6 +22,8 @@ and the link has filled since 2026-10-27; bank 1 (`$C08B`) is the second, new on
   about 40,000 cycles, 2.4 frames.
 - The disk: after boot the loader at `$0800-$0AFF` is gone. Reading a track needs a resident
   reader (about 400 bytes: seek, nibbles, decode) and takes two turns, 0.4 s for 4 KB.
+  Built since for data (2026-10-30): lib/disk reads tables placed `:on disk`, its reader 1.2 KB
+  at `$1700` with 768 bytes of tables below, 8.9 KB a second (docs/disks.md, Disk tables).
 
 ## The proposal: the link decides, no syntax
 

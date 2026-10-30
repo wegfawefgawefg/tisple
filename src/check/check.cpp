@@ -443,6 +443,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
     for (std::size_t i = 0; i < ck.consts.size(); i++) {
         EvalConst(ck, static_cast<std::int32_t>(i));
     }
+    PlaceDiskConsts(ck);
     for (std::size_t i = 0; i < out.functions.size(); i++) {
         ReadSignature(ck, static_cast<std::int32_t>(i));
     }

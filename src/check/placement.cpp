@@ -1,5 +1,5 @@
 // placement options on a top-level let or const: :address, :align, :boundary, :in aux and
-// :reserve (docs/language.md, Placement)
+// :reserve, and :on disk and :interleave on a const table (docs/language.md, Placement)
 
 #include "check/checker.hpp"
 
@@ -32,6 +32,41 @@ void ReadIn(Checker& ck, Var& var, const Node& key, const Node* value) {
         return;
     }
     var.placement.in_aux = true;
+}
+
+// :on names the boot disk: the table's bytes live there, not in memory (docs/disks.md)
+void ReadOn(Checker& ck, Var& var, const Node& key, const Node* value) {
+    if (!value || value->kind != NodeKind::Symbol || value->text != "disk") {
+        Err(ck, value ? *value : key, ":on takes disk; write :on disk");
+        return;
+    }
+    if (var.placement.on_disk) {
+        Err(ck, key, ":on is given twice; keep one");
+        return;
+    }
+    var.placement.on_disk = true;
+}
+
+void ReadInterleave(Checker& ck, Var& var, const Node& key, const Node* value) {
+    std::uint32_t number = 0;
+    if (!value) {
+        Err(ck, key, ":interleave needs a value; write :interleave 2");
+        return;
+    }
+    if (!FoldOption(ck, *value, ":interleave", number)) {
+        return;
+    }
+    if (var.placement.interleave != 0) {
+        Err(ck, key, ":interleave is given twice; keep one");
+        return;
+    }
+    if (number < 1 || number > 15) {
+        Err(ck, *value,
+            ":interleave is how many physical sectors apart a table's sectors go, 1 to 15; "
+            "write :interleave 2");
+        return;
+    }
+    var.placement.interleave = static_cast<std::uint8_t>(number);
 }
 
 void ReadNumberOption(Checker& ck, Var& var, const Node& key, const Node& value) {
@@ -80,9 +115,18 @@ int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
         ReadIn(ck, var, key, value);
         return 2;
     }
+    if (name == ":on") {
+        ReadOn(ck, var, key, value);
+        return 2;
+    }
+    if (name == ":interleave") {
+        ReadInterleave(ck, var, key, value);
+        return 2;
+    }
     if (name != ":address" && name != ":align" && name != ":boundary") {
         Err(ck, key,
-            name + " is not a let option; use :address, :align, :boundary, :in aux or :reserve");
+            name + " is not a placement option; use :address, :align, :boundary, :in aux, "
+                   ":reserve, or on a const table :on disk and :interleave");
         return 2;
     }
     if (!value) {
@@ -101,6 +145,11 @@ void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_
         Err(ck, form,
             ":reserve keeps memory at a fixed address; give it one: (let " + name +
                 " (array u8 8192) :address 0x2000 :reserve)");
+    }
+    if (place.on_disk || place.interleave != 0) {
+        Err(ck, form,
+            std::string(place.on_disk ? ":on disk" : ":interleave") +
+                " is for const tables, whose bytes never change; make " + name + " a const");
     }
     if (place.reserve && has_value) {
         Err(ck, form,
