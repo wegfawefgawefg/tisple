@@ -249,8 +249,12 @@ void DemoTests(TestResults& results, TickCost& cost) {
     // voice 1: the arpeggio, a note every pulse
     const char* arp = "d4 a4 c5 e5 a4 d5 c5 a4 g4 a4 e5 c5";
     std::vector<uint16_t> arp_periods;
-    for (const char* p = arp; *p != 0; p += 3) {
+    // two characters a note, a space between (none after the last)
+    for (const char* p = arp;; p += 3) {
         arp_periods.push_back(Period(Note(p[0], false, p[1] - '0')));
+        if (p[2] == 0) {
+            break;
+        }
     }
     bool arp_ok = true;
     bool slip_ok = true;

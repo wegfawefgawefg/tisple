@@ -81,6 +81,12 @@ std::string GenerateInlineProgram(std::uint64_t seed);
 constexpr int kSizePercent = 25;
 std::string GenerateSizeProgram(std::uint64_t seed);
 
+// for one seed in kIoPercent hundred, the seed's program with I/O through u16 globals plus a
+// constant, those globals set here and there, and small helpers that hand their parameters on
+// to a call (fuzz_gen_io.cpp), for I/O bases and forwarded parameters; "" for the others
+constexpr int kIoPercent = 25;
+std::string GenerateIoProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

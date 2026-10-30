@@ -102,6 +102,8 @@ void RunBackendCount16Tests(TestResults& results);
 void RunBackendUnrollTests(TestResults& results);
 // the code size budget (test_backend_size.cpp)
 void RunBackendSizeTests(TestResults& results);
+// I/O bases, forwarded parameters, the IRQ entry's registers (test_backend_io.cpp)
+void RunBackendIoTests(TestResults& results);
 // 16-bit runs a byte at a time (test_backend_spine.cpp)
 void RunBackendSpineTests(TestResults& results);
 // store indices into their registers early (test_backend_preload.cpp)
