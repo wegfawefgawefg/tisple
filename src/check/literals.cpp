@@ -16,6 +16,22 @@ std::string FieldList(const StructDecl& sd) {
     return text;
 }
 
+// an element of a const table of function pointers: a function's name, whose address the
+// layout fills in. The table's var does not exist yet, so the slot waits in pending_slots
+bool FunctionSlot(Checker& ck, const Node& item, ExprId element, const std::string& what,
+                  std::uint32_t at) {
+    const Expr& e = ExprAt(ck, element);
+    if (e.type == kErrorType) {
+        return false;
+    }
+    if (e.kind != ExprKind::FnRef) {
+        Err(ck, item, what + " is a function pointer; name a function there");
+        return false;
+    }
+    ck.pending_slots.push_back(FnSlot{at, e.ref});
+    return true;
+}
+
 // (make (array u16 192) 0x2000 0x2400 ...), shortened for a fix
 std::string ArrayLiteralFix(const std::string& type_text) {
     return "(make " + type_text + " v0 v1 ...)";
@@ -169,6 +185,10 @@ bool FoldArrayLiteral(Checker& ck, const Node& value, TypeId type, const std::st
         ExprId element = CheckExpr(ck, item, elem);
         if (!RequireType(ck, item, element, elem, what)) {
             ok = false;
+            continue;
+        }
+        if (Kind(ck, elem) == TypeKind::Fn) {
+            ok = FunctionSlot(ck, item, element, what, at) && ok;
             continue;
         }
         if (Kind(ck, elem) == TypeKind::Struct && !RequireStructSource(ck, item, element)) {

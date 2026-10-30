@@ -63,6 +63,10 @@ struct VarPlace {
 struct Layout {
     std::vector<VarPlace> vars; // by var id
     bool no_room = false;       // automatic placement ran out of memory
+    // by function id: what its name is worth as a value, the address of its entry for calls
+    // through a pointer (set by the backend for the functions whose address is taken). Empty
+    // or 0: kFunctionValueBase + id, which only the interpreter gives meaning (image.hpp)
+    std::vector<std::uint16_t> functions;
 };
 
 // every Var's shape (size, split, plane stride) with address 0: what code generation needs

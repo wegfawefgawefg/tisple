@@ -287,6 +287,7 @@ void Rewrite(Rewriter& r, ExprId id, bool shared) {
     case ExprKind::Convert:
     case ExprKind::Reinterpret:
     case ExprKind::Call:
+    case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:

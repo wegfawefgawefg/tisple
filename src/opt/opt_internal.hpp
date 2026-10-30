@@ -81,7 +81,11 @@ struct Pass {
     OptReport* report = nullptr;
     std::vector<std::uint32_t> refs; // by expr: how many nodes (or function bodies) name it
     std::vector<Summary> summaries;  // by function
-    VarRanges ranges;                // worked out at the start of each round
+    // calls through function pointers, by the pointer's type: every function they may reach
+    // (CallTargets), and the union of those functions' summaries (every effect with none)
+    std::map<TypeId, std::vector<std::int32_t>> targets;
+    std::map<TypeId, Summary> pointer_summaries;
+    VarRanges ranges; // worked out at the start of each round
     // the ranges pass's memo of ValueRange by expr, good while the counters and facts around
     // the walk are those of stamp now (ranges.cpp bumps it at each change)
     struct RangeMemo {
@@ -116,6 +120,15 @@ void ComputeSummaries(Pass& p);
 // a call that can be dropped when its value is unused: writes no global, no memory through a
 // pointer, no I/O or jsr, and ends
 bool PureFunction(const Pass& p, std::int32_t function);
+// what a Call or CallPtr may do: its callee's summary, or the union over a pointer's targets
+const Summary& CallSummary(const Pass& p, const Expr& call);
+// the functions a call through a pointer of this type may reach
+const std::vector<std::int32_t>& PointerTargets(const Pass& p, TypeId type);
+// a node whose list holds children: a call, direct or through a pointer, a struct value, a do
+inline bool HasItems(ExprKind kind) {
+    return kind == ExprKind::Call || kind == ExprKind::CallPtr || kind == ExprKind::StructLit ||
+           kind == ExprKind::Do;
+}
 // no effect at all, and ends: dropped when its value is unused
 bool IsPure(const Pass& p, ExprId id);
 // the place's index expressions (its root var is written, not read) have no effect
@@ -158,7 +171,7 @@ template <typename Fn> void EachChild(const Pass& p, const Expr& e, Fn fn) {
             fn(child);
         }
     }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (HasItems(e.kind)) {
         for (std::uint32_t i = 0; i < e.count; i++) {
             fn(Item(p, e, i));
         }

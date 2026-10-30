@@ -6,7 +6,8 @@
 // fourth, with loop-invariant work and constants ("(motion)"), one in four a fifth, with
 // work done twice, branches on equalities and calls with constant arguments ("(common)"), one
 // in four a sixth, with loops that collapse and compares ranges decide ("(collapse)"), and one
-// in four a seventh, with steps, sets and elements the round's ranges decide ("(values)").
+// in four a seventh, with steps, sets and elements the round's ranges decide ("(values)"), and
+// one in four an eighth, with calls through function pointers ("(fnptr)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -55,6 +56,13 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
 
 void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats) {
     stats.programs++;
+    // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
+    if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
+        if (std::string(variant).find(print) != std::string::npos) {
+            std::printf("; seed %llu%s\n%s\n", static_cast<unsigned long long>(seed), variant,
+                        text.c_str());
+        }
+    }
     Compiled c = CompileMainText(text);
     if (!c.built.ok) {
         stats.invalid++;
@@ -225,6 +233,10 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string values = GenerateValuesProgram(seed);
         if (!values.empty()) {
             FuzzOne(seed, " (values)", values, stats);
+        }
+        std::string fnptr = GenerateFnPtrProgram(seed);
+        if (!fnptr.empty()) {
+            FuzzOne(seed, " (fnptr)", fnptr, stats);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

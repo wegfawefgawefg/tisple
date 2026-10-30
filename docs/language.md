@@ -131,6 +131,7 @@ Not values, not named arguments.
 | `bool` | `true` / `false`; not an integer |
 | `(ptr t)` | 16-bit address of a `t` |
 | `(array t n)` | `n` elements of `t`; `n` a constant |
+| `(fn (t ...) r)` | address of a function taking `t ...` and giving `r` (`void` for nothing); see Function pointers |
 | struct name | a declared `struct` |
 | enum name | a declared `enum`; stored as `u8` |
 | `void` | only as the return type of a `fn` that returns nothing |
@@ -191,6 +192,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(addr_of place)` | address of a variable, element or field |
 | `(io_read t addr)` / `(io_write t addr v)` | hardware access, `t` is `u8` or `u16` (low byte first); never dropped, merged or reordered |
 | `(jsr addr (a v) (x v) (y v))` | call machine code (ROM, card firmware) with registers set; gives A after; see Machine code |
+| `name` of a function, `(f args ...)` with `f` holding one | a function's address; a call through it, see Function pointers |
 | `(wait_cycles n)` | exactly n cycles (a variable n: 69 at least); see Exact delays |
 | `"text"` | a `(ptr u8)` to the text's ASCII bytes and a 0; see Strings |
 
@@ -472,9 +474,11 @@ because a macro emits Tisple, not instructions.
   `build` and `run` all lay the program out the way the backend does, so
   pointer programs agree byte for byte and layout errors are the same
   everywhere.
-- No recursion in this subset: the checker rejects call-graph cycles. Every
-  function gets a static frame; the backend overlaps frames that can't be live
-  at the same time, and the interpreter follows whatever the layout says.
+- No recursion in this subset: the checker rejects call-graph cycles. A call
+  through a function pointer counts as a call of every function of its type
+  whose name is used as a value. Every function gets a static frame; the
+  backend overlaps frames that can't be live at the same time, and the
+  interpreter follows whatever the layout says.
 - Return value: `u8`/`i8`/`bool` in A, 16-bit in A (low) and X (high).
 - Arrays of structs are stored one array per field, and arrays of `u16`, `i16`
   and pointers as a low-byte table and a high-byte table, unless something
@@ -500,6 +504,65 @@ The layout checks the one case it can see: a constant `(as (ptr t) n)` whose
 `n` falls inside a declared variable is an error that says to use `addr_of`.
 Declare the screen as a variable and write `(addr_of (at screen i))`, or leave
 it undeclared and use `as`; not both.
+
+## Function pointers
+
+Added 2026-10-30 (owner: dispatch tables and per-object update functions, no
+closures).
+
+```scheme
+(fn walk ((i u8)) void ...)
+(fn fall ((i u8)) void ...)
+(const STEPS (array (fn (u8) void) 2) (make (array (fn (u8) void) 2) walk fall))
+
+(struct Thing ((x u8) (step (fn (u8) void))))
+(let things (array Thing 8))
+
+(set (at things 0 step) (at STEPS 1))
+(let step (fn (u8) void) (at things i step))
+(step i)
+```
+
+- The type is `(fn (t ...) r)`: the parameter types, then the return type,
+  `void` for nothing; the declaration `(fn name (params) type ...)` with the
+  name and parameter names left out. Types with the same parameter and return
+  types are the same type. 2 bytes, like a pointer; arrays of them are a
+  low-byte and a high-byte table.
+- A function's name used as a value is its address: `(let f (fn (u8) void)
+  walk)`. `(addr_of walk)` is an error that says to write `walk`.
+- `(f args ...)` calls through `f` when `f` names a local, parameter, global or
+  field (`thing.step`) holding one. Anything else, an element or a load, goes
+  through a `let` first: the head of a form is always a name. Arguments are
+  checked against the type's parameters; the callee is worked out before the
+  arguments.
+- A const table may hold functions' names. A top-level `let` may not start
+  with them (its bytes are worked out before the code is placed): set it in
+  code. A `const` scalar of a function type is an error that says to name the
+  function directly.
+- `=` and `!=` compare them. Nothing converts to or from one, and there is no
+  arithmetic on them, so a call through a pointer of type t can only reach a
+  function of type t whose name is used as a value somewhere in the program:
+  those are its targets, and the checker counts them as called from there
+  (recursion through a pointer is an error like any other).
+- Calling a pointer that holds no function (a zeroed global) is undefined; the
+  interpreter stops with "holds no function of its type".
+- Not for compile-time calls from macros, which say "uses a function pointer".
+
+What it compiles to (design.md, "Calls through function pointers"): the call
+stores the pointer and the arguments into a dispatcher of the type, a function
+shared by every call of that type, and JSRs to it; the dispatcher stores the
+pointer into its own `JMP` and jumps. The pointer holds the address of the
+target's entry, a small function that calls the target with the dispatcher's
+arguments (usually the target's body inlined). About 30 cycles more than a
+direct call, plus a copy of each argument when the target is not inlined.
+
+What the optimiser assumes of a function whose address is taken: it is called
+from anywhere a pointer to it goes. Its parameters get no ranges from the calls
+the tree shows, its return values are kept even when no direct call uses them,
+and its pointer parameters reach anything. A call through a pointer reads and
+writes what any of its targets may (their effect summaries joined), and ends
+only if each does. Inlining and called-once decisions see the entry's call of
+the target as a call like any other.
 
 ## Machine code
 
@@ -708,8 +771,6 @@ since removing it would change behaviour. Frame-level waits stay in the library
 
 ## Planned after the first backend (owner, 2026-10-26)
 
-- Function pointers, no closures: dispatch tables, per-object update
-  functions. Cheap on the 6502 (indirect `JMP` or push-address + `RTS`).
 - Tail calls: a call in tail position compiles to `JMP`, not `JSR` + `RTS`.
   Backend only, no syntax.
 

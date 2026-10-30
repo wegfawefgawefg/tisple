@@ -205,6 +205,30 @@ Recursion, function pointers, assembly, ROM calls and interrupts break static
 frame sharing and register assumptions. Each gets a defined ABI; never assume
 calls cannot overlap.
 
+### Calls through function pointers (2026-10-30)
+
+Made into direct calls once the mid-level passes are done
+(src/backend/dispatch.cpp), so frames, effects, ranges, pointer targets and
+inlining see ordinary calls:
+
+- Each `(fn ...)` type t has a dispatcher: a function whose parameters are the
+  pointer and then t's parameters. `(p a b)` is a call of it: the pointer and
+  the arguments go into its frame like any call's, then `JSR`. Its code is
+  `LDA p; STA j+1; LDA p+1; STA j+2; j: JMP $0000` (the program runs from
+  RAM, the card's included).
+- Each function f whose address is taken has an entry, `f.indirect`, with no
+  parameters of its own: its body is f called with the dispatcher's
+  parameters, so f is usually inlined into it and reads them where they are. A
+  function pointer's value is the entry's address; the interpreter, run on the
+  compiled layout, uses the same values (`Layout::functions`).
+- The entry returns straight to the dispatcher's caller: results in A, or A
+  (low) and X (high), as for any call.
+- The call graph is caller, dispatcher, entries of t's functions, functions.
+  Frames stack in that order, so the dispatcher's frame, which holds the
+  arguments, is live while an entry runs and nothing that runs then overlaps
+  it. For the analyses the dispatcher's body is a match that calls one of the
+  entries; its code is only the jump.
+
 ## Target
 
 *Proposed* first target: NMOS 6502 (runs on every Apple II), Apple IIe memory
@@ -297,5 +321,6 @@ reports come after the compiler works.
 - Literal typing details, pointer arithmetic, signed compares.
 - View syntax.
 - How backing storage for allocators is declared.
-- Calling convention for recursion, function pointers and interrupts.
+- Calling convention for recursion and interrupts (function pointers: see
+  Backend).
 - IR shape.

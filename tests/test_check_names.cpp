@@ -88,8 +88,10 @@ void ResolveTests(TestResults& results) {
                 "t.tsp:1:26: x is already declared in this body (t.tsp:1:9); pick another name");
     ExpectError(results, "(let x u9 0)",
                 "t.tsp:1:8: unknown type u9; types are u8 i8 u16 i16 bool, (ptr t), (array t n), "
-                "or a struct or enum name");
-    ExpectError(results, "(fn f () u8 f)", "t.tsp:1:13: f is a function; call it: (f ...)");
+                "(fn (t ...) r), or a struct or enum name");
+    ExpectError(results, "(fn f () u8 f)",
+                "t.tsp:1:13: the value of f needs a u8 but f is (fn () u8); to call it write (f "
+                "...)");
     ExpectError(results, "(enum A (one))\n(fn f () u8 (as A 1))",
                 "t.tsp:2:13: nothing converts to an enum; name a member, as in A.one, or match on "
                 "the number");

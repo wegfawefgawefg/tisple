@@ -164,6 +164,7 @@ void Walk(Walker& w, ExprId id, Bits& live) {
     const Expr& e = At(*w.p, id);
     switch (e.kind) {
     case ExprKind::Literal:
+    case ExprKind::FnRef:
         return;
     case ExprKind::VarRef:
         Gen(w, live, e.ref);
@@ -240,6 +241,19 @@ void Walk(Walker& w, ExprId id, Bits& live) {
         OrBits(live, CalleeReads(w, e.ref));
         WalkItems(w, e, live);
         return;
+    case ExprKind::CallPtr: {
+        // what any function the pointer may hold reads; the pointer is worked out first
+        const std::vector<std::int32_t>& targets = PointerTargets(*w.p, At(*w.p, e.a).type);
+        for (std::int32_t target : targets) {
+            OrBits(live, CalleeReads(w, target));
+        }
+        if (targets.empty()) {
+            OrBits(live, w.globals);
+        }
+        WalkItems(w, e, live);
+        Walk(w, e.a, live);
+        return;
+    }
     case ExprKind::StructLit:
     case ExprKind::Do:
         WalkItems(w, e, live);

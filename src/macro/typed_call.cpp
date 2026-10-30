@@ -180,6 +180,9 @@ std::string ExprWhy(const Program& program, ExprId id) {
         return "uses io_write";
     case ExprKind::Jsr:
         return "uses jsr";
+    case ExprKind::FnRef:
+    case ExprKind::CallPtr:
+        return "uses a function pointer";
     case ExprKind::Store:
     case ExprKind::StoreField:
         return "writes through a pointer";
@@ -234,7 +237,7 @@ const std::string& FunctionWhy(TypedCalls& typed, std::int32_t function) {
     return typed.impure[index];
 }
 
-std::string Signature(const Program& program, const Function& fn) {
+std::string ParamSignature(const Program& program, const Function& fn) {
     std::string text;
     for (std::int32_t param : fn.params) {
         const Var& var = program.vars[static_cast<std::size_t>(param)];
@@ -413,8 +416,8 @@ Value CallTyped(MacroRun& run, Frame& frame, std::int32_t fn_module, const std::
     if (args.size() != fn.params.size()) {
         RunFail(run, frame, at,
                 fn_name + " takes " + std::to_string(fn.params.size()) + " argument" +
-                    (fn.params.size() == 1 ? "" : "s") + " " + Signature(program, fn) + ", got " +
-                    std::to_string(args.size()));
+                    (fn.params.size() == 1 ? "" : "s") + " " + ParamSignature(program, fn) +
+                    ", got " + std::to_string(args.size()));
         return Value();
     }
     std::vector<std::uint16_t> bits(args.size(), 0);
@@ -422,7 +425,8 @@ Value CallTyped(MacroRun& run, Frame& frame, std::int32_t fn_module, const std::
         TypeId type = program.vars[static_cast<std::size_t>(fn.params[i])].type;
         std::string problem;
         if (!ArgBits(program, type, args[i], bits[i], problem)) {
-            RunFail(run, frame, at, fn_name + " takes " + Signature(program, fn) + "; " + problem);
+            RunFail(run, frame, at,
+                    fn_name + " takes " + ParamSignature(program, fn) + "; " + problem);
             return Value();
         }
     }

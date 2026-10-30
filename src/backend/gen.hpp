@@ -94,6 +94,9 @@ struct Backend {
     std::vector<std::uint32_t> lptr_size;
     Effects effects;
     std::vector<InlineKind> inlines; // by function: FindInlines
+    // by function of the program as checked: the entry calls through a pointer reach, or -1
+    // (dispatch.hpp)
+    std::vector<std::int32_t> entries;
     // by for expression: the first of the literals its counter takes in copies of its body
     // (AddCounterLiterals), or -1
     std::vector<ExprId> counter_literals;

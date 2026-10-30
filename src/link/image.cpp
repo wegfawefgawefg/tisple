@@ -30,6 +30,39 @@ void WriteValue(const Program& program, const Layout& layout, Cursor dst, std::i
 
 } // namespace
 
+std::uint16_t FunctionValue(const Layout& layout, std::int32_t function) {
+    std::size_t f = static_cast<std::size_t>(function);
+    if (f < layout.functions.size() && layout.functions[f] != 0) {
+        return layout.functions[f];
+    }
+    return static_cast<std::uint16_t>(kFunctionValueBase + function);
+}
+
+std::int32_t FunctionOfValue(const Program& program, const Layout& layout, std::uint16_t value) {
+    if (value == 0) {
+        return -1;
+    }
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        std::int32_t function = static_cast<std::int32_t>(f);
+        if (program.functions[f].address_taken && FunctionValue(layout, function) == value) {
+            return function;
+        }
+    }
+    return -1;
+}
+
+std::vector<std::uint8_t> InitBytes(const Program& program, const Layout& layout,
+                                    std::int32_t var) {
+    const Var& v = program.vars[static_cast<std::size_t>(var)];
+    std::vector<std::uint8_t> bytes = v.init;
+    for (const FnSlot& slot : v.fn_slots) {
+        std::uint16_t value = FunctionValue(layout, slot.function);
+        bytes[slot.offset] = static_cast<std::uint8_t>(value & 0xFF);
+        bytes[slot.offset + 1] = static_cast<std::uint8_t>(value >> 8);
+    }
+    return bytes;
+}
+
 void WriteVarInit(const Program& program, const Layout& layout, std::int32_t var,
                   std::vector<std::uint8_t>& memory) {
     const Var& v = program.vars[static_cast<std::size_t>(var)];
@@ -37,7 +70,12 @@ void WriteVarInit(const Program& program, const Layout& layout, std::int32_t var
         layout.vars[static_cast<std::size_t>(var)].dropped) {
         return;
     }
-    WriteValue(program, layout, VarCursor(layout, var), var, v.type, v.init, 0, memory);
+    if (v.fn_slots.empty()) {
+        WriteValue(program, layout, VarCursor(layout, var), var, v.type, v.init, 0, memory);
+        return;
+    }
+    std::vector<std::uint8_t> bytes = InitBytes(program, layout, var);
+    WriteValue(program, layout, VarCursor(layout, var), var, v.type, bytes, 0, memory);
 }
 
 } // namespace tisple

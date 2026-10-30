@@ -68,8 +68,18 @@ void Scan(const Pass& p, Summary& s, ExprId id) {
     const Expr& e = At(p, id);
     switch (e.kind) {
     case ExprKind::Literal:
+    case ExprKind::FnRef:
     case ExprKind::Break:
     case ExprKind::Continue:
+        return;
+    case ExprKind::CallPtr:
+        // every function the pointer may hold (they are callees, so already summed up)
+        for (std::int32_t target : PointerTargets(p, At(p, e.a).type)) {
+            Merge(s, p.summaries[static_cast<std::size_t>(target)]);
+        }
+        s.unknown = s.unknown || PointerTargets(p, At(p, e.a).type).empty();
+        Scan(p, s, e.a);
+        ScanItems(p, s, e);
         return;
     case ExprKind::VarRef:
         if (IsGlobal(p, e.ref)) {
@@ -172,6 +182,16 @@ std::vector<std::int32_t> CalleesFirst(const Program& program) {
 void ComputeSummaries(Pass& p) {
     const Program& program = *p.program;
     std::size_t vars = program.vars.size();
+    p.targets.clear();
+    p.pointer_summaries.clear();
+    for (const Expr& e : program.exprs) {
+        if (e.kind == ExprKind::CallPtr) {
+            TypeId type = program.exprs[static_cast<std::size_t>(e.a)].type;
+            if (p.targets.count(type) == 0) {
+                p.targets.emplace(type, CallTargets(program, type));
+            }
+        }
+    }
     p.summaries.assign(program.functions.size(), Summary());
     for (Summary& s : p.summaries) {
         s.reads.assign(vars, false);
@@ -192,10 +212,47 @@ void ComputeSummaries(Pass& p) {
         }
         s.pure = !writes && !s.stores && !s.io && !s.jsr && !s.unknown && s.terminates;
     }
+    for (const auto& [type, targets] : p.targets) {
+        Summary u;
+        u.reads.assign(vars, false);
+        u.writes.assign(vars, false);
+        u.unknown = targets.empty();
+        u.pure = !targets.empty();
+        for (std::int32_t target : targets) {
+            const Summary& s = p.summaries[static_cast<std::size_t>(target)];
+            Merge(u, s);
+            u.terminates = u.terminates && s.terminates;
+            u.pure = u.pure && s.pure;
+        }
+        p.pointer_summaries.emplace(type, u);
+    }
 }
 
 bool PureFunction(const Pass& p, std::int32_t function) {
     return p.summaries[static_cast<std::size_t>(function)].pure;
+}
+
+const std::vector<std::int32_t>& PointerTargets(const Pass& p, TypeId type) {
+    static const std::vector<std::int32_t> kNone;
+    auto found = p.targets.find(type);
+    return found == p.targets.end() ? kNone : found->second;
+}
+
+const Summary& CallSummary(const Pass& p, const Expr& call) {
+    if (call.kind == ExprKind::Call) {
+        return p.summaries[static_cast<std::size_t>(call.ref)];
+    }
+    // a pointer type no call of the program as summed up had: nothing known
+    static Summary unknown;
+    if (unknown.reads.size() != p.program->vars.size()) {
+        unknown.reads.assign(p.program->vars.size(), true);
+        unknown.writes.assign(p.program->vars.size(), true);
+        unknown.loads = unknown.stores = unknown.io = unknown.jsr = unknown.unknown = true;
+        unknown.terminates = false;
+        unknown.pure = false;
+    }
+    auto found = p.pointer_summaries.find(At(p, call.a).type);
+    return found == p.pointer_summaries.end() ? unknown : found->second;
 }
 
 std::int32_t PlaceRoot(const Pass& p, ExprId place) {
@@ -237,6 +294,17 @@ bool IsPure(const Pass& p, ExprId id) {
     switch (e.kind) {
     case ExprKind::Literal:
     case ExprKind::VarRef:
+    case ExprKind::FnRef:
+        return true;
+    case ExprKind::CallPtr:
+        if (!CallSummary(p, e).pure || !IsPure(p, e.a)) {
+            return false;
+        }
+        for (std::uint32_t i = 0; i < e.count; i++) {
+            if (!IsPure(p, Item(p, e, i))) {
+                return false;
+            }
+        }
         return true;
     case ExprKind::Field:
     case ExprKind::Load:

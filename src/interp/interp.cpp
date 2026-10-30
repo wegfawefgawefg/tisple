@@ -1,6 +1,7 @@
 #include "interp/interp.hpp"
 
 #include "check/arith.hpp"
+#include "link/image.hpp"
 
 namespace tisple {
 
@@ -174,13 +175,31 @@ std::uint16_t EvalCall(Interp& in, const Expr& e) {
         many.resize(e.count);
         slots = many.data();
     }
+    std::uint16_t pointer = 0;
+    if (e.kind == ExprKind::CallPtr) {
+        pointer = Eval(in, e.a);
+        if (in.flow == Flow::Stop) {
+            return 0;
+        }
+    }
     for (std::uint32_t i = 0; i < e.count; i++) {
         slots[i] = Eval(in, in.program->lists[e.first + i]);
         if (in.flow == Flow::Stop) {
             return 0;
         }
     }
-    return CallInto(in, e.ref, slots, e.count);
+    if (e.kind == ExprKind::Call) {
+        return CallInto(in, e.ref, slots, e.count);
+    }
+    // through a pointer: the function whose value it holds, of the pointer's own type
+    std::int32_t function = FunctionOfValue(*in.program, *in.layout, pointer);
+    TypeId type = At(in, e.a).type;
+    if (function < 0 || in.program->functions[static_cast<std::size_t>(function)].type != type) {
+        Stop(in, StopKind::Error,
+             "a call through a function pointer that holds no function of its type", e.loc);
+        return 0;
+    }
+    return CallInto(in, function, slots, e.count);
 }
 
 std::uint16_t EvalFor(Interp& in, const Expr& e) {
@@ -367,7 +386,10 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::WaitCycles:
         return Eval(in, e.a);
     case ExprKind::Call:
+    case ExprKind::CallPtr:
         return EvalCall(in, e);
+    case ExprKind::FnRef:
+        return FunctionValue(*in.layout, e.ref);
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
         return EvalIo(in, e);
@@ -463,7 +485,11 @@ void InitInterp(Interp& in, const Program& program, const Layout& layout) {
             continue;
         }
         std::int32_t id = static_cast<std::int32_t>(i);
-        WriteValue(in, VarCursor(layout, id), id, var.type, var.init, 0);
+        if (var.fn_slots.empty()) {
+            WriteValue(in, VarCursor(layout, id), id, var.type, var.init, 0);
+        } else {
+            WriteValue(in, VarCursor(layout, id), id, var.type, InitBytes(program, layout, id), 0);
+        }
     }
 }
 

@@ -28,8 +28,12 @@ bool FoldConstArray(Checker& ck, ConstDecl& cd, const Node& form, TypeId type) {
         return false;
     }
     std::vector<std::uint8_t> bytes(array.size, 0);
+    std::vector<FnSlot> outer_slots = std::move(ck.pending_slots);
+    ck.pending_slots.clear();
     bool ok = FoldArrayLiteral(ck, form.items[3], type, cd.name, bytes, 0);
     Var var;
+    var.fn_slots = std::move(ck.pending_slots);
+    ck.pending_slots = std::move(outer_slots);
     var.name = ck.out->modules[static_cast<std::size_t>(cd.module)].name + "." + cd.name;
     var.kind = VarKind::ConstArray;
     var.type = type;
@@ -131,6 +135,12 @@ bool FoldConstForm(Checker& ck, ConstDecl& cd, const Node& form) {
             "a const holds a number, bool, enum member or pointer, or an array of them; use a "
             "top-level let for " +
                 ShowType(ck, type));
+        return false;
+    }
+    if (KindOf(*ck.out, type) == TypeKind::Fn) {
+        Err(ck, form,
+            "a function is named directly, not through a const; write " + Show(items[3]) +
+                " where " + cd.name + " is used");
         return false;
     }
     std::size_t before = ck.errors->size();
@@ -369,7 +379,16 @@ void ResolveGlobal(Checker& ck, std::int32_t index) {
         std::vector<std::uint8_t> bytes(TypeOf(*ck.out, type).size, 0);
         bool folded = false;
         if (KindOf(*ck.out, type) == TypeKind::Array) {
+            std::vector<FnSlot> outer_slots = std::move(ck.pending_slots);
+            ck.pending_slots.clear();
             folded = FoldArrayLiteral(ck, *value_node, type, name, bytes, 0);
+            if (!ck.pending_slots.empty()) {
+                Err(ck, *value_node,
+                    "only a const table starts with functions; make " + name +
+                        " a const, or set its elements in code");
+                folded = false;
+            }
+            ck.pending_slots = std::move(outer_slots);
         } else {
             ExprId value = CheckExpr(ck, *value_node, type);
             std::size_t before = ck.errors->size();

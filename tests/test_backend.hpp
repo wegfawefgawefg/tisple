@@ -107,6 +107,8 @@ void RunBackendPlaceSumTests(TestResults& results);
 void RunBackendFoldTests(TestResults& results);
 void RunBackendTableTests(TestResults& results);
 void RunBackendJsrTests(TestResults& results);
+// calls through function pointers (test_backend_fnptr.cpp)
+void RunBackendFnPtrTests(TestResults& results);
 void RunBackendWaitTests(TestResults& results);
 void RunBackendStringTests(TestResults& results);
 void RunBackendWhileTests(TestResults& results);

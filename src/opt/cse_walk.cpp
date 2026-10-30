@@ -355,6 +355,7 @@ void Walk(Walker& w, ExprId id, bool shared) {
     switch (e.kind) {
     case ExprKind::Literal:
     case ExprKind::VarRef:
+    case ExprKind::FnRef:
     case ExprKind::Break:
     case ExprKind::Continue:
         return;
@@ -416,6 +417,11 @@ void Walk(Walker& w, ExprId id, bool shared) {
     case ExprKind::Call:
         WalkChildren(w, e, shared);
         KillCall(w, e.ref);
+        return;
+    case ExprKind::CallPtr:
+        // the pointer and the arguments, then whatever the function it holds may change
+        WalkChildren(w, e, shared);
+        KillAll(w);
         return;
     case ExprKind::IoRead:
     case ExprKind::IoWrite:

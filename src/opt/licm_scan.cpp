@@ -41,8 +41,9 @@ void ScanWrites(const Pass& p, ExprId id, LoopWrites& w) {
     case ExprKind::StoreField:
         w.stores = true;
         break;
-    case ExprKind::Call: {
-        const Summary& s = p.summaries[static_cast<std::size_t>(e.ref)];
+    case ExprKind::Call:
+    case ExprKind::CallPtr: {
+        const Summary& s = CallSummary(p, e);
         if (s.io || s.jsr || s.unknown) {
             w.all = true;
             return;
@@ -60,6 +61,7 @@ void ScanWrites(const Pass& p, ExprId id, LoopWrites& w) {
         w.all = true;
         return;
     case ExprKind::Literal:
+    case ExprKind::FnRef:
     case ExprKind::VarRef:
     case ExprKind::Index:
     case ExprKind::Field:
@@ -214,6 +216,7 @@ bool MayLeave(const Pass& p, ExprId id, int depth) {
     case ExprKind::For:
         return MayLeave(p, e.a, depth) || MayLeave(p, e.b, depth) || MayLeave(p, e.c, depth + 1);
     case ExprKind::Literal:
+    case ExprKind::FnRef:
     case ExprKind::VarRef:
     case ExprKind::Index:
     case ExprKind::Field:
@@ -231,6 +234,7 @@ bool MayLeave(const Pass& p, ExprId id, int depth) {
     case ExprKind::Convert:
     case ExprKind::Reinterpret:
     case ExprKind::Call:
+    case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
@@ -376,6 +380,7 @@ void Candidates(Finder& f, ExprId id, bool shared, bool sometimes) {
     case ExprKind::Convert:
     case ExprKind::Reinterpret:
     case ExprKind::Call:
+    case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:

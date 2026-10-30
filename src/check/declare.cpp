@@ -87,8 +87,43 @@ TypeId PrimitiveType(const std::string& text) {
     return -1;
 }
 
-const char* kTypeHelp =
-    "types are u8 i8 u16 i16 bool, (ptr t), (array t n), or a struct or enum name";
+const char* kTypeHelp = "types are u8 i8 u16 i16 bool, (ptr t), (array t n), (fn (t ...) r), or a "
+                        "struct or enum name";
+
+// a parameter or return type of (fn (t ...) r): 1 or 2 bytes, as for a fn
+TypeId SignatureType(Checker& ck, const Node& node) {
+    TypeId type = ResolveType(ck, node);
+    if (type != kErrorType && !IsScalarKind(KindOf(*ck.out, type))) {
+        Err(ck, node,
+            "a function takes and returns 1 or 2 bytes (integers, bool, enums, pointers); "
+            "write (ptr " +
+                ShowType(ck, type) + ")");
+        return kErrorType;
+    }
+    return type;
+}
+
+// (fn (u8 u8) u8), (fn () void)
+TypeId FnPointerType(Checker& ck, const Node& node) {
+    bool shaped = node.items.size() == 3 && node.items[1].kind == NodeKind::List &&
+                  node.items[1].mark == QuoteMark::None;
+    if (!shaped) {
+        Err(ck, node,
+            "a function pointer type is (fn (t ...) r), the parameter types then the return "
+            "type; write (fn (u8 u8) u8) or (fn () void)");
+        return kErrorType;
+    }
+    std::vector<TypeId> params;
+    for (const Node& item : node.items[1].items) {
+        params.push_back(SignatureType(ck, item));
+    }
+    const Node& ret = node.items[2];
+    TypeId ret_type = kVoidType;
+    if (ret.kind != NodeKind::Symbol || ret.text != "void") {
+        ret_type = SignatureType(ck, ret);
+    }
+    return FnType(ck, params, ret_type, node);
+}
 
 } // namespace
 
@@ -137,6 +172,9 @@ TypeId ResolveType(Checker& ck, const Node& node) {
         }
         return ArrayOf(ck, elem, count, node);
     }
+    if (head == "fn") {
+        return FnPointerType(ck, node);
+    }
     Err(ck, node, Show(node) + " is not a type; " + kTypeHelp);
     return kErrorType;
 }
@@ -158,7 +196,7 @@ TypeId TryResolveType(Checker& ck, const Node& node) {
         return -1;
     }
     const std::string& head = HeadName(node);
-    if (head == "ptr" || head == "array") {
+    if (head == "ptr" || head == "array" || head == "fn") {
         return ResolveType(ck, node);
     }
     return -1;

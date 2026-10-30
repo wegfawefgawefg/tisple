@@ -30,7 +30,7 @@ std::uint32_t CountWrites(const Pass& p, ExprId id, std::int32_t var) {
         count++;
     }
     count += CountWrites(p, e.a, var) + CountWrites(p, e.b, var) + CountWrites(p, e.c, var);
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (HasItems(e.kind)) {
         for (std::uint32_t i = 0; i < e.count; i++) {
             count += CountWrites(p, Item(p, e, i), var);
         }
@@ -208,7 +208,7 @@ bool ContinuesHere(const Pass& p, ExprId id, int depth) {
         ContinuesHere(p, e.c, depth)) {
         return true;
     }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (HasItems(e.kind)) {
         for (std::uint32_t i = 0; i < e.count; i++) {
             if (ContinuesHere(p, Item(p, e, i), depth)) {
                 return true;
@@ -245,7 +245,21 @@ bool CodeTerminates(const Pass& p, ExprId id) {
             return false;
         }
         break;
+    case ExprKind::CallPtr: {
+        // every function it may reach (callees, so their summaries are done) ends
+        const std::vector<std::int32_t>& targets = PointerTargets(p, At(p, e.a).type);
+        for (std::int32_t target : targets) {
+            if (!p.summaries[static_cast<std::size_t>(target)].terminates) {
+                return false;
+            }
+        }
+        if (targets.empty()) {
+            return false;
+        }
+        break;
+    }
     case ExprKind::Literal:
+    case ExprKind::FnRef:
     case ExprKind::VarRef:
     case ExprKind::Index:
     case ExprKind::Field:
@@ -282,7 +296,7 @@ bool CodeTerminates(const Pass& p, ExprId id) {
     if (!CodeTerminates(p, e.a) || !CodeTerminates(p, e.b) || !CodeTerminates(p, e.c)) {
         return false;
     }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (HasItems(e.kind)) {
         for (std::uint32_t i = 0; i < e.count; i++) {
             if (!CodeTerminates(p, Item(p, e, i))) {
                 return false;

@@ -1275,6 +1275,28 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     CounterBefore reading the condition of an item that is no while). Tests:
     tests/test_opt_values.cpp; fuzz shape tests/fuzz_gen_values.cpp (`seed N
     (values)`, one seed in four).
+49. Function pointers (2026-10-30, docs/language.md): `(fn (t ...) r)`, a
+    function's name as its address, `(f args ...)` through a name holding one,
+    const tables of them. The closed world of slice 5 had four places that
+    would have miscompiled a call through a pointer had they seen one: vars
+    gave a parameter the range of the calls the tree shows (`(scale 2)`
+    direct, `(f 200)` through a pointer: k became the literal 2), returns
+    dropped a value only the pointer call uses, collapse_memory followed a
+    pointer parameter to its direct calls, and its loads and stores of a
+    function skipped what a call through a pointer inside it does; the
+    backend's FoldConstants and FindNamedTables walked a call's arguments only
+    for direct calls. The four have tests in tests/test_backend_fnptr.cpp, each
+    failing with its fix taken out; the two backend walks have none (the
+    lowered code names the same tables, and nothing shares those nodes). The backend side is a lowering, not
+    new code generation: a dispatcher per type and an entry per target make
+    them direct calls, so frames, effects, ranges and inlining needed nothing
+    (src/backend/dispatch.cpp). Every program and example byte for byte as
+    before, the random race (seeds 1-2000) cycle for cycle. The formatter took
+    `(fn (u8) void)` for a macro lambda with the body `void`: a list of types
+    and a type is a type now. Fuzz shape tests/fuzz_gen_fnptr.cpp (`seed N
+    (fnptr)`, one seed in four): tables indexed by worked-out values, fields,
+    pointers passed and returned, a call inside another's arguments, targets
+    that write the callers' globals, also called directly with constants.
 
 ## Gap finder (2026-10-26)
 

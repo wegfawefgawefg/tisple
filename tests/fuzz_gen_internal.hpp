@@ -134,6 +134,12 @@ struct Gen {
     std::string values_m;
     bool values_vr_read = false; // whether ValuesCall reads vr's value
     int values_stored[2] = {0, 0};
+    // calls through function pointers, from a stream of their own (fuzz_gen_fnptr.cpp); only
+    // in GenerateFnPtrProgram's programs. fnptr_targets: writing the targets' bodies, where
+    // no shape calls through a pointer (it could reach the target itself)
+    Rng fnptr_rng;
+    bool fnptr_shapes = false;
+    bool fnptr_targets = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -318,6 +324,17 @@ struct Gen {
     std::string Complements();
     std::string SwitchLoop(int depth);
     std::string ValuesShape(int depth);
+    // ---- calls through function pointers (fuzz_gen_fnptr.cpp)
+    std::string FnPtrVar(T t);
+    std::string FnPtrBody(T ret, bool pure);
+    // fq, the targets fa0-2 (fn (u8 u16) u8), fb0-2 (fn (u8) void), fc0-2 (fn () u16), the
+    // table FTA, fhb, fgc, fos, finit, fapply and fpick, before the generated functions
+    std::string FnPtrHelpers();
+    std::string FnPtrIndex();
+    // a value of type t (u8 or u16) from a call through a pointer, or a direct call of a
+    // target; the lets it needs go into lets
+    std::string FnPtrValue(T t, std::string& lets);
+    std::string FnPtrShape(int depth);
     std::string Stmt(int depth);
     std::string Function(std::size_t index);
     std::string Program();

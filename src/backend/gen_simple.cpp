@@ -180,6 +180,9 @@ Opnd TrySimple(Gen& g, ExprId id) {
             static_cast<std::int32_t>((address.offset + place.cursor.address) & 0xFFFF);
         return SymImmOpnd(address, 2);
     }
+    case ExprKind::FnRef:
+        // an entry for calls through a pointer (dispatch.hpp)
+        return SymImmOpnd(SymValue(g.be->fn_sym[static_cast<std::size_t>(e.ref)]), 2);
     default:
         break;
     }

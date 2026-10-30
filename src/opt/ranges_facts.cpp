@@ -38,7 +38,8 @@ void ForgetWritesIn(Ranger& g, ExprId id) {
         Forget(g, e.ref);
         break;
     case ExprKind::Call:
-        ForgetCallWrites(g, e.ref);
+    case ExprKind::CallPtr:
+        ForgetCallWrites(g, e);
         break;
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
@@ -85,8 +86,8 @@ void ForgetLoopWrites(Ranger& g, ExprId loop) {
     }
 }
 
-void ForgetCallWrites(Ranger& g, std::int32_t function) {
-    const Summary& s = g.p->summaries[static_cast<std::size_t>(function)];
+void ForgetCallWrites(Ranger& g, const Expr& call) {
+    const Summary& s = CallSummary(*g.p, call);
     if (s.io || s.jsr || s.unknown) {
         ForgetGlobals(g, false);
         return;

@@ -22,6 +22,7 @@ template <typename Fn> bool AnyExpr(const Program& program, ExprId id, Fn fn) {
     }
     switch (e.kind) {
     case ExprKind::Call:
+    case ExprKind::CallPtr: // only before LowerIndirectCalls (FindNamedTables on the source)
     case ExprKind::StructLit:
     case ExprKind::Do:
         for (std::uint32_t i = 0; i < e.count; i++) {

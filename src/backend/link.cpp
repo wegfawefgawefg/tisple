@@ -391,6 +391,16 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     if (!LayoutProgram(program, lo, out.layout, errors)) {
         return out.layout.no_room ? LinkResult::kNoRoom : LinkResult::kError;
     }
+    // a function's name as a value is its entry's address (dispatch.hpp), in the code and in
+    // the const tables below
+    out.layout.functions.assign(be.entries.size(), 0);
+    for (std::size_t f = 0; f < be.entries.size(); f++) {
+        std::size_t entry = static_cast<std::size_t>(be.entries[f]);
+        if (be.entries[f] >= 0 && (*in.kept)[entry]) {
+            out.layout.functions[f] = static_cast<std::uint16_t>(
+                be.as.symbols[static_cast<std::size_t>(be.fn_sym[entry])].value);
+        }
+    }
 
     // every byte: initial values, then the code over them, then zeroed frames
     std::vector<std::uint8_t> memory(0x10000, 0);

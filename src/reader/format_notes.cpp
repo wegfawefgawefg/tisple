@@ -187,6 +187,29 @@ bool HeadIs(const Node& node, const char* name) {
            node.items[0].kind == NodeKind::Symbol && node.items[0].text == name;
 }
 
+// written like a type: u8, Sprite, (ptr t), (array t n), (fn (t ...) r)
+bool IsTypeForm(const Node& node) {
+    if (node.kind == NodeKind::Symbol) {
+        return ClassifySymbol(node.text) == SymbolClass::Type;
+    }
+    return HeadIs(node, "ptr") || HeadIs(node, "array") || HeadIs(node, "fn");
+}
+
+// (fn (u8 u16) void): parameter types and a return type, where a macro's (fn (a b) body)
+// has names and a body
+bool IsFnPointerType(const Node& node) {
+    if (node.items.size() != 3 || node.items[1].mark != QuoteMark::None ||
+        !IsTypeForm(node.items[2])) {
+        return false;
+    }
+    for (const Node& param : node.items[1].items) {
+        if (!IsTypeForm(param)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int BodyHeaderCount(const Node& node) {
@@ -196,8 +219,12 @@ int BodyHeaderCount(const Node& node) {
     }
     const std::string& head = node.items[0].text;
     if (head == "fn") {
-        // (fn name (params) type body ...); in macro code (fn (params) body ...)
+        // (fn name (params) type body ...); in macro code (fn (params) body ...); a function
+        // pointer type (fn (u8 u16) void) is no body form
         bool anonymous = node.items.size() > 1 && node.items[1].kind == NodeKind::List;
+        if (anonymous && IsFnPointerType(node)) {
+            return -1;
+        }
         return anonymous ? 1 : 3;
     }
     if (head == "macro") {

@@ -56,6 +56,12 @@ std::string GenerateCollapseProgram(std::uint64_t seed);
 constexpr int kValuesPercent = 25;
 std::string GenerateValuesProgram(std::uint64_t seed);
 
+// for one seed in kFnPtrPercent hundred, the seed's program with calls through function
+// pointers (fuzz_gen_fnptr.cpp) among its statements: tables, fields, arguments, returns, and
+// targets that use the callers' globals; "" for the others
+constexpr int kFnPtrPercent = 25;
+std::string GenerateFnPtrProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at

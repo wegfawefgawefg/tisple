@@ -389,6 +389,7 @@ void Visit(Collapser& c, ExprId id, bool shared) {
         return;
     case ExprKind::Literal:
     case ExprKind::VarRef:
+    case ExprKind::FnRef:
     case ExprKind::Break:
     case ExprKind::Continue:
         return;
@@ -408,6 +409,7 @@ void Visit(Collapser& c, ExprId id, bool shared) {
     case ExprKind::Convert:
     case ExprKind::Reinterpret:
     case ExprKind::Call:
+    case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:

@@ -24,6 +24,7 @@ void RunCheckExampleTests(TestResults& results) {
         "lib/tables.tsp",
         "lib/macros.tsp",
         "programs/plasma/main.tsp",
+        "examples/dispatch.tsp",
     };
     for (const char* file : files) {
         Built built = BuildFile(file);

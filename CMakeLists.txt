@@ -58,7 +58,7 @@ add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp
                tests/fuzz_gen_loops.cpp tests/fuzz_gen_race.cpp tests/fuzz_gen_entries.cpp
                tests/fuzz_gen_late.cpp
                tests/fuzz_gen_dead.cpp tests/fuzz_gen_motion.cpp tests/fuzz_gen_common.cpp
-               tests/fuzz_gen_collapse.cpp tests/fuzz_gen_values.cpp)
+               tests/fuzz_gen_collapse.cpp tests/fuzz_gen_values.cpp tests/fuzz_gen_fnptr.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
 target_include_directories(tisple PRIVATE tests)
 tisple_warnings(tisple)

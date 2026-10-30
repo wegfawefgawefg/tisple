@@ -1,3 +1,4 @@
+#include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
 #include "backend/link.hpp"
 #include "backend/peephole.hpp"
@@ -147,6 +148,16 @@ std::vector<bool> KeptFunctions(const Backend& be, const BuildOptions& options) 
     std::vector<bool> kept(count, false);
     std::vector<std::int32_t> work = {main};
     kept[static_cast<std::size_t>(main)] = true;
+    // the entries a const table holds: the table is data, not code that names them
+    for (const Var& var : be.program->vars) {
+        for (const FnSlot& slot : var.fn_slots) {
+            std::int32_t entry = be.entries[static_cast<std::size_t>(slot.function)];
+            if (!kept[static_cast<std::size_t>(entry)]) {
+                kept[static_cast<std::size_t>(entry)] = true;
+                work.push_back(entry);
+            }
+        }
+    }
     while (!work.empty()) {
         std::int32_t f = work.back();
         work.pop_back();
@@ -245,6 +256,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     FoldConstants(program);
     OptReport report;
     OptimizeProgram(program, options.opt, report);
+    std::vector<std::int32_t> entries = LowerIndirectCalls(program);
     std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     out = Compiled();
     out.origin = options.origin;
@@ -257,7 +269,13 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
         return false;
     }
     be.counter_literals = counter_literals;
+    be.entries = entries;
     be.inlines = FindInlines(program, options.no_inline);
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (program.functions[f].dispatcher) {
+            be.inlines[f] = InlineKind::None; // its body is only for the analyses
+        }
+    }
     be.deref = FindDerefPointers(program, be.inlines);
     be.aliases = FindIndexAliases(program);
     be.unit_steps = FindUnitSteps(program);
@@ -270,8 +288,12 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     std::vector<WeightsAdded> added(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         std::vector<std::uint64_t> weights = Weights(be);
-        GenFunction(be, static_cast<std::int32_t>(f));
-        Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)));
+        if (program.functions[f].dispatcher) {
+            GenDispatcher(be, static_cast<std::int32_t>(f));
+        } else {
+            GenFunction(be, static_cast<std::int32_t>(f));
+            Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)));
+        }
         added[f] = AddedSince(be, weights);
     }
     if (errors.size() != before) {

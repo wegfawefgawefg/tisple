@@ -45,14 +45,21 @@ enum class TypeKind : std::uint8_t {
     Array,
     Struct,
     Enum,
+    Fn, // a function pointer: (fn (u8 u8) u8)
 };
 
 struct Type {
     TypeKind kind = TypeKind::Error;
     TypeId elem = -1;        // ptr, array
     std::uint32_t count = 0; // array
-    std::int32_t decl = -1;  // struct or enum index
+    std::int32_t decl = -1;  // struct or enum index; for fn, the Signature index
     std::uint32_t size = 0;  // bytes
+};
+
+// what a function pointer type takes and gives; interned, so equal signatures have one index
+struct Signature {
+    std::vector<TypeId> params;
+    TypeId ret = -1; // kVoidType when nothing is returned
 };
 
 // fixed ids, interned first
@@ -108,6 +115,12 @@ struct Placement {
     bool reserve = false; // :reserve: memory the program reaches by address; not a variable
 };
 
+// a function's address inside a const table's initial bytes (Var::init holds zeros there)
+struct FnSlot {
+    std::uint32_t offset = 0; // packed byte offset of the 2-byte element
+    std::int32_t function = -1;
+};
+
 struct Var {
     std::string name; // qualified for globals (gfx/hgr.row_lo), plain for locals
     VarKind kind = VarKind::Global;
@@ -119,6 +132,7 @@ struct Var {
     bool address_taken = false; // some addr_of reaches into it: stored packed
     bool loop_var = false;
     std::vector<std::uint8_t> init; // packed bytes; empty means zero
+    std::vector<FnSlot> fn_slots;   // const tables of function pointers: the addresses in init
 };
 
 enum class Op : std::uint8_t {
@@ -177,6 +191,10 @@ enum class ExprKind : std::uint8_t {
     Continue,
     Let, // ref: var, a: initial value (locals always have one)
     Set, // a: place, b: value
+    // a call through a function pointer: a, the pointer, then the list's arguments, worked out
+    // in that order; type the signature's return type
+    CallPtr,
+    FnRef, // ref: function; a function's name as a value, its address, of type (fn ...)
 };
 
 struct Expr {
@@ -208,7 +226,13 @@ struct Function {
     std::vector<std::int32_t> locals; // vars, loop variables included
     TypeId ret = kVoidType;
     ExprId body = -1;
-    std::vector<std::int32_t> callees; // functions called directly, no repeats
+    // functions called directly, no repeats; then, for each indirect call, every function
+    // whose address is taken with the pointer's type (all it may reach)
+    std::vector<std::int32_t> callees;
+    bool address_taken = false; // its name is used as a value: callers the tree does not show
+    TypeId type = -1;           // its (fn ...) type, once its address is taken
+    // backend only (backend/dispatch.cpp): jumps to the address in its first parameter
+    bool dispatcher = false;
 };
 
 struct ModuleInfo {
@@ -228,12 +252,13 @@ struct Program {
     std::vector<Expr> exprs;
     std::vector<ExprId> lists;
     std::vector<Clause> clauses;
-    std::int32_t main = -1; // main in the entry module, if any
+    std::vector<Signature> signatures; // of (fn ...) types, by Type::decl
+    std::int32_t main = -1;            // main in the entry module, if any
 };
 
 bool IsIntegerKind(TypeKind kind);
 bool IsSignedKind(TypeKind kind);
-// fits in a register pair: integers, bool, enums, pointers
+// fits in a register pair: integers, bool, enums, pointers, function pointers
 bool IsScalarKind(TypeKind kind);
 std::uint32_t KindBits(TypeKind kind); // 8 or 16 for scalars
 
@@ -248,5 +273,9 @@ std::int32_t FindFieldIndex(const Program& program, TypeId struct_type, const st
 // the raw bits of a constant expression, folded with the target's arithmetic; false when it
 // is not constant (a division by zero counts as not constant)
 bool ConstValue(const Program& program, ExprId id, std::uint16_t& value);
+
+// the functions a call through a pointer of this (fn ...) type may reach: every function
+// whose address is taken with exactly that type (no conversion makes a function pointer)
+std::vector<std::int32_t> CallTargets(const Program& program, TypeId type);
 
 } // namespace tisple
