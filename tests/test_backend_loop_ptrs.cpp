@@ -83,9 +83,44 @@ void TestPagePointerAfterLoops(TestResults& results) {
     CHECK(results, ok);
 }
 
+// a page pointer made in a loop is read again where its function is inlined after a later
+// loop: that loop may not take its bytes (fuzz seed 6063372, reduced)
+void TestPagePointerInlinedAgain(TestResults& results) {
+    std::string text =
+        "(struct S ((a u8) (b i16) (c bool) (d u8)))\n"
+        "(enum E (e0 e1 e2 e3 e4))\n"
+        "(let g0 u8 99) (let g1 u8 128) (let g2 i8 -39) (let g3 u16 64578) (let g6 i16 32767)\n"
+        "(let g10 E) (let arr13 (array i8 512)) (let pt (array u8 16))\n"
+        "(let wb (array u8 1024)) (let sm (array u8 32)) (let sa (array S 8))\n"
+        "(fn f0 () i16 g6)\n"
+        "(fn f1 () void (for n19 u8 1 6 (do)))\n"
+        "(fn f2 ((a20 u8) (a21 u16)) u8\n"
+        "    (do (let n22 u16 (+ (as u16 (- a20 g1)) 277))\n"
+        "        (while (and (< n22 113) (!= (at wb n22) a20)) (set n22 (+ n22 1)))\n"
+        "        (set g3 (+ g3 n22)))\n"
+        "    (- (+ (+ (at sm 3) (at sm (& (at sa (& g1 7) a) 31))) (+ (at sm 3) 102))\n"
+        "       (load (+ \"Hello, \" (& g0 7)))))\n"
+        "(fn f3 ((a23 i8) (a24 E)) u8\n"
+        "    (set (at arr13 (& (+ g3 g3) 511)) a23)\n"
+        "    (io_read u8 49155))\n"
+        "(fn main () u8\n"
+        "    (for n31 i8 -1 2 (f3 103 g10) (set g2 n31) (let l32 u8 255))\n"
+        "    (store (+ (addr_of (at sm (& (f2 g1 g3) 15))) (as u16 (& (as u8 g2) 15))) 252)\n"
+        "    (set g1 g0)\n"
+        "    (f3 (- (~ g2) g2) g10))";
+    Compiled c = CompileMainText(text);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+    if (!ok) {
+        std::fprintf(stderr, "program:\n%s\n  %s\n", text.c_str(), d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
 } // namespace
 
 void RunBackendLoopPtrsTests(TestResults& results) {
+    TestPagePointerInlinedAgain(results);
     TestManyLoops(results);
     TestPagePointerAfterLoops(results);
 }

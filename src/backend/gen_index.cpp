@@ -222,15 +222,8 @@ bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
         PagePointer p;
         p.site = place.site;
         p.base = base;
-        // its low byte is set once at the function's start: above every byte a loop before
-        // may have used and given back (GenStmt)
-        std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
-        g.lptr_top = std::max(g.lptr_top, max);
-        std::uint32_t at = g.lptr_top;
-        g.lptr_top += 2;
-        max = g.lptr_top > max ? g.lptr_top : max;
-        p.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
-                         static_cast<std::int32_t>(at));
+        // its low byte is set once at the function's start
+        p.ptr = NewLoopPointer(g, true);
         g.page_ptrs.push_back(p);
         found = &g.page_ptrs.back();
     }
@@ -251,6 +244,19 @@ bool UsePagePointer(Gen& g, PlaceRef& place, TypeId type) {
     place.index = low;
     place.counter = -1;
     return true;
+}
+
+AsmValue NewLoopPointer(Gen& g, bool above) {
+    if (above) {
+        g.lptr_top = std::max(g.lptr_top, g.lptr_high);
+    }
+    std::uint32_t at = g.lptr_top;
+    g.lptr_top += 2;
+    g.lptr_high = std::max(g.lptr_high, g.lptr_top);
+    std::uint32_t& size = g.be->lptr_size[static_cast<std::size_t>(g.function)];
+    size = std::max(size, g.lptr_top);
+    return SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
+                    static_cast<std::int32_t>(at));
 }
 
 void InitPagePointers(Gen& g) {
@@ -355,12 +361,7 @@ AsmValue DerivedPointer(Gen& g, std::int32_t loop, AsmValue base, std::int32_t v
     d.base = base;
     d.var = var;
     d.offset = offset;
-    std::uint32_t at = g.lptr_top;
-    g.lptr_top += 2;
-    std::uint32_t& max = g.be->lptr_size[static_cast<std::size_t>(g.function)];
-    max = g.lptr_top > max ? g.lptr_top : max;
-    d.ptr = SymValue(g.be->lptr_sym[static_cast<std::size_t>(g.function)],
-                     static_cast<std::int32_t>(at));
+    d.ptr = NewLoopPointer(g, false);
     g.derived.push_back(d);
     return d.ptr;
 }
