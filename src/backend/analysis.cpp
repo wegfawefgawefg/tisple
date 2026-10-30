@@ -222,8 +222,11 @@ std::vector<bool> FindWarmInlines(const Program& program) {
     std::vector<bool> warm(count, false);
     for (std::size_t f = 0; f < count; f++) {
         std::uint64_t size = CountExprs(program, program.functions[f].body);
+        ExprId body = program.functions[f].body;
+        std::uint64_t copied = (calls[f] - 1) * size;
         warm[f] = size > kMaxInlineExprs && size <= kMaxWarmInlineExprs && calls[f] > 1 &&
-                  runs[f] >= (calls[f] - 1) * size && !HasLoops(program, program.functions[f].body);
+                  copied <= kMaxWarmCopiedExprs && runs[f] >= copied && !HasLoops(program, body) &&
+                  !HasCalls(program, body);
     }
     return warm;
 }
