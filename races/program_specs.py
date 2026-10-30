@@ -18,6 +18,8 @@ ORDER = [
     "sort",
     "dhrystone",
     "parser",
+    "lz4",
+    "vm",
 ]
 
 
