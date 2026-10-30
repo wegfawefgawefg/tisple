@@ -9,8 +9,9 @@ namespace {
 
 constexpr double kCyclesPerSample = kCpuHz / kAudioRate;
 constexpr uint64_t kCyclesPerTick = 8; // the chip's tone counters step at its clock / 8
-// one channel at full volume; all six at once stay under full scale with the speaker quiet
-constexpr double kChannelVolume = 0.12 * 32767.0;
+// one channel at full volume: a quarter of full scale. six at full volume in phase would
+// clip, which music at the usual levels (8-13: a tenth to a half of full) never does
+constexpr double kChannelVolume = 0.25 * 32767.0;
 constexpr double kHighPass = 0.995; // about 35 Hz, as the speaker's
 
 int16_t Clamp(double sample) {

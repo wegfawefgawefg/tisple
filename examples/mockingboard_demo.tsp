@@ -1,10 +1,10 @@
-; music and effects on a Mockingboard (slot 4 usually; any slot is found): five loops of
+; music and effects on a Mockingboard (slot 4 usually; any slot is found): loops of
 ; different lengths phasing over each other, and effects on keys 1-4. ESC ends it. With no
 ; card the effects play on the speaker and the music is silent.
 ;
-; the loops, in pulses of 6 ticks (a tenth of a second): a bass of 16, an arpeggio of 12 and
-; the same arpeggio with a rest, 13, in the other speaker, so the two slide apart one pulse a
-; bar and come back after 156; a bell of 5, a pad of 64 and a shaker of 3
+; the loops, in pulses of 8 ticks (0.13 s), all in D dorian: a bass of 16, an arpeggio of 12
+; and the same arpeggio with a rest, 13, in the other speaker, so the two slide apart one
+; pulse a bar and come back together after 156; a bell of 5, a pad of 64 and a shaker of 3
 
 (import apple2 a2)
 (import mockingboard mb)
@@ -12,13 +12,13 @@
 (import text40)
 
 (tune.song music
-    (pattern bass "l6 v13 k3 d2 - r d2 - r a1 - c2 - r d2 - r f2 -")
-    (pattern arp "l6 v11 k1 d4 a4 c5 e5 a4 d5 c5 a4 g4 a4 e5 c5")
-    (pattern pad "l48 v8 k10 f3 - a3 - g3 - e3 -")
-    (pattern arp_slip "l6 v10 k1 d4 a4 c5 e5 a4 d5 c5 a4 g4 a4 e5 c5 r")
-    (pattern bell_in "l16 r")
-    (pattern bell "l6 v7 k1 a5 r e6 r d6")
-    (pattern shaker "l6 m2 n2 k2 v6 c4 v3 c4 r")
+    (pattern bass "l8 v11 k3 d2 - r d2 - r a1 - c2 - r d2 - r f2 -")
+    (pattern arp "l8 v11 k1 d4 a4 c5 e5 a4 d5 c5 a4 g4 a4 e5 c5")
+    (pattern pad "l64 v8 k15 f3 - a3 - g3 - e3 -")
+    (pattern arp_slip "l8 v10 k1 d4 a4 c5 e5 a4 d5 c5 a4 g4 a4 e5 c5 r")
+    (pattern bell_in "l32 r")
+    (pattern bell "l8 v7 k1 a5 r e6 r d6")
+    (pattern shaker "l8 m2 n2 k2 v6 c4 v3 c4 r")
     (voice 0 bass)
     (voice 1 arp)
     (voice 2 pad)

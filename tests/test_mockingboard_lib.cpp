@@ -20,6 +20,7 @@ namespace tisple_tests {
 namespace {
 
 constexpr uint64_t kTick = 17030; // the lib's default rate
+constexpr int kPulse = 8;         // the demo's patterns' length, in ticks
 
 struct Build {
     tisple::Program program;
@@ -106,6 +107,39 @@ void DetectTests(TestResults& results) {
     tisple::RunApple2(*noisy, 2000000);
     CHECK(results, noisy->stop_reason == tisple::MachineStop::kReturned);
     CHECK(results, noisy->cpu.mem[seen] == 0);
+}
+
+// set_rate: twice as many ticks. stop: the music's voices quiet, the tick going on
+const char* kRateStop = R"(
+(import mockingboard mb)
+(import mockingboard_song tune)
+(tune.song hum (pattern a "l4 v12 c4 e4 g4") (voice 0 a) (voice 4 a))
+(fn irq () void :interrupt (mb.service))
+(fn main () void
+    (mb.init)
+    (mb.set_rate 8515)
+    (mb.play (addr_of (at hum 0)))
+    (for i u8 0 20 (wait_cycles 50000))
+    (mb.stop)
+    (while true))
+)";
+
+void RateStopTests(TestResults& results) {
+    Build b;
+    BuildText(results, "t.tsp", kRateStop, b);
+    if (!b.ok) {
+        return;
+    }
+    std::unique_ptr<tisple::Apple2> a = Start(b, 5);
+    tisple::RunApple2(*a, 2000000);
+    // about 1.1 M cycles to the stop at 120 a second, then on to 2 M
+    uint64_t taken = a->cpu.irqs_taken;
+    CHECK(results, taken > 2000000 / 8515 - 6 && taken < 2000000 / 8515 + 2);
+    const uint8_t* first = a->slots.mockingboard.ay[0].regs;
+    const uint8_t* second = a->slots.mockingboard.ay[1].regs;
+    CHECK(results, first[8] == 0 && second[8] == 0 && second[9] == 0);
+    CHECK(results, first[0] != 0); // it did play
+    CHECK(results, a->slots.mockingboard.slot == 5);
 }
 
 // the cycles each interrupt takes, from the cpu's 7-cycle entry to the end of its RTI
@@ -212,7 +246,7 @@ void DemoTests(TestResults& results, TickCost& cost) {
     CHECK(results, a->cpu.irq_level_at == UINT64_MAX);
     uint64_t first = FirstTick(*a);
     Voices v = ReadVoices(*a, first, 590);
-    // voice 1: the arpeggio, a note every 6 ticks
+    // voice 1: the arpeggio, a note every pulse
     const char* arp = "d4 a4 c5 e5 a4 d5 c5 a4 g4 a4 e5 c5";
     std::vector<uint16_t> arp_periods;
     for (const char* p = arp; *p != 0; p += 3) {
@@ -220,8 +254,8 @@ void DemoTests(TestResults& results, TickCost& cost) {
     }
     bool arp_ok = true;
     bool slip_ok = true;
-    for (int t = 0; t < 288; t++) {
-        int pulse = t / 6;
+    for (int t = 0; t < 576; t++) {
+        int pulse = t / kPulse;
         arp_ok = arp_ok && v.period[1][t] == arp_periods[pulse % 12];
         // voice 3: the same with a rest, 13 pulses, so a pulse later each time round
         if (pulse % 13 == 12) {
@@ -232,8 +266,8 @@ void DemoTests(TestResults& results, TickCost& cost) {
     }
     CHECK(results, arp_ok && slip_ok);
     // the arpeggio's decay: v11 k1, one less a tick from the note's start
-    CHECK(results, v.volume[1][0] == 11 && v.volume[1][1] == 10 && v.volume[1][5] == 6 &&
-                       v.volume[1][6] == 11);
+    CHECK(results, v.volume[1][0] == 11 && v.volume[1][1] == 10 && v.volume[1][7] == 4 &&
+                       v.volume[1][kPulse] == 11);
     // the shaker on voice 5 is noise; the zap at frame 300 puts tones there, a tick each, then
     // gives the voice back
     CHECK(results, (v.mixer[1][0] & 0x24) == 0x04);
@@ -322,6 +356,7 @@ void BusyTests(TestResults& results, TickCost& cost) {
 
 void RunMockingboardLibTests(TestResults& results) {
     DetectTests(results);
+    RateStopTests(results);
     TickCost demo;
     DemoTests(results, demo);
     SpeakerTests(results);
