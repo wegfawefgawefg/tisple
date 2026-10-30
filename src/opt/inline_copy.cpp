@@ -210,11 +210,15 @@ bool PutIn(const Pass& p, std::int32_t callee, ExprId call, std::uint32_t i) {
     std::int32_t param = fn.params[i];
     ExprId arg = Item(p, At(p, call), i);
     const Summary& s = p.summaries[static_cast<std::size_t>(callee)];
-    if (VarOf(p, param).address_taken || CountSets(p, fn.body, param) > 0 || s.jsr || s.unknown ||
-        !IsPure(p, arg) || !Quiet(p, arg) || !Unchanged(p, s, arg)) {
+    ExprKind kind = At(p, arg).kind;
+    if (VarOf(p, param).address_taken || CountSets(p, fn.body, param) > 0) {
         return false;
     }
-    ExprKind kind = At(p, arg).kind;
+    // (a literal stays what it is, whatever the body does: machine code, a wait)
+    if (kind != ExprKind::Literal &&
+        (s.jsr || s.unknown || !IsPure(p, arg) || !Quiet(p, arg) || !Unchanged(p, s, arg))) {
+        return false;
+    }
     if (kind != ExprKind::Literal && kind != ExprKind::VarRef &&
         Nodes(p, arg) * Reads(p, fn.body, param, 0) > kMaxPutIn) {
         return false;

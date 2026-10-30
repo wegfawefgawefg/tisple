@@ -297,6 +297,12 @@ std::uint64_t InlineStep(Pass& p) {
         }
         in.size[f] = CountExprs(program, fn.body);
         bool small = in.size[f] <= kMaxInlineExprs;
+        // a small function with a loop, copied into a caller the backend inlines once, would
+        // give that caller a loop, and the backend keeps it a JSR in a loop then (snake's step
+        // and speaker.buzz)
+        if (small && calls[f] > 1 && HasLoops(program, fn.body)) {
+            continue;
+        }
         if ((small || calls[f] == 1) && Lowerable(p, static_cast<std::int32_t>(f))) {
             in.copied[f] = true;
             in.once[f] = !small;
