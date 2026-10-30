@@ -264,6 +264,18 @@ called from wherever a pointer to it goes, which the closed world above does not
   takes their writes like a call's.
 - The backend makes them direct calls after the passes (design.md).
 
+Interrupt handlers (2026-10-30, docs/language.md): the handler runs between any two
+instructions, outside the closed world.
+
+- What it shares (`Var::irq_shared`, marked by the checker) counts as hardware everywhere
+  `:address` does: live (untracked, so never a dead store and always live), consts (not
+  tracked), ranges (not quiet, not ranged: vars would miss the handler's writes, which no
+  function main reaches makes), elements and collapse (Hardware), licm (never holds), cse
+  (no plain variable), dead's self-assignment, consts_eval's steady values.
+- `(sei)` and `(cli)` are I/O in summaries and walks: never moved or dropped, globals
+  forgotten at them.
+- The handler's own code is optimised like any function; it runs with interrupts off.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`

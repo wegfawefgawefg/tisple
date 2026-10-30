@@ -115,7 +115,8 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 
 1. Placement options on a top-level `let` or a `const` table, after the value:
    `:address`, `:align`, `:boundary`, and on a `let` `:in aux` and `:reserve`
-   (see Placement). `:reserve` is the one option without a value.
+   (see Placement). `:reserve` is the one option without a value. On a `fn`,
+   after the return type, `:interrupt` (see Interrupts), also without one.
 2. Field names in struct values: `(make Sprite :x 10 :y 20 :active true)`.
    Every field, in declared order, none left out. The names exist so a swapped
    `x`/`y` is an error instead of a silent bug; there is no reordering and no
@@ -194,6 +195,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(jsr addr (a v) (x v) (y v))` | call machine code (ROM, card firmware) with registers set; gives A after; see Machine code |
 | `name` of a function, `(f args ...)` with `f` holding one | a function's address; a call through it, see Function pointers |
 | `(wait_cycles n)` | exactly n cycles (a variable n: 69 at least); see Exact delays |
+| `(sei)` / `(cli)` | interrupts off / on; see Interrupts |
 | `"text"` | a `(ptr u8)` to the text's ASCII bytes and a 0; see Strings |
 
 The parameter list is always written, `()` when empty, and the return type is
@@ -563,6 +565,65 @@ and its pointer parameters reach anything. A call through a pointer reads and
 writes what any of its targets may (their effect summaries joined), and ends
 only if each does. Inlining and called-once decisions see the entry's call of
 the target as a call like any other.
+
+## Interrupts
+
+Added 2026-10-30, for the Mockingboard's timers and the mouse card.
+
+```scheme
+(let ticks u16 0)
+
+(fn tick () void :interrupt
+    (io_read u8 T1_LOW) ; answers the 6522
+    (set ticks (+ ticks 1)))
+
+(fn main () void
+    ...
+    (sei)
+    (let now u16 ticks) ; both bytes from one moment
+    (cli)
+    ...)
+```
+
+- `(fn name () void :interrupt body ...)` is the program's interrupt handler: it
+  runs on every IRQ, between any two instructions of the rest. One a program, no
+  parameters, no value; the program needs a main. Calling it or using its name
+  as a value is an error.
+- The startup installs it before main with interrupts off, turns them on for
+  main (`CLI`), and at the end takes it out with them off and gives the caller
+  its I flag back. The device is the program's to start and stop: write its
+  registers with `io_write`, answer it in the handler.
+- `(sei)` and `(cli)` turn interrupts off and on: the 6502's own instructions,
+  as `jsr` is. They are effects like `io_write`: never dropped or moved. A
+  `(cli)` in the handler or anything it calls is an error (interrupts would nest
+  over frames that have one copy); its `RTI` turns them on again.
+- The handler shares no function with main's code: a function both reach is an
+  error that says to give the handler a copy. Calls through function pointers
+  count as calls of their targets here too.
+- Reads tear: a `u16` or a struct the handler writes is read a byte at a time,
+  and an interrupt between the bytes gives half old, half new. Read it between
+  `(sei)` and `(cli)`. The same for a read-modify-write main and handler both
+  make: `(set n (+ n 1))` is several instructions.
+- What the optimiser assumes: every global the handler (or a function it calls)
+  names, every variable whose address is taken when it goes through a pointer,
+  and every global as well when it runs `jsr`, may change or be looked at
+  between any two instructions. They count as hardware: no ranges, constants,
+  dead stores, merged or hoisted reads, collapsed loops, and no register is
+  taken to hold one. So `(while (= flag 0))` waits for the handler, and every
+  `(set mode ...)` main makes is made. Everything else is optimised as before:
+  the handler runs only its own code and frames.
+- The interpreter takes interrupts only where a test asks for them (between two
+  steps, when they are on).
+- A `BRK` with the card's ram in runs the handler and returns past it; Tisple
+  code has none. lib/auxmem's mover switches RAMRD and RAMWRT: on a II+ or an
+  unenhanced IIe an interrupt in it would fetch the vector, and with the card
+  in the handler's code, from aux memory. Put `(sei)` and `(cli)` around
+  `auxmem.read` and `auxmem.write` when a handler may run. lib/mouse stays
+  polled (its interrupt modes need SERVEMOUSE in the handler, which our
+  machine's card does not raise).
+
+What it compiles to, and how each Apple II routes the IRQ: design.md,
+"Interrupt handlers".
 
 ## Machine code
 

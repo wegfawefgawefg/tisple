@@ -229,6 +229,47 @@ inlining see ordinary calls:
   it. For the analyses the dispatcher's body is a match that calls one of the
   entries; its code is only the jump.
 
+### Interrupt handlers (2026-10-30)
+
+How the machines route an IRQ (checked in their roms with our NMOS core, which
+runs all three IRQ paths; tests/test_backend_irq.cpp):
+
+- II+ and unenhanced IIe: $FFFE holds $FA40, which does `STA $45`, looks at
+  the B flag on the stack (a BRK goes to the monitor) and does `JMP ($03FE)`.
+  The handler finds the interrupted A in $45 (A itself holds the status shifted
+  left), X and Y as they were, and must give A back from $45 before its `RTI`. With RAMRD on, `$3FE` is read from
+  aux memory.
+- Enhanced IIe: $FFFE holds $C3FA, which saves A, X, Y and the memory switches
+  on the stack, puts main memory and the rom in (the card's ram too), pushes a
+  return into itself and does `JMP ($03FE)`; after the handler's `RTI` it puts
+  everything back. $45 is not touched on this path (only a BRK writes $44).
+- Language card ram read-enabled: the cpu reads $FFFA-$FFFF from the card,
+  whatever the rom says. Our programs have the card in for all of main when they
+  use it, so with a handler the link keeps $FFFA-$FFFF out of the card's data
+  and the startup writes them: NMI $03FB and RESET $FA62 as the roms have them
+  (reset puts the rom back in anyway), IRQ straight to the entry.
+
+What the backend makes (src/backend/irq.cpp):
+
+- `irq.direct: STA $45` (the card's $FFFE), then `irq.entry` ($3FE): `CLD`,
+  X and Y pushed, then each zero-page scratch byte the handler's kept code uses,
+  or every scratch byte the runtime routines it calls use; `JSR handler`; the
+  same pulled back; `LDA $45; RTI`. 45 cycles and 19 bytes besides the scratch
+  bytes (13 cycles each), the rom's path not counted.
+- $45 is never given to a variable in a program with a handler (an :address
+  let there is an error).
+- The handler and everything it calls get frames above every other function's:
+  the handler counts every other function as a caller. Nothing else shares
+  their bytes, so they are not saved; main's frames, its temporaries, page and
+  loop pointers are never touched.
+- Startup: `PHP; SEI`, zero page saved and set, the old $3FE kept and the entry
+  put there (and the card's vectors), `CLI`, `JSR main`; then `SEI`, $3FE as it
+  was, zero page back, `PLP; RTS`.
+- What the handler shares is `Var::irq_shared`: the symbol is `shared`, which
+  keeps the peephole and code generation from taking a register to hold it,
+  the dead-store pass from it, and every "may this code write it" from saying
+  no.
+
 ## Target
 
 *Proposed* first target: NMOS 6502 (runs on every Apple II), Apple IIe memory
@@ -321,6 +362,6 @@ reports come after the compiler works.
 - Literal typing details, pointer arithmetic, signed compares.
 - View syntax.
 - How backing storage for allocators is declared.
-- Calling convention for recursion and interrupts (function pointers: see
+- Calling convention for recursion (function pointers and interrupts: see
   Backend).
 - IR shape.

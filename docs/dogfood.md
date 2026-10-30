@@ -1353,7 +1353,8 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     (15,414), clean. Tests: test_backend_number_cmp, _rt_args, _zero_cmp,
     _loop_ptrs, _mul (one product alone), _preload; farm programs 42013970.tsp
     and _reduced.tsp.
-50. Function pointers (2026-10-30, docs/language.md): `(fn (t ...) r)`, a
+50. Function pointers and interrupt handlers (2026-10-30, docs/language.md).
+    Function pointers: `(fn (t ...) r)`, a
     function's name as its address, `(f args ...)` through a name holding one,
     const tables of them. The closed world of slice 5 had four places that
     would have miscompiled a call through a pointer had they seen one: vars
@@ -1375,6 +1376,25 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     (fnptr)`, one seed in four): tables indexed by worked-out values, fields,
     pointers passed and returned, a call inside another's arguments, targets
     that write the callers' globals, also called directly with constants.
+    Interrupt handlers: `(fn name () void :interrupt)`, `(sei)`, `(cli)`. The
+    IRQ paths were read from the roms before any code: the II+ and the
+    unenhanced IIe store A in $45 and jump through $3FE, so $45 is kept out of
+    zero page and the entry ends `LDA $45; RTI`; the enhanced IIe saves
+    everything itself; with the card's ram in, the cpu reads $FFFE from the
+    card, which the startup now writes. The simulator had IRQ pins but no way to
+    raise them: `RequestIrq` at a cycle, held until taken. Bugs on the way, all
+    in our test machinery: one interrupt counted several times while the BRK
+    sequence kept its flag (several due requests taken at once), and a
+    comparison after the program's end, which puts zero page back. The
+    interrupt tests run a handler that multiplies, divides and indexes against
+    a main that does the same, at 120 points one by one and 40 at once, both
+    ways in, and through Apple's II+, IIe and enhanced IIe roms on the machine
+    (globals as the interpreter's with the handler run as often), the card
+    case, and examples/ticks.tsp (a Mockingboard clock) with an interrupt every
+    17045 cycles. Fuzz shape tests/fuzz_gen_irq.cpp (`seed N (irq)`): a handler
+    on its own globals with the runtime, X and Y, a loop and a helper; main
+    masking interrupts around statements now and then; interrupts early in main
+    on both sides.
 
 ## Gap finder (2026-10-26)
 
