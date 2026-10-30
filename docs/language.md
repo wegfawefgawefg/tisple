@@ -198,6 +198,13 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `(sei)` / `(cli)` | interrupts off / on; see Interrupts |
 | `"text"` | a `(ptr u8)` to the text's ASCII bytes and a 0; see Strings |
 
+An `io_read` or `io_write` at a constant address is one absolute instruction. So
+is one at a u16 global plus or minus a constant, such as a card's slot page that
+init finds: the compiler rewrites those instructions when the global is set
+(docs/design.md, "I/O bases"), as long as the global has no `addr_of` and the
+interrupt handler never sets it. At any other address an access costs about 16
+cycles more.
+
 The parameter list is always written, `()` when empty, and the return type is
 always the third item, `void` when nothing is returned:
 `(fn flip ((x u16) (y u8)) void ...)`, `(fn read_key () u8 ...)`. A function
