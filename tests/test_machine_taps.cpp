@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 // --taps: a game's phone player config read for the window's clicks
@@ -12,7 +13,8 @@
 namespace tisple_tests {
 
 void RunMachineTapsTests(TestResults& results) {
-    std::string path = "/tmp/tisple_test_taps.json";
+    // a name of its own: fuzz runs start several test processes at once
+    std::string path = "/tmp/tisple_test_taps_" + std::to_string(getpid()) + ".json";
     {
         std::ofstream out(path);
         out << "{\n \"title\": \"T\",\n \"buttons\": [{\"label\": \"1\", \"key\": \"1\"}],\n"
