@@ -11,9 +11,9 @@
 (const KEY_RIGHT u8 0x15) ; right arrow
 (const KEY_UP u8 0x0B)    ; up arrow (IIe)
 (const KEY_DOWN u8 0x0A)  ; down arrow (IIe)
-(const KEY_RETURN u8 0x0D)
+(const KEY_RETURN u8 '\r')
 (const KEY_ESC u8 0x1B)
-(const KEY_SPACE u8 0x20)
+(const KEY_SPACE u8 ' ')
 (const KEY_DELETE u8 0x7F)
 
 ; sound and cassette

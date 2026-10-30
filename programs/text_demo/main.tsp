@@ -185,8 +185,8 @@
             (a2.KEY_SPACE (down (as u16 PAGE)))
             (a2.KEY_LEFT (up (as u16 PAGE)))
             (a2.KEY_RETURN (next_chapter))
-            (0x54 (set top 0)) ; T
-            (0x74 (set top 0)) ; t
+            ('T' (set top 0))
+            ('t' (set top 0))
             (_))
         (draw))
     (text80.clear)
