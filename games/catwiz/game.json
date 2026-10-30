@@ -1,88 +1,88 @@
 {
  "title": "Catwiz",
+ "about": "A cat wizard's dice battles in the forest: tap a die, then an enemy.",
  "mockingboard": 4,
- "columns": 5,
- "buttons": [
+ "pad": [
   {
-   "label": "1",
-   "key": "1",
-   "sub": "die"
+   "size": "small",
+   "keys": [
+    {
+     "label": "MEOW",
+     "key": "M",
+     "look": "orange"
+    },
+    {
+     "label": "LET GO",
+     "key": "ESC",
+     "look": "green"
+    }
+   ]
   },
   {
-   "label": "2",
-   "key": "2",
-   "sub": "die"
+   "size": "medium",
+   "keys": [
+    {
+     "label": "RE-ROLL",
+     "key": "R",
+     "look": "white"
+    },
+    {
+     "label": "END TURN",
+     "key": "E",
+     "look": "white",
+     "span": 2
+    }
+   ]
   },
   {
-   "label": "3",
-   "key": "3",
-   "sub": "die"
+   "size": "big",
+   "keys": [
+    {
+     "label": "ENEMY\n1",
+     "key": "Z",
+     "look": "violet"
+    },
+    {
+     "label": "ENEMY\n2",
+     "key": "X",
+     "look": "violet"
+    },
+    {
+     "label": "ENEMY\n3",
+     "key": "C",
+     "look": "violet"
+    }
+   ]
   },
   {
-   "label": "4",
-   "key": "4",
-   "sub": "die"
-  },
-  {
-   "label": "5",
-   "key": "5",
-   "sub": "die"
-  },
-  {
-   "label": "6",
-   "key": "6",
-   "sub": "reward"
-  },
-  {
-   "label": "Z",
-   "key": "Z",
-   "sub": "enemy 1"
-  },
-  {
-   "label": "X",
-   "key": "X",
-   "sub": "enemy 2"
-  },
-  {
-   "label": "C",
-   "key": "C",
-   "sub": "enemy 3"
-  },
-  {
-   "label": "M",
-   "key": "M",
-   "sub": "meow"
-  },
-  {
-   "label": "R",
-   "key": "R",
-   "sub": "reroll"
-  },
-  {
-   "label": "E",
-   "key": "E",
-   "sub": "end turn"
-  },
-  {
-   "label": "&larr;",
-   "key": "LEFT",
-   "sub": "target"
-  },
-  {
-   "label": "&rarr;",
-   "key": "RIGHT",
-   "sub": "target"
-  },
-  {
-   "label": "ESC",
-   "key": "ESC",
-   "sub": "let go"
-  },
-  {
-   "label": "RETURN",
-   "key": "RETURN",
-   "sub": "play / start",
-   "wide": true
+   "size": "big",
+   "keys": [
+    {
+     "label": "DIE\n1",
+     "key": "1",
+     "look": "card"
+    },
+    {
+     "label": "DIE\n2",
+     "key": "2",
+     "look": "card"
+    },
+    {
+     "label": "DIE\n3",
+     "key": "3",
+     "look": "card"
+    },
+    {
+     "label": "DIE\n4",
+     "key": "4",
+     "look": "card"
+    },
+    {
+     "label": "DIE\n5",
+     "key": "5",
+     "look": "card"
+    }
+   ]
   }
  ],
  "taps": [
@@ -122,11 +122,25 @@
    "key": "5"
   },
   {
-   "x": 206,
+   "x": 208,
    "y": 126,
-   "w": 74,
-   "h": 34,
+   "w": 32,
+   "h": 17,
    "key": "R"
+  },
+  {
+   "x": 208,
+   "y": 143,
+   "w": 32,
+   "h": 17,
+   "key": "6"
+  },
+  {
+   "x": 240,
+   "y": 126,
+   "w": 40,
+   "h": 17,
+   "key": "E"
   },
   {
    "x": 106,
@@ -145,18 +159,25 @@
   {
    "x": 202,
    "y": 16,
-   "w": 74,
+   "w": 78,
    "h": 108,
    "key": "C"
   },
   {
-   "x": 42,
+   "x": 36,
    "y": 26,
-   "w": 64,
-   "h": 78,
+   "w": 70,
+   "h": 98,
    "key": "M"
+  },
+  {
+   "x": 0,
+   "y": 0,
+   "w": 280,
+   "h": 192,
+   "key": "ESC"
   }
  ],
- "disk": "disk-0b3773ba.dsk",
- "version": "0b3773ba"
+ "disk": "disk-0958b0d8.dsk",
+ "version": "0958b0d8"
 }
