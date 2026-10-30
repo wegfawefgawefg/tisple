@@ -356,6 +356,9 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
         w.Imm(Mn::LDA, store.second);
         w.Op(Mn::STA, Mode::Abs, Num(store.first));
     }
+    for (std::int32_t patch : plan.io_patches) {
+        w.Mem(Mn::JSR, patch);
+    }
     if (irq) {
         InstallHandler(w, plan);
     }

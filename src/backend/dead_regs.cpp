@@ -321,6 +321,17 @@ bool CompareZero(const AsmItem& item, int& r) {
     return r >= 0;
 }
 
+// INC or DEC of the byte load reads, the same way (N and Z show that byte after it)
+bool StepsSameByte(const AsmItem& step, const AsmItem& load) {
+    if (step.kind != ItemKind::Ins || (step.mn != Mn::INC && step.mn != Mn::DEC)) {
+        return false;
+    }
+    bool direct = step.mode == Mode::Zp || step.mode == Mode::Abs || step.mode == Mode::ZpX ||
+                  step.mode == Mode::AbsX;
+    return direct && step.mode == load.mode && step.value.sym == load.value.sym &&
+           step.value.offset == load.value.offset && step.value.part == load.value.part;
+}
+
 // liveness of the registers and flags before and after every item
 void Liveness(const Assembly& as, const std::vector<AsmItem>& items,
               std::vector<std::uint8_t>& live_in, std::vector<std::uint8_t>& live_out) {
@@ -414,6 +425,16 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items) {
                 prev--;
             }
             dead = prev > 0 && NzReg(items[prev - 1]) == r;
+        }
+        // a load right after an INC or DEC of the byte it reads, its register unread after:
+        // N and Z already show the byte (a read with no effect: RAM the program owns)
+        int loaded = items[i].kind == ItemKind::Ins ? LoadedReg(items[i].mn) : -1;
+        if (!dead && loaded >= 0 && e.removable && (live_out[i] & RegBit(loaded)) == 0) {
+            std::size_t prev = i;
+            while (prev > 0 && items[prev - 1].kind == ItemKind::Note) {
+                prev--;
+            }
+            dead = prev > 0 && StepsSameByte(items[prev - 1], items[i]);
         }
         if (dead) {
             dropped = true;

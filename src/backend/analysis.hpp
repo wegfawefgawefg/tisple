@@ -50,7 +50,7 @@ void FoldConstants(Program& program);
 // them even where the mid-level passes folded every read away
 std::vector<bool> FindNamedTables(const Program& program);
 
-// functions this small (in expressions, CountExprs) are inlined at every call (gen_expr.cpp)
+// functions this small (in expressions, CountExprs) are inlined at every call (gen_call.cpp)
 constexpr std::uint32_t kMaxInlineExprs = 24;
 
 enum class InlineKind : std::uint8_t {

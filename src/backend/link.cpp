@@ -312,6 +312,11 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         sp.irq_direct = in.irq_plan.direct_sym;
         sp.irq_saved = in.irq_plan.saved_sym;
     }
+    for (std::int32_t f : be.io_bases.patches) {
+        if ((*in.kept)[static_cast<std::size_t>(f)]) {
+            sp.io_patches.push_back(be.fn_sym[static_cast<std::size_t>(f)]);
+        }
+    }
     if (!StartupStores(be, options.origin, data_end, sp.stores, errors)) {
         return LinkResult::kError;
     }

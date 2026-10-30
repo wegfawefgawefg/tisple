@@ -276,7 +276,7 @@ std::vector<bool> FindDerefPointers(const Program& program,
         }
     }
     // a pointer handed to such a parameter of a function that is inlined: the inlined body
-    // reads the argument where it is (gen_expr.cpp, CanBind), so it is the one used
+    // reads the argument where it is (gen_call.cpp, CanBind), so it is the one used
     for (bool changed = true; changed;) {
         changed = false;
         for (const Expr& e : program.exprs) {

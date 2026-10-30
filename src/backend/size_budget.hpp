@@ -4,7 +4,7 @@
 //
 // - Code generation notes each copy it makes: every inlined copy of a small function
 //   (InlineKind::Always) and every unrolled for loop's copies, with their bytes and cycles
-//   (Gen::cost, plus the runtime routines they call) and the code's place (gen_expr.cpp,
+//   (Gen::cost, plus the runtime routines they call) and the code's place (gen_call.cpp,
 //   gen_unroll.cpp). An unrollable loop is made both ways, as copies and as a loop, so both
 //   are measured; copies no faster and no smaller than the loop are dropped there.
 // - A copy's growth is its bytes over the code it replaces: a JSR and the stores of the

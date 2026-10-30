@@ -73,6 +73,35 @@ void ItemBytes(const Backend& be, const AsmItem& item, std::vector<Byte>& bytes)
     }
 }
 
+constexpr std::uint8_t kX = 1;
+constexpr std::uint8_t kY = 2;
+
+// the index registers one item may change; a call or jump to code we do not know (an address,
+// through a pointer) may change both
+std::uint8_t ChangedIndexRegs(const AsmItem& item) {
+    if (item.kind != ItemKind::Ins) {
+        return 0;
+    }
+    switch (item.mn) {
+    case Mn::LDX:
+    case Mn::TAX:
+    case Mn::TSX:
+    case Mn::INX:
+    case Mn::DEX:
+        return kX;
+    case Mn::LDY:
+    case Mn::TAY:
+    case Mn::INY:
+    case Mn::DEY:
+        return kY;
+    case Mn::JSR:
+    case Mn::JMP:
+        return item.mode != Mode::Abs || item.value.sym < 0 ? kX | kY : 0;
+    default:
+        return 0;
+    }
+}
+
 } // namespace
 
 std::vector<bool> HandlerFunctions(const Program& program) {
@@ -100,6 +129,7 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
     const Program& program = *be.program;
     std::vector<bool> handler = HandlerFunctions(program);
     std::vector<Byte> bytes;
+    std::uint8_t regs = 0;
     bool routines = false;
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         if (!handler[f] || !kept[f]) {
@@ -107,12 +137,14 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
         }
         for (const AsmItem& item : be.code[f]) {
             ItemBytes(be, item, bytes);
+            regs |= ChangedIndexRegs(item);
         }
         routines = routines || CallsRuntime(be, f);
     }
     if (routines) {
         for (const AsmItem& item : runtime) {
             ItemBytes(be, item, bytes);
+            regs |= ChangedIndexRegs(item);
         }
     }
     std::sort(bytes.begin(), bytes.end());
@@ -124,10 +156,14 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
     out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kIrqSaveA)));
     out.push_back(MakeLabel(plan.entry_sym));
     out.push_back(MakeIns(Mn::CLD, Mode::Imp));
-    out.push_back(MakeIns(Mn::TXA, Mode::Imp));
-    out.push_back(MakeIns(Mn::PHA, Mode::Imp));
-    out.push_back(MakeIns(Mn::TYA, Mode::Imp));
-    out.push_back(MakeIns(Mn::PHA, Mode::Imp));
+    if (regs & kX) {
+        out.push_back(MakeIns(Mn::TXA, Mode::Imp));
+        out.push_back(MakeIns(Mn::PHA, Mode::Imp));
+    }
+    if (regs & kY) {
+        out.push_back(MakeIns(Mn::TYA, Mode::Imp));
+        out.push_back(MakeIns(Mn::PHA, Mode::Imp));
+    }
     for (const Byte& b : bytes) {
         out.push_back(MakeIns(Mn::LDA, Mode::Abs, SymValue(b.first, b.second)));
         out.push_back(MakeIns(Mn::PHA, Mode::Imp));
@@ -138,10 +174,14 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
         out.push_back(MakeIns(Mn::PLA, Mode::Imp));
         out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(bytes[i].first, bytes[i].second)));
     }
-    out.push_back(MakeIns(Mn::PLA, Mode::Imp));
-    out.push_back(MakeIns(Mn::TAY, Mode::Imp));
-    out.push_back(MakeIns(Mn::PLA, Mode::Imp));
-    out.push_back(MakeIns(Mn::TAX, Mode::Imp));
+    if (regs & kY) {
+        out.push_back(MakeIns(Mn::PLA, Mode::Imp));
+        out.push_back(MakeIns(Mn::TAY, Mode::Imp));
+    }
+    if (regs & kX) {
+        out.push_back(MakeIns(Mn::PLA, Mode::Imp));
+        out.push_back(MakeIns(Mn::TAX, Mode::Imp));
+    }
     out.push_back(MakeIns(Mn::LDA, Mode::Zp, Num(kIrqSaveA)));
     out.push_back(MakeIns(Mn::RTI, Mode::Imp));
     out.push_back(MakeLabel(plan.saved_sym));

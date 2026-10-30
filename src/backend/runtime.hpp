@@ -26,6 +26,8 @@ struct StartupPlan {
     std::uint32_t zp_count = 0;
     // explicit-address globals outside the file: byte stores before main
     std::vector<std::pair<std::uint16_t, std::uint8_t>> stores;
+    // the I/O bases' patch functions (io_bases.hpp), run once before main
+    std::vector<std::int32_t> io_patches;
     std::int32_t ready_sym = -1; // labels the startup defines
     std::int32_t after_sym = -1;
     bool card_ram = false; // part of the program is in the language card: switch its ram in

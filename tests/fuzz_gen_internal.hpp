@@ -159,6 +159,10 @@ struct Gen {
     Rng frames_rng;
     bool frames_shapes = false;
     bool frames_once = false;
+    // I/O through bases in globals and inlined copies handing their parameters on, from a
+    // stream of its own (fuzz_gen_io.cpp); only in GenerateIoProgram's programs
+    Rng io_rng;
+    bool io_shapes = false;
     std::vector<VarInfo> globals;
     std::vector<ArrayInfo> arrays;
     std::vector<FnInfo> fns;
@@ -327,6 +331,11 @@ struct Gen {
     // ---- where inlined copies' locals get bytes (fuzz_gen_frames.cpp)
     std::string FramesHelpers();
     std::string FramesShape(int depth);
+    // ---- I/O bases, parameters handed on (fuzz_gen_io.cpp)
+    std::string IoHelpers();
+    std::string IoBaseValue();
+    std::string IoBased();
+    std::string IoShape(int depth);
     // the pure helpers common shapes call, after peek2 and poke2
     std::string CommonHelpers();
     T CommonInt();

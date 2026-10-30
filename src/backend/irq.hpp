@@ -6,11 +6,12 @@
 //   irq.direct:  STA $45        $FFFE in the card's ram, when the program runs with it in
 //   irq.entry:   CLD            $3FE, where the ROM's IRQ code jumps: A is in $45 (II+,
 //                TXA, PHA       unenhanced IIe) or on the stack (enhanced IIe, which also
-//                TYA, PHA       restores it after the RTI)
+//                TYA, PHA       restores it after the RTI); X and Y only if the handler's
+//                               code (and the routines it calls) may change them
 //                LDA zp, PHA    each zero-page scratch byte the handler's code may use
 //                JSR handler
 //                PLA, STA zp    the same, the other way
-//                PLA, TAY, PLA, TAX
+//                PLA, TAY, PLA, TAX   (the ones saved)
 //                LDA $45
 //                RTI
 //

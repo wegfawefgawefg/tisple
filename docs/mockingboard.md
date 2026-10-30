@@ -140,28 +140,43 @@ is one pattern.
 ## What a tick costs
 
 Measured on the machine (`tests/test_mockingboard_lib.cpp`), from the cpu's
-interrupt entry to the end of its `RTI`, through the card's ram vector:
+interrupt entry to the end of its `RTI`, through the card's ram vector. Before:
+the player and compiler of round 53 (dogfood 53); after: dogfood 54.
 
-| Case | Cycles | Of a 17030-cycle frame |
-| --- | ---: | ---: |
-| demo, median tick | 1101 | 6.5% |
-| demo, average | 1345 | 7.9% |
-| demo, the busiest tick after the first | 5097 | 30% |
-| demo, the first tick (every voice reads its first pattern) | 7013 | 41% |
-| every register of both chips changing every tick | 13093 | 77% |
+| Case | Before | After | Of a 17030-cycle frame |
+| --- | ---: | ---: | ---: |
+| demo, median tick | 1137 | 800 | 4.7% |
+| demo, average | 1403 | 1030 | 6.0% |
+| demo, the busiest tick after the first | 5382 | 4489 | 26% |
+| demo, the first tick (every voice reads its first pattern) | 7358 | 5647 | 33% |
+| every register of both chips changing every tick | 13779 | 10631 | 62% |
 
 Apple's IIe rom adds about 20 cycles a tick on its way to `$3FE`; the enhanced
-IIe's adds more. The cost is per voice per tick (about 60-90 cycles to count a
-note down and fade it), plus about 110 cycles for each register write. A
-write is six 6522 accesses; the player makes them to fixed addresses, picked
-by a match on the slot, because an `io_write` to a computed address costs 20
-cycles where a fixed one costs 6. Ticks where many voices start notes at once
-cost the most, so a song whose voices start on different ticks spreads its
-cost.
+IIe's adds more. Where a tick goes now:
 
-The library is about 4 KB of code in the demo (the handler's side about 1.6
-KB, the rest main's: detection, init, play, effects, the speaker fallback),
-and 100 bytes of zero page with the demo's own.
+- The entry and exit (A, X and Y saved), the 6522's flag read and answer:
+  about 75 cycles.
+- Each of the seven slots: 20 cycles when it is not playing, about 35 to count a
+  note down, about 55 when its note fades.
+- A register the player looks at but that has not changed: about 25 cycles (the
+  compare in `reg`, inlined). One that changed: about 85, of which 38 are the
+  six 6522 accesses themselves, 4 cycles each: `page` is an I/O base
+  (docs/design.md), so `(io_write u8 (+ page 1) reg)` is a `STA $Cn01` whose
+  operand init's `(set player.page page)` patched. Before, a write was a 14-arm
+  match on the slot to reach fixed addresses (an `io_write` to a computed one
+  costs 20 cycles where a fixed one costs 4): about 150 cycles.
+- A voice starting a note: its pattern bytes, about 25 cycles each plus 5 for
+  each kind of event the parser asks about before its own, then the note's
+  period, level and mixer through `reg`: about 250-400 cycles. A new pattern
+  from the order list adds about 100.
+
+Ticks where many voices start notes at once cost the most, so a song whose
+voices start on different ticks spreads its cost.
+
+The demo's code is 4635 bytes (5055 before), the handler's side 940 (1451:
+the tick with fade inlined 161, `send` 72, `out` 184, `events` 523), plus the
+137-byte patch of `page` that init and the startup call; zero page 122 bytes
+with the demo's own (129).
 
 ## The emulated card
 
@@ -198,6 +213,8 @@ runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
 
 - Stereo WAVs: both chips go to one channel now.
 - The handler's cost. The player is compiled Tisple (there is no inline
-  assembly); the per-voice counting and the calls between its functions are
-  most of it.
+  assembly). What is left is mostly the compiled code's own: the parser's index
+  and each slot's loop counter live in zero page and are loaded again after
+  every call (a register write is a `JSR`), and each register is compared
+  before it is written, about 25 cycles even when it has not changed.
 - The AY's volume table is a 3 dB curve, not a measured one.

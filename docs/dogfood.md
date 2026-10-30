@@ -1678,6 +1678,93 @@ From a scan of Life, Snake, dot, the other examples and the libraries
     tests/test_backend_frames.cpp (sizes of three functions copied five
     times, and copies whose bytes must not meet),
     tests/programs/fuzz_farm/73069302_reduced.tsp, 74142977.tsp.
+55. The Mockingboard player made cheap (2026-10-30, docs/mockingboard.md; docs/design.md
+    "I/O bases" and "Parameters handed on"), for Witchdog's music during battle
+    redraws. Where a demo tick's 1403 cycles went (the average; a profile by
+    instruction from the machine): the slot loop with the fade inlined 650, the
+    register writes 490 (reg 138, send 350: about 150 cycles a changed register,
+    38 of them the six 6522 accesses), events 140, out 76, the entry 42. A write
+    was two calls with their argument copies, a lookup of the arm, a range check
+    and a 22-cycle jump table on the slot (14 arms, 498 bytes), because an
+    io_write to a computed address costs 20 cycles. The handler's code counted
+    as running 0 times: it is no root of the run counts, so the size budget
+    turned down copying reg (144 bytes, 906 cycles "saved") and the mid-level
+    leaves handler code alone. Compiler, all general:
+    - Run counts: the handler runs as often as a while loop's body (8), its
+      callees with it (src/backend/run_counts.cpp). reg is copied at its calls.
+    - I/O bases (src/backend/io_bases.cpp, gen_io.cpp): a u16 global with no
+      addr_of, no :address, never set in the handler, used as an io_read or
+      io_write address alone or plus or minus a constant. Each such access is
+      one LDA or STA absolute on the symbol <base>.io plus K (I/O to the passes:
+      shared, at $C000 until the link); each set of the base is followed by a
+      call of <base>.patch, made once all code is final, which stores base + K
+      into every such operand, under PHP/SEI when there is a handler; the
+      startup calls it once. 20 cycles an access to 4. Not where an io_write's
+      value, worked out after its address, may set the base: the fuzzer's
+      first run found (io_write u8 (+ ib2 34) (f1)) with f1 setting ib2 (seeds
+      1203350, 1903720).
+    - Parameters handed on (src/backend/gen_forward.cpp): a small function the
+      backend inlines whose only call is its last act keeps the parameters it
+      passes on unchanged in that call's parameter bytes; reg's copies put i and
+      value straight into send's. 11 cycles a changed register.
+    - Peephole: a load right after an INC or DEC of the same byte, its register
+      unread after, goes (the flags show the byte; dead_regs.cpp); JSR f / L:
+      RTS is a JMP with labels between too; labels nothing names no longer stop
+      the removal of unreachable code or the branch-over-JMP inversion; a branch
+      follows a JMP only to this function's code (a long branch to another
+      function's cost 3 bytes for a cycle; text_demo's put had grown 6 bytes on
+      the tail call before this).
+    - The IRQ entry saves X and Y only when the handler's code, or a runtime
+      routine it calls, may change them (a JSR or JMP to an address counts as
+      changing both): examples/ticks.tsp's entry 45 to 23 cycles, 19 to 11
+      bytes; the demo's uses both.
+    Library: page, one u16, instead of the orb/ora/ifr/t1_low addresses and the
+    port arm; send writes through (+ page ORA) and the like (72 bytes; main's
+    poke through a computed via); the wait counts down with DEC and the fade
+    decrements its counter before it looks at the level (the same sound: a
+    level of 0 or 16 stays so until the next note, which sets the counter
+    again; play and effect start wait at 1); a voice's mixer bits go into its
+    chip's register as they are in sent, instead of the three voices' worked
+    out again (about 120 cycles to 25). Ticks, before (main as it was; the doc
+    table had round 52's numbers) and after, stepwise as average / every
+    register changing every tick: 1403 / 13779; run counts and the tail call
+    1345 / 13020; the 6522 reads as bases 1317 / 12957; the library's writes
+    through page 1180 / 11624; DEC countdown and fade order 1116 / 11653; the
+    INC/DEC load 1071 / 11625; mixer bits 1069 / 11098; parameters handed on
+    1035 / 10678; labels 1030 / 10631. Final: median 1137 to 800, average 1403
+    to 1030, busiest after the first 5382 to 4489, first 7358 to 5647, every
+    register 13779 to 10631. A changed register is about 85 cycles (150), an
+    unchanged one about 25 (38). The demo: code 5055 to 4635 bytes, the
+    handler's side 1451 to 940 plus the 137-byte patch, zero page 129 to 122.
+    Examples: dispatch, fill, hires_plot, keys, macros, read_key, speaker,
+    sprites, multi, paint and plasma byte for byte; mockingboard_demo as above;
+    ticks 652 to 644 bytes of code (the entry); dot 339 to 338, life 739 to 738,
+    snake 1085 to 1081, text_demo 2982 to 2981 (the label rules). Life 56 and
+    230 generations, plasma 243 and 975 frames, as before; the kernels' cycles
+    and bytes all the same. Random race, seeds 1-2000: geomean 0.811 to 0.810,
+    wins 68.8% to 69.0%; Tisple's own cycles geomean -0.13%, bytes -1.85% (all
+    2000 programs 625737 to 616861 bytes; 37 slower, at most +2.5%, 88 faster,
+    6 both slower and bigger, 405 smaller); against llvm-mos bytes 0.739 to
+    0.726. Fuzz: a new shape, tests/fuzz_gen_io.cpp (`seed N (io)`, one seed in
+    four, run at -O0 too as `(io -O0)`, where the backend makes the copies the
+    mid-level would): bases set here and there, in helpers, to each other plus
+    a constant, u8 and u16 accesses at a base plus or minus a constant, one
+    global with its address taken, wrappers that hand their parameters on to a
+    helper that changes its own; of its first 101 programs 27 have patched
+    accesses at -O1, 94 at -O0, 22 forwarded parameters. On the final code 12 x
+    12000 seeds (612,613 programs), 0 mismatches; ASan and UBSan 8 x 600 seeds
+    (20,411 programs and the whole suite each time), clean, once
+    tests/test_mockingboard_lib.cpp no longer read a byte past its arpeggio's
+    text (round 52's test, which ASan stopped at). Tests:
+    tests/test_backend_io.cpp (an AY register write through a base: 31 bytes,
+    13 instructions, 44 cycles; what is no base; the patch with a handler; the
+    startup's call; forwarding; the countdown; the tail call; the entry with X
+    alone, 13 bytes). Not done: the parser's index and the slot loop's counter
+    in registers across calls (zero page, loaded again after each JSR, about
+    6 cycles a pattern byte and 3 a slot); the stores to a register write's
+    parameters are still made by the caller (12 cycles) where a register
+    calling convention could pass two bytes; a void function's RTS still
+    counts A as read, so a countdown's load before a return stays.
 
 ## Gap finder (2026-10-26)
 

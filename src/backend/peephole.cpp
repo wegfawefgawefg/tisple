@@ -1,6 +1,7 @@
 #include "backend/peephole.hpp"
 
 #include <map>
+#include <set>
 
 namespace tisple {
 
@@ -979,11 +980,30 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
 
 void FlowPass(Pass& p) {
     std::map<std::int32_t, std::size_t> labels;
+    // labels something names (the entry, which other code calls, counts): only these lead in
+    std::set<std::int32_t> named;
+    bool entry = true;
     for (std::size_t i = 0; i < p.items->size(); i++) {
-        if (!p.dead[i] && p.At(i).kind == ItemKind::Label) {
-            labels[p.At(i).value.sym] = i;
+        if (p.dead[i]) {
+            continue;
+        }
+        const AsmItem& item = p.At(i);
+        if (item.kind == ItemKind::Label) {
+            labels[item.value.sym] = i;
+            if (entry) {
+                named.insert(item.value.sym);
+            }
+            entry = false;
+        } else if ((item.kind == ItemKind::Ins || item.kind == ItemKind::Byte) &&
+                   item.value.sym >= 0) {
+            named.insert(item.value.sym);
         }
     }
+    auto leads_in = [&](std::size_t j) {
+        const AsmItem& item = p.At(j);
+        return !p.dead[j] && ((item.kind == ItemKind::Label && named.count(item.value.sym)) ||
+                              item.kind == ItemKind::Byte);
+    };
     // the item a label leads to; -1 if not in this function
     auto target = [&](std::int32_t label) -> std::size_t {
         auto found = labels.find(label);
@@ -997,12 +1017,14 @@ void FlowPass(Pass& p) {
         bool jump = item.mn == Mn::JMP && item.mode == Mode::Abs;
         bool branch = IsBranch(item.mn);
         if (jump || branch) {
-            // follow jumps to jumps
+            // follow jumps to jumps; a branch only to this function's code (a long branch to
+            // another function's would cost 3 bytes to save a cycle)
             for (int hop = 0; hop < kMaxHops; hop++) {
                 std::size_t to = target(item.value.sym);
                 if (to >= p.items->size() || p.At(to).kind != ItemKind::Ins ||
                     p.At(to).mn != Mn::JMP || p.At(to).mode != Mode::Abs ||
-                    p.At(to).value.sym == item.value.sym) {
+                    p.At(to).value.sym == item.value.sym ||
+                    (branch && !labels.count(p.At(to).value.sym))) {
                     break;
                 }
                 item.value = p.At(to).value;
@@ -1031,8 +1053,7 @@ void FlowPass(Pass& p) {
                 labels[item.value.sym] > next) {
                 bool label_between = false;
                 for (std::size_t j = i + 1; j < next; j++) {
-                    label_between =
-                        label_between || (!p.dead[j] && p.At(j).kind == ItemKind::Label);
+                    label_between = label_between || leads_in(j);
                 }
                 if (!label_between) {
                     item.mn = InvertBranch(item.mn);
@@ -1043,10 +1064,11 @@ void FlowPass(Pass& p) {
                 }
             }
         }
-        // JSR f / RTS: JMP f
+        // JSR f / RTS: JMP f (labels between: what jumps there still reaches the RTS)
         if (item.mn == Mn::JSR) {
             std::size_t next = i + 1;
-            while (next < p.items->size() && (p.dead[next] || p.At(next).kind == ItemKind::Note)) {
+            while (next < p.items->size() && (p.dead[next] || p.At(next).kind == ItemKind::Note ||
+                                              p.At(next).kind == ItemKind::Label)) {
                 next++;
             }
             if (next < p.items->size() && p.At(next).kind == ItemKind::Ins &&
@@ -1055,10 +1077,10 @@ void FlowPass(Pass& p) {
                 p.changed = true;
             }
         }
-        // nothing reaches the code after a JMP or RTS until the next label
+        // nothing reaches the code after a JMP or RTS until the next label something names
         if (EndsFlow(item.mn)) {
             for (std::size_t j = i + 1; j < p.items->size(); j++) {
-                if (p.At(j).kind == ItemKind::Label || p.At(j).kind == ItemKind::Byte) {
+                if (leads_in(j)) {
                     break;
                 }
                 if (!p.dead[j] && p.At(j).kind == ItemKind::Ins) {

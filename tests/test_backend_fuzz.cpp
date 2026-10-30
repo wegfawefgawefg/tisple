@@ -11,8 +11,9 @@
 // ninth, with an interrupt handler of its own, run with interrupts raised early in main
 // ("(irq)"), and one in four a tenth, with calls to inline and divisions to work out
 // ("(inline)"), and one in four an eleventh, with copies the size budget weighs, folds around
-// calls and constant indexes ("(size)"), and one in four a twelfth, with copies whose locals
-// share bytes ("(frames)").
+// calls and constant indexes ("(size)"), and one in four a twelfth each, with copies whose
+// locals share bytes ("(frames)") and with I/O through bases in globals and helpers that hand
+// their parameters on ("(io)", also at -O0: "(io -O0)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -110,7 +111,7 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
 }
 
 void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats,
-             const IrqPlan& irqs = IrqPlan()) {
+             const IrqPlan& irqs = IrqPlan(), const tisple::OptOptions& opt = {}) {
     stats.programs++;
     // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
     if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
@@ -119,7 +120,7 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
                         text.c_str());
         }
     }
-    Compiled c = CompileMainText(text);
+    Compiled c = CompileMainText(text, opt);
     if (!c.built.ok) {
         stats.invalid++;
         Report("program does not check", seed, variant, text, c.errors, stats.invalid);
@@ -329,6 +330,13 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string frames = GenerateFramesProgram(seed);
         if (!frames.empty()) {
             FuzzOne(seed, " (frames)", frames, stats);
+        }
+        std::string io = GenerateIoProgram(seed);
+        if (!io.empty()) {
+            FuzzOne(seed, " (io)", io, stats);
+            tisple::OptOptions o0;
+            o0.level = 0;
+            FuzzOne(seed, " (io -O0)", io, stats, IrqPlan(), o0);
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "

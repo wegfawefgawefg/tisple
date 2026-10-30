@@ -7,13 +7,15 @@
 // How often code runs, estimated before code generation: a loop's body by its trip count (a
 // for with constant bounds; else 8 for a while, 4 for a for), a function by the calls to it,
 // each weighed by the loops around it and by how often its caller runs. main runs once; with
-// no main every function that nothing calls does.
+// no main every function that nothing calls does. The interrupt handler runs over and over
+// while main does, as often as a while loop's body (kHandlerRuns).
 
 namespace tisple {
 
 namespace {
 
 constexpr std::uint64_t kMaxRuns = std::uint64_t(1) << 32;
+constexpr std::uint64_t kHandlerRuns = 8; // LoopTrips' while
 
 std::uint64_t Times(std::uint64_t a, std::uint64_t b) {
     if (a == 0 || b == 0) {
@@ -101,6 +103,9 @@ std::vector<std::uint64_t> FindRunCounts(const Program& program, std::uint32_t m
     for (std::size_t f = 0; f < count; f++) {
         bool root = program.main >= 0 ? static_cast<std::int32_t>(f) == program.main : !called[f];
         runs[f] = root ? 1 : 0;
+        if (static_cast<std::int32_t>(f) == program.handler) {
+            runs[f] = kHandlerRuns;
+        }
     }
     for (std::int32_t f : CallersFirst(program)) {
         std::uint64_t r = runs[static_cast<std::size_t>(f)];

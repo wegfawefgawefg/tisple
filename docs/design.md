@@ -255,10 +255,13 @@ runs all three IRQ paths; tests/test_backend_irq.cpp):
 What the backend makes (src/backend/irq.cpp):
 
 - `irq.direct: STA $45` (the card's $FFFE), then `irq.entry` ($3FE): `CLD`,
-  X and Y pushed, then each zero-page scratch byte the handler's kept code uses,
-  or every scratch byte the runtime routines it calls use; `JSR handler`; the
-  same pulled back; `LDA $45; RTI`. 45 cycles and 19 bytes besides the scratch
-  bytes (13 cycles each), the rom's path not counted.
+  X and Y pushed (each only if the handler's kept code, or a runtime routine it
+  calls, may change it: any LDX, TAX, INX and the like, or a JSR or JMP to an
+  address, which could be anything), then each zero-page scratch byte the
+  handler's kept code uses, or every scratch byte the runtime routines it calls
+  use; `JSR handler`; the same pulled back; `LDA $45; RTI`. 45 cycles and 19
+  bytes with X and Y (34 and 15 with X alone) besides the scratch bytes (13
+  cycles each), the rom's path not counted.
 - $45 is never given to a variable in a program with a handler (an :address
   let there is an error).
 - The handler and everything it calls get frames above every other function's:
@@ -272,6 +275,54 @@ What the backend makes (src/backend/irq.cpp):
   keeps the peephole and code generation from taking a register to hold it,
   the dead-store pass from it, and every "may this code write it" from saying
   no.
+- The handler runs over and over while main does: run counts (and so the size
+  budget and the choice of multiply routine) count it as often as a while
+  loop's body, 8 times a run of main, and its callees by their calls from it.
+
+### I/O bases (2026-10-30)
+
+A card found at run time is reached at its slot's page plus a constant:
+`(io_write u8 (+ page 1) v)` with `page` a global init sets. An access at a
+computed address stores the address into its own instruction first (20 cycles
+for a 4-cycle `STA`); a register write of the Mockingboard is six of them. So
+the backend makes such globals I/O bases (src/backend/io_bases.cpp):
+
+- A base is a u16 global with no `addr_of`, no `:address`, never set in the
+  interrupt handler's code, that some `io_read` or `io_write` uses as its
+  address, alone or plus or minus a constant.
+- Each such access is one `LDA` or `STA` absolute whose operand is the symbol
+  `<base>.io` plus the constant: until the link a symbol at $C000 that is
+  `shared`, so no pass tracks, merges or drops it, as with a constant I/O
+  address; at the link the base's initial value.
+- Each `(set base v)` becomes `(do (set base v) (base.patch))`. The patch
+  function's code is made once every function's code is final: for each
+  constant K, `LDA base; CLC; ADC #<K`, `STA` into the low operand byte of each
+  access with that K, `LDA base+1; ADC #>K`, the same for the high bytes; with
+  `PHP; SEI` and `PLP` around it when there is a handler, so the handler never
+  runs on half an operand. A label goes before each access it patches. The
+  startup calls each patch once before main (zero page is set again on each
+  run; the code keeps what the last run patched).
+- An `io_write` whose value is worked out after its address must not set the
+  base on the way (a set of it, a call that may set it, machine code): then the
+  access stays computed, as the interpreter reads the address first.
+- Tearing: a set from main with interrupts on can be stopped between storing
+  the base and the patch; the handler then sees the old address, as it would
+  have between the two bytes of the store before.
+
+The Mockingboard's register write went from 20 cycles an access (or a 14-arm
+match on the slot to reach fixed ones) to 4.
+
+### Parameters handed on (2026-10-30)
+
+A small function inlined by the backend, whose only call is its last act, has
+its parameters live in that call's parameter bytes when it passes them on
+unchanged (src/backend/gen_forward.cpp): `(fn reg ((i u8) (v u8)) void (if (!=
+(at sent i) v) (send i v)))` inlined puts its arguments straight into
+`send.i` and `send.v`, reads them there, and the call copies nothing. Nothing
+else runs a call before it, so nothing whose frame may share those bytes runs
+in between; nothing reads the parameters after it, so what `send` does to its
+own does not matter. Not for a parameter the copy binds to its argument, one
+with an alias or its address taken, or a callee the backend copies too.
 
 ## Target
 

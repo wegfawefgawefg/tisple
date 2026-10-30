@@ -5,7 +5,8 @@
 ;
 ; Each tick: answer the 6522, then step the six music voices and the effect. A register is
 ; written when what a voice wants in it differs from what was written last; a write is six
-; 6522 accesses at the slot's own addresses, a match on the slot picking the copy.
+; 6522 accesses at page plus a constant, which the compiler makes accesses to fixed addresses
+; (it patches them when init sets page).
 
 (import mockingboard_song tune)
 
@@ -35,11 +36,7 @@
 
 ; the card, from mockingboard.init
 (let found bool false)
-(let port u8 0)         ; (slot - 1) * 2: send's arm for the first chip, + 1 the second
-(let orb (array u16 2)) ; each chip's 6522 port B: its bus lines (for main's writes)
-(let ora (array u16 2)) ; port A: its data bus
-(let ifr u16 0)         ; the first 6522's flags
-(let t1_low u16 0)      ; reading it answers the timer
+(let page u16 0xC400) ; the card's page, $Cn00: its first 6522; the second at + SECOND
 
 ; what plays: the music's six voices and the effect, each a slot
 (let song (ptr u8))
@@ -79,58 +76,44 @@
 (const VOICE_CHIP (array u8 6) (make (array u8 6) 0 0 0 1 1 1))
 (const VOICE_TONE (array u8 6) (make (array u8 6) 0 2 4 14 16 18))
 (const VOICE_VOLUME (array u8 6) (make (array u8 6) 8 9 10 22 23 24))
+; each voice's chip's mixer register in sent, and the voice's two bits in it (tone, noise)
+(const VOICE_MIXER (array u8 6) (make (array u8 6) 7 7 7 21 21 21))
+(const VOICE_MIX_BITS (array u8 6) (make (array u8 6) 0x09 0x12 0x24 0x09 0x12 0x24))
+; the mixer bits a voice's m (bit 0 tone, bit 1 noise) turns off (1 is off), for every channel
+(const MIX_OFF (array u8 4) (make (array u8 4) 0x3F 0x38 0x07 0x00))
 
-; a place in sent as a chip and its register
-(const SENT_CHIP (array u8 28)
-    (make (array u8 28) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1))
-
-(const SENT_REG (array u8 28)
-    (make (array u8 28) 0 1 2 3 4 5 6 7 8 9 10 11 12 13 0 1 2 3 4 5 6 7 8 9 10 11 12 13))
-
-; one register write at page (a 6522's): the number latched, then the value written, each
-; through the inactive state between
-(macro write_at (page)
+; one register write at a 6522's base address: the number latched, then the value written,
+; each through the inactive state between
+(macro write_at (via)
     `(do
-        (io_write u8 ,(+ page 1) reg)
-        (io_write u8 ,page BUS_LATCH)
-        (io_write u8 ,page BUS_INACTIVE)
-        (io_write u8 ,(+ page 1) value)
-        (io_write u8 ,page BUS_WRITE)
-        (io_write u8 ,page BUS_INACTIVE)))
+        (io_write u8 (+ ,via ORA) reg)
+        (io_write u8 ,via BUS_LATCH)
+        (io_write u8 ,via BUS_INACTIVE)
+        (io_write u8 (+ ,via ORA) value)
+        (io_write u8 ,via BUS_WRITE)
+        (io_write u8 ,via BUS_INACTIVE)))
 
 ; the handler's register write, the register at i in sent (0-13 the first chip's, 14-27 the
-; second's): an arm for each slot and chip, so every access is to a fixed address (6 cycles;
-; a computed one takes 20)
-(macro fixed_writer (name)
-    (let arms (list))
-    (for n 1 8
-        (for chip 0 2
-            (let page (+ 0xC000 (+ (* n 256) (* chip 128))))
-            (set arms (append arms (list `(,(+ (* (- n 1) 2) chip) (write_at ,page)))))))
-    `(fn ,name
-        ((i u8) (value u8))
-        void
-        (set (at sent i) value)
-        (let reg u8 (at SENT_REG i))
-        (match (+ port (at SENT_CHIP i))
-            ,@arms
-            (_))))
+; second's): page plus a constant, so 4 cycles an access (a computed address takes 20)
+(fn send ((i u8) (value u8)) void
+    (set (at sent i) value)
+    (if (< i 14)
+        (do
+            (let reg u8 i)
+            (write_at page))
+        (do
+            (let reg u8 (- i 14))
+            (write_at (+ page SECOND)))))
 
-(fixed_writer send)
-
-; main's: through the addresses init found, for the few writes it makes
+; main's, for the few writes it makes
 (macro psg_writer (name)
     `(fn ,name
         ((chip u8) (reg u8) (value u8))
         void
-        (let b u16 (at orb chip))
-        (let a u16 (at ora chip))
-        (io_write u8 a reg)
-        (io_write u8 b BUS_LATCH)
-        (io_write u8 b BUS_INACTIVE)
-        (io_write u8 a value)
-        (io_write u8 b BUS_WRITE)
-        (io_write u8 b BUS_INACTIVE)))
+        (let via u16 (if (= chip 0)
+            page
+            (+ page SECOND)))
+        (write_at via)))
 
 ; the register at i in sent, written only when it changes
 (fn reg ((i u8) (value u8)) void
@@ -139,18 +122,6 @@
 
 (fn word ((p (ptr u8))) u16
     (| (as u16 (load p)) (<< (as u16 (load (+ p 1))) 8)))
-
-; a chip's mixer register from what its three voices want (1 turns a tone or noise off)
-(fn mixer ((chip u8)) void
-    (let r u8 0x3F)
-    (let first u8 (* chip 3))
-    (for c u8 0 3
-        (let m u8 (at voice_mix (+ first c)))
-        (if (!= (& m 1) 0)
-            (set r (& r (~ (<< 1 c)))))
-        (if (!= (& m 2) 0)
-            (set r (& r (~ (<< 8 c))))))
-    (reg (+ (at CHIP_BASE chip) 7) r))
 
 ; a slot's period, level and mixer into its voice's registers, if it has the voice
 (fn out ((s u8)) void
@@ -170,8 +141,11 @@
     (let v u8 (at voice s))
     (if (!= m (at voice_mix v))
         (do
+            ; the voice's two bits of its chip's mixer, the other voices' as they are
             (set (at voice_mix v) m)
-            (mixer (at chip_of s)))))
+            (let i u8 (at VOICE_MIXER v))
+            (let bits u8 (at VOICE_MIX_BITS v))
+            (reg i (| (& (at sent i) (~ bits)) (& (at MIX_OFF m) bits))))))
 
 ; the effect is over: its voice goes back to the music
 (fn end_effect () void
@@ -266,26 +240,26 @@
 
 ; a note's level goes down 1 every decay ticks
 (fn fade ((s u8)) void
+    (set (at decay_left s) (- (at decay_left s) 1))
+    (if (!= (at decay_left s) 0)
+        (return))
+    (set (at decay_left s) (at decay s))
+    ; silent, or the envelope's: it stays so until the next note
     (let l u8 (at level s))
     (if (or (= l 0) (= l 16))
         (return))
-    (let left u8 (- (at decay_left s) 1))
-    (if (> left 0)
-        (do
-            (set (at decay_left s) left)
-            (return)))
-    (set (at decay_left s) (at decay s))
-    (set (at level s) (- l 1))
+    (let down u8 (- l 1))
+    (set (at level s) down)
     (if (at owns s)
-        (reg (at volume_at s) (- l 1))))
+        (reg (at volume_at s) down)))
 
 ; one timer interrupt: every slot that plays counts its note down, fading it, or reads on
 (fn tick () void
     (if (not found)
         (return))
-    (if (= (& (io_read u8 ifr) 0x40) 0)
+    (if (= (& (io_read u8 (+ page IFR)) 0x40) 0)
         (return))
-    (io_read u8 t1_low)
+    (io_read u8 (+ page T1C_L))
     (if any_stale
         (do
             (set any_stale false)
@@ -299,10 +273,8 @@
     (for s u8 0 SLOTS
         (if (at playing s)
             (do
-                (let w u8 (at wait s))
-                (if (> w 1)
-                    (do
-                        (set (at wait s) (- w 1))
-                        (if (!= (at decay s) 0)
-                            (fade s)))
-                    (events s))))))
+                (set (at wait s) (- (at wait s) 1))
+                (if (= (at wait s) 0)
+                    (events s)
+                    (if (!= (at decay s) 0)
+                        (fade s)))))))

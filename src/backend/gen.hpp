@@ -80,6 +80,13 @@ struct DivRoutine {
     std::int32_t needs = -1; // the unsigned routine a signed one calls, if any
 };
 
+// globals that I/O addresses are based on, reached at fixed-address cost (io_bases.hpp)
+struct IoBases {
+    std::vector<bool> base;            // by var
+    std::vector<std::int32_t> patch;   // by var: its patch function, or -1 (never set)
+    std::vector<std::int32_t> patches; // the patch functions
+};
+
 struct Backend {
     const Program* program = nullptr;
     Layout shapes; // every var's shape, address 0
@@ -111,6 +118,8 @@ struct Backend {
     std::vector<bool> div_pairs;          // by expr: FindDivPairs
     std::vector<DivRoutine> div_routines; // the ones the code calls
     ValueRanges ranges;
+    IoBases io_bases;
+    std::vector<std::int32_t> io_sym;       // by var: an I/O base's operand symbol, or -1
     std::vector<std::vector<AsmItem>> code; // by function
     // the copies the generation made, for the size budget (size_budget.hpp), and by for
     // expression the loops it must not unroll
@@ -351,6 +360,9 @@ struct Gen {
     // parameters of the calls being inlined that read their argument, a plain variable the
     // callee never changes, instead of a copy of it
     std::vector<std::pair<std::int32_t, ExprId>> bound;
+    // parameters of the calls being inlined that live in the parameter bytes of the call they
+    // are handed on to (gen_forward.cpp)
+    std::vector<std::int32_t> forwarded;
     std::uint64_t cost = 0; // cycles emitted so far, times each loop level's factor
     // the cycles of the runtime routines the code calls, weighed the same way (about; only
     // the size budget reads it)
@@ -585,7 +597,7 @@ void StepOwnPointers(Gen& g, ExprId loop, std::int32_t var, std::uint16_t step);
 Opnd AddressOf(Gen& g, ExprId place, const Opnd* dst);
 void CopyStruct(Gen& g, ExprId value, const PlaceRef& dst, TypeId type);
 
-// ---- expressions (gen_expr.cpp, gen_arith.cpp)
+// ---- expressions (gen_expr.cpp, gen_arith.cpp; calls gen_call.cpp, I/O gen_io.cpp)
 
 void EvalA(Gen& g, ExprId id);
 // an operand holding the value; computed values go to dst when given (and safe), else to a
@@ -594,6 +606,9 @@ Opnd Eval(Gen& g, ExprId id, const Opnd* dst);
 // the value, written into dst
 void EvalInto(Gen& g, ExprId id, const Opnd& dst);
 Opnd EvalCall(Gen& g, ExprId id, const Opnd* dst);
+// fn's parameter i, inlined, kept in the parameter of the call it hands it on to: that
+// parameter's var, or -1 (gen_forward.cpp)
+std::int32_t ForwardedParam(const Gen& g, const Function& fn, std::uint32_t i);
 void EvalArith8(Gen& g, const Expr& e);
 Opnd EvalArith16(Gen& g, const Expr& e, const Opnd* dst);
 // 16-bit a op b into dst, byte by byte (ADC/SBC with carry, AND/ORA/EOR)
@@ -643,6 +658,7 @@ Opnd ShiftConst16(Gen& g, Op op, bool is_signed, const Opnd& a, std::uint16_t co
 bool GenShiftedIf(Gen& g, const Expr& e);
 // io_read or io_write as a statement
 void GenIo(Gen& g, ExprId id);
+Opnd EvalIoRead(Gen& g, const Expr& e, const Opnd* dst); // gen_io.cpp
 // (jsr ...): the registers set, the call, A after it (gen_jsr.cpp)
 Opnd EvalJsr(Gen& g, ExprId id);
 // (wait_cycles n): the exact delay (gen_wait.cpp)
