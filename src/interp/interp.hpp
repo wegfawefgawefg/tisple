@@ -17,6 +17,8 @@
 //   at addr, then the high byte at addr + 1.
 // - jsr stops the run with an Error ("jsr needs the machine"): machine code runs only on
 //   the 6502. wait_cycles only works out its count: time passes only there too.
+// - Interrupts come only where a test asks for them (Interp::irq_steps): the handler runs
+//   between two steps, interrupts on (the startup leaves them on, (sei) and (cli) switch).
 // - Every evaluated expression is one step; past max_steps the run stops with StepLimit.
 //   Division by zero gives what the backend's routine gives (check/arith.hpp) and goes on.
 // - A global with :address and no value is never written at the start: it holds whatever
@@ -69,6 +71,15 @@ struct Interp {
     // when set, one count per expr id of how often it was evaluated (tisple race-gen's
     // record of where a program's work is); sized to the program's exprs
     std::vector<std::uint32_t>* expr_counts = nullptr;
+
+    // interrupts (tests and the fuzzer): the program's handler runs, as an IRQ would, before
+    // the step counted irq_steps[k] (ascending) when interrupts are on, else as soon as they
+    // are. (sei) and (cli) turn them off and on; the handler runs with them off
+    std::vector<std::uint64_t> irq_steps;
+    std::size_t irq_next = 0;
+    bool irq_on = true;
+    bool in_handler = false;
+    std::uint64_t irqs_taken = 0;
 
     // run state
     std::uint64_t steps = 0;

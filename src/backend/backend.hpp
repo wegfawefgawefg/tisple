@@ -67,6 +67,10 @@ struct Compiled {
     std::uint16_t entry_ready = 0; // zero page saved and initialised; next is JSR main
     std::uint16_t after_main = 0;  // main returned; zero page not restored yet
     std::uint16_t save_buffer = 0; // where zero page is saved
+    // the interrupt handler's entries (irq.hpp): $3FE's, and the cpu's $FFFE in the card's ram;
+    // 0 without a handler
+    std::uint16_t irq_entry = 0;
+    std::uint16_t irq_direct = 0;
     std::int32_t main = -1;
     std::uint32_t code_bytes = 0; // startup, functions, runtime, tables
     std::uint32_t data_bytes = 0; // frames in memory, globals, constants

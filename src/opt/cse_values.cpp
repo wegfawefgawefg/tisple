@@ -14,7 +14,8 @@ namespace {
 constexpr std::int32_t kMinSaving = 12;
 
 bool PlainVar(const Var& v) {
-    return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve;
+    return !v.placement.has_address && !v.placement.in_aux && !v.placement.reserve &&
+           !v.irq_shared;
 }
 
 bool Stable(const Pass& p, ExprId id, CseEntry& e);

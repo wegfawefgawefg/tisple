@@ -195,7 +195,7 @@ bool IsReturnTypeShape(Checker& ck, const Node& node) {
         return TryResolveType(ck, node) >= 0;
     }
     const std::string& head = HeadName(node);
-    return head == "ptr" || head == "array";
+    return head == "ptr" || head == "array" || head == "fn";
 }
 
 std::string ShowItems(const Node& list, std::size_t first) {
@@ -206,8 +206,40 @@ std::string ShowItems(const Node& list, std::size_t first) {
     return text;
 }
 
+// (fn name () void :interrupt ...): the program's interrupt handler
+void ReadHandlerOption(Checker& ck, std::int32_t index, const Node& form, const Node& option,
+                       const std::string& params_text, const std::string& return_text) {
+    Function& fn = ck.out->functions[static_cast<std::size_t>(index)];
+    const std::string& name = form.items[1].text;
+    if (option.text != ":interrupt") {
+        Err(ck, option, option.text + " is no fn option; the one there is is :interrupt");
+        return;
+    }
+    if (!fn.params.empty() || fn.ret != kVoidType) {
+        Err(ck, form,
+            "an interrupt handler takes nothing and gives nothing; write (fn " + name +
+                " () void :interrupt ...), not (fn " + name + " " + params_text + " " +
+                return_text + " :interrupt ...)");
+        return;
+    }
+    if (ck.out->handler >= 0) {
+        Err(ck, option,
+            "a program has one interrupt handler, and " +
+                ck.out->functions[static_cast<std::size_t>(ck.out->handler)].name +
+                " is it; poll every device there");
+        return;
+    }
+    fn.interrupt = true;
+    ck.out->handler = index;
+}
+
 // (fn name (params) type body ...); the old (args ...) and (returns t) get a fix
 void ReadSignature(Checker& ck, std::int32_t index) {
+    Progress& state = ck.signature_states[static_cast<std::size_t>(index)];
+    if (state != Progress::Pending) {
+        return;
+    }
+    state = Progress::Done;
     const Node& form = *ck.function_forms[static_cast<std::size_t>(index)];
     Function& fn = ck.out->functions[static_cast<std::size_t>(index)];
     Context saved = SwitchContext(ck, fn.module, index);
@@ -247,6 +279,11 @@ void ReadSignature(Checker& ck, std::int32_t index) {
         Err(ck, form,
             "the return type comes after the parameters, void when " + name +
                 " returns nothing; write (fn " + name + " " + params_text + " void ...)");
+    }
+    // options after the return type: :interrupt
+    if (next < items.size() && items[next].kind == NodeKind::Keyword) {
+        ReadHandlerOption(ck, index, form, items[next], params_text, return_text);
+        next++;
     }
     std::string fix = "(fn " + name + " " + params_text + " " + return_text + " ...)";
     if (old_params) {
@@ -306,21 +343,37 @@ void FindRecursion(Checker& ck, std::int32_t fn, std::vector<Progress>& state,
         const Function& target = ck.out->functions[static_cast<std::size_t>(callee)];
         std::string chain;
         bool started = false;
+        bool indirect = false;
         for (std::int32_t on_stack : stack) {
             started = started || on_stack == callee;
             if (started && on_stack != callee) {
                 chain += ck.out->functions[static_cast<std::size_t>(on_stack)].name + " -> ";
             }
+            for (const auto& call : ck.indirect_calls) {
+                indirect = indirect || (started && call.first == on_stack);
+            }
         }
         std::string message = chain.empty()
                                   ? target.name + " calls itself"
                                   : target.name + " calls itself through " + chain + target.name;
+        if (indirect) {
+            message += " (a call through a function pointer may reach every function of its "
+                       "type whose name is used as a value)";
+        }
         AddError(*ck.errors, target.loc,
                  message + "; recursion is not in this subset, write it as a loop");
     }
     stack.pop_back();
     state[static_cast<std::size_t>(fn)] = Progress::Done;
 }
+
+} // namespace
+
+void EnsureSignature(Checker& ck, std::int32_t function) {
+    ReadSignature(ck, function);
+}
+
+namespace {
 
 void FindMain(Checker& ck) {
     const ModuleScope& entry = ck.modules[0];
@@ -382,10 +435,12 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
         EnsureStruct(ck, static_cast<std::int32_t>(i), *ck.struct_forms[i]);
         RestoreContext(ck, std::move(saved));
     }
+    // a const table that names a function reads its signature early
+    ck.body_starts.resize(out.functions.size());
+    ck.signature_states.assign(out.functions.size(), Progress::Pending);
     for (std::size_t i = 0; i < ck.consts.size(); i++) {
         EvalConst(ck, static_cast<std::int32_t>(i));
     }
-    ck.body_starts.resize(out.functions.size());
     for (std::size_t i = 0; i < out.functions.size(); i++) {
         ReadSignature(ck, static_cast<std::int32_t>(i));
     }
@@ -399,6 +454,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
         CheckFunctionBody(ck, static_cast<std::int32_t>(i));
     }
     CheckRegionUses(ck);
+    AddIndirectCallees(ck);
 
     std::vector<Progress> state(out.functions.size(), Progress::Pending);
     std::vector<std::int32_t> stack;
@@ -408,6 +464,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
         }
     }
     FindMain(ck);
+    CheckHandler(ck);
     if (names) {
         CopyConsts(ck);
     }

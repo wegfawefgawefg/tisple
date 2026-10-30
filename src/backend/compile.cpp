@@ -1,4 +1,6 @@
+#include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
+#include "backend/irq.hpp"
 #include "backend/link.hpp"
 #include "backend/peephole.hpp"
 #include "backend/runtime.hpp"
@@ -16,7 +18,7 @@ namespace {
 // first (a callee's locals by its inlined copies, or by itself); globals and other
 // functions' parameters by any code after a call or the return
 StoreScope VarScope(const Var& var, std::int32_t function) {
-    if (var.address_taken || var.placement.has_address) {
+    if (var.address_taken || var.placement.has_address || var.irq_shared) {
         return StoreScope::Untracked;
     }
     if (var.kind == VarKind::Local || (var.kind == VarKind::Param && var.function == function)) {
@@ -82,6 +84,7 @@ void MakeSymbols(Backend& be) {
         } else if (PointerInZp(be, static_cast<std::int32_t>(v))) {
             s.zp = true;
         }
+        s.shared = var.irq_shared;
     }
     std::size_t fn_count = program.functions.size();
     be.fn_sym.resize(fn_count);
@@ -167,6 +170,22 @@ std::vector<bool> KeptFunctions(const Backend& be, const BuildOptions& options) 
     std::vector<bool> kept(count, false);
     std::vector<std::int32_t> work = {main};
     kept[static_cast<std::size_t>(main)] = true;
+    // the interrupt handler: the IRQ entry calls it
+    std::int32_t handler = be.program->handler;
+    if (handler >= 0) {
+        kept[static_cast<std::size_t>(handler)] = true;
+        work.push_back(handler);
+    }
+    // the entries a const table holds: the table is data, not code that names them
+    for (const Var& var : be.program->vars) {
+        for (const FnSlot& slot : var.fn_slots) {
+            std::int32_t entry = be.entries[static_cast<std::size_t>(slot.function)];
+            if (!kept[static_cast<std::size_t>(entry)]) {
+                kept[static_cast<std::size_t>(entry)] = true;
+                work.push_back(entry);
+            }
+        }
+    }
     while (!work.empty()) {
         std::int32_t f = work.back();
         work.pop_back();
@@ -269,6 +288,7 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     FoldConstants(program);
     OptReport report;
     OptimizeProgram(program, options.opt, report);
+    std::vector<std::int32_t> entries = LowerIndirectCalls(program);
     std::vector<ExprId> counter_literals = AddCounterLiterals(program);
     out = Compiled();
     out.origin = options.origin;
@@ -281,7 +301,13 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
         return false;
     }
     be.counter_literals = counter_literals;
+    be.entries = entries;
     be.inlines = FindInlines(program, options.no_inline);
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (program.functions[f].dispatcher || program.functions[f].interrupt) {
+            be.inlines[f] = InlineKind::None; // only for the analyses; the IRQ entry calls it
+        }
+    }
     be.deref = FindDerefPointers(program, be.inlines);
     be.aliases = FindIndexAliases(program);
     be.unit_steps = FindUnitSteps(program);
@@ -294,9 +320,13 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     std::vector<WeightsAdded> added(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         std::vector<std::uint64_t> weights = Weights(be);
-        GenFunction(be, static_cast<std::int32_t>(f));
-        Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
-                 FrameSharers(be, static_cast<std::int32_t>(f)));
+        if (program.functions[f].dispatcher) {
+            GenDispatcher(be, static_cast<std::int32_t>(f));
+        } else {
+            GenFunction(be, static_cast<std::int32_t>(f));
+            Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
+                     FrameSharers(be, static_cast<std::int32_t>(f)));
+        }
         added[f] = AddedSince(be, weights);
     }
     if (errors.size() != before) {
@@ -312,6 +342,11 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     std::vector<AsmItem> runtime;
     EmitRuntime(be, runtime);
     EmitDivRoutines(be, runtime);
+    std::vector<AsmItem> irq;
+    IrqPlan irq_plan;
+    if (program.handler >= 0) {
+        EmitIrqEntry(be, kept, runtime, irq_plan, irq);
+    }
     FramePlan plan;
     if (!AllocateFrames(be, plan)) {
         return false;
@@ -321,6 +356,8 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     in.plan = &plan;
     in.kept = &kept;
     in.runtime = &runtime;
+    in.irq = &irq;
+    in.irq_plan = irq_plan;
     std::vector<bool> source_tables = FindNamedTables(source);
     in.source_tables = &source_tables;
     // the language card only when the program needs the room: link without it first

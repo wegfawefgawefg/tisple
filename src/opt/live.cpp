@@ -164,6 +164,7 @@ void Walk(Walker& w, ExprId id, Bits& live) {
     const Expr& e = At(*w.p, id);
     switch (e.kind) {
     case ExprKind::Literal:
+    case ExprKind::FnRef:
         return;
     case ExprKind::VarRef:
         Gen(w, live, e.ref);
@@ -240,6 +241,19 @@ void Walk(Walker& w, ExprId id, Bits& live) {
         OrBits(live, CalleeReads(w, e.ref));
         WalkItems(w, e, live);
         return;
+    case ExprKind::CallPtr: {
+        // what any function the pointer may hold reads; the pointer is worked out first
+        const std::vector<std::int32_t>& targets = PointerTargets(*w.p, At(*w.p, e.a).type);
+        for (std::int32_t target : targets) {
+            OrBits(live, CalleeReads(w, target));
+        }
+        if (targets.empty()) {
+            OrBits(live, w.globals);
+        }
+        WalkItems(w, e, live);
+        Walk(w, e.a, live);
+        return;
+    }
     case ExprKind::StructLit:
     case ExprKind::Do:
         WalkItems(w, e, live);
@@ -247,6 +261,7 @@ void Walk(Walker& w, ExprId id, Bits& live) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         OrBits(live, w.globals);
         break;
     case ExprKind::Index:
@@ -277,7 +292,8 @@ void Walk(Walker& w, ExprId id, Bits& live) {
 } // namespace
 
 bool TrackedVar(const Var& var, std::int32_t function) {
-    if (var.address_taken || var.placement.has_address || var.placement.in_aux) {
+    if (var.address_taken || var.placement.has_address || var.placement.in_aux ||
+        var.irq_shared) {
         return false;
     }
     if (var.kind == VarKind::Global) {

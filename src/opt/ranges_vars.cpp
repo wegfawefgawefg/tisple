@@ -352,7 +352,12 @@ void Settle(Walker& w) {
             Widen(info.natural, info.seen, initial);
             Widen(info.other, info.other_seen, OtherView(kind, initial));
         }
+        // a function whose address is taken is called from wherever the pointer goes, with
+        // what its calls through it pass: not the calls the tree shows
         bool uncalled = v.kind == VarKind::Param && !called[static_cast<std::size_t>(v.function)];
+        uncalled =
+            uncalled || (v.kind == VarKind::Param &&
+                         p.program->functions[static_cast<std::size_t>(v.function)].address_taken);
         // with no main, called from outside: any argument, any global's bytes between calls
         uncalled = uncalled || (p.program->main < 0 && v.kind != VarKind::Local);
         Range natural = type;

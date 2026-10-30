@@ -152,6 +152,7 @@ void Visit(Editor& ed, ExprId id, bool used) {
     }
     case ExprKind::Literal:
     case ExprKind::VarRef:
+    case ExprKind::FnRef:
     case ExprKind::Break:
     case ExprKind::Continue:
         return;
@@ -171,8 +172,10 @@ void Visit(Editor& ed, ExprId id, bool used) {
     case ExprKind::Convert:
     case ExprKind::Reinterpret:
     case ExprKind::Call:
+    case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
+    case ExprKind::Interrupts:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:
@@ -183,7 +186,7 @@ void Visit(Editor& ed, ExprId id, bool used) {
         Visit(ed, e.a, true);
         Visit(ed, e.b, true);
         Visit(ed, e.c, true);
-        if (kind == ExprKind::Call || kind == ExprKind::StructLit) {
+        if (kind == ExprKind::Call || kind == ExprKind::CallPtr || kind == ExprKind::StructLit) {
             for (std::uint32_t i = 0; i < e.count; i++) {
                 Visit(ed, Item(p, e, i), true);
             }

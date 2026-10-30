@@ -319,7 +319,7 @@ Val WalkCall(Walker& w, const Expr& e, Env& env) {
     if (!env.reached) {
         return Val();
     }
-    const Summary& s = w.p->summaries[static_cast<std::size_t>(e.ref)];
+    const Summary& s = CallSummary(*w.p, e);
     if (s.io || s.jsr || s.unknown) {
         ForgetGlobals(w, env);
         return AnyVal();
@@ -382,6 +382,7 @@ Val WalkNode(Walker& w, const Expr& e, Env& env) {
         return AnyVal();
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         WalkChildren(w, e, env);
         if (env.reached) {
             ForgetGlobals(w, env);
@@ -389,6 +390,12 @@ Val WalkNode(Walker& w, const Expr& e, Env& env) {
         return AnyVal();
     case ExprKind::Call:
         return WalkCall(w, e, env);
+    case ExprKind::CallPtr:
+        // the pointer first; then as any call that may reach its targets
+        Walk(w, e.a, env);
+        return WalkCall(w, e, env);
+    case ExprKind::FnRef:
+        return AnyVal();
     case ExprKind::StructLit:
         for (std::uint32_t i = 0; i < e.count; i++) {
             Walk(w, Item(p, e, i), env);

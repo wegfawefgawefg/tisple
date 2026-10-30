@@ -15,11 +15,12 @@ bool IsSignedKind(TypeKind kind) {
 
 bool IsScalarKind(TypeKind kind) {
     return IsIntegerKind(kind) || kind == TypeKind::Bool || kind == TypeKind::Enum ||
-           kind == TypeKind::Ptr;
+           kind == TypeKind::Ptr || kind == TypeKind::Fn;
 }
 
 std::uint32_t KindBits(TypeKind kind) {
-    if (kind == TypeKind::U16 || kind == TypeKind::I16 || kind == TypeKind::Ptr) {
+    if (kind == TypeKind::U16 || kind == TypeKind::I16 || kind == TypeKind::Ptr ||
+        kind == TypeKind::Fn) {
         return 16;
     }
     return 8;
@@ -63,6 +64,15 @@ std::string TypeName(const Program& program, TypeId id) {
         return program.structs[static_cast<std::size_t>(type.decl)].name;
     case TypeKind::Enum:
         return program.enums[static_cast<std::size_t>(type.decl)].name;
+    case TypeKind::Fn: {
+        const Signature& sig = program.signatures[static_cast<std::size_t>(type.decl)];
+        std::string params;
+        for (TypeId param : sig.params) {
+            params += (params.empty() ? "" : " ") + TypeName(program, param);
+        }
+        std::string ret = sig.ret == kVoidType ? "void" : TypeName(program, sig.ret);
+        return "(fn (" + params + ") " + ret + ")";
+    }
     }
     return "?";
 }
@@ -162,6 +172,17 @@ bool ConstValue(const Program& program, ExprId id, std::uint16_t& value) {
     default:
         return false;
     }
+}
+
+std::vector<std::int32_t> CallTargets(const Program& program, TypeId type) {
+    std::vector<std::int32_t> out;
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        const Function& fn = program.functions[f];
+        if (fn.address_taken && fn.type == type) {
+            out.push_back(static_cast<std::int32_t>(f));
+        }
+    }
+    return out;
 }
 
 } // namespace tisple

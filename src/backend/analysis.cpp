@@ -22,6 +22,7 @@ template <typename Fn> bool AnyExpr(const Program& program, ExprId id, Fn fn) {
     }
     switch (e.kind) {
     case ExprKind::Call:
+    case ExprKind::CallPtr: // only before LowerIndirectCalls (FindNamedTables on the source)
     case ExprKind::StructLit:
     case ExprKind::Do:
         for (std::uint32_t i = 0; i < e.count; i++) {
@@ -115,6 +116,7 @@ bool HasEffects(const Program& program, ExprId id) {
         case ExprKind::IoWrite:
         case ExprKind::Jsr:
         case ExprKind::WaitCycles:
+        case ExprKind::Interrupts:
         case ExprKind::Return:
         case ExprKind::Break:
         case ExprKind::Continue:
@@ -129,6 +131,9 @@ bool HasEffects(const Program& program, ExprId id) {
 
 bool MayWriteVar(const Program& program, ExprId id, std::int32_t var) {
     const Var& v = program.vars[static_cast<std::size_t>(var)];
+    if (v.irq_shared && id >= 0) {
+        return true; // the interrupt handler may change it while any code runs
+    }
     bool shared = v.function < 0 || v.address_taken;
     return AnyExpr(program, id, [&](const Expr& e) {
         if (e.kind == ExprKind::Set && RootVar(program, e.a) == var) {

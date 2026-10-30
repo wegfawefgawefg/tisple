@@ -48,7 +48,13 @@ ExprId CheckName(Checker& ck, const Node& node) {
         return Fail(ck, node,
                     first + " is a module; name one of its members, as in " + first + ".x");
     case NameKind::Function:
-        return Fail(ck, node, node.text + " is a function; call it: (" + node.text + " ...)");
+        if (ref.used < segments.size()) {
+            return Fail(ck, node,
+                        segments[ref.used - 1] + " is a function; it has no field " +
+                            segments[ref.used]);
+        }
+        // its address: a function pointer
+        return FunctionValue(ck, node, ref.index);
     case NameKind::Struct:
         return Fail(ck, node,
                     node.text + " is a type; build a value with (make " + node.text +
@@ -192,6 +198,9 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint, bool used) {
     if (head == "wait_cycles") {
         return CheckWaitCycles(ck, node);
     }
+    if (head == "sei" || head == "cli") {
+        return CheckInterruptsForm(ck, node);
+    }
     if (head == "fn" || head == "struct" || head == "enum" || head == "const" || head == "import" ||
         head == "macro") {
         std::string fix = head == "const" ? "; use let here" : "; move it out of this function";
@@ -229,6 +238,17 @@ ExprId CheckList(Checker& ck, const Node& node, TypeId hint, bool used) {
     }
     if (ref.kind == NameKind::None && !ref.missing_in.empty()) {
         return Fail(ck, node, ref.missing_in + " has no " + segments[ref.used]);
+    }
+    if (ref.kind == NameKind::Var) {
+        // a variable or field holding a function pointer: a call through it
+        ExprId callee = CheckName(ck, head_node);
+        TypeId type = ExprType(ck, callee);
+        if (type == kErrorType) {
+            return ErrorExpr(ck, node);
+        }
+        if (KindOf(*ck.out, type) == TypeKind::Fn) {
+            return CheckIndirectCall(ck, node, callee);
+        }
     }
     return Fail(ck, node, head + " is not a function, so (" + head + " ...) is not a call");
 }
@@ -326,6 +346,9 @@ bool RequireType(Checker& ck, const Node& node, ExprId expr, TypeId want, const 
         fix = "; write (!= " + Show(node) + " 0)";
     } else if (got == kU16Type && wk == TypeKind::Ptr) {
         fix = "; write (as " + ShowType(ck, want) + " " + Show(node) + ")";
+    } else if (gk == TypeKind::Fn && wk != TypeKind::Fn && node.kind == NodeKind::Symbol) {
+        // a function's name, or a variable holding one, where its value was meant
+        fix = "; to call it write (" + Show(node) + " ...)";
     }
     Err(ck, node,
         what + " needs a " + ShowType(ck, want) + " but " + Show(node) + " is " +

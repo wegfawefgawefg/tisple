@@ -249,6 +249,33 @@ walk unrolls and unswitches, and the rounds go on:
   poke globals between calls.
 - `--no-pass vars|elements|unroll|unswitch|returns`. Results: dogfood.md 48.
 
+Function pointers (2026-10-30, docs/language.md): a function whose address is taken is
+called from wherever a pointer to it goes, which the closed world above does not see.
+
+- The checker adds every function a call through a pointer may reach (address taken, the
+  pointer's type) to the caller's callees, so summaries, what runs (vars) and the order
+  callees come first in include them; a call through a pointer reads and writes what any
+  of them may (`CallSummary`, the union; every effect with none) and ends when each does.
+- vars: an address-taken function's parameters get their type's range. returns: its
+  values stay. collapse_memory: its pointer parameters reach anything, and a call
+  through a pointer loads and stores what its targets do.
+- Calls through pointers are never worked out at compile time, collapsed, unrolled or
+  common subexpressions; constants and ranges forget what their targets write; licm
+  takes their writes like a call's.
+- The backend makes them direct calls after the passes (design.md).
+
+Interrupt handlers (2026-10-30, docs/language.md): the handler runs between any two
+instructions, outside the closed world.
+
+- What it shares (`Var::irq_shared`, marked by the checker) counts as hardware everywhere
+  `:address` does: live (untracked, so never a dead store and always live), consts (not
+  tracked), ranges (not quiet, not ranged: vars would miss the handler's writes, which no
+  function main reaches makes), elements and collapse (Hardware), licm (never holds), cse
+  (no plain variable), dead's self-assignment, consts_eval's steady values.
+- `(sei)` and `(cli)` are I/O in summaries and walks: never moved or dropped, globals
+  forgotten at them.
+- The handler's own code is optimised like any function; it runs with interrupts off.
+
 ## Flags
 
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`

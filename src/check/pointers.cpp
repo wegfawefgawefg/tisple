@@ -146,6 +146,10 @@ ExprId CheckAddrOf(Checker& ck, const Node& node) {
     if (expr.kind == ExprKind::Literal) {
         return Fail(ck, place_node, "constants have no address; use a top-level let");
     }
+    if (expr.kind == ExprKind::FnRef) {
+        return Fail(ck, place_node,
+                    "a function's name is its address already; write " + Show(place_node));
+    }
     bool through_load = false;
     std::int32_t root = PlaceRoot(ck, place, through_load);
     if (through_load) {
@@ -204,6 +208,10 @@ ExprId CheckIntegerAs(Checker& ck, const Node& node, TypeId to) {
         return Fail(ck, node, "as converts integers, not bool; write (if " + Show(arg) + " 1 0)");
     }
     // an enum member converts to its number; nothing converts back
+    if (kind == TypeKind::Fn) {
+        return Fail(ck, node,
+                    "a function pointer converts to nothing; call it, or compare it with = or !=");
+    }
     if (!IsIntegerKind(kind) && kind != TypeKind::Enum) {
         return Fail(ck, node,
                     "as converts integers, enums and pointers, not " + ShowType(ck, from));
@@ -242,6 +250,11 @@ ExprId CheckAs(Checker& ck, const Node& node) {
     }
     if (kind == TypeKind::Bool) {
         return Fail(ck, node, "nothing converts to bool; write (!= " + Show(node.items[2]) + " 0)");
+    }
+    if (kind == TypeKind::Fn) {
+        return Fail(ck, node,
+                    "nothing converts to a function pointer; name a function, as in (let f " +
+                        ShowType(ck, to) + " my_fn)");
     }
     if (kind != TypeKind::Ptr) {
         return Fail(ck, node, help);

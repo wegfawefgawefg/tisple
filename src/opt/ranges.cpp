@@ -248,6 +248,7 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
         VisitLoop(g, id, shared, before);
         return;
     case ExprKind::Literal:
+    case ExprKind::FnRef:
     case ExprKind::Break:
     case ExprKind::Continue:
         return;
@@ -315,11 +316,13 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
         Wrote(g, id, e.ref, e.a);
         return;
     case ExprKind::Call:
+    case ExprKind::CallPtr:
         EachChild(p, e, [&](ExprId child) { Visit(g, child, shared, -1); });
-        ForgetCallWrites(g, e.ref);
+        ForgetCallWrites(g, e);
         return;
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
+    case ExprKind::Interrupts:
         EachChild(p, e, [&](ExprId child) { Visit(g, child, shared, -1); });
         ForgetGlobals(g, false);
         return;

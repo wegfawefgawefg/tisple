@@ -51,9 +51,11 @@ void ScanCode(const Pass& p, Scan& s, ExprId id, int depth) {
         ScanCode(p, s, e.c, depth + 1);
         return;
     case ExprKind::Call:
-        s.ok = PureFunction(p, e.ref);
+    case ExprKind::CallPtr:
+        s.ok = CallSummary(p, e).pure;
         break;
     case ExprKind::Literal:
+    case ExprKind::FnRef:
     case ExprKind::VarRef:
     case ExprKind::Index:
     case ExprKind::Field:
@@ -81,7 +83,7 @@ void ScanCode(const Pass& p, Scan& s, ExprId id, int depth) {
     ScanCode(p, s, e.a, depth);
     ScanCode(p, s, e.b, depth);
     ScanCode(p, s, e.c, depth);
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (HasItems(e.kind)) {
         for (std::uint32_t i = 0; i < e.count; i++) {
             ScanCode(p, s, Item(p, e, i), depth);
         }

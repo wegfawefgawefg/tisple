@@ -80,8 +80,9 @@ Reach ParamReach(const Pass& p, MemoryFacts& m, std::int32_t var, int depth) {
     while (index < fn.params.size() && fn.params[index] != var) {
         index++;
     }
-    // a function nothing calls is called from outside, with any pointer
-    if (writes != 0 || calls.empty()) {
+    // a function nothing calls is called from outside, with any pointer; one whose address is
+    // taken, from wherever the pointer goes
+    if (writes != 0 || calls.empty() || fn.address_taken) {
         return Anything();
     }
     Reach r;
@@ -220,6 +221,20 @@ void GatherExpr(const Pass& p, MemoryFacts& m, Reach& loads, Reach& stores, Expr
         std::size_t callee = static_cast<std::size_t>(e.ref);
         Join(loads, m.loads[callee]);
         Join(stores, m.stores[callee]);
+        break;
+    }
+    case ExprKind::CallPtr: {
+        // what any function the pointer may hold reaches
+        const std::vector<std::int32_t>& targets = PointerTargets(p, At(p, e.a).type);
+        for (std::int32_t target : targets) {
+            Gather(p, m, target);
+            Join(loads, m.loads[static_cast<std::size_t>(target)]);
+            Join(stores, m.stores[static_cast<std::size_t>(target)]);
+        }
+        if (targets.empty()) {
+            Join(loads, Anything());
+            Join(stores, Anything());
+        }
         break;
     }
     default:

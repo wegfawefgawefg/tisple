@@ -29,11 +29,18 @@ struct StartupPlan {
     std::int32_t ready_sym = -1; // labels the startup defines
     std::int32_t after_sym = -1;
     bool card_ram = false; // part of the program is in the language card: switch its ram in
+    // the interrupt handler's entry (irq.hpp), -1 for none: installed at $3FE (and the
+    // cpu's vectors in the card's ram) with interrupts off, interrupts on for main; the old
+    // vector back at the end, the caller's I flag too
+    std::int32_t irq_entry = -1;
+    std::int32_t irq_direct = -1;
+    std::int32_t irq_saved = -1;
 };
 
 // save zero page, write the zero-page image and other initial values, JSR main, restore
 // zero page, RTS. With card_ram, the language card's ram (bank 2) is switched in first, for
-// reads and writes, and the rom back in before the RTS
+// reads and writes, and the rom back in before the RTS. With an interrupt handler, all of it
+// but main runs with interrupts off
 void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out);
 
 } // namespace tisple

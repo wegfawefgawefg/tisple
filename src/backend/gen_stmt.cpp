@@ -328,6 +328,9 @@ void GenStmt(Gen& g, ExprId id) {
     case ExprKind::WaitCycles:
         GenWait(g, id);
         break;
+    case ExprKind::Interrupts:
+        Emit(g, e.value != 0 ? Mn::CLI : Mn::SEI, Mode::Imp);
+        break;
     default:
         // a value nobody uses: only its effects matter
         if (HasEffects(*g.program, id)) {

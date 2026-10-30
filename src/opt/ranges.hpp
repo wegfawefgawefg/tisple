@@ -53,7 +53,7 @@ void ForgetGlobals(Ranger& g, bool all);
 // a loop: what it writes anywhere in it may differ on its later passes
 void ForgetLoopWrites(Ranger& g, ExprId loop);
 // a call writes what its summary says
-void ForgetCallWrites(Ranger& g, std::int32_t function);
+void ForgetCallWrites(Ranger& g, const Expr& call);
 // (set x v) or (let x v): x holds v's range after it, for the do around it to keep
 void Wrote(Ranger& g, ExprId id, std::int32_t var, ExprId value);
 

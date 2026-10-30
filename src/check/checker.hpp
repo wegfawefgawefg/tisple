@@ -103,6 +103,14 @@ struct Checker {
     std::vector<std::size_t> body_starts;    // by function id
     std::map<std::tuple<int, int, std::uint32_t, int>, TypeId> interned;
     std::map<std::string, std::int32_t> string_tables; // a string's bytes -> its table var
+    // function pointers (fnptr.cpp): signatures by their types (the return type last), each
+    // function's signature as ReadSignature reads it (lazily for a const table that names it),
+    // and each indirect call's function and pointer type, for the callees
+    std::map<std::vector<TypeId>, std::int32_t> signature_index;
+    std::vector<Progress> signature_states;
+    std::vector<std::pair<std::int32_t, TypeId>> indirect_calls;
+    // the function slots of the const table being folded (FoldArrayLiteral)
+    std::vector<FnSlot> pending_slots;
     Context at;
     NameIndex* names = nullptr; // editor tools only: what each written name is
 };
@@ -243,6 +251,28 @@ ExprId CheckString(Checker& ck, const Node& node);
 // (wait_cycles n): an exact delay; a constant n of 2 or more, or any u16
 ExprId CheckWaitCycles(Checker& ck, const Node& node);
 ExprId CheckCall(Checker& ck, const Node& node, std::int32_t function);
+
+// function pointers (fnptr.cpp)
+// (fn (u8 u8) u8): the interned type
+TypeId FnType(Checker& ck, const std::vector<TypeId>& params, TypeId ret, const Node& at);
+// the function's (fn ...) type; reads its signature first if it has not been read
+TypeId FunctionType(Checker& ck, std::int32_t function);
+// a function's name as a value: its address, which counts as taking it
+ExprId FunctionValue(Checker& ck, const Node& node, std::int32_t function);
+// (f args ...) with f a name whose value is a function pointer, already checked as callee
+ExprId CheckIndirectCall(Checker& ck, const Node& node, ExprId callee);
+// after every body: each indirect call's function calls every function whose address is
+// taken with its pointer's type
+void AddIndirectCallees(Checker& ck);
+// check.cpp: the signature, once (const tables may need it before the functions are read)
+void EnsureSignature(Checker& ck, std::int32_t function);
+
+// the interrupt handler (interrupts.cpp)
+// (sei) and (cli)
+ExprId CheckInterruptsForm(Checker& ck, const Node& node);
+// once main is known: the handler shares no function with main and does not turn interrupts
+// on; marks what it reads and writes (Var::irq_shared)
+void CheckHandler(Checker& ck);
 // (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);
 ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string& field);

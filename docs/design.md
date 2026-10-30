@@ -205,6 +205,71 @@ Recursion, function pointers, assembly, ROM calls and interrupts break static
 frame sharing and register assumptions. Each gets a defined ABI; never assume
 calls cannot overlap.
 
+### Calls through function pointers (2026-10-30)
+
+Made into direct calls once the mid-level passes are done
+(src/backend/dispatch.cpp), so frames, effects, ranges, pointer targets and
+inlining see ordinary calls:
+
+- Each `(fn ...)` type t has a dispatcher: a function whose parameters are the
+  pointer and then t's parameters. `(p a b)` is a call of it: the pointer and
+  the arguments go into its frame like any call's, then `JSR`. Its code is
+  `LDA p; STA j+1; LDA p+1; STA j+2; j: JMP $0000` (the program runs from
+  RAM, the card's included).
+- Each function f whose address is taken has an entry, `f.indirect`, with no
+  parameters of its own: its body is f called with the dispatcher's
+  parameters, so f is usually inlined into it and reads them where they are. A
+  function pointer's value is the entry's address; the interpreter, run on the
+  compiled layout, uses the same values (`Layout::functions`).
+- The entry returns straight to the dispatcher's caller: results in A, or A
+  (low) and X (high), as for any call.
+- The call graph is caller, dispatcher, entries of t's functions, functions.
+  Frames stack in that order, so the dispatcher's frame, which holds the
+  arguments, is live while an entry runs and nothing that runs then overlaps
+  it. For the analyses the dispatcher's body is a match that calls one of the
+  entries; its code is only the jump.
+
+### Interrupt handlers (2026-10-30)
+
+How the machines route an IRQ (checked in their roms with our NMOS core, which
+runs all three IRQ paths; tests/test_backend_irq.cpp):
+
+- II+ and unenhanced IIe: $FFFE holds $FA40, which does `STA $45`, looks at
+  the B flag on the stack (a BRK goes to the monitor) and does `JMP ($03FE)`.
+  The handler finds the interrupted A in $45 (A itself holds the status shifted
+  left), X and Y as they were, and must give A back from $45 before its `RTI`. With RAMRD on, `$3FE` is read from
+  aux memory.
+- Enhanced IIe: $FFFE holds $C3FA, which saves A, X, Y and the memory switches
+  on the stack, puts main memory and the rom in (the card's ram too), pushes a
+  return into itself and does `JMP ($03FE)`; after the handler's `RTI` it puts
+  everything back. $45 is not touched on this path (only a BRK writes $44).
+- Language card ram read-enabled: the cpu reads $FFFA-$FFFF from the card,
+  whatever the rom says. Our programs have the card in for all of main when they
+  use it, so with a handler the link keeps $FFFA-$FFFF out of the card's data
+  and the startup writes them: NMI $03FB and RESET $FA62 as the roms have them
+  (reset puts the rom back in anyway), IRQ straight to the entry.
+
+What the backend makes (src/backend/irq.cpp):
+
+- `irq.direct: STA $45` (the card's $FFFE), then `irq.entry` ($3FE): `CLD`,
+  X and Y pushed, then each zero-page scratch byte the handler's kept code uses,
+  or every scratch byte the runtime routines it calls use; `JSR handler`; the
+  same pulled back; `LDA $45; RTI`. 45 cycles and 19 bytes besides the scratch
+  bytes (13 cycles each), the rom's path not counted.
+- $45 is never given to a variable in a program with a handler (an :address
+  let there is an error).
+- The handler and everything it calls get frames above every other function's:
+  the handler counts every other function as a caller. Nothing else shares
+  their bytes, so they are not saved; main's frames, its temporaries, page and
+  loop pointers are never touched.
+- Startup: `PHP; SEI`, zero page saved and set, the old $3FE kept and the entry
+  put there (and the card's vectors), `CLI`, `JSR main`; then `SEI`, $3FE as it
+  was, zero page back, `PLP; RTS`.
+- What the handler shares is `Var::irq_shared`: the symbol is `shared`, which
+  keeps the peephole and code generation from taking a register to hold it,
+  the dead-store pass from it, and every "may this code write it" from saying
+  no.
+
 ## Target
 
 *Proposed* first target: NMOS 6502 (runs on every Apple II), Apple IIe memory
@@ -297,5 +362,6 @@ reports come after the compiler works.
 - Literal typing details, pointer arithmetic, signed compares.
 - View syntax.
 - How backing storage for allocators is declared.
-- Calling convention for recursion, function pointers and interrupts.
+- Calling convention for recursion (function pointers and interrupts: see
+  Backend).
 - IR shape.

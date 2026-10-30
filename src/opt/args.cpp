@@ -59,6 +59,14 @@ void FindUsed(const Pass& p, ExprId id, bool used, std::vector<bool>& value_used
             FindUsed(p, Item(p, e, i), true, value_used);
         }
         return;
+    case ExprKind::CallPtr:
+        // any function the pointer may hold
+        for (std::int32_t target : PointerTargets(p, At(p, e.a).type)) {
+            value_used[static_cast<std::size_t>(target)] =
+                value_used[static_cast<std::size_t>(target)] || used;
+        }
+        EachChild(p, e, [&](ExprId child) { FindUsed(p, child, true, value_used); });
+        return;
     case ExprKind::Do:
         for (std::uint32_t i = 0; i < e.count; i++) {
             FindUsed(p, Item(p, e, i), used && i + 1 == e.count, value_used);
@@ -134,8 +142,8 @@ std::uint64_t DropUnusedReturns(Pass& p) {
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         const Function& fn = program.functions[f];
         // a function nothing calls is called from outside (main, or by address), which may
-        // read its value
-        if (value_used[f] || !called[f] || fn.ret == kVoidType || fn.body < 0) {
+        // read its value; so is one whose address is taken, from wherever the pointer goes
+        if (value_used[f] || !called[f] || fn.address_taken || fn.ret == kVoidType || fn.body < 0) {
             continue;
         }
         changes += DropReturns(p, fn.body);

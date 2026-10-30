@@ -38,7 +38,8 @@ template <typename Fn> void EachChild(const Program& program, const Expr& e, Fn 
             fn(child);
         }
     }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (e.kind == ExprKind::Call || e.kind == ExprKind::CallPtr || e.kind == ExprKind::StructLit ||
+        e.kind == ExprKind::Do) {
         for (std::uint32_t i = 0; i < e.count; i++) {
             fn(program.lists[e.first + i]);
         }

@@ -1,5 +1,7 @@
 #include "backend/frames.hpp"
 
+#include "backend/irq.hpp"
+
 #include <algorithm>
 
 namespace tisple {
@@ -81,6 +83,23 @@ void AddVarItem(Backend& be, std::vector<Item>& items, std::int32_t var, std::in
     items.push_back(item);
 }
 
+// the interrupt handler's functions run between any two instructions of everything else:
+// their frames start after every other function's (the handler counts every one of those as
+// a caller), and come last in the order
+void HandlerFramesApart(const Program& program, Stack& st) {
+    std::vector<bool> handler = HandlerFunctions(program);
+    std::vector<std::int32_t> rest;
+    std::vector<std::int32_t> irq;
+    for (std::int32_t f : st.order) {
+        (handler[static_cast<std::size_t>(f)] ? irq : rest).push_back(f);
+    }
+    st.order = rest;
+    st.order.insert(st.order.end(), irq.begin(), irq.end());
+    for (std::int32_t f : rest) {
+        st.callers[static_cast<std::size_t>(program.handler)].push_back(f);
+    }
+}
+
 } // namespace
 
 std::vector<std::int32_t> CallersFirst(const Program& program) {
@@ -123,6 +142,9 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
         AddError(*be.errors, Loc(), "internal: the call graph has a cycle");
         return false;
     }
+    if (program.handler >= 0) {
+        HandlerFramesApart(program, st);
+    }
 
     // zero page left after explicit placements
     std::vector<bool> free(256, true);
@@ -135,6 +157,16 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
         for (std::uint32_t a = var.placement.address; a < end && a < 256; a++) {
             free[a] = false;
         }
+    }
+    if (program.handler >= 0) {
+        // on every IRQ the II+ and IIe roms save A there
+        if (!free[kIrqSaveA]) {
+            AddError(*be.errors, Loc(),
+                     "an :address let takes zero page $45, where the rom saves A on every "
+                     "interrupt; move it");
+            return false;
+        }
+        free[kIrqSaveA] = false;
     }
     std::uint32_t run = 0;
     std::uint32_t length = 0;

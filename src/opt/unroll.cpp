@@ -26,8 +26,10 @@ constexpr int kMaxNodes = 96;
 bool Keeps(const Pass& p, const Expr& e) {
     switch (e.kind) {
     case ExprKind::Call:
+    case ExprKind::CallPtr:
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
+    case ExprKind::Interrupts:
     case ExprKind::Jsr:
     case ExprKind::WaitCycles:
         return true;
@@ -85,7 +87,7 @@ ExprId Clone(Pass& p, ExprId id, std::int32_t var, std::uint32_t bits, std::int3
             *child = Clone(p, *child, var, bits, function, names);
         }
     }
-    if (e.kind == ExprKind::Call || e.kind == ExprKind::StructLit || e.kind == ExprKind::Do) {
+    if (HasItems(e.kind)) {
         std::vector<ExprId> items;
         for (std::uint32_t i = 0; i < e.count; i++) {
             items.push_back(Clone(p, Item(p, e, i), var, bits, function, names));

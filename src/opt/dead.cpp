@@ -40,8 +40,8 @@ Action DeadValue(const Pass& p, ExprId value, const char* what, std::int32_t var
 // (set x x), (set s.a s.a), (set (at a i) (at a i)): the same bytes written back
 bool SelfAssignment(const Pass& p, const Expr& set, std::int32_t root) {
     const Var& var = VarOf(p, root);
-    if (var.placement.has_address || var.placement.in_aux) {
-        return false; // hardware may see the write
+    if (var.placement.has_address || var.placement.in_aux || var.irq_shared) {
+        return false; // hardware, or the interrupt handler, may see the write
     }
     return SameExpr(*p.program, set.a, set.b) && PurePlace(p, set.a) && IsPure(p, set.b);
 }

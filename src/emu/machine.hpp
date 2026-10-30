@@ -56,6 +56,15 @@ struct Machine {
     IoHook io;
     // when set, every bus cycle is appended here
     std::vector<BusCycle>* bus_log = nullptr;
+    // interrupt requests (tests): the IRQ line goes low at each of these cycle counts, in
+    // ascending order, and stays low until the cpu takes the interrupt, as a device holds it
+    // until it is answered; with I set it waits. A fixed array: the machine is copied whole
+    // for snapshots
+    static constexpr uint32_t kMaxIrqs = 1024;
+    uint64_t irq_cycles[kMaxIrqs] = {};
+    uint32_t irq_count = 0;
+    uint32_t irq_next = 0;
+    uint64_t irqs_taken = 0;
 };
 
 void InitMachine(Machine& m);
@@ -68,5 +77,10 @@ Regs GetRegs(const Machine& m);
 
 // runs exactly one instruction, performing and counting all its bus cycles
 void StepInstruction(Machine& m);
+
+// an interrupt request at cycle count `cycle` (after any already asked for); false when
+// kMaxIrqs are waiting. Once every request has been taken the list starts again, so a test
+// can go on asking one at a time
+bool RequestIrq(Machine& m, uint64_t cycle);
 
 } // namespace tisple

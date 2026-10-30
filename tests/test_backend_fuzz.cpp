@@ -6,7 +6,10 @@
 // fourth, with loop-invariant work and constants ("(motion)"), one in four a fifth, with
 // work done twice, branches on equalities and calls with constant arguments ("(common)"), one
 // in four a sixth, with loops that collapse and compares ranges decide ("(collapse)"), and one
-// in four a seventh, with steps, sets and elements the round's ranges decide ("(values)").
+// in four a seventh, with steps, sets and elements the round's ranges decide ("(values)"), and
+// one in four an eighth, with calls through function pointers ("(fnptr)"), and one in four a
+// ninth, with an interrupt handler of its own, run with interrupts raised early in main
+// ("(irq)").
 
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
@@ -32,6 +35,56 @@ std::uint64_t EnvNumber(const char* name, std::uint64_t fallback) {
     return std::strtoull(text, nullptr, 0);
 }
 
+// the interrupts an (irq) program runs with: early in main on both, from the seed; half
+// straight to the entry ($FFFE), half through a rom-like STA $45 / JMP ($03FE)
+struct IrqPlan {
+    bool on = false;
+    std::vector<std::uint64_t> cycles;
+    std::vector<std::uint64_t> steps;
+    bool rom = false;
+};
+
+IrqPlan MakeIrqPlan(std::uint64_t seed) {
+    IrqPlan plan;
+    plan.on = true;
+    std::uint64_t s = seed * 0x9E3779B97F4A7C15ull + 77;
+    auto next = [&](std::uint64_t n) {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        return (s >> 11) % n;
+    };
+    int count = 1 + static_cast<int>(next(8));
+    std::uint64_t cycle = 20;
+    std::uint64_t step = 5;
+    for (int i = 0; i < count; i++) {
+        cycle += 1 + next(400);
+        step += 1 + next(40);
+        plan.cycles.push_back(cycle);
+        plan.steps.push_back(step);
+    }
+    plan.rom = next(2) == 0;
+    return plan;
+}
+
+void StartIrqs(Diff& d, const IrqPlan& plan) {
+    tisple::Machine& m = *d.sim.machine;
+    std::uint16_t vector = d.c->code.irq_direct;
+    if (plan.rom) {
+        const std::uint8_t kRomLike[] = {0x85, 0x45, 0x6C, 0xFE, 0x03};
+        for (std::size_t i = 0; i < sizeof(kRomLike); i++) {
+            m.mem[0xFF00 + i] = kRomLike[i];
+        }
+        vector = 0xFF00;
+    }
+    m.mem[0xFFFE] = static_cast<std::uint8_t>(vector & 0xFF);
+    m.mem[0xFFFF] = static_cast<std::uint8_t>(vector >> 8);
+    for (std::uint64_t k : plan.cycles) {
+        tisple::RequestIrq(m, m.cycles + k);
+    }
+    d.in.irq_steps = plan.steps;
+}
+
 struct FuzzStats {
     std::uint64_t programs = 0;
     std::uint64_t ran = 0;
@@ -53,8 +106,16 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
     }
 }
 
-void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats) {
+void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats,
+             const IrqPlan& irqs = IrqPlan()) {
     stats.programs++;
+    // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
+    if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
+        if (std::string(variant).find(print) != std::string::npos) {
+            std::printf("; seed %llu%s\n%s\n", static_cast<unsigned long long>(seed), variant,
+                        text.c_str());
+        }
+    }
     Compiled c = CompileMainText(text);
     if (!c.built.ok) {
         stats.invalid++;
@@ -74,7 +135,16 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
         Report("startup", seed, variant, text, d.message, stats.mismatches);
         return;
     }
-    if (DiffCall(d, "t.main", {})) {
+    if (irqs.on) {
+        StartIrqs(d, irqs);
+    }
+    bool same = DiffCall(d, "t.main", {});
+    // main ended before every interrupt came, on one side: nothing to compare
+    if (irqs.on && d.sim.machine->irqs_taken != d.in.irqs_taken) {
+        stats.skipped++;
+        return;
+    }
+    if (same) {
         stats.ran++;
         stats.cycles += d.last_cycles;
         if (std::getenv("TISPLE_FUZZ_CYCLES")) {
@@ -139,7 +209,18 @@ bool DiffFile(TestResults& results) {
     Diff d;
     d.in.max_steps = 300000;
     d.max_cycles = 40000000;
-    bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
+    // TISPLE_FUZZ_IRQ=seed: the interrupts that seed's (irq) program runs with
+    std::uint64_t irq_seed = EnvNumber("TISPLE_FUZZ_IRQ", 0);
+    bool ok = StartDiff(d, c);
+    if (ok && irq_seed != 0) {
+        StartIrqs(d, MakeIrqPlan(irq_seed));
+    }
+    ok = ok && DiffCall(d, "t.main", {});
+    if (ok && irq_seed != 0 && d.sim.machine->irqs_taken != d.in.irqs_taken) {
+        d.message = std::to_string(d.sim.machine->irqs_taken) + " interrupts on the 6502, " +
+                    std::to_string(d.in.irqs_taken) + " in the interpreter";
+        ok = false;
+    }
     if (opt.bisect >= 0) {
         std::printf("%s\n", tisple::DescribeOptReport(c.code.opt).c_str());
     }
@@ -225,6 +306,14 @@ void RunBackendFuzzTests(TestResults& results) {
         std::string values = GenerateValuesProgram(seed);
         if (!values.empty()) {
             FuzzOne(seed, " (values)", values, stats);
+        }
+        std::string fnptr = GenerateFnPtrProgram(seed);
+        if (!fnptr.empty()) {
+            FuzzOne(seed, " (fnptr)", fnptr, stats);
+        }
+        std::string irq = GenerateIrqProgram(seed);
+        if (!irq.empty()) {
+            FuzzOne(seed, " (irq)", irq, stats, MakeIrqPlan(seed));
         }
     }
     std::printf("fuzz: %llu programs, %llu ran (%llu cycles), %llu skipped at the step limit, "
