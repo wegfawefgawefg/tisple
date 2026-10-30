@@ -5,6 +5,7 @@
 #include "disk/boot_loader.hpp"
 #include "disk/dos33.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -57,6 +58,63 @@ LoaderBank BankFor(MemoryBank bank) {
     }
 }
 
+MemorySegment Merged(const MemorySegment& a, const MemorySegment& b) {
+    uint32_t a_end = a.address + static_cast<uint32_t>(a.bytes.size());
+    uint32_t b_end = b.address + static_cast<uint32_t>(b.bytes.size());
+    MemorySegment out;
+    out.bank = a.bank;
+    out.address = std::min(a.address, b.address);
+    out.bytes.assign(std::max(a_end, b_end) - out.address, 0);
+    std::memcpy(out.bytes.data() + (a.address - out.address), a.bytes.data(), a.bytes.size());
+    std::memcpy(out.bytes.data() + (b.address - out.address), b.bytes.data(), b.bytes.size());
+    return out;
+}
+
+bool BytesOverlap(const MemorySegment& a, const MemorySegment& b) {
+    uint32_t a_end = a.address + static_cast<uint32_t>(a.bytes.size());
+    uint32_t b_end = b.address + static_cast<uint32_t>(b.bytes.size());
+    return a.bank == b.bank && a.address < b_end && b.address < a_end;
+}
+
+bool SharePage(const MemorySegment& a, const MemorySegment& b) {
+    uint32_t a_last = (a.address + static_cast<uint32_t>(a.bytes.size()) - 1) >> 8;
+    uint32_t b_last = (b.address + static_cast<uint32_t>(b.bytes.size()) - 1) >> 8;
+    return a.bank == b.bank && (a.address >> 8) <= b_last && (b.address >> 8) <= a_last;
+}
+
+// the segments as the disk holds them: the loader writes whole pages, so segments of one
+// memory that share a page become one, with zeros between them (else each would clear the
+// others' bytes there); the aux ones first, so that a main page can hold their sectors
+// before the copy
+std::vector<MemorySegment> DiskSegments(const std::vector<MemorySegment>& segments) {
+    std::vector<MemorySegment> merged;
+    for (const MemorySegment& segment : segments) {
+        MemorySegment s = segment;
+        for (size_t i = 0; i < merged.size();) {
+            if (!SharePage(merged[i], s)) {
+                i++;
+                continue;
+            }
+            s = Merged(merged[i], s);
+            merged.erase(merged.begin() + static_cast<std::ptrdiff_t>(i));
+            i = 0;
+        }
+        merged.push_back(s);
+    }
+    std::vector<MemorySegment> out;
+    for (const MemorySegment& s : merged) {
+        if (s.bank == MemoryBank::kAux) {
+            out.push_back(s);
+        }
+    }
+    for (const MemorySegment& s : merged) {
+        if (s.bank != MemoryBank::kAux) {
+            out.push_back(s);
+        }
+    }
+    return out;
+}
+
 int NextTrack(int track) {
     track++;
     return track == kBootCatalogTrack ? track + 1 : track;
@@ -64,12 +122,26 @@ int NextTrack(int track) {
 
 } // namespace
 
-bool MakeBootDisk(const std::vector<MemorySegment>& segments, uint16_t entry, DiskSectors& disk,
+bool MakeBootDisk(const std::vector<MemorySegment>& program, uint16_t entry, DiskSectors& disk,
                   BootDiskInfo& info, std::string& error) {
-    if (segments.empty()) {
+    if (program.empty()) {
         error = "the program is empty";
         return false;
     }
+    for (size_t i = 0; i < program.size(); i++) {
+        if (!CheckSegment(program[i], error)) {
+            return false;
+        }
+        for (size_t j = 0; j < i; j++) {
+            if (BytesOverlap(program[i], program[j])) {
+                error = "the segments at " + SegmentRange(program[j]) + " and " +
+                        SegmentRange(program[i]) + " in " + MemoryBankName(program[i].bank) +
+                        " memory overlap";
+                return false;
+            }
+        }
+    }
+    std::vector<MemorySegment> segments = DiskSegments(program);
     if (segments.size() > kMaxBootSegments) {
         error = "the program has " + std::to_string(segments.size()) +
                 " segments; a boot disk holds " + std::to_string(kMaxBootSegments);
@@ -79,9 +151,12 @@ bool MakeBootDisk(const std::vector<MemorySegment>& segments, uint16_t entry, Di
     plan.entry = entry;
     info = BootDiskInfo();
     for (const MemorySegment& segment : segments) {
-        if (!CheckSegment(segment, error)) {
-            return false;
+        if (segment.bank == MemoryBank::kMain) {
+            plan.bounce_page = static_cast<uint8_t>(segment.address >> 8);
+            break;
         }
+    }
+    for (const MemorySegment& segment : segments) {
         uint32_t start = segment.address & 0xFF00u;
         uint32_t end = segment.address + static_cast<uint32_t>(segment.bytes.size());
         LoaderSegment piece;
@@ -123,7 +198,7 @@ bool MakeBootDisk(const std::vector<MemorySegment>& segments, uint16_t entry, Di
         info.last_track = track;
         track = NextTrack(track);
     }
-    info.first_page = plan.segments[0].first_page;
+    info.first_page = static_cast<uint16_t>(program[0].address >> 8);
     info.segments = segments.size();
     return true;
 }

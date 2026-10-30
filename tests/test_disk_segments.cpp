@@ -100,12 +100,11 @@ void TestSegmentsBoot(TestResults& results) {
     CHECK(results, !tisple::MakeBootDisk(low, 0x0A00, *disk, info, error));
     std::vector<MemorySegment> card = {Noise(MemoryBank::kCard, 0xC800, 16, 5)};
     CHECK(results, !tisple::MakeBootDisk(card, 0x6000, *disk, info, error));
-    std::vector<MemorySegment> full = segments;
-    full.push_back(Noise(MemoryBank::kAux, 0x0800, 0xB800, 6));
-    full.push_back(Noise(MemoryBank::kAux, 0x0800, 0xB800, 7));
-    full.push_back(Noise(MemoryBank::kAux, 0x0800, 0xB800, 8));
-    CHECK(results, !tisple::MakeBootDisk(full, 0x6000, *disk, info, error));
-    CHECK(results, error.find("528") != std::string::npos);
+    std::vector<MemorySegment> twice = segments;
+    twice.push_back(Noise(MemoryBank::kAux, 0x2000, 0x0100, 6));
+    CHECK(results, !tisple::MakeBootDisk(twice, 0x6000, *disk, info, error));
+    CHECK(results, error.find("$0800-$BFFF and $2000-$20FF in aux memory overlap") !=
+                       std::string::npos);
 }
 
 const char* const kRegions = R"(
@@ -208,11 +207,68 @@ void TestCompiledRegionsBoot(TestResults& results) {
     }
 }
 
+// text page 1's 24 rows: spaces, and LOADING in row 12 from column 16
+bool CleanScreen(const tisple::Apple2& a) {
+    const char* loading = "LOADING";
+    for (int row = 0; row < 24; row++) {
+        int base = 0x0400 + (row % 8) * 0x80 + (row / 8) * 40;
+        for (int col = 0; col < 40; col++) {
+            int k = col - 16;
+            bool word = row == 12 && k >= 0 && k < 7;
+            uint8_t want = word ? static_cast<uint8_t>(loading[k] | 0x80) : 0xA0;
+            if (a.cpu.mem[base + col] != want) {
+                std::fprintf(stderr, "screen row %d column %d: %02X\n", row, col,
+                             a.cpu.mem[base + col]);
+                return false;
+            }
+        }
+    }
+    return a.sw.text && !a.sw.page2;
+}
+
+// segments of one memory that share a page (two rows of text page 2 reserved split page $0B
+// in three): each loads whole, and the rows between them are zeros. Meanwhile the screen
+// shows text page 1 blank but for LOADING, aux sectors and all
+void TestSharedPagesBoot(TestResults& results) {
+    std::vector<MemorySegment> segments;
+    segments.push_back(Noise(MemoryBank::kMain, 0x6000, 0x0300, 11));
+    segments[0].bytes[0] = 0x60; // RTS at the entry
+    segments.push_back(Noise(MemoryBank::kMain, 0x0B00, 0x50, 12));
+    segments.push_back(Noise(MemoryBank::kMain, 0x0B78, 0x58, 13));
+    segments.push_back(Noise(MemoryBank::kMain, 0x0BF8, 0x1400, 14));
+    segments.push_back(Noise(MemoryBank::kAux, 0x0800, 0x1FC0, 15));
+    segments.push_back(Noise(MemoryBank::kAux, 0x27E0, 0x0100, 16));
+    segments.push_back(Noise(MemoryBank::kCard, 0xD000, 0x0100, 17));
+    auto disk = std::make_unique<tisple::DiskSectors>();
+    tisple::BootDiskInfo info;
+    std::string error;
+    CHECK(results, tisple::MakeBootDisk(segments, 0x6000, *disk, info, error));
+    CHECK(results, info.segments == 4 && info.first_page == 0x60); // $0B with $0C-$1F, aux
+    std::unique_ptr<tisple::Apple2> a = MachineWithDisk(*disk);
+    a->return_pc = info.return_pc;
+    tisple::StartDiskBoot(*a);
+    bool clean = true;
+    for (int frame = 0; frame < 600 && !a->stopped; frame++) {
+        tisple::RunApple2(*a, tisple::kCyclesPerFrame);
+        if (frame >= 30 && frame % 30 == 0) {
+            clean = clean && CleanScreen(*a);
+        }
+    }
+    CHECK(results, clean);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    for (const MemorySegment& s : segments) {
+        CHECK(results, Loaded(*a, s));
+    }
+    CHECK(results, a->cpu.mem[0x0B50] == 0 && a->cpu.mem[0x0BF7] == 0);
+    CHECK(results, a->aux[0x27C0] == 0 && a->aux[0x27DF] == 0);
+}
+
 } // namespace
 
 void RunDiskSegmentTests(TestResults& results) {
     TestSegmentsBoot(results);
     TestCompiledRegionsBoot(results);
+    TestSharedPagesBoot(results);
 }
 
 } // namespace tisple_tests

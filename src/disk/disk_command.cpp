@@ -263,7 +263,7 @@ bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& se
         bytes += segment.bytes.size();
     }
     std::string pieces =
-        segments.size() == 1 ? "" : " in " + std::to_string(segments.size()) + " segments";
+        info.segments == 1 ? "" : " in " + std::to_string(info.segments) + " segments";
     std::printf("%s: boots %zu bytes%s from $%04X (%s); %u sectors free for DOS 3.3 files\n",
                 path.c_str(), bytes, pieces.c_str(), entry, BootTracksText(info).c_str(),
                 DosFreeSectors(*disk));

@@ -40,8 +40,13 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   the page holding its start and from a track of its own, 16 pages a track,
   track 17 skipped. The loader's table gives each one's first page, pages and
   memory: main memory, the language card's bank 2 (switched in for writes, two
-  reads of `$C083`), or aux memory (each sector read to text page 1, then copied
-  over with RAMWRT on). The rest of the disk is an empty DOS 3.3 volume with
+  reads of `$C083`), or aux memory (each sector read to the first page of a main
+  segment, then copied over with RAMWRT on; the aux segments load first, so that
+  page is loaded again after them). The loader writes whole pages, so segments of
+  one memory that share a page are one on the disk, with zeros between them
+  (2026-10-30: two reserved rows of text page 2 split page `$0B` in three, and
+  each load cleared the others' bytes there); segments whose bytes overlap are an
+  error. The rest of the disk is an empty DOS 3.3 volume with
   the program's tracks marked in use, so `tisple disk put` can add files, and
   its catalog on track 17 survives a program of any size.
 - Size limits (2026-10-29; the table for every build is in docs/language.md,
@@ -64,16 +69,21 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   program in the emulator; an aux track can take three, since the copy can
   miss the next sector. programs/text_demo, 20 tracks, shows its first page
   10.5 s after power on with our ROM, 12.2 s through Apple's (2026-10-29).
+- The screen while it loads: text page 1 in 40 columns, cleared to spaces but
+  for LOADING in row 12 (the screen holes, the last 8 bytes of each 128, are the
+  cards' and stay as they were). Nothing loads there, so it stays so until the
+  program shows something else. Before (version 2), aux sectors went through
+  `$0400-$04FF` and showed as rows of garbage for the whole load.
 - At the jump: stack `$FF` (then the JSR), A = X = Y = 0, interrupts off,
   decimal off, 80STORE off, RAMRD and RAMWRT off, language card `$C082` (as a
-  direct load), motor off. It also used `$0296-$0365`, `$0400-$04FF` (text page
-  1, for aux sectors) and zero page `$DB-$EF`. A program in the language card
+  direct load), motor off, text page 1 shown. It also used `$0296-$0365` and
+  zero page `$DB-$EF`. A program in the language card
   switches its RAM in itself, in the startup.
 - If the program returns, the loader switches to text and enters the monitor
   (`$FF69`). The emulator stops there instead ("returned from the entry
   point"), like a direct load. A signature at `$0AF0` ("TISPLE BOOT", version
-  2, the return address) lets the machine find that address; version 1 disks,
-  two sectors with it at `$09F0`, are still found.
+  3, the return address) lets the machine find that address; version 2 disks,
+  and version 1 ones (two sectors with it at `$09F0`), are still found.
 
 ## Our boot ROM
 

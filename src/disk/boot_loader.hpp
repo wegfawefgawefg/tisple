@@ -14,12 +14,16 @@
 //   from the rom: it turns the motor on itself and steps and reads with its own code.
 // - tracks 1 on: the program's segments, each from the page holding its start and from a
 //   track of its own, 16 pages a track in physical sector order, track 17 skipped. the pages
-//   around a segment are zeros.
+//   around a segment are zeros. segments of one memory that share a page are one segment
+//   on the disk (the loader writes whole pages), with zeros between them; aux segments come
+//   first.
 // - the rest is an empty DOS 3.3 volume (VTOC and catalog on track 17) with the tracks
 //   above marked in use, so `tisple disk put` can add files beside it.
 // at run time the loader keeps to $0800-$0AFF, $0296-$0365 (its nibble table and scratch,
-// clear of the vectors at $03F0), $0400-$04FF for aux sectors and zero page $DB-$EF. it
-// switches 80store off first, and the language card's bank 2 in to write its segments. then
+// clear of the vectors at $03F0) and zero page $DB-$EF. an aux sector is read to the first
+// page of a main segment, which loads after every aux one. it switches 80store off first,
+// shows text page 1 cleared to spaces but for LOADING in the middle (the screen holes are
+// left alone; nothing loads there), and the language card's bank 2 in to write its segments. then
 // it sets the stack to $FF, A = X = Y = 0, interrupts off, the language card to $C082 (rom
 // reads, as a direct load starts), turns the motor off and calls the origin. if the program
 // returns, the loader shows the text screen and enters the monitor ($FF69); the emulator
@@ -71,7 +75,7 @@ bool FindBootLoader(const DiskTrack& track0, uint16_t& return_pc);
 enum class LoaderBank : uint8_t {
     kMain = 0,
     kCard = 1, // the language card's bank 2, switched in for writes
-    kAux = 2,  // read to text page 1, then copied with RAMWRT on
+    kAux = 2,  // read to the bounce page, then copied with RAMWRT on
 };
 
 struct LoaderSegment {
@@ -82,6 +86,8 @@ struct LoaderSegment {
 
 struct LoaderPlan {
     uint16_t entry = 0;
+    // where aux sectors are read before their copy: a main memory page loaded after them
+    uint8_t bounce_page = 0x0B;
     std::vector<LoaderSegment> segments; // from track 1 on, each on a track of its own
 };
 
