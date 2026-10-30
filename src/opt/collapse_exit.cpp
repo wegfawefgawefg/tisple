@@ -96,8 +96,8 @@ ExprId OuterCounterLet(const Pass& p, ExprId list, std::uint32_t index, ExprId l
 }
 
 bool RunsOnce(Pass& p, ExprId loop, std::vector<ExprId>& out) {
-    const Expr& w = At(p, loop);
-    const Expr& d = At(p, w.b);
+    Expr w = At(p, loop); // copies: the new nodes may move every expression
+    Expr d = At(p, w.b);
     if (w.kind != ExprKind::While || d.kind != ExprKind::Do || d.count == 0 ||
         At(p, Item(p, d, d.count - 1)).kind != ExprKind::Break || !IsPure(p, w.a) ||
         Shared(p, w.a)) {
@@ -129,7 +129,7 @@ bool RunsOnce(Pass& p, ExprId loop, std::vector<ExprId>& out) {
 }
 
 bool ScanToEnd(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out) {
-    const Expr& w = At(p, loop);
+    Expr w = At(p, loop); // a copy: the new nodes may move every expression
     if (before < 0 || At(p, before).kind != ExprKind::Let || Shared(p, w.a) ||
         PassOff(p, "scans")) {
         return false;
