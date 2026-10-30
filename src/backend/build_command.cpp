@@ -103,6 +103,12 @@ bool Compile(const BuildArgs& args, Program& program, Compiled& compiled) {
         std::fputs(DescribeOptReport(compiled.opt).c_str(), stderr);
     }
     std::fputs(FormatDiagnostics(program.sources, compiled.warnings).c_str(), stderr);
+    if (!program.disk_tables.empty()) {
+        std::fprintf(stderr,
+                     "%s: warning: %zu tables are :on disk, which only a disk build holds "
+                     "(--disk); without one, disk.read gives disk.NO_CARD\n",
+                     args.path, program.disk_tables.size());
+    }
     return true;
 }
 

@@ -129,9 +129,11 @@ bool CompileFor(const DiskBuildArgs& args, Program& program, Compiled& compiled)
     return true;
 }
 
+} // namespace
+
 // what the program adds to its disk: its tables :on disk, and lib/disk's reader where the
 // library keeps room for it (disk.reader, and disk.work for its tables)
-BootExtras ExtrasFor(const Program& program) {
+BootExtras BootExtrasFor(const Program& program) {
     BootExtras extras;
     extras.tables = &program.disk_tables;
     std::int32_t reader = FindVar(program, "disk.reader");
@@ -148,8 +150,6 @@ BootExtras ExtrasFor(const Program& program) {
     }
     return extras;
 }
-
-} // namespace
 
 void UseBootDiskLayout(BuildOptions& options) {
     // no DOS to keep clear of: the loader can fill memory up to $BFFF, and from $0B00 below
@@ -198,7 +198,7 @@ int RunBuildDiskCommand(int argc, char** argv) {
     std::string error;
     MakeDiskFolder(args.disk);
     if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error,
-                       ExtrasFor(program))) {
+                       BootExtrasFor(program))) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -228,7 +228,7 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     BootDiskInfo info;
     std::string error;
     if (!MakeBootDisk(ProgramSegments(compiled), compiled.origin, *disk, info, error,
-                      ExtrasFor(program))) {
+                      BootExtrasFor(program))) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }

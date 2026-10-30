@@ -54,6 +54,11 @@ bool LayFrom(std::vector<DiskTable>& tables, int start) {
 bool PlaceDiskTables(std::vector<DiskTable>& tables, std::string& error) {
     std::uint32_t pieces = 0;
     for (const DiskTable& table : tables) {
+        if (table.bytes.empty() || table.bytes.size() > kMaxDiskTableBytes) {
+            error = "a table :on disk holds 1 to " + std::to_string(kMaxDiskTableBytes) +
+                    " bytes, not " + std::to_string(table.bytes.size());
+            return false;
+        }
         pieces += DiskTableSectors(static_cast<std::uint32_t>(table.bytes.size()));
     }
     for (int start = kBootLastTrack; start >= kBootFirstTrack; start--) {
