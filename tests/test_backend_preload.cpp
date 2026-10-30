@@ -1,5 +1,5 @@
 // a store's index worked out in A goes straight into its register (PreloadIndex, TAX in
-// LoadIndexReg), against the interpreter
+// LoadIndexReg), also Y for a store through a pointer, against the interpreter
 
 #include "test_backend.hpp"
 
@@ -35,8 +35,10 @@ void TestPreload(TestResults& results) {
         // the value has an index of its own
         "(set (at a (& x 15)) (at a (& y 15)))",
         "(set (at a (& x 15)) (+ g y))",
-        // through a pointer
+        // through a pointer, one a variable holds, the value a load through another
         "(store (+ (addr_of (at a 0)) (as u16 (& x 15))) g)",
+        "(let p (ptr u8) (addr_of (at a (& y 7)))) (store (+ p (as u16 (& x 7))) g)",
+        "(let p (ptr u8) (addr_of (at a (& y 7)))) (store (+ p (as u16 (& x 7))) (load p))",
         // in a loop whose counter is in X
         "(for i u8 0 (& y 7) (set (at a (& (+ x i) 15)) g) (set g (+ g i)))",
     };
@@ -47,6 +49,11 @@ void TestPreload(TestResults& results) {
     Compiled c = CompileText(std::string(head) + "(fn f ((x u8)) void (set (at a (& x 15)) g))");
     CHECK(results, CountMn(c, "t.f", tisple::Mn::LDX) == 0);
     CHECK(results, CountMn(c, "t.f", tisple::Mn::TAX) == 1);
+    Compiled p = CompileText(std::string(head) +
+                             "(fn f ((x u8) (y u8)) void (let p (ptr u8) (addr_of (at a (& y 7))))"
+                             " (store (+ p (as u16 (& x 7))) g))");
+    CHECK(results, CountMn(p, "t.f", tisple::Mn::LDY) == 0);
+    CHECK(results, CountMn(p, "t.f", tisple::Mn::TAY) == 1);
 }
 
 } // namespace

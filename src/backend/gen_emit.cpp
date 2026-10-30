@@ -439,8 +439,11 @@ void LoadIndexReg(Gen& g, int reg, const Index& index) {
 }
 
 void PreloadIndex(Gen& g, const Opnd& dst, const Opnd& value) {
-    if (dst.size == 0 || dst.b[0].kind != ByteKind::MemIdx || dst.index.is_reg ||
-        !AHoldsByte(g, MemOpnd(dst.index.value, 1, 1), 0) || value.size == 0 || value.in_a) {
+    // abs,X or abs,Y; or (p),Y with the index in Y
+    bool indexed = dst.size != 0 && (dst.b[0].kind == ByteKind::MemIdx ||
+                                     (dst.b[0].kind == ByteKind::IndY && dst.b[0].y_index));
+    if (!indexed || dst.index.is_reg || !AHoldsByte(g, MemOpnd(dst.index.value, 1, 1), 0) ||
+        value.size == 0 || value.in_a) {
         return;
     }
     for (int k = 0; k < value.size; k++) {
@@ -448,7 +451,7 @@ void PreloadIndex(Gen& g, const Opnd& dst, const Opnd& value) {
             return;
         }
     }
-    int r = PickIndexReg(g, dst.index, Mn::STA);
+    int r = dst.b[0].kind == ByteKind::IndY ? 1 : PickIndexReg(g, dst.index, Mn::STA);
     if (g.pin[r] < 0) {
         LoadIndexReg(g, r, dst.index);
     }
