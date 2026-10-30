@@ -21,7 +21,8 @@ std::string Gen::PlacesHelpers() {
     Rng& r = places_rng;
     std::string text = "(struct PR ((nx (ptr PR)) (k u8) (n i16) (tag (array u8 5))))\n"
                        "(let pa PR)\n(let pb PR)\n(let parr (array PR 4))\n(let pw (array u16 6))\n"
-                       "(let pacc u16 0)\n";
+                       "(let pacc u16 0)\n(let pq (array u16 300))\n(let pbytes (array u8 600))\n"
+                       "(let gq u16 0)\n";
     text += "(let pg0 (ptr PR) (addr_of pa))\n";
     text += "(let pg1 (ptr PR) (addr_of (at parr " + Num(r.Below(4)) + ")))\n";
     text += "(let pg2 (ptr PR) (addr_of pb))\n";
@@ -29,6 +30,7 @@ std::string Gen::PlacesHelpers() {
     text += "(fn pcopy ((d (ptr PR)) (s (ptr PR))) void (store d (load s)))\n";
     text += "(fn pbump ((p (ptr PR)) (v u8)) void\n    (store p k (+ (load p k) v))\n"
             "    (store p n (+ (load p n) (as i16 v))))\n";
+    text += "(fn pmove () void (set gq (+ gq " + Num(1 + r.Below(255)) + ")))\n";
     return text;
 }
 
@@ -51,9 +53,39 @@ std::string Gen::PlacesPointer() {
     }
 }
 
+// tables at u16 indexes in memory (page pointers, gen_index.cpp): a read and then a store of
+// the same element, a change of the index's high byte, a call that moves a global index
+std::string Gen::PageShape() {
+    Rng& r = places_rng;
+    std::string i = Fresh("pi");
+    // below 44, so 256 more is inside pq too
+    std::string text = "(do (let " + i + " u16 (% " + Expr(T::U16, 1) + " 44))";
+    std::string idx = r.Chance(50) ? i : "gq";
+    if (idx == "gq") {
+        text += " (set gq " + i + ")";
+    }
+    text += " (set pacc (+ pacc (at pq " + idx + ")))";
+    text += " (if (!= (at pbytes " + idx + ") " + Num(r.Below(256)) + ") (set (at pbytes " + idx +
+            ") (+ (at pbytes " + idx + ") 1)))";
+    text += " (set (at pq " + idx + ") (+ (at pq " + idx + ") " + Expr(T::U16, 1) + "))";
+    switch (r.Below(3)) {
+    case 0:
+        text += " (set " + idx + " (+ " + idx + " 256))";
+        break;
+    case 1:
+        text += " (pmove)";
+        break;
+    default:
+        break;
+    }
+    text += " (set (at pq " + idx + ") (^ (at pq " + idx + ") pacc))";
+    text += " (set pacc (+ pacc (as u16 (at pbytes (+ " + idx + " 299))))))";
+    return text;
+}
+
 std::string Gen::PlacesShape(int depth) {
     Rng& r = places_rng;
-    switch (r.Below(11)) {
+    switch (r.Below(12)) {
     case 0:
         return "(store " + PlacesPointer() + " (load " + PlacesPointer() + "))";
     case 1:
@@ -90,6 +122,8 @@ std::string Gen::PlacesShape(int depth) {
                             : "(set pb (at parr (& " + Expr(T::U8, 1) + " 3)))";
     case 9:
         return "(store " + PlacesPointer() + " nx " + PlacesPointer() + ")";
+    case 10:
+        return PageShape();
     default:
         if (depth > 0) {
             return "(if " + BoolExpr(1) + " " + PlacesShape(0) + " " + PlacesShape(0) + ")";

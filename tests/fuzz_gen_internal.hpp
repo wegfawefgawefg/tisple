@@ -308,6 +308,7 @@ struct Gen {
     std::string PlacesHelpers();
     std::string PlacesPointer();
     std::string PlacesShape(int depth);
+    std::string PageShape();
     // ---- loops entered by a jump (fuzz_gen_entries.cpp)
     // a test that can never hold, on a variable in scope
     std::string NeverTrue();
