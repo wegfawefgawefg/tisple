@@ -125,6 +125,7 @@ struct Backend {
     // expression the loops it must not unroll
     std::vector<SizeNote> size_notes;
     std::vector<bool> keep_loops;
+    SizeBudget budget;                  // BuildOptions::squeeze's
     std::vector<std::uint64_t> fn_cost; // by function: its own code's Gen::cost
     std::int32_t scratch = -1;          // 2 bytes
     std::int32_t rt_a = -1;             // 2 bytes each

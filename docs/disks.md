@@ -16,7 +16,9 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
 ```
 
 - The disk build and run take the code flags of a plain build too: `-O0`,
-  `-O1`, `--opt-bisect N`, `--no-pass NAME`, `--no-inline module.fn`.
+  `-O1`, `--opt-bisect N`, `--no-pass NAME`, `--no-inline module.fn`. A program
+  that does not fit is built with a tighter size budget and says what it traded
+  (docs/design.md, Room), so `--no-inline` is not needed to make room.
 - Images: `.dsk`/`.do` (DOS 3.3 sector order), `.po` (ProDOS order), both
   140 KB, and `.nib` (35 tracks of 6656 raw disk bytes). The DOS 3.3 file
   commands work on all three.

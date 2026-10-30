@@ -362,6 +362,28 @@ in between; nothing reads the parameters after it, so what `send` does to its
 own does not matter. Not for a parameter the copy binds to its argument, one
 with an alias or its address taken, or a callee the backend copies too.
 
+### Room (2026-10-30)
+
+The size budget (src/backend/size_budget.hpp) weighs every copy of a call and every unrolled
+loop by the cycles it saves for its bytes. It did not know how much memory there is, so a
+program that filled main memory and the card (Catwiz) needed 128 `--no-inline` names to fit.
+Now the link decides (src/backend/squeeze.cpp):
+
+- A program that fits is built as before (squeeze 0).
+- One that does not (code or data, after the language card too) is built again with a
+  tighter budget, a level at a time up to 10, the first that fits kept. Each level halves
+  the item, function and program budgets and doubles the cycles a byte that make an item pay
+  for itself (32 at 0, none at 10: then nothing that adds bytes is copied). The
+  quarter-square multiplies count their 1 KB of tables and routines as bytes the first
+  multiply pulls in: squeezed, they are used only when the multiplies save the level's cycles
+  for each of those bytes (80 cycles a multiply counted). From level 4 the mid-level passes
+  neither unroll nor unswitch.
+- The build says what it traded, a warning: the level, the functions' and runtime's bytes
+  against the usual build's, the functions now called that the usual build copied at every
+  call, the loops left rolled, the multiply routines.
+- `--no-inline` names must be functions; the error says what the names look like
+  (`draw/text.start`), or the one meant.
+
 ## Target
 
 *Proposed* first target: NMOS 6502 (runs on every Apple II), Apple IIe memory
