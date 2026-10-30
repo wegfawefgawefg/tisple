@@ -14,6 +14,7 @@
 // - Loops run to a fixed point; a node seen on several passes keeps the union of what was
 //   live after it, which only ever errs towards live.
 
+#include "opt/licm.hpp"
 #include "opt/opt_internal.hpp"
 
 namespace tisple::opt {
@@ -136,6 +137,7 @@ void WalkFor(Walker& w, ExprId id, Bits& live) {
     Record(w, id, exit);
     std::int32_t bit = w.out->bit[static_cast<std::size_t>(e.ref)];
     Bits head = exit;
+    Bits first = exit; // live where the first pass starts
     while (true) {
         w.loops.push_back(Loop{exit, head});
         Bits body = head;
@@ -145,6 +147,7 @@ void WalkFor(Walker& w, ExprId id, Bits& live) {
         if (bit >= 0) {
             ClearBit(body, bit);
         }
+        first = body;
         OrBits(body, exit);
         OrBits(body, head);
         if (body == head) {
@@ -152,7 +155,9 @@ void WalkFor(Walker& w, ExprId id, Bits& live) {
         }
         head = body;
     }
-    live = head;
+    // a range that surely makes a pass (slice 6): what the first pass sets before reading is
+    // dead before the loop (seed 1278's g2)
+    live = BodyRuns(*w.p, id) ? first : head;
     Walk(w, e.b, live);
     Walk(w, e.a, live);
 }
@@ -292,8 +297,7 @@ void Walk(Walker& w, ExprId id, Bits& live) {
 } // namespace
 
 bool TrackedVar(const Var& var, std::int32_t function) {
-    if (var.address_taken || var.placement.has_address || var.placement.in_aux ||
-        var.irq_shared) {
+    if (var.address_taken || var.placement.has_address || var.placement.in_aux || var.irq_shared) {
         return false;
     }
     if (var.kind == VarKind::Global) {

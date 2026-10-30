@@ -49,6 +49,17 @@ struct Inliner {
     std::uint64_t changes = 0;
 };
 
+// a call through a function pointer under id
+bool CallsThroughPointers(const Pass& p, ExprId id) {
+    const Expr& e = At(p, id);
+    if (e.kind == ExprKind::CallPtr) {
+        return true;
+    }
+    bool found = false;
+    EachChild(p, e, [&](ExprId child) { found = found || CallsThroughPointers(p, child); });
+    return found;
+}
+
 // an argument is a for's counter
 bool CounterArgument(const Pass& p, const Expr& call) {
     for (std::uint32_t i = 0; i < call.count; i++) {
@@ -290,9 +301,11 @@ std::uint64_t InlineStep(Pass& p) {
         bool never = std::find(p.options->no_inline.begin(), p.options->no_inline.end(), fn.name) !=
                      p.options->no_inline.end();
         // a function whose address is taken keeps its body to itself (its calls through
-        // pointers are not these), as does the handler's code
+        // pointers are not these), as does the handler's code. Nor one that calls through a
+        // pointer: constant folding (backend/fold.cpp) drops such a call where it is a value
+        // whatever the rest makes it, (& (fp) 0) (fuzz seed 19014827, on main at -O0 too)
         if (calls[f] == 0 || never || static_cast<std::int32_t>(f) == program.main || fn.body < 0 ||
-            fn.address_taken || fn.dispatcher || handler[f]) {
+            fn.address_taken || fn.dispatcher || handler[f] || CallsThroughPointers(p, fn.body)) {
             continue;
         }
         in.size[f] = CountExprs(program, fn.body);

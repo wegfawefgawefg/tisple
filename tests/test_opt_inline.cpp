@@ -226,9 +226,27 @@ void Fields(TestResults& results) {
     }
 }
 
+// liveness (live.cpp, slice 6): a for with a literal range makes its first pass, so what that
+// pass sets before reading it is dead before the loop (seed 1278); a break that may come
+// first keeps it
+void FirstPass(TestResults& results) {
+    std::string dead = With("(fn main () u8 (set g 5) (for i u8 0 20 (set g (+ i h)) (set (at "
+                            "wb i) g)) g)\n(let wb (array u8 32))");
+    CheckMain(results, dead);
+    for (const char* h : {"0", "7", "200"}) {
+        std::string kept =
+            std::string("(let g u8 7)\n(let h u8 ") + h +
+            ")\n(let wb (array u8 32))\n"
+            "(fn main () u8 (set h (io_read u8 0xC000)) (set g 5)\n"
+            "    (for i u8 0 20 (if (= i h) (break)) (set g i) (set (at wb i) g)) g)";
+        CheckMain(results, kept);
+    }
+}
+
 } // namespace
 
 void RunOptInlineTests(TestResults& results) {
+    FirstPass(results);
     Fields(results);
     Copied(results);
     Kept(results);
