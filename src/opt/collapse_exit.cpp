@@ -130,7 +130,8 @@ bool RunsOnce(Pass& p, ExprId loop, std::vector<ExprId>& out) {
 
 bool ScanToEnd(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out) {
     const Expr& w = At(p, loop);
-    if (before < 0 || At(p, before).kind != ExprKind::Let || Shared(p, w.a)) {
+    if (before < 0 || At(p, before).kind != ExprKind::Let || Shared(p, w.a) ||
+        PassOff(p, "scans")) {
         return false;
     }
     std::int32_t c = At(p, before).ref;

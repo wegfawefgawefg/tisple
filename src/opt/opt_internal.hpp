@@ -120,6 +120,8 @@ const Var& VarOf(const Pass& p, std::int32_t var);
 
 // may this transformation be made? Counts it; false once --opt-bisect's budget is spent
 bool Allow(Pass& p, const char* what, ExprId at, std::int32_t var);
+// --no-pass names it (for parts of a pass that have names of their own: divisions, scans)
+bool PassOff(const Pass& p, const char* name);
 
 void ComputeSummaries(Pass& p);
 // a call that can be dropped when its value is unused: writes no global, no memory through a

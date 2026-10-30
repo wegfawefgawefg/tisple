@@ -174,7 +174,7 @@ void FoldDivision(Ranger& g, ExprId id) {
     const Expr& e = At(p, id);
     TypeKind kind = KindOf(*p.program, e.type);
     if (e.kind != ExprKind::Binary || (e.op != Op::Div && e.op != Op::Mod) ||
-        !IsIntegerKind(kind)) {
+        !IsIntegerKind(kind) || PassOff(p, "divisions")) {
         return;
     }
     const char* what = "";

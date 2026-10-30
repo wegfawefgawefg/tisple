@@ -32,6 +32,15 @@ bool Allow(Pass& p, const char* what, ExprId at, std::int32_t var) {
     return true;
 }
 
+bool PassOff(const Pass& p, const char* name) {
+    for (const std::string& pass : p.options->disabled) {
+        if (pass == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace opt
 
 namespace {

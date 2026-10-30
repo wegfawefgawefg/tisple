@@ -13,16 +13,20 @@
 // - returns: return values no call uses are not worked out
 // - collapse: loops whose passes all do the same, or whose last pass decides, run their body
 //   once; accumulators (set x (+ x k)) add k times the passes
+//   - scans: a while stepping its counter to a bound while nothing else it tests changes ends
+//     at the bound
 // - consts: constant propagation and folding across statements, branches on constants cut
 // - ranges: compares and match clauses decided by the values their operands may hold, values
 //   with one possible value made literals
 //   - vars: what each variable may ever hold (a parameter every call passes the same, a step
 //     of 65535 meaning -1), worked out at the start of each round for ranges to use
 //   - elements: elements and fields no store reaches hold their initial values
+//   - divisions: by 0 and 1, of a smaller dividend, (/ x (| x 1)) worked out without dividing
 // - eval: calls of pure functions with constant arguments worked out at compile time, in the
 //   interpreter (it runs before consts, which carries the values on)
 // - licm: pure expressions a loop never changes the inputs of, worked out before it
 // - cse: a value worked out again while the first working out holds, kept in a local
+// - pointers: loads and stores through a pointer to a known element are its reads and sets
 // Once a round changes nothing:
 // - inline: calls the backend would inline become copies of the function's body
 // - then (when nothing is left to inline) unroll and unswitch in collapse's walk
