@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -102,12 +103,11 @@ struct Pass {
     bool unroll = false;
     bool unswitch = false;
     // compile-time evaluation (eval.cpp), over every round: the interpreter steps spent, and
-    // each call tried (the function, then its arguments' bits) with its value, -1 when it
-    // could not be worked out
+    // each call that could not be worked out (the function, then its arguments' bits)
     std::uint64_t eval_steps = 0;
+    std::set<std::vector<std::uint32_t>> not_evaluated;
     // inlining (inline.cpp), over every round: the nodes copied
     std::uint32_t inline_copied = 0;
-    std::map<std::vector<std::uint32_t>, std::int32_t> evaluated;
     // the last transformation made, for --opt-bisect
     const char* last_what = "";
     ExprId last_at = -1;
