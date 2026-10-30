@@ -13,13 +13,15 @@ RESULT = 0x5F00  # scalar results and parameters live here
 
 
 class Kernel:
-    def __init__(self, name, title, buffers, inputs, reference, c_headers=None):
+    def __init__(self, name, title, buffers, inputs, reference, c_headers=None,
+                 folder="kernels"):
         self.name = name
         self.title = title
         self.buffers = buffers
         self.inputs = inputs  # rng -> {buffer name: value}, every buffer
         self.reference = reference  # inputs -> {buffer name: expected value}
         self.c_headers = c_headers or {}  # extra generated C headers: name -> () -> text
+        self.folder = folder  # races/<folder>/<name>/ holds the sources
 
     def buffer(self, name):
         for b in self.buffers:

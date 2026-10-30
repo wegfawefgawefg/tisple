@@ -10,6 +10,9 @@
 /* keep code and data below the race's buffers ($2000-$5FFF), bss and stacks above */
 #pragma region(main, 0x0880, 0x2000, , , {code, data})
 #pragma region(himem, 0x6000, 0xa000, , , {bss, heap, stack})
+/* Oscar64 v1.32.273 does not know the register keyword (error 3005); cc65 uses it for
+ * its zero-page register variables, the others ignore it */
+#define register
 #endif
 
 #include "buffers.h"

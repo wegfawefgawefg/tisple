@@ -4,6 +4,11 @@
     races/run.sh [--kernels a,b] [--compilers cc65,tisple] [--jobs N] [--variants]
                  [--update-doc]
     races/run.sh --gaps [--kernels a,b]
+    races/run.sh --programs [--kernels a,b] [--update-doc]   the program race
+
+--programs races the programs in races/programs/ (program_specs.py) instead of the
+kernels: the same builds, runs and checks, into races/out/programs/ and the program
+tables in docs/races.md.
 
 Each build is run by `tisple race`: the binary's own startup runs, the inputs are written
 when main is entered, and the cycles from main's first instruction to its RTS are the
@@ -14,10 +19,12 @@ the kernel ran: every function or library module it executed, whole.
 import argparse
 import concurrent.futures
 import json
+import math
 import os
 import sys
 
 import kernels as kernel_specs
+import program_specs
 import toolchains
 from layout import decode, encode
 
@@ -27,6 +34,16 @@ ALL_COMPILERS = ["cc65", "llvm-mos", "oscar64", "tisple"]
 MAX_CYCLES = 400000000
 DOC_BEGIN = "<!-- race results: begin (races/run.sh --update-doc writes this part) -->"
 DOC_END = "<!-- race results: end -->"
+PROGRAM_DOC_BEGIN = ("<!-- program race results: begin (races/run.sh --programs --update-doc "
+                     "writes this part) -->")
+PROGRAM_DOC_END = "<!-- program race results: end -->"
+
+
+def out_dir(kernel):
+    """races/out/<kernel>, races/out/programs/<program>"""
+    if kernel.folder == "kernels":
+        return os.path.join(OUT, kernel.name)
+    return os.path.join(OUT, kernel.folder, kernel.name)
 
 
 class Result:
@@ -94,7 +111,7 @@ def check_outputs(kernel, build, inputs, memory):
 
 def measure(kernel, variant):
     result = Result(kernel, variant)
-    outdir = os.path.join(OUT, kernel.name, variant.key())
+    outdir = os.path.join(out_dir(kernel), variant.key())
     try:
         build = toolchains.build(kernel, variant, outdir)
     except (toolchains.BuildError, KeyError, OSError) as e:
@@ -172,6 +189,34 @@ def kernel_table(kernel, results, compilers):
     return "\n".join(lines)
 
 
+def geomean(values):
+    return math.exp(sum(math.log(v) for v in values) / len(values)) if values else 0.0
+
+
+def geomean_row(by_kernel, compilers):
+    """each compiler's cycles over the fastest compiler's, and Tisple over the fastest other,
+    as geometric means over the kernels where they built and ran correctly"""
+    slower = {c: [] for c in compilers}
+    tisple_ratios = []
+    for _kernel, results in by_kernel:
+        best = best_by_compiler(results, compilers)
+        if not best:
+            continue
+        fastest = min(r.cycles for r in best.values())
+        for c, r in best.items():
+            slower[c].append(r.cycles / fastest)
+        rivals = [r.cycles for c, r in best.items() if c != "tisple"]
+        if "tisple" in best and rivals:
+            tisple_ratios.append(best["tisple"].cycles / min(rivals))
+    cells = []
+    for c in compilers:
+        n = len(slower[c])
+        note = "" if n == len(by_kernel) else " (%d of %d)" % (n, len(by_kernel))
+        cells.append("%.2fx%s" % (geomean(slower[c]), note) if n else "-")
+    tisple = "%.3f" % geomean(tisple_ratios) if tisple_ratios else "-"
+    return "| geomean, x the fastest | %s | | %s |" % (" | ".join(cells), tisple)
+
+
 def summary_table(by_kernel, compilers):
     head = "| Kernel | " + " | ".join(compilers) + " | Winner | Tisple / best other |"
     lines = [head, "| --- |" + " ---: |" * len(compilers) + " --- | ---: |"]
@@ -184,6 +229,8 @@ def summary_table(by_kernel, compilers):
         winner = min(best.values(), key=lambda r: (r.cycles, r.bytes)).compiler if best else "-"
         lines.append("| %s | %s | %s | %s |" % (kernel.name, " | ".join(cells), winner,
                                                 ratio_text(best)))
+    if len(by_kernel) > 1:
+        lines.append(geomean_row(by_kernel, compilers))
     return "\n".join(lines)
 
 
@@ -201,7 +248,8 @@ def run_gaps(chosen, top):
     races/out/gaps/<kernel>.txt"""
     os.makedirs(os.path.join(OUT, "gaps"), exist_ok=True)
     for k in chosen:
-        src = os.path.join(toolchains.kernel_dir(k), "kernel.tsp")
+        main = "kernel.tsp" if k.folder == "kernels" else "program.tsp"
+        src = os.path.join(toolchains.kernel_dir(k), main)
         cmd = [toolchains.tisple_binary(), "gaps", src, "--sim", "--top", str(top)]
         inputs = kernel_specs.make_inputs(k)
         for buf in k.buffers:
@@ -220,11 +268,11 @@ def run_gaps(chosen, top):
                                     os.path.relpath(path, toolchains.REPO)))
 
 
-def update_doc(text):
+def update_doc(text, begin_mark, end_mark):
     with open(DOC) as f:
         doc = f.read()
-    begin = doc.index(DOC_BEGIN) + len(DOC_BEGIN)
-    end = doc.index(DOC_END)
+    begin = doc.index(begin_mark) + len(begin_mark)
+    end = doc.index(end_mark)
     with open(DOC, "w") as f:
         f.write(doc[:begin] + "\n\n" + text + "\n\n" + doc[end:])
 
@@ -237,13 +285,17 @@ def main():
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--variants", action="store_true", help="every setting, not just the best")
     parser.add_argument("--update-doc", action="store_true", help="rewrite the tables in docs/races.md")
+    parser.add_argument("--programs", action="store_true",
+                        help="the program race (races/programs/) instead of the kernels")
     parser.add_argument("--gaps", action="store_true",
                         help="only run tisple gaps on the Tisple kernels (races/out/gaps/)")
     args = parser.parse_args()
     compilers = [c for c in args.compilers.split(",") if c]
-    chosen = kernel_specs.KERNELS
+    everything = program_specs.load() if args.programs else kernel_specs.KERNELS
+    chosen = everything
     if args.kernels:
-        chosen = [kernel_specs.by_name(n) for n in args.kernels.split(",")]
+        by_name = {k.name: k for k in everything}
+        chosen = [by_name[n] for n in args.kernels.split(",")]
     if args.gaps:
         run_gaps(chosen, 12)
         return 0
@@ -255,8 +307,9 @@ def main():
     by_kernel = []
     for k in chosen:
         by_kernel.append((k, [r for r in results if r.kernel == k.name]))
-    os.makedirs(OUT, exist_ok=True)
-    with open(os.path.join(OUT, "results.json"), "w") as f:
+    results_dir = os.path.join(OUT, "programs") if args.programs else OUT
+    os.makedirs(results_dir, exist_ok=True)
+    with open(os.path.join(results_dir, "results.json"), "w") as f:
         json.dump([r.as_json() for r in results], f, indent=1)
 
     sections = ["Cycles / bytes, best setting of each compiler:", "",
@@ -272,8 +325,10 @@ def main():
         print("note: %s %s %s: %s" % (r.kernel, r.compiler, r.variant, one_line(r.error, 200)),
               file=sys.stderr)
     if args.update_doc:
+        marks = (PROGRAM_DOC_BEGIN, PROGRAM_DOC_END) if args.programs else (DOC_BEGIN, DOC_END)
         update_doc("\n".join(sections[:3] + [s for k, rs in by_kernel
-                                             for s in ["", kernel_table(k, rs, compilers)]]))
+                                             for s in ["", kernel_table(k, rs, compilers)]]),
+                   *marks)
     return 0
 
 
