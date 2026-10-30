@@ -132,7 +132,7 @@ void TestAuxMem(TestResults& results) {
                             "    `(make (array u8 ,n) ,@(map (fn (i) (% i 251)) (range 0 n))))\n"
                             "(let doc (array u8 700) (counting 700) :in aux)\n"
                             "(let buf (array u8 700))\n"
-                            "(let out u16 0 :address 0x0380)\n"
+                            "(let out u16 0 :address 0x03C0)\n"
                             "(fn main () void\n"
                             "    (auxmem.read (addr_of (at buf 0)) (addr_of (at doc 0)) 700)\n"
                             "    (set (at buf 0) 77)\n"
@@ -143,9 +143,9 @@ void TestAuxMem(TestResults& results) {
         return;
     }
     // buf[699] is 699 % 251 = 197, buf[5] the 77 written to aux and read back
-    CHECK(results, (a->cpu.mem[0x0380] | (a->cpu.mem[0x0381] << 8)) == 197 + 77);
+    CHECK(results, (a->cpu.mem[0x03C0] | (a->cpu.mem[0x03C1] << 8)) == 197 + 77);
     // the mover in page 3 of both memories; all switches off again; zero page as it was
-    CHECK(results, a->cpu.mem[0x0300] == 0x48 && a->aux[0x0300] == 0x48);
+    CHECK(results, a->cpu.mem[0x0300] == 0x9D && a->aux[0x0300] == 0x9D);
     CHECK(results, !a->sw.ramrd && !a->sw.ramwrt);
 }
 

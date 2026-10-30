@@ -7,7 +7,9 @@
 ;       (voice 3 intro loop bell bell bell2))
 ;   (tune.effect zap "l1 v15 k1 c7 g6 c6 g5")
 ; each makes a let, an array of u8: give (addr_of (at music 0)) to mockingboard.play and
-; (addr_of (at zap 0)) to mockingboard.effect.
+; (addr_of (at zap 0)) to mockingboard.effect. Placement options go last and on to the let:
+; (tune.song music ... :in aux), (tune.effect zap "..." :align 256). The player reads main
+; memory (and the language card), so a song :in aux is copied in with lib/auxmem to be played.
 ;
 ; the text, tokens between spaces. a tick is one timer interrupt (60 a second by default)
 ;   c4 c#4 ... b8  a note, C1 to B8 (sharps only); sounds for the length
@@ -191,6 +193,7 @@
     (error "voice " voice " names no pattern " name))
 
 (macro song (name & parts)
+    (let options (list))
     (let names (list))
     (let patterns (list))
     (let voices (repeat 6 (list)))
@@ -198,6 +201,11 @@
     (let used (repeat 6 false))
     (for p 0 (len parts)
         (let part (nth parts p))
+        ; the let's placement options, from the first keyword on
+        (if (or (!= (len options) 0) (= (kind part) 'keyword))
+            (do
+                (set options (append options (list part)))
+                (continue)))
         (match (head part)
             ('pattern
                 (set names (append names (list (nth part 1))))
@@ -232,7 +240,9 @@
                 (set voices new_voices)
                 (set loops new_loops)
                 (set used new_used))
-            (_ (error "a song has (pattern name \"text\") and (voice n name ...), not " part))))
+            (_
+                (error "a song has (pattern name \"text\") and (voice n name ...), then placement "
+                    "options, not " part))))
     ; the order lists after the header, then the patterns
     (let offset 12)
     (let order_at (list))
@@ -262,8 +272,8 @@
                 (set bytes (append bytes (low_high (+ (nth order_at v) (* 2 (nth loops v)))))))))
     (for k 0 (len patterns)
         (set bytes (append bytes (nth patterns k))))
-    `(let ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes)))
+    `(let ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes) ,@options))
 
-(macro effect (name text)
+(macro effect (name text & options)
     (let bytes (pattern_bytes name text))
-    `(let ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes)))
+    `(let ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes) ,@options))

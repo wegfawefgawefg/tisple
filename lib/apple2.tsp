@@ -65,6 +65,9 @@
 (const SETALTCHAR u16 0xC00F)
 
 ; IIe status reads: bit 7
+(const RDLCRAM u16 0xC012)  ; the language card's ram read, not the rom
+(const RDRAMRD u16 0xC013)  ; reads of $0200-$BFFF from aux memory
+(const RDRAMWRT u16 0xC014) ; writes of $0200-$BFFF to aux memory
 (const RDVBLBAR u16 0xC019) ; IIe: 0 during vertical blank (IIc and IIgs differ)
 
 ; screen memory

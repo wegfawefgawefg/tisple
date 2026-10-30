@@ -3,10 +3,10 @@
 ; from main set them with interrupts off, and nothing here is called from main, so the
 ; handler has its own copy of every function it runs.
 ;
-; Each tick: answer the 6522, then step the six music voices and the effect. A register is
-; written when what a voice wants in it differs from what was written last; a write is six
-; 6522 accesses at page plus a constant, which the compiler makes accesses to fixed addresses
-; (it patches them when init sets page).
+; Each tick: answer the 6522, start the next effect waiting in line if its turn has come, then
+; step the six music voices and the effect. A register is written when what a voice wants in it
+; differs from what was written last; a write is six 6522 accesses at page plus a constant,
+; which the compiler makes accesses to fixed addresses (it patches them when init sets page).
 
 (import mockingboard_song tune)
 
@@ -55,6 +55,17 @@
 (let fx_on bool false)
 (let fx_voice u8 0)
 (let fx_priority u8 0)
+
+; effects waiting their turn, from mockingboard.effect: a ring of LINE, line_first the next.
+; cut: the next cuts off the effect playing (its priority is higher) instead of waiting for it
+(const LINE u8 4)
+(let line_sound (array (ptr u8) 4))
+(let line_voice (array u8 4))
+(let line_priority (array u8 4))
+(let line_first u8 0)
+(let line_count u8 0)
+(let cut bool false)
+
 (let stale (array bool 6)) ; voices to work out again: their owner changed
 (let any_stale bool false)
 (let end_mark (array u8 1) (make (array u8 1) 0xFF)) ; where play points a voice first
@@ -147,6 +158,39 @@
             (let bits u8 (at VOICE_MIX_BITS v))
             (reg i (| (& (at sent i) (~ bits)) (& (at MIX_OFF m) bits))))))
 
+; the next effect in line into the effect's slot, from its first byte on the next events; the
+; voice the one playing had goes back to the music
+(fn start_effect () void
+    (let k u8 line_first)
+    (set line_first (& (+ k 1) (- LINE 1)))
+    (set line_count (- line_count 1))
+    (set cut false)
+    (if fx_on
+        (do
+            (set (at owns fx_voice) true)
+            (set (at stale fx_voice) true)
+            (set any_stale true)))
+    (let v u8 (at line_voice k))
+    (set (at pos FX) (at line_sound k))
+    (set (at index FX) 0)
+    (set (at playing FX) true)
+    (set (at wait FX) 1)
+    (set (at length FX) 1)
+    (set (at volume FX) 15)
+    (set (at level FX) 0)
+    (set (at decay FX) 0)
+    (set (at mix FX) 1)
+    (set (at period FX) 0)
+    (set (at voice FX) v)
+    (set (at chip_of FX) (at VOICE_CHIP v))
+    (set (at tone_at FX) (at VOICE_TONE v))
+    (set (at volume_at FX) (at VOICE_VOLUME v))
+    (set (at owns v) false)
+    (set (at owns FX) true)
+    (set fx_voice v)
+    (set fx_priority (at line_priority k))
+    (set fx_on true))
+
 ; the effect is over: its voice goes back to the music
 (fn end_effect () void
     (set fx_on false)
@@ -201,10 +245,17 @@
                 (return)))
         (if (= b tune.END)
             (do
+                ; the effect's end: the next in line goes on at once, or the voice goes back
                 (if (= s FX)
                     (do
-                        (end_effect)
-                        (return)))
+                        (if (= line_count 0)
+                            (do
+                                (end_effect)
+                                (return)))
+                        (start_effect)
+                        (set p (at pos s))
+                        (set i 0)
+                        (continue)))
                 (set p (next_pattern s))
                 (set (at pos s) p)
                 (set i 0)
@@ -238,7 +289,7 @@
         (set i (+ i 3))
         (set (at volume s) 16)))
 
-; a note's level goes down 1 every decay ticks
+; a note's level goes down 1 every decay ticks; written with send, not reg: it always changes
 (fn fade ((s u8)) void
     (set (at decay_left s) (- (at decay_left s) 1))
     (if (!= (at decay_left s) 0)
@@ -251,7 +302,7 @@
     (let down u8 (- l 1))
     (set (at level s) down)
     (if (at owns s)
-        (reg (at volume_at s) down)))
+        (send (at volume_at s) down)))
 
 ; one timer interrupt: every slot that plays counts its note down, fading it, or reads on
 (fn tick () void
@@ -260,6 +311,8 @@
     (if (= (& (io_read u8 (+ page IFR)) 0x40) 0)
         (return))
     (io_read u8 (+ page T1C_L))
+    (if (and (!= line_count 0) (or cut (not fx_on)))
+        (start_effect))
     (if any_stale
         (do
             (set any_stale false)

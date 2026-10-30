@@ -7,8 +7,7 @@
 
 #include "machine/mockingboard.hpp"
 #include "machine/mouse.hpp"
-#include "test_backend.hpp"
-#include "test_machine.hpp"
+#include "test_mockingboard.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,51 +18,7 @@ namespace tisple_tests {
 
 namespace {
 
-constexpr uint64_t kTick = 17030; // the lib's default rate
-constexpr int kPulse = 8;         // the demo's patterns' length, in ticks
-
-struct Build {
-    tisple::Program program;
-    tisple::Compiled code;
-    bool ok = false;
-};
-
-void BuildText(TestResults& results, const std::string& path, const std::string& text, Build& b) {
-    tisple::LoadOptions load;
-    if (!text.empty()) {
-        load.files.push_back(tisple::VirtualFile{path, text});
-    }
-    std::vector<tisple::Diagnostic> errors;
-    b.ok = tisple::BuildProgram(path, load, b.program, errors) &&
-           tisple::CompileProgram(b.program, tisple::BuildOptions(), b.code, errors);
-    CHECK(results, b.ok);
-    if (!b.ok) {
-        std::fprintf(stderr, "%s", tisple::FormatDiagnostics(b.program.sources, errors).c_str());
-    }
-}
-
-uint16_t VarAddress(const Build& b, const char* name) {
-    int32_t v = tisple::FindVar(b.program, name);
-    return v < 0 ? 0 : b.code.layout.vars[static_cast<size_t>(v)].address;
-}
-
-// loaded, the card in slot (0 for none), the IRQ vector at $FFFE in the card's ram straight to
-// the program's entry, as with the card's ram in: no rom needed
-std::unique_ptr<tisple::Apple2> Start(const Build& b, int slot) {
-    std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
-    std::string error;
-    for (const tisple::MemorySegment& s : b.code.segments) {
-        tisple::LoadSegment(*a, s, error);
-    }
-    tisple::LoadProgram(*a, b.code.image.data(), b.code.image.size(), b.code.origin, error);
-    if (slot != 0) {
-        tisple::InsertMockingboard(*a, slot);
-    }
-    a->lc.read_ram = true;
-    a->lc.e000[0x1FFE] = static_cast<uint8_t>(b.code.irq_direct & 0xFF);
-    a->lc.e000[0x1FFF] = static_cast<uint8_t>(b.code.irq_direct >> 8);
-    return a;
-}
+constexpr int kPulse = 8; // the demo's patterns' length, in ticks
 
 const char* kDetect = R"(
 (import mockingboard mb)
@@ -76,14 +31,14 @@ const char* kDetect = R"(
 )";
 
 void DetectTests(TestResults& results) {
-    Build b;
-    BuildText(results, "t.tsp", kDetect, b);
+    MbBuild b;
+    MbBuildText(results, "t.tsp", kDetect, b);
     if (!b.ok) {
         return;
     }
-    uint16_t seen = VarAddress(b, "t.seen");
+    uint16_t seen = MbVarAddress(b, "t.seen");
     for (int slot : {0, 4, 2, 7}) {
-        std::unique_ptr<tisple::Apple2> a = Start(b, slot);
+        std::unique_ptr<tisple::Apple2> a = MbStart(b, slot);
         tisple::RunApple2(*a, 2000000);
         CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
         CHECK(results, a->cpu.mem[seen] == slot);
@@ -91,12 +46,12 @@ void DetectTests(TestResults& results) {
         CHECK(results, a->cpu.irq_level_at == UINT64_MAX);
     }
     // the mouse card in 4 and the Mockingboard in 5
-    std::unique_ptr<tisple::Apple2> a = Start(b, 5);
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 5);
     tisple::InsertMouseCard(*a, tisple::kMouseSlot, nullptr);
     tisple::RunApple2(*a, 2000000);
     CHECK(results, a->cpu.mem[seen] == 5);
     // no card, a hi-res screen of noise on the floating bus
-    std::unique_ptr<tisple::Apple2> noisy = Start(b, 0);
+    std::unique_ptr<tisple::Apple2> noisy = MbStart(b, 0);
     noisy->sw.text = false;
     noisy->sw.hires = true;
     uint32_t x = 12345;
@@ -125,12 +80,12 @@ const char* kRateStop = R"(
 )";
 
 void RateStopTests(TestResults& results) {
-    Build b;
-    BuildText(results, "t.tsp", kRateStop, b);
+    MbBuild b;
+    MbBuildText(results, "t.tsp", kRateStop, b);
     if (!b.ok) {
         return;
     }
-    std::unique_ptr<tisple::Apple2> a = Start(b, 5);
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 5);
     tisple::RunApple2(*a, 2000000);
     // about 1.1 M cycles to the stop at 120 a second, then on to 2 M
     uint64_t taken = a->cpu.irqs_taken;
@@ -142,100 +97,13 @@ void RateStopTests(TestResults& results) {
     CHECK(results, a->slots.mockingboard.slot == 5);
 }
 
-// the cycles each interrupt takes, from the cpu's 7-cycle entry to the end of its RTI
-struct TickCost {
-    uint16_t entry = 0;
-    uint64_t began = 0;
-    bool inside = false;
-    uint64_t count = 0;
-    uint64_t total = 0;
-    uint64_t most = 0;
-    std::vector<uint64_t> each;
-};
-
-void MeasureTick(void* ctx, const tisple::Machine& m) {
-    TickCost& t = *static_cast<TickCost*>(ctx);
-    uint16_t pc = tisple::GetRegs(m).pc;
-    if (pc == t.entry && !t.inside) {
-        t.inside = true;
-        t.began = m.cycles - 7;
-        return;
-    }
-    if (t.inside && m.mem[pc] == 0x40) {
-        uint64_t took = m.cycles + 6 - t.began;
-        t.inside = false;
-        t.count++;
-        t.total += took;
-        t.most = took > t.most ? took : t.most;
-        t.each.push_back(took);
-    }
-}
-
-// a chip's registers at each tick: the writes replayed, looked at after each interrupt
-struct Voices {
-    std::vector<uint16_t> period[6]; // a tick each
-    std::vector<uint8_t> volume[6];
-    std::vector<uint8_t> mixer[2];
-};
-
-const int kVoiceTone[6] = {0, 2, 4, 0, 2, 4};
-
-Voices ReadVoices(const tisple::Apple2& a, uint64_t first_tick, int ticks) {
-    Voices out;
-    uint8_t regs[2][16] = {};
-    const tisple::MockingboardState& mb = a.slots.mockingboard;
-    uint64_t n = 0;
-    for (int t = 0; t < ticks; t++) {
-        uint64_t until = first_tick + static_cast<uint64_t>(t) * kTick + kTick / 2;
-        while (n < mb.log_count && tisple::MockingboardWrite(a, n).cycle < until) {
-            const tisple::PsgWrite& w = tisple::MockingboardWrite(a, n);
-            if (w.reg < 16) {
-                regs[w.chip][w.reg] = w.value;
-            }
-            n++;
-        }
-        for (int v = 0; v < 6; v++) {
-            const uint8_t* r = regs[v / 3];
-            out.period[v].push_back(
-                static_cast<uint16_t>(r[kVoiceTone[v]] | (r[kVoiceTone[v] + 1] << 8)));
-            out.volume[v].push_back(r[8 + v % 3]);
-        }
-        out.mixer[0].push_back(regs[0][7]);
-        out.mixer[1].push_back(regs[1][7]);
-    }
-    return out;
-}
-
-// what the lib's NOTE_PERIOD holds for a note name's number (C1 = 0)
-uint16_t Period(int note) {
-    double f = 440.0 * std::pow(2.0, (note - 45) / 12.0);
-    return static_cast<uint16_t>(std::lround(1020484.0 / (16.0 * f)));
-}
-
-int Note(char letter, bool sharp, int octave) {
-    const int semis[7] = {9, 11, 0, 2, 4, 5, 7}; // a b c d e f g
-    return (octave - 1) * 12 + semis[letter - 'a'] + (sharp ? 1 : 0);
-}
-
-// the first tick: the first interrupt's cycle, from the first write after the reset
-uint64_t FirstTick(const tisple::Apple2& a) {
-    const tisple::MockingboardState& mb = a.slots.mockingboard;
-    for (uint64_t n = 0; n < mb.log_count; n++) {
-        const tisple::PsgWrite& w = tisple::MockingboardWrite(a, n);
-        if (w.chip == 0 && w.reg == 2 && w.value != 0) {
-            return w.cycle - 2000; // inside the first tick, before its writes
-        }
-    }
-    return 0;
-}
-
 void DemoTests(TestResults& results, TickCost& cost) {
-    Build b;
-    BuildText(results, "examples/mockingboard_demo.tsp", "", b);
+    MbBuild b;
+    MbBuildText(results, "examples/mockingboard_demo.tsp", "", b);
     if (!b.ok) {
         return;
     }
-    std::unique_ptr<tisple::Apple2> a = Start(b, 4);
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 4);
     // 1 at frame 300: zap on voice 5. ESC at 600 ends it
     tisple::ScheduleKey(*a, 300 * tisple::kCyclesPerFrame, '1');
     tisple::ScheduleKey(*a, 600 * tisple::kCyclesPerFrame, 0x1B);
@@ -306,20 +174,20 @@ void DemoTests(TestResults& results, TickCost& cost) {
 
 // no card: the key's effect on the speaker, main waiting for it
 void SpeakerTests(TestResults& results) {
-    Build b;
-    BuildText(results, "examples/mockingboard_demo.tsp", "", b);
+    MbBuild b;
+    MbBuildText(results, "examples/mockingboard_demo.tsp", "", b);
     if (!b.ok) {
         return;
     }
-    std::unique_ptr<tisple::Apple2> a = Start(b, 0);
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 0);
     tisple::ScheduleKey(*a, 20 * tisple::kCyclesPerFrame, '2');
     tisple::ScheduleKey(*a, 80 * tisple::kCyclesPerFrame, 0x1B);
     tisple::RunApple2(*a, 200 * tisple::kCyclesPerFrame);
     CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
     CHECK(results, a->speaker.toggle_count > 100 && a->cpu.irqs_taken == 0);
     // coin: b5 for 4 ticks, e6 for 12: about 16 / 60 s of clicks at those pitches
-    uint64_t want = (4 * kTick) / (8 * Period(Note('b', false, 5))) +
-                    (12 * kTick) / (8 * Period(Note('e', false, 6)));
+    uint64_t want = (4 * kMbTick) / (8 * Period(Note('b', false, 5))) +
+                    (12 * kMbTick) / (8 * Period(Note('e', false, 6)));
     CHECK(results, a->speaker.toggle_count > want * 8 / 10 && a->speaker.toggle_count < want);
 }
 
@@ -337,18 +205,18 @@ const char* kBusy = R"(
     (mb.init)
     (mb.play (addr_of (at busy 0)))
     (for i u8 0 60
-        (mb.effect (addr_of (at blip 0)) (% i 6) 1)
+        (mb.effect (addr_of (at blip 0)) (% i 6) (+ i 1)) ; each cuts off the one before
         (wait_cycles 8000))
     (mb.off))
 )";
 
 void BusyTests(TestResults& results, TickCost& cost) {
-    Build b;
-    BuildText(results, "t.tsp", kBusy, b);
+    MbBuild b;
+    MbBuildText(results, "t.tsp", kBusy, b);
     if (!b.ok) {
         return;
     }
-    std::unique_ptr<tisple::Apple2> a = Start(b, 4);
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 4);
     cost.entry = b.code.irq_direct;
     // the handler takes most of the cpu: main's 60 waits of 8000 cycles take a while
     tisple::RunApple2Traced(*a, 600 * tisple::kCyclesPerFrame, MeasureTick, &cost);

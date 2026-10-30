@@ -66,6 +66,11 @@ void RunLinkRegionTests(TestResults& results);
 void RunTextLibTests(TestResults& results);
 // lib/mockingboard with the emulated card (test_mockingboard_lib.cpp)
 void RunMockingboardLibTests(TestResults& results);
+// its effects in line, and the speaker's version left out (test_mockingboard_line.cpp)
+void RunMockingboardLineTests(TestResults& results);
+// lib/auxmem's guard under the card's ticks, songs copied from aux memory
+// (test_mockingboard_aux.cpp)
+void RunMockingboardAuxTests(TestResults& results);
 // programs/text_demo run, then booted from its disk (test_text_demo.cpp)
 void RunTextDemoTests(TestResults& results);
 

@@ -6,8 +6,9 @@
 ;   (mb.effect (addr_of (at zap 0)) 2 5)      ; an effect on voice 2, priority 5
 ;   (mb.stop)                ; the music off; effects go on
 ;   (mb.off)                 ; before main returns: the timer off, the chips quiet
-; mb.found says whether there is a card, mb.slot where. With no card, effects play on the
-; speaker (main waits while they do) and the music is silent.
+; mb.found says whether there is a card, mb.slot where. With no card the music and effects are
+; silent; (mb.speaker_effect (addr_of (at zap 0))) plays an effect on the speaker instead, while
+; main waits (a program that never calls it has none of its code).
 ;
 ; The handler must call (mb.service) and the program must call (mb.off) before it ends: the
 ; card's interrupts go on otherwise, into whatever runs next. Songs and effects are made with
@@ -21,8 +22,9 @@
 ;
 ; Voices 0-2 are the first chip's channels A-C ($Cn00, the left speaker), 3-5 the second's
 ; ($Cn80, right). An effect takes one voice while it plays; the music on that voice goes on
-; silently under it and comes back after. A new effect replaces one playing when its priority
-; is at least as high, and only then.
+; silently under it and comes back after. One effect plays at a time: a new one with a higher
+; priority than the one playing cuts it off, any other waits in line (4 at most; more are
+; dropped) and plays when the ones before it are over.
 
 (import apple2 a2)
 (import mockingboard_player player)
@@ -93,7 +95,9 @@
     (for s u8 0 player.SLOTS
         (set (at player.playing s) false))
     (set (at player.owns player.FX) false)
-    (set player.fx_on false))
+    (set player.fx_on false)
+    (set player.line_count 0)
+    (set player.cut false))
 
 ; timer 1 of the first 6522 free-running every rate cycles, its interrupt on
 (fn start_timer () void
@@ -183,7 +187,9 @@
     (for t u8 0 ticks
         (wait_cycles rate)))
 
-; an effect on the speaker, while main waits: notes as square waves, the volume only on or off
+; an effect on the speaker, while main waits: notes as square waves, the volume only on or off,
+; noise as jittered clicks; no decay. For a program with no card: (if mb.found (mb.effect ...)
+; (mb.speaker_effect ...))
 (fn speaker_effect ((fx (ptr u8))) void
     (let p (ptr u8) fx)
     (let len u8 1)
@@ -220,45 +226,44 @@
         (if (= b tune.ENVELOPE)
             (set p (+ p 3)))))
 
-; an effect (a pattern from mockingboard_song's effect) on a voice, 0-5, if its priority is at
-; least the one playing now
+; an effect (a pattern from mockingboard_song's effect) on a voice, 0-5: now if its priority is
+; higher than the one playing (which it cuts off), else after the ones playing and waiting.
+; The handler starts it on the next tick.
 (fn effect ((sound (ptr u8)) (voice u8) (priority u8)) void
     (if (not found)
-        (do
-            (speaker_effect sound)
-            (return)))
+        (return))
     (sei)
-    (if (and player.fx_on (< priority player.fx_priority))
+    (let first u8 player.line_first)
+    (let count u8 player.line_count)
+    ; the priority of the one playing, or of the next if none plays yet
+    (let ahead u8 (if player.fx_on
+        player.fx_priority
+        (at player.line_priority first)))
+    (let busy bool (or player.fx_on (!= count 0)))
+    (let k u8 0)
+    (if (and busy (> priority ahead))
         (do
-            (cli)
-            (return)))
-    ; the voice the effect had goes back to the music
-    (if player.fx_on
+            ; at the front, cutting off the one playing; a full line drops its last
+            (set k (& (- first 1) (- player.LINE 1)))
+            (set player.line_first k)
+            (if (< count player.LINE)
+                (set player.line_count (+ count 1)))
+            (set player.cut player.fx_on))
         (do
-            (set (at player.owns player.fx_voice) true)
-            (set (at player.stale player.fx_voice) true)
-            (set player.any_stale true)))
-    (let fx u8 player.FX)
-    (set (at player.pos fx) sound)
-    (set (at player.index fx) 0)
-    (set (at player.playing fx) true)
-    (set (at player.wait fx) 1)
-    (set (at player.length fx) 1)
-    (set (at player.volume fx) 15)
-    (set (at player.level fx) 0)
-    (set (at player.decay fx) 0)
-    (set (at player.mix fx) 1)
-    (set (at player.period fx) 0)
-    (set (at player.voice fx) voice)
-    (set (at player.chip_of fx) (at player.VOICE_CHIP voice))
-    (set (at player.tone_at fx) (at player.VOICE_TONE voice))
-    (set (at player.volume_at fx) (at player.VOICE_VOLUME voice))
-    (set (at player.owns voice) false)
-    (set (at player.owns fx) true)
-    (set player.fx_voice voice)
-    (set player.fx_priority priority)
-    (set player.fx_on true)
+            (if (= count player.LINE)
+                (do
+                    (cli)
+                    (return)))
+            (set k (& (+ first count) (- player.LINE 1)))
+            (set player.line_count (+ count 1))))
+    (set (at player.line_sound k) sound)
+    (set (at player.line_voice k) voice)
+    (set (at player.line_priority k) priority)
     (cli))
+
+; whether an effect plays or waits to
+(fn effect_playing () bool
+    (or player.fx_on (!= player.line_count 0)))
 
 ; in the program's :interrupt handler
 (fn service () void
@@ -275,6 +280,7 @@
     (io_write u8 (+ (+ page player.SECOND) player.IER) 0x7F)
     (set player.found false)
     (set player.fx_on false)
+    (set player.line_count 0)
     (for chip u8 0 2
         (for r u8 8 11
             (poke chip r 0)))

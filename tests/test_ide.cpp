@@ -211,7 +211,7 @@ void MultiTests(TestResults& results) {
         {main, 9, 22, SymbolKind::Local, "u8", main, 8, 14},
         {main, 9, 34, SymbolKind::Local, "u8", main, 7, 10},
         {lores, 17, 38, SymbolKind::Function, "fn row_base ((row u8)) u16", lores, 6, 5},
-        {lores, 7, 14, SymbolKind::Constant, "u16 = 0x0400 (1024)", "lib/apple2.tsp", 71, 8},
+        {lores, 7, 14, SymbolKind::Constant, "u16 = 0x0400 (1024)", "lib/apple2.tsp", 74, 8},
     };
     for (const Expect& expect : expects) {
         CHECK(results, Matches(index, expect));

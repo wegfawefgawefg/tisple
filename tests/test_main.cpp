@@ -102,6 +102,8 @@ int main() {
     tisple_tests::RunLinkRegionTests(results);
     tisple_tests::RunTextLibTests(results);
     tisple_tests::RunMockingboardLibTests(results);
+    tisple_tests::RunMockingboardLineTests(results);
+    tisple_tests::RunMockingboardAuxTests(results);
     tisple_tests::RunTextDemoTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);
