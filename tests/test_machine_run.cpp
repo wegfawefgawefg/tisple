@@ -72,6 +72,25 @@ void TestStops(TestResults& results) {
     r = RunToStop(*illegal);
     CHECK(results, r.reason == MachineStop::kIllegalOpcode && illegal->stop_pc == 0x6001);
 
+    // booted, not loaded straight in (no stop on undocumented opcodes): a JAM hangs the chip,
+    // which ran its step forever and the machine with it (Catwiz's garbage code, 2026-10-30).
+    // Now it stops there, the clock goes on, and a step of a jammed cpu ends
+    auto jam = MachineWithBytes({0xA9, 0x05, 0x85, 0x00, 0x12});
+    jam->direct_load = false;
+    r = RunToStop(*jam);
+    CHECK(results, r.reason == MachineStop::kJammed && jam->stop_pc == 0x6004);
+    CHECK(results, jam->cpu.mem[0x00] == 5 && r.cycles == 5);
+    CHECK(results, tisple::DescribeStop(*jam) ==
+                       "the cpu jammed on opcode $12 at $6004 (only a reset frees it)");
+    uint64_t jammed_at = tisple::Cycles(*jam);
+    tisple::StepInstruction(jam->cpu);
+    CHECK(results, tisple::Cycles(*jam) == jammed_at + tisple::kMaxInstructionTicks);
+    int jams = 0;
+    for (int op = 0; op < 256; op++) {
+        jams += tisple::IsJamOpcode(static_cast<uint8_t>(op)) ? 1 : 0;
+    }
+    CHECK(results, jams == 12 && !tisple::IsJamOpcode(0x82) && tisple::IsJamOpcode(0xF2));
+
     // no rom: $D000-$FFFF read as a pattern and ignore writes
     auto pattern =
         MachineWithBytes({0xA9, 0x11, 0x8D, 0x34, 0xF8, 0xAD, 0x34, 0xF8, 0x85, 0x00, 0x00});

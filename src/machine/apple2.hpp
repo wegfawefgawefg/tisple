@@ -30,7 +30,8 @@
 //   leaves it at bank 2, rom reads, writes enabled
 // - without a rom, $D000-$FFFF and internal $Cxxx rom read as the address's high byte
 // - BRK and undocumented opcodes stop a direct-loaded program (the chip would vector or
-//   execute them); with a rom and no program loaded, they run as on the chip
+//   execute them); with a rom and no program loaded, they run as on the chip, but a JAM
+//   opcode stops the machine there (the chip hangs until a reset; the clock goes on)
 // - interrupts: only the Mockingboard raises them (mockingboard.hpp)
 // - the extended 80-column card is always in (a2audit reports 128K); there is no 64 KB iie
 //   and no plain 80-column card with 1 KB
@@ -317,7 +318,8 @@ enum class MachineStop : uint8_t {
     kReturned,    // the entry's final RTS
     kBrk,
     kIllegalOpcode,
-    kNoRom, // jumped into rom or slot space with nothing there
+    kNoRom,  // jumped into rom or slot space with nothing there
+    kJammed, // a JAM opcode: the NMOS chip hangs until a reset
 };
 
 struct Apple2 {

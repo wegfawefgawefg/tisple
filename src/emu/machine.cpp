@@ -84,8 +84,11 @@ Regs GetRegs(const Machine& m) {
 }
 
 void StepInstruction(Machine& m) {
-    // the fetch of the next instruction is the last tick, so stop when SYNC comes back
+    // the fetch of the next instruction is the last tick, so stop when SYNC comes back. A
+    // JAM opcode never fetches again (the NMOS chip hangs until a reset): after more ticks
+    // than any instruction and an interrupt's sequence take, give the caller its turn
     bool taken = false;
+    int ticks = 0;
     do {
         DoBusCycle(m);
         bool irq = m.cycles >= m.irq_due;
@@ -105,7 +108,8 @@ void StepInstruction(Machine& m) {
                 UpdateIrqDue(m);
             }
         }
-    } while ((m.pins & M6502_SYNC) == 0);
+        ticks++;
+    } while ((m.pins & M6502_SYNC) == 0 && ticks < kMaxInstructionTicks);
 }
 
 bool RequestIrq(Machine& m, uint64_t cycle) {

@@ -81,8 +81,15 @@ void SetBusLog(Machine& m, std::vector<BusCycle>* log);
 void SetRegs(Machine& m, const Regs& regs);
 Regs GetRegs(const Machine& m);
 
-// runs exactly one instruction, performing and counting all its bus cycles
+// runs exactly one instruction, performing and counting all its bus cycles; a jammed cpu
+// (an NMOS JAM opcode: it never fetches again) runs kMaxInstructionTicks cycles a call
+constexpr int kMaxInstructionTicks = 32;
 void StepInstruction(Machine& m);
+
+// the NMOS opcodes that jam the chip ($02, $12, ... $F2 but $82, $A2, $C2, $E2)
+inline bool IsJamOpcode(uint8_t opcode) {
+    return (opcode & 0x0F) == 0x02 && (opcode & 0x90) != 0x80;
+}
 
 // an interrupt request at cycle count `cycle` (after any already asked for); false when
 // kMaxIrqs are waiting. Once every request has been taken the list starts again, so a test
