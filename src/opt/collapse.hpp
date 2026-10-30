@@ -145,6 +145,15 @@ ExprId CountLet(Pass& p, std::int32_t function, ExprId loop, std::int32_t& var);
 // a while that only steps its counter by 1 while (< c k) and what the loop never changes hold,
 // as (if test (set c k)) (collapse_exit.cpp); false when it stays
 bool ScanToEnd(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out);
+// a while whose body ends in a break every pass reaches, as (if test (do items...))
+bool RunsOnce(Pass& p, ExprId loop, std::vector<ExprId>& out);
+// (collapse_exit.cpp) only lets stand before the item at index of a do
+bool LetsBefore(const Pass& p, ExprId list, std::uint32_t index);
+// before is the let of a counting while's counter
+bool LetOfCounter(const Pass& p, ExprId before, ExprId loop);
+// the let of loop's counter among the lets just before the item at index of list (a branch
+// whose arm holds the loop, as unswitching leaves it), or -1
+ExprId OuterCounterLet(const Pass& p, ExprId list, std::uint32_t index, ExprId loop);
 // a short loop as a copy of its body per pass (unroll.cpp): what stands for it, named by
 // nobody yet; false when it stays. before: the item before it, for a counting while
 bool UnrollLoop(Pass& p, std::int32_t function, ExprId loop, ExprId before,

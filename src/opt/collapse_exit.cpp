@@ -5,8 +5,11 @@
 //   -> (let c u16 v) (if (and (< c 999) (!= 0 g)) (set c 999))
 // Seed 841's scan of wb, once the elements it reads are known (ranges_values.cpp's counter
 // range, ranges_elements.cpp). The test is worked out once, as the loop's first pass does.
+// And a while whose body ends in a break it reaches every time (nothing before it leaves)
+// makes one pass: (if test (do items...)), as unswitching on (if x (break)) leaves one.
 
 #include "opt/collapse.hpp"
+#include "opt/licm.hpp"
 #include "opt/ranges.hpp"
 
 namespace tisple::opt {
@@ -47,6 +50,83 @@ ExprId OnlyStep(const Pass& p, ExprId body, std::int32_t c) {
 }
 
 } // namespace
+
+bool LetsBefore(const Pass& p, ExprId list, std::uint32_t index) {
+    const Expr& d = At(p, list);
+    for (std::uint32_t i = 0; i < index; i++) {
+        if (At(p, Item(p, d, i)).kind != ExprKind::Let) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// a while's counter: c of (< c k) or of (and (< c k) x), or -1
+std::int32_t WhileCounterVar(const Pass& p, ExprId loop) {
+    const Expr& w = At(p, loop);
+    if (w.kind != ExprKind::While) {
+        return -1;
+    }
+    const Expr* test = &At(p, w.a);
+    if (test->kind == ExprKind::And) {
+        test = &At(p, test->a);
+    }
+    bool counts = test->kind == ExprKind::Binary && At(p, test->a).kind == ExprKind::VarRef;
+    return counts ? At(p, test->a).ref : -1;
+}
+
+bool LetOfCounter(const Pass& p, ExprId before, ExprId loop) {
+    std::int32_t c = WhileCounterVar(p, loop);
+    return before >= 0 && c >= 0 && At(p, before).kind == ExprKind::Let && At(p, before).ref == c;
+}
+
+ExprId OuterCounterLet(const Pass& p, ExprId list, std::uint32_t index, ExprId loop) {
+    std::int32_t c = WhileCounterVar(p, loop);
+    const Expr& d = At(p, list);
+    for (std::uint32_t i = index; c >= 0 && i > 0; i--) {
+        ExprId item = Item(p, d, i - 1);
+        if (At(p, item).kind != ExprKind::Let) {
+            return -1;
+        }
+        if (At(p, item).ref == c) {
+            return item;
+        }
+    }
+    return -1;
+}
+
+bool RunsOnce(Pass& p, ExprId loop, std::vector<ExprId>& out) {
+    const Expr& w = At(p, loop);
+    const Expr& d = At(p, w.b);
+    if (w.kind != ExprKind::While || d.kind != ExprKind::Do || d.count == 0 ||
+        At(p, Item(p, d, d.count - 1)).kind != ExprKind::Break || !IsPure(p, w.a) ||
+        Shared(p, w.a)) {
+        return false;
+    }
+    for (std::uint32_t i = 0; i + 1 < d.count; i++) {
+        if (MayLeave(p, Item(p, d, i), 0)) {
+            return false; // a break or continue of its own, or a return
+        }
+    }
+    if (!Allow(p, "while of one pass", loop, -1)) {
+        return false;
+    }
+    std::vector<ExprId> items(p.program->lists.begin() + d.first,
+                              p.program->lists.begin() + d.first + d.count - 1);
+    std::uint16_t always = 0;
+    if (ConstValue(*p.program, w.a, always) && always != 0) {
+        out = items;
+        return true;
+    }
+    Expr branch;
+    branch.kind = ExprKind::If;
+    branch.type = kVoidType;
+    branch.a = w.a;
+    branch.b = NewList(p, ExprKind::Do, kVoidType, items, w.loc);
+    branch.loc = w.loc;
+    out.push_back(NewExpr(p, branch));
+    return true;
+}
 
 bool ScanToEnd(Pass& p, ExprId loop, ExprId before, std::vector<ExprId>& out) {
     const Expr& w = At(p, loop);

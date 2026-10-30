@@ -144,6 +144,12 @@ ExprId CopySwap(Pass& p, std::int32_t function, ExprId id, ExprId target, ExprId
 std::int32_t NewCopy(Pass& p, std::int32_t function, ExprId loop, ExprId target, ExprId arm) {
     Expr e = At(p, loop);
     std::unordered_map<std::int32_t, std::int32_t> names;
+    if (e.kind == ExprKind::While) {
+        // its counter's let is before it: both copies step that one (only one of them runs)
+        e.a = CloneExpr(p, e.a);
+        e.b = CopySwap(p, function, e.b, target, arm, names);
+        return NewExpr(p, e);
+    }
     e.a = CloneExpr(p, e.a);
     e.b = e.b >= 0 ? CloneExpr(p, e.b) : -1;
     // the counter first: the bounds cannot read it, the body does
@@ -212,10 +218,11 @@ bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
                   std::vector<ExprId>& out) {
     Expr e = At(p, loop); // a copy: the copies move every expression
     int size = Size(p, loop, kMaxNodes + 1);
-    if (e.kind != ExprKind::For || size > kMaxNodes) {
+    bool is_for = e.kind == ExprKind::For;
+    if ((!is_for && e.kind != ExprKind::While) || size > kMaxNodes) {
         return false;
     }
-    ExprId index = FindSwitch(p, loop, e.c);
+    ExprId index = FindSwitch(p, loop, is_for ? e.c : e.b);
     if (index < 0) {
         return false;
     }
@@ -255,7 +262,7 @@ bool UnswitchLoop(Pass& p, MemoryFacts& m, std::int32_t function, ExprId loop,
     bool collapses = false;
     for (ExprId copy : made) {
         const Expr& c = At(p, copy);
-        collapses = collapses || PlanBody(p, m, c.c, c.ref, -1).same;
+        collapses = collapses || (is_for && PlanBody(p, m, c.c, c.ref, -1).same);
     }
     if ((!collapses && !Plain(p, loop, branch)) || !Allow(p, "loop unswitched", loop, e.ref)) {
         for (ExprId copy : made) {
