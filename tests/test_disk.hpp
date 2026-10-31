@@ -17,6 +17,7 @@ void RunDiskFormatTests(TestResults& results);
 void RunDiskDriveTests(TestResults& results);
 void RunDiskBootTests(TestResults& results);
 void RunDiskSegmentTests(TestResults& results);
+void RunDiskSoundTests(TestResults& results);
 
 // a disk of reproducible noise: sector bytes from a seed
 std::unique_ptr<tisple::DiskSectors> NoiseDisk(uint32_t seed);

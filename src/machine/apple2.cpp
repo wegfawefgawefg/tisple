@@ -17,7 +17,8 @@ static_assert(std::is_trivially_copyable_v<Apple2>, "a snapshot is a struct copy
 namespace {
 
 constexpr uint32_t kSnapshotMagic = 0x32415054; // "TPA2"
-constexpr uint32_t kSnapshotVersion = 5;        // 4: auxiliary memory; 5: the Mockingboard
+// 4: auxiliary memory; 5: the Mockingboard; 6: the disk ii's event log
+constexpr uint32_t kSnapshotVersion = 6;
 
 struct SnapshotHeader {
     uint32_t magic = kSnapshotMagic;

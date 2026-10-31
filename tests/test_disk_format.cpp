@@ -324,6 +324,7 @@ void RunDiskTests(TestResults& results) {
     RunDiskDriveTests(results);
     RunDiskBootTests(results);
     RunDiskSegmentTests(results);
+    RunDiskSoundTests(results);
 }
 
 } // namespace tisple_tests
