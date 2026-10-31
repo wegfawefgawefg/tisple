@@ -104,7 +104,7 @@ the 6502 code did with calls (a step through the band, the source moved on) is i
   mask and `from` page are in aux memory (lets `:in aux`), for `dhgr.MAIN` in main memory.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
-- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1F32` for `runs`
+- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1F56` for `runs`
   (below): about 33 KB of the 128; in main memory `$1D8A`-`$1DDC` for lib/auxcard. Text page 2
   (`$0800`-`$0BFF`, both memories) only with `(import dhgr_text2)`, for a program that shows
   the mixed window's text with page 2 (examples/dhgr_demo); a full-screen one has that 2 KB
@@ -133,6 +133,8 @@ Added 2026-10-30 for Catwiz, whose sprites do not fit as whole boxes of picture 
   by one byte, written n times (2026-10-31: a sprite drawn solid onto black stores its black
   as fills, not byte by byte). n is 1-63. A row stores only its bytes with something in them, and masks only at the edges.
   Rows are drawn top to bottom from `col` (even, as for `masked`); the runs end themselves.
+- `dhgr.CUTOUT` (2026-10-31) leaves the screen's byte wherever an opaque or fill byte is 0: a
+  sprite drawn solid onto black, over another sprite, without its black box.
 - `dhgr.AS_WHITE` draws the shape in white: opaque and fill bytes `$7F`, edged ones
   `screen | (mask ^ $7F)` (a hit flash).
 - `dhgr.FROM_CARD` (bank 2, `$D000`-`$FFFF`) or `dhgr.FROM_CARD1` (bank 1's `$D000`-`$DFFF`):

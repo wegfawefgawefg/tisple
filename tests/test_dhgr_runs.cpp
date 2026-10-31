@@ -44,6 +44,9 @@ Half MakeHalf(TestRandom& r) {
             if (kind == 1 && x > 0 && h.mask[y * kW + x - 1] == 0 && r.Below(2) == 0) {
                 p = h.pic[y * kW + x - 1];
             }
+            if (kind == 1 && r.Below(4) == 0) {
+                p = 0; // black: CUTOUT leaves the screen there
+            }
             h.pic.push_back(kind == 0 ? 0 : p);
             h.mask.push_back(m);
         }
@@ -187,6 +190,11 @@ std::string Program(const Half& aux, const Half& main) {
     (set rom_after (io_read u8 0xC012))
     (io_read u8 0xC083)
     (io_read u8 0xC083)
+    ; cut out over the orange: from own memory, and the main half from the card
+    (dhgr.runs dhgr.PAGE2 dhgr.AUX 30 90 )" +
+           std::to_string(kH) + R"( (addr_of (at aux_runs 0)) dhgr.CUTOUT)
+    (dhgr.runs dhgr.PAGE2 dhgr.MAIN 30 90 )" +
+           std::to_string(kH) + R"( (as (ptr u8) 0xE100) (| dhgr.FROM_CARD dhgr.CUTOUT))
     (mb.off))
 )";
 }
@@ -212,7 +220,8 @@ int PixelAt(const tisple::Apple2& a, int page, int x, int y) {
 // every byte of page's rows: inside the box at col, top the sprite over the background byte
 // the page had there (bg_aux, bg_main by column parity), elsewhere the background
 bool PageRight(const tisple::Apple2& a, int page, int col, int top, const Half& aux,
-               const Half& main, bool white, const uint8_t bg_aux[2], const uint8_t bg_main[2]) {
+               const Half& main, bool white, const uint8_t bg_aux[2], const uint8_t bg_main[2],
+               bool cutout = false) {
     for (int y = top - 2; y < top + kH + 2; y++) {
         for (int c = 0; c < 40; c++) {
             int at = RowAddress(page, y) + c;
@@ -227,6 +236,12 @@ bool PageRight(const tisple::Apple2& a, int page, int col, int top, const Half& 
                     want_aux = bg_aux[c & 1];
                 }
                 if (white && main.mask[i] == 0x7F) {
+                    want_main = bg_main[c & 1];
+                }
+                if (cutout && aux.mask[i] == 0 && aux.pic[i] == 0) {
+                    want_aux = bg_aux[c & 1];
+                }
+                if (cutout && main.mask[i] == 0 && main.pic[i] == 0) {
                     want_main = bg_main[c & 1];
                 }
             }
@@ -280,6 +295,8 @@ void RunDhgrRunsTests(TestResults& results) {
     CHECK(results, PageRight(*a, 0x4000, 20, 60, aux, main, false, orange_aux, orange_main));
     CHECK(results, PageRight(*a, 0x2000, 26, 150, aux, main, true, blue_aux, blue_main));
     CHECK(results, PageRight(*a, 0x4000, 4, 120, aux, main, false, orange_aux, orange_main));
+    CHECK(results,
+          PageRight(*a, 0x4000, 30, 90, aux, main, false, orange_aux, orange_main, true));
     // the pixel rows: every pixel its colour; the short one only its 21 pixels from 35
     bool pixels = true;
     for (int x = 0; x < 140; x++) {

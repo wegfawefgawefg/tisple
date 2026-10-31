@@ -159,3 +159,11 @@ best hand-written assembly.
 
 Write software with it, measure, and keep pushing the backend. Catwiz is the
 first big one (docs/dogfood.md logs what it needed from the compiler).
+
+Open bugs:
+
+- lib/dhgr runs from the aux language card (dhgr.FROM_CARD) with the rom switched in for
+  reading: a second such call breaks the card's runs for every call after it and loses
+  interrupt ticks (found 2026-10-31 adding cutout draws to tests/test_dhgr_runs.cpp; with the
+  card's ram in, as a program in the language card runs, it is fine). lib/auxcard's rom path
+  (the guard vector at $FFFE, the bank put back after) is the place to look.
