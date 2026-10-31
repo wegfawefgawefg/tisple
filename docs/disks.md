@@ -261,6 +261,36 @@ to the cycle, so copy protection that counts bits or reads half-finished bytes
 sees what it would on a drive. Approximations are listed in
 `src/machine/apple2.hpp`.
 
+### The drives' sound
+
+The window, `--wav` and the phone player play what a Disk II sounds like,
+made up from the card's own events (`src/machine/drive_audio.cpp`; nothing
+recorded). The card logs each head step, each new pull against a stop (a
+magnet change that asks the head past track 0 or 39.5), and each change of
+the motor or the selected drive, with its cycle:
+
+- a step is a tick: a bank of seven damped resonators struck in its upper
+  modes, plus a short click of noise. A seek is a run of them.
+- a pull against the stop is a knock: the same bank struck hard and low, a
+  longer click, and one bounce 3 ms later. The boot's recalibration (80 phases
+  outward: at the stop, each four phases are a knock, nothing, a step in and a
+  step back) is the grind.
+- while the drive spins: band-passed noise that swells once a turn (300 rpm,
+  5 Hz), a soft 80 Hz thump each turn, the motor's hum, some flutter. It ramps
+  up at motor on and runs down over 0.4 s once the drive stops (after the
+  card's one-second off delay).
+
+The head keeps a mechanical pace: no impact sooner than 2.5 ms after a step or
+36 ms after a knock, and once behind, one per 19.7 ms (Apple's ROM's phase
+time), at most 2 s behind. Stepping at a real drive's pace (Apple's ROM, DOS
+3.3, our loader) sounds at its cycle. Our boot ROM steps all 80 phases in
+2 ms, so its grind plays over the next 1.5 s as Apple's would, and the
+loader's first steps sound that much late. Levels: knocks peak at 0.1-0.2 of
+full scale, ticks 0.04-0.1, the motor about -41 dBFS; the speaker's square is
+0.35. `--no-drive-sound` leaves it out; F3 toggles it in the window; on the
+phone it is the `disk` button. Headless runs without `--wav` only pay for the
+log (a few stores per step).
+
 ## Accuracy checks
 
 - `tests/test_disk_boot.cpp` boots a self-booting disk with our ROM, with
