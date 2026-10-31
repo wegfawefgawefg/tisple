@@ -1,4 +1,5 @@
-// what `tisple build` leaves out: functions main never calls, and the runtime only they use
+// what `tisple build` leaves out: functions main never calls, and the runtime only they use;
+// and the bytes it puts before a function so its short loop stays inside a page
 
 #include "test_backend.hpp"
 
@@ -142,11 +143,58 @@ void TestPackedWarning(TestResults& results) {
 
 } // namespace
 
+// the link puts a few bytes before a function whose short loop would cross a page: with the
+// code before it 3 bytes longer each time, the loop's branch back never lands in another
+// page, and the function still works
+void TestLoopPads(TestResults& results) {
+    bool apart = true;
+    for (int n = 0; n < 100 && apart; n++) {
+        std::string text = "(fn filler () void\n";
+        for (int k = 0; k < n; k++) {
+            text += "    (io_write u8 0xC030 0)\n";
+        }
+        text += ")\n(fn sum ((p (ptr u8)) (n u8)) u8\n"
+                "    (let s u8 0)\n"
+                "    (for i u8 0 n\n"
+                "        (set s (+ s (load (+ p i)))))\n"
+                "    s)\n";
+        Compiled c = CompileText(text);
+        CHECK(results, c.ok);
+        if (!c.ok) {
+            return;
+        }
+        for (const tisple::FunctionSpan& span : c.code.spans) {
+            if (span.name != "t.sum") {
+                continue;
+            }
+            for (std::size_t i = span.first; i < span.end; i++) {
+                const tisple::AsmItem& item = c.code.as.items[i];
+                if (item.kind != tisple::ItemKind::Ins || item.mode != tisple::Mode::Rel) {
+                    continue;
+                }
+                std::uint32_t target =
+                    c.code.as.symbols[static_cast<std::size_t>(item.value.sym)].value;
+                std::uint32_t next = item.address + item.size;
+                if (target < item.address && (target >> 8) != (next >> 8)) {
+                    std::fprintf(stderr, "loop pads: %d fillers, the branch at $%04X crosses\n", n,
+                                 item.address);
+                    apart = false;
+                }
+            }
+        }
+        if (n % 25 == 0) {
+            CheckProgram(results, text, "t.sum", {0x2000, 9});
+        }
+    }
+    CHECK(results, apart);
+}
+
 void RunBackendBuildTests(TestResults& results) {
     TestDroppedFunctions(results);
     TestLibraryKeepsAll(results);
     TestJsrStays(results);
     TestPackedWarning(results);
+    TestLoopPads(results);
 }
 
 } // namespace tisple_tests
