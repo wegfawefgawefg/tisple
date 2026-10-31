@@ -35,6 +35,7 @@ struct MachineArgs {
     bool cycles_given = false;
     VideoLook look = VideoLook::kColor;
     bool window = false;
+    bool drive_sound = true; // the disk drives' sound in the window and --wav
     int scale = 2;
     const char* taps = nullptr; // a game's player config: clicks press its tap boxes' keys
     std::vector<ScreenshotArg> screenshots;

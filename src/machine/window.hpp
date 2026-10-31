@@ -14,6 +14,7 @@ namespace tisple {
 struct WindowOptions {
     int scale = 2;                      // window size in multiples of 560 x 384
     VideoLook look = VideoLook::kColor; // F2 cycles color, ntsc, mono
+    bool drive_sound = true;            // the disk drives' sound; F3 turns it on and off
     uint64_t max_cycles = 0;            // 0: run until the window closes
     std::string title = "Tisple ][";
     std::vector<Tap> taps; // --taps: clicks press these keys instead of moving the mouse card

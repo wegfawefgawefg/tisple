@@ -17,7 +17,9 @@ void PrintMachineUsage() {
         "  --keys \"C:K,...\"    press key K at cycle C; K is a character, $hex, or one of\n"
         "                      RETURN ESC LEFT RIGHT UP DOWN SPACE TAB DELETE COMMA\n"
         "  --screenshot F.png[@C]  save the screen at cycle C (default: at the end)\n"
-        "  --wav F.wav         save the speaker, and the Mockingboard's sound chips when it is in\n"
+        "  --wav F.wav         save the speaker, the Mockingboard's sound chips when it is in,\n"
+        "                      and the disk drives' sound (steps, the motor)\n"
+        "  --no-drive-sound    leave the drives' sound out of --wav and the window\n"
         "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color)\n"
         "  --rom F             a 12 or 16 KB rom image; with no program, reset through it\n"
         "  --disk F | --disk2 F  a disk ii in slot 6 with F (.dsk .do .po .nib) in drive 1 / 2;\n"
@@ -35,7 +37,8 @@ void PrintMachineUsage() {
         "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
         "  --profile F.txt[@C] cycles by instruction address and memory, from cycle C to\n"
         "                      the end (tools/profile.py adds them up by function)\n"
-        "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
+        "  --window [--scale N]  run in a window at real speed (F1: unthrottled, F2: the\n"
+        "                      look, F3: the drives' sound on and off)\n"
         "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
         "                      (a game's phone player config, docs/phone.md)\n"
         "numbers take $hex, 0xhex or decimal; a cycle may be given in frames as 30f\n"
@@ -72,6 +75,8 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.taps = argv[++i];
         } else if (std::strcmp(arg, "--window") == 0) {
             args.window = true;
+        } else if (std::strcmp(arg, "--no-drive-sound") == 0) {
+            args.drive_sound = false;
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number) || number > 0xBFFF) {
                 return false;
