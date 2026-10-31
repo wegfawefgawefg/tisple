@@ -1,9 +1,15 @@
 # Phone player
 
 `tisple machine` built as WebAssembly (`web/`), for playtesting on a phone. It boots a
-disk with our own roms (Apple's never leave the desktop), runs at the Apple's speed with
-the loading turbo'd, plays the speaker and a Mockingboard, and turns a game's on-screen
-buttons into key presses.
+disk with our own roms (Apple's never leave the desktop), runs at the Apple's speed, plays
+the speaker, a Mockingboard and the disk drive, and turns a game's on-screen buttons into
+key presses.
+
+- The bar's `disk` button turns the drive's sound on and off (dim when off; the browser
+  remembers it; off until pressed: the owner wants it opt in). On, a disk loads at the
+  Apple's speed so it sounds like a Disk II: the boot's grind, the head stepping, the motor
+  (docs/disks.md, "The drives' sound"); Catwiz takes about 11 s to load. Off, or with no
+  sound running, loading runs flat out and silent as before.
 
 - `web/build.sh`: needs Emscripten (`source <emsdk>/emsdk_env.sh`); builds `web/dist`.
 - `web/publish.py NAME DISK CONFIG`: puts a disk in `~/.local/share/tisple/phone/games`
@@ -35,7 +41,8 @@ buttons into key presses.
   `src/machine/font.cpp` at build).
 - `tisple machine --window --taps <config>` reads the same `taps` for the desktop window:
   a left click on a box presses its key until the button comes up.
-- `?autostart` runs without the tap and without sound, for headless checks.
+- `?autostart` runs without the tap and without sound (so loading is flat out), for
+  headless checks.
 
 ## The web demo
 

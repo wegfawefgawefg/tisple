@@ -1,12 +1,14 @@
 // The phone player's machine: tisple machine compiled to WebAssembly (web/build.sh), driven
 // by player.js one slice at a time. It boots a disk with our own roms, renders the screen to
-// RGBA for a canvas and the speaker and Mockingboard to 16-bit samples for WebAudio. While
-// the disk motor is on, player.js runs it flat out, so a disk boots in a moment.
+// RGBA for a canvas and the speaker, Mockingboard and disk drives to 16-bit samples for
+// WebAudio. While the disk motor is on, player.js runs it flat out, so a disk boots in a
+// moment, unless the drives' sound is on: then a disk loads at the Apple's speed, grinding.
 
 #include "disk/image.hpp"
 #include "disk/machine_disks.hpp"
 #include "machine/apple2.hpp"
 #include "machine/disk2.hpp"
+#include "machine/drive_audio.hpp"
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
 #include "machine/speaker_audio.hpp"
@@ -29,6 +31,8 @@ struct Player {
     std::vector<uint8_t> rgba = std::vector<uint8_t>(kScreenWidth * kScreenHeight * 4);
     SpeakerRenderer speaker;
     MockingboardRenderer chips;
+    DriveSoundRenderer drives;
+    bool drive_sound = true;
     std::vector<int16_t> samples;
     std::string error;
 };
@@ -41,6 +45,7 @@ void StartAudio(Player& p) {
     p.speaker.samples_done = SamplesForCycles(Cycles(*p.a));
     p.chips = MockingboardRenderer();
     StartMockingboardAudio(p.chips, *p.a);
+    StartDriveSound(p.drives, *p.a);
 }
 
 } // namespace
@@ -83,7 +88,19 @@ EMSCRIPTEN_KEEPALIVE int tp_run(int cycles, int sound) {
     if (HasMockingboard(*p.a)) {
         MixMockingboard(p.chips, *p.a, Cycles(*p.a), p.samples, 0);
     }
+    if (p.drive_sound) {
+        MixDriveSound(p.drives, *p.a, Cycles(*p.a), p.samples, 0);
+    }
     return static_cast<int>(p.samples.size());
+}
+
+// the drives' sound on (1) or off (0) in what tp_run renders
+EMSCRIPTEN_KEEPALIVE void tp_drive_sound(int on) {
+    Player& p = g_player;
+    if (on != 0 && !p.drive_sound && p.a) {
+        StartDriveSound(p.drives, *p.a); // from now, not from when it went off
+    }
+    p.drive_sound = on != 0;
 }
 
 EMSCRIPTEN_KEEPALIVE const int16_t* tp_samples() {
@@ -126,7 +143,7 @@ EMSCRIPTEN_KEEPALIVE void tp_button(int index, int down) {
     }
 }
 
-// the drive is spinning: player.js runs flat out and mutes
+// the motor is on: player.js runs flat out and mutes, unless the drives' sound is on
 EMSCRIPTEN_KEEPALIVE int tp_disk_busy() {
     return g_player.a && g_player.a->slots.disk2.motor_on ? 1 : 0;
 }

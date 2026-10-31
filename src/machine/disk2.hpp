@@ -24,6 +24,10 @@
 // - the stepper moves the head one half-track toward a magnet that is next to the head's own
 //   (AppleWin's model without quarter tracks), at once, and only while the drive spins. motor
 //   off turns every magnet off.
+// - every head step, every pull against a stop, and every change of the motor or the selected
+//   drive goes in the card's event log (DriveEvent) with its cycle, for the drives' sound
+//   (drive_audio.hpp). a pull against a stop is a magnet change that newly asks for a step the
+//   head cannot take: the boot's recalibration, which steps outward 40 tracks from anywhere.
 // adapted from AppleWin's Disk.cpp (GPL-2.0-or-later; see third_party/applewin/README.md).
 
 #include "machine/apple2.hpp"
@@ -53,5 +57,8 @@ void StartDiskBoot(Apple2& a);
 // the track the head is over (the half-track rounded down), or -1 past the last one
 int DriveTrack(const Apple2& a, int drive);
 bool DriveSpinning(const Apple2& a, uint64_t cycle);
+
+// event n of the card's log, for n in [log_count - kDriveLogSize, log_count)
+const DriveEvent& DriveLogEvent(const Apple2& a, uint64_t n);
 
 } // namespace tisple

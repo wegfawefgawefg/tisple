@@ -236,6 +236,25 @@ struct DiskDrive {
     DiskTrack tracks[kDiskTracks];
 };
 
+// what the drives do that can be heard, logged for whoever makes their sound (drive_audio.hpp);
+// the card itself never reads the log
+enum class DriveEventKind : uint8_t {
+    kStep, // a magnet moved the head a half-track
+    kStop, // a magnet pulled the head against a stop (track 0, or 39.5) and it could not move
+    kSpin, // the motor or the drive selection changed: motor_on, spin_until and drive say how
+};
+
+constexpr uint32_t kDriveLogSize = 1024; // drain once a frame
+
+struct DriveEvent {
+    uint64_t cycle = 0;
+    uint64_t spin_until = 0; // the card's, after the event
+    DriveEventKind kind = DriveEventKind::kStep;
+    uint8_t drive = 0;      // the selected drive, after the event
+    uint8_t half_track = 0; // the selected drive's head, after the event
+    bool motor_on = false;
+};
+
 struct Disk2State {
     uint8_t slot = 0;
     uint8_t rom[256] = {}; // $Cn00: our boot rom, or the owner's DISK2.rom
@@ -250,6 +269,8 @@ struct Disk2State {
     int8_t latch_hold = 0;       // microseconds a finished nibble still stays in the latch
     uint32_t noise = 0x2545F491; // random bits when the head sees no flux for a while
     DiskDrive drives[2];
+    DriveEvent log[kDriveLogSize]; // event n at [n % size]
+    uint64_t log_count = 0;
 };
 
 // applemouse ii (mouse.hpp has the model). positions are the 6805's signed 16-bit numbers

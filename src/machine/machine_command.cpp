@@ -2,6 +2,7 @@
 
 #include "disk/machine_disks.hpp"
 #include "machine/disk2.hpp"
+#include "machine/drive_audio.hpp"
 #include "machine/machine_args.hpp"
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
@@ -114,6 +115,8 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     speaker.samples_done = SamplesForCycles(start);
     MockingboardRenderer chips;
     StartMockingboardAudio(chips, a);
+    DriveSoundRenderer drives;
+    StartDriveSound(drives, a);
     std::vector<int16_t> samples;
     bool ok = true;
     uint64_t run_cycles = 0;
@@ -157,6 +160,9 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
             if (HasMockingboard(a)) {
                 MixMockingboard(chips, a, Cycles(a), samples, first);
             }
+            if (args.drive_sound) {
+                MixDriveSound(drives, a, Cycles(a), samples, first);
+            }
         }
     }
     double seconds =
@@ -191,6 +197,13 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     if (args.wav != nullptr) {
         std::printf("speaker: %llu toggles, %zu samples\n",
                     static_cast<unsigned long long>(a.speaker.toggle_count), samples.size());
+    }
+    if (args.wav != nullptr && args.drive_sound && drives.next_event > 0) {
+        std::printf("drive sound: %llu steps and knocks, %llu of them late (the head was "
+                    "busy), %llu dropped\n",
+                    static_cast<unsigned long long>(drives.impacts),
+                    static_cast<unsigned long long>(drives.late),
+                    static_cast<unsigned long long>(drives.dropped));
     }
     if (seconds > 0 && run_cycles > 0) {
         double rate = static_cast<double>(run_cycles) / seconds;
@@ -301,6 +314,7 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         WindowOptions options;
         options.scale = args.scale;
         options.look = args.look;
+        options.drive_sound = args.drive_sound;
         if (args.taps != nullptr && !LoadTaps(args.taps, options.taps, error)) {
             std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
             return 1;

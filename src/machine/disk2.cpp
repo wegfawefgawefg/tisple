@@ -128,6 +128,18 @@ void CatchUp(Disk2State& card, uint64_t now) {
     }
 }
 
+// every event the drives' sound needs, with the card as it is after it
+void LogEvent(Disk2State& card, DriveEventKind kind, uint64_t now) {
+    DriveEvent& e = card.log[card.log_count % kDriveLogSize];
+    e.cycle = now;
+    e.spin_until = card.spin_until;
+    e.kind = kind;
+    e.drive = card.drive;
+    e.half_track = card.drives[card.drive].half_track;
+    e.motor_on = card.motor_on;
+    card.log_count++;
+}
+
 bool Spinning(const Disk2State& card, uint64_t now) {
     return card.motor_on || now < card.spin_until;
 }
@@ -155,29 +167,39 @@ void MoveHead(DiskDrive& d, int half_track) {
     }
 }
 
+// which way the magnets that are on pull a head at half_track: +1 in, -1 out, 0 neither
+int Pull(uint8_t magnets, int half_track) {
+    int direction = 0;
+    if ((magnets & (1 << ((half_track + 1) & 3))) != 0) {
+        direction++;
+    }
+    if ((magnets & (1 << ((half_track + 3) & 3))) != 0) {
+        direction--;
+    }
+    return direction;
+}
+
 void Stepper(Disk2State& card, int reg, uint64_t now) {
     if (!Spinning(card, now)) {
         return; // the drive is not enabled, so its stepper has no power
     }
     int phase = reg >> 1;
+    DiskDrive& d = card.drives[card.drive];
+    int pulled = Pull(card.magnets, d.half_track);
     if ((reg & 1) != 0) {
         card.magnets = static_cast<uint8_t>(card.magnets | (1 << phase));
     } else {
         card.magnets = static_cast<uint8_t>(card.magnets & ~(1 << phase));
     }
-    DiskDrive& d = card.drives[card.drive];
-    int direction = 0;
-    if ((card.magnets & (1 << ((d.half_track + 1) & 3))) != 0) {
-        direction++;
-    }
-    if ((card.magnets & (1 << ((d.half_track + 3) & 3))) != 0) {
-        direction--;
-    }
+    int direction = Pull(card.magnets, d.half_track);
     int next = d.half_track + direction;
     next = next < 0 ? 0 : next;
     next = next > kDiskHalfTracks - 1 ? kDiskHalfTracks - 1 : next;
     if (next != d.half_track) {
         MoveHead(d, next);
+        LogEvent(card, DriveEventKind::kStep, now);
+    } else if (direction != 0 && direction != pulled) {
+        LogEvent(card, DriveEventKind::kStop, now); // a new pull against a stop: the grind
     }
 }
 
@@ -186,14 +208,19 @@ void Motor(Disk2State& card, bool on, uint64_t now) {
         card.magnets = 0; // "drives off" clears the stepper's flip-flops
         if (card.motor_on) {
             card.spin_until = now + kMotorOffDelay;
+            card.motor_on = false;
+            LogEvent(card, DriveEventKind::kSpin, now);
         }
-        card.motor_on = false;
         return;
     }
-    if (!card.motor_on && !Spinning(card, now)) {
+    if (card.motor_on) {
+        return;
+    }
+    if (!Spinning(card, now)) {
         card.drives[card.drive].spun_to = now; // spins up from here
     }
     card.motor_on = true;
+    LogEvent(card, DriveEventKind::kSpin, now);
 }
 
 void SelectDrive(Disk2State& card, int drive, uint64_t now) {
@@ -202,6 +229,7 @@ void SelectDrive(Disk2State& card, int drive, uint64_t now) {
     }
     card.drive = static_cast<uint8_t>(drive);
     card.drives[drive].spun_to = now; // the other drive stops; this one turns from now
+    LogEvent(card, DriveEventKind::kSpin, now);
 }
 
 // Q6 and Q7 switch the sequencer's mode; registers C-F
@@ -310,6 +338,10 @@ int DriveTrack(const Apple2& a, int drive) {
 
 bool DriveSpinning(const Apple2& a, uint64_t cycle) {
     return Spinning(a.slots.disk2, cycle);
+}
+
+const DriveEvent& DriveLogEvent(const Apple2& a, uint64_t n) {
+    return a.slots.disk2.log[n % kDriveLogSize];
 }
 
 } // namespace tisple

@@ -46,6 +46,7 @@ body {
     border: 2px solid var(--green); color: var(--green); background: var(--black); cursor: pointer;
 }
 #bar .btn:active { background: var(--green); color: var(--black); }
+#bar .btn.off { border-color: var(--dim); color: var(--dim); }
 #rec { color: var(--orange); }
 
 /* the screen and the controls */
@@ -121,6 +122,7 @@ body.wide.no-pad #side:not(.kb) { display: none; }
     <a class="btn" id="games" href="./" hidden></a>
     <span class="name" id="name"></span>
     <span id="rec"></span>
+    <span class="btn" id="disk"></span>
     <span class="btn" id="look"></span>
     <span class="btn" id="kb"></span>
     <span class="btn" id="send"></span>

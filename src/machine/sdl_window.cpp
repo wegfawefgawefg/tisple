@@ -1,6 +1,6 @@
 // `tisple machine --window`: the machine at real speed in an SDL3 window, with keyboard,
-// speaker and Mockingboard audio and the mouse card. built only with TISPLE_SDL. it never raises
-// itself, and closing the window returns at once.
+// speaker, Mockingboard and disk drive audio and the mouse card. built only with TISPLE_SDL.
+// it never raises itself, and closing the window returns at once.
 //
 // the mouse: while the pointer is over the window, its motion moves the card's mouse (one
 // hi-res pixel per two screen pixels at scale 1). it is never grabbed until a click into the
@@ -8,6 +8,7 @@
 // and the left button go to the card until Esc (which the Apple does not see) or losing
 // focus lets it go.
 
+#include "machine/drive_audio.hpp"
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
 #include "machine/mouse.hpp"
@@ -35,6 +36,7 @@ struct WindowState {
     SDL_AudioStream* audio = nullptr;
     bool vsync = false;
     bool turbo = false;
+    bool drive_sound = true;
     VideoLook look = VideoLook::kColor;
     bool reported_stop = false;
     bool mouse_captured = false;
@@ -44,6 +46,7 @@ struct WindowState {
     Framebuffer fb;
     SpeakerRenderer speaker;
     MockingboardRenderer chips;
+    DriveSoundRenderer drives;
     std::vector<int16_t> samples;
     // real-time pacing: apple cycle base_cycle was due at host time base_ns
     uint64_t base_ns = 0;
@@ -64,6 +67,7 @@ void SkipAudio(WindowState& w, const Apple2& a) {
     w.speaker.next_toggle = a.speaker.toggle_count;
     w.speaker.samples_done = SamplesForCycles(Cycles(a));
     StartMockingboardAudio(w.chips, a);
+    StartDriveSound(w.drives, a);
 }
 
 void FeedAudio(WindowState& w, const Apple2& a) {
@@ -71,6 +75,9 @@ void FeedAudio(WindowState& w, const Apple2& a) {
     RenderSpeaker(w.speaker, a, Cycles(a), w.samples);
     if (HasMockingboard(a)) {
         MixMockingboard(w.chips, a, Cycles(a), w.samples, 0);
+    }
+    if (w.drive_sound) {
+        MixDriveSound(w.drives, a, Cycles(a), w.samples, 0);
     }
     if (w.audio == nullptr) {
         return;
@@ -91,6 +98,9 @@ void UpdateTitle(WindowState& w, const Apple2& a, const WindowOptions& options) 
     std::string title = options.title;
     if (w.turbo) {
         title += "  [unthrottled]";
+    }
+    if (!w.drive_sound) {
+        title += "  [drive sound off]";
     }
     if (w.look != VideoLook::kColor) {
         title += std::string("  [") + VideoLookName(w.look) + "]";
@@ -265,6 +275,12 @@ bool HandleEvent(WindowState& w, Apple2& a, const WindowOptions& options, const 
             UpdateTitle(w, a, options);
             return true;
         }
+        if (key == SDLK_F3 && !e.key.repeat) {
+            w.drive_sound = !w.drive_sound;
+            StartDriveSound(w.drives, a); // back on: from now, not from when it went off
+            UpdateTitle(w, a, options);
+            return true;
+        }
         if (key == SDLK_F1 && !e.key.repeat) {
             w.turbo = !w.turbo;
             UpdateTitle(w, a, options);
@@ -411,11 +427,13 @@ bool Open(WindowState& w, const WindowOptions& options) {
 int RunMachineWindow(Apple2& a, const WindowOptions& options) {
     WindowState w;
     w.look = options.look;
+    w.drive_sound = options.drive_sound;
     if (!Open(w, options)) {
         Close(w);
         return 1;
     }
     SkipAudio(w, a);
+    UpdateTitle(w, a, options);
     w.base_ns = SDL_GetTicksNS();
     w.base_cycle = Cycles(a);
     for (;;) {
