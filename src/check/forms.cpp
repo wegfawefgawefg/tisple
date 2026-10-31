@@ -258,6 +258,8 @@ ExprId CheckIf(Checker& ck, const Node& node, TypeId hint, bool used) {
     }
     ExprId cond = CheckExpr(ck, node.items[1], kBoolType);
     RequireType(ck, node.items[1], cond, kBoolType, "the if condition");
+    std::uint16_t known = 0;
+    bool folds = ExprType(ck, cond) == kBoolType && ConstValue(*ck.out, cond, known);
     ExprId id = -1;
     if (node.items.size() == 3 && used) {
         // one error for (let k u8 (if c 1)), not "1 on its own does nothing" as well
@@ -267,14 +269,16 @@ ExprId CheckIf(Checker& ck, const Node& node, TypeId hint, bool used) {
                         Show(node.items[2]) + " other)");
     }
     if (node.items.size() == 3) {
+        ck.at.dead += folds && known == 0 ? 1 : 0;
         ExprId then = CheckStatementArm(ck, node.items[2]);
+        ck.at.dead -= folds && known == 0 ? 1 : 0;
         id = AddExpr(ck, ExprKind::If, kVoidType, node);
         ExprAt(ck, id).a = cond;
         ExprAt(ck, id).b = then;
         return id;
     }
-    std::vector<Arm> arms = {Arm{&node.items, 2, 3, &node.items[2]},
-                             Arm{&node.items, 3, 4, &node.items[3]}};
+    std::vector<Arm> arms = {Arm{&node.items, 2, 3, &node.items[2], folds && known == 0},
+                             Arm{&node.items, 3, 4, &node.items[3], folds && known != 0}};
     std::vector<ExprId> out;
     TypeId type = CheckArms(ck, arms, hint, used, out, "if");
     id = AddExpr(ck, ExprKind::If, type, node);
@@ -297,10 +301,14 @@ ExprId CheckWhile(Checker& ck, const Node& node) {
     }
     ExprId cond = CheckExpr(ck, node.items[1], kBoolType);
     RequireType(ck, node.items[1], cond, kBoolType, "the while condition");
+    std::uint16_t known = 1;
+    bool never = ExprType(ck, cond) == kBoolType && ConstValue(*ck.out, cond, known) && known == 0;
     ck.at.loop_depth++;
+    ck.at.dead += never ? 1 : 0;
     ck.at.scopes.emplace_back();
     ExprId body = CheckBody(ck, node.items, 2, -1, false, node);
     ck.at.scopes.pop_back();
+    ck.at.dead -= never ? 1 : 0;
     ck.at.loop_depth--;
     ExprId id = AddExpr(ck, ExprKind::While, kVoidType, node);
     ExprAt(ck, id).a = cond;

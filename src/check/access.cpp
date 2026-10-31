@@ -147,8 +147,9 @@ ExprId CheckAt(Checker& ck, const Node& node) {
         return ErrorExpr(ck, node);
     }
     const Expr& index_expr = ExprAt(ck, index);
+    // in an arm that never runs the index may be anything: (if (!= K 255) (set (at a K) 1))
     if (index_expr.kind == ExprKind::Literal && index_expr.type != kErrorType &&
-        index_expr.value >= count) {
+        index_expr.value >= count && ck.at.dead == 0) {
         return Fail(ck, node.items[2],
                     "index " + std::to_string(index_expr.value) + " is past the end of " +
                         Show(array_node) + " (" + std::to_string(count) + " elements)");

@@ -51,8 +51,11 @@ TableUse FindTableUse(const Backend& be, const LinkInput& in) {
     use.dropped.assign(count, false);
     use.interp_only.assign(count, false);
     for (std::size_t v = 0; v < count; v++) {
+        // a const :in aux the program as written may take the address of is in the binary
+        // (its aux segments): an address inside the code would be main memory's
+        bool aux = program.vars[v].placement.in_aux;
         use.dropped[v] = !any[v];
-        use.interp_only[v] = any[v] && !binary[v];
+        use.interp_only[v] = any[v] && !binary[v] && !aux;
     }
     return use;
 }

@@ -189,7 +189,9 @@ bool ConstValue(const Program& program, ExprId id, std::uint16_t& value) {
         }
         const Var& v = program.vars[static_cast<std::size_t>(var)];
         offset += e.value;
-        if (offset + type.size > TypeOf(program, v.type).size) {
+        // a pointer into aux memory reads it only where RAMRD is on, which is the program's
+        // business: the load is left as it is, as for a let :in aux
+        if (v.placement.in_aux || offset + type.size > TypeOf(program, v.type).size) {
             return false;
         }
         return InitBits(v, offset, type.size, value);

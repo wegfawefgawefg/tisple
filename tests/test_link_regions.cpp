@@ -69,7 +69,8 @@ bool Overlaps(std::uint32_t a_start, std::uint32_t a_end, std::uint32_t b_start,
 // one segment's bytes against the memory nothing may load over: zero page to text page 1,
 // I/O, the other segments of its memory and every :reserve let in its memory. all[0] is the
 // main file, which runs from the origin over whatever is in it, :reserve lets too, as it
-// does over any :address let (docs/language.md, Placement)
+// does over any :address let (docs/language.md, Placement); an aux segment runs over the few
+// pages between its pieces the same way (backend/segments.cpp)
 bool SegmentApart(const Compiled& c, const std::vector<tisple::MemorySegment>& all, std::size_t i) {
     const tisple::MemorySegment& s = all[i];
     std::uint32_t start = s.address;
@@ -95,7 +96,8 @@ bool SegmentApart(const Compiled& c, const std::vector<tisple::MemorySegment>& a
         std::uint32_t r_end = r_start + c.code.layout.vars[v].size;
         bool same_ram =
             place.in_aux ? s.bank == MemoryBank::kAux : ram(s.bank) == MemoryBank::kMain;
-        if (i > 0 && place.reserve && same_ram && Overlaps(start, end, r_start, r_end)) {
+        bool aux = s.bank == MemoryBank::kAux;
+        if (i > 0 && !aux && place.reserve && same_ram && Overlaps(start, end, r_start, r_end)) {
             return false;
         }
     }
@@ -279,6 +281,24 @@ void TestAuxPlacement(TestResults& results) {
     Diff d;
     CHECK(results, StartDiff(d, c));
     CheckDiff(results, d, "t.f", {});
+
+    // pieces of aux memory a few pages apart are one segment, with zeros over the :reserve
+    // between them; 4 pages or more apart, two
+    c = CompileAll("(let a (array u8 4) (make (array u8 4) 1 2 3 4) :address 0x2000 :in aux)\n"
+                   "(let home (array u8 300) :address 0x2004 :in aux :reserve)\n"
+                   "(let b (array u8 4) (make (array u8 4) 5 6 7 8) :address 0x2200 :in aux)\n"
+                   "(let c (array u8 4) (make (array u8 4) 9 9 9 9) :address 0x2700 :in aux)\n"
+                   "(fn f () void)");
+    if (!Report(c)) {
+        CHECK(results, false);
+        return;
+    }
+    CheckSegmentsApart(results, c);
+    aux = SegmentWith(c, MemoryBank::kAux, 0x2000);
+    CHECK(results, aux != nullptr && aux->address == 0x2000 && aux->bytes.size() == 0x204 &&
+                       aux->bytes[0x100] == 0 && aux->bytes[0x201] == 6);
+    const tisple::MemorySegment* last = SegmentWith(c, MemoryBank::kAux, 0x2700);
+    CHECK(results, last != nullptr && last != aux && last->address == 0x2700);
 
     ExpectLinkError(results,
                     "(let a (array u8 64) :address 0x5000 :in aux)\n"

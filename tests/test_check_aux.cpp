@@ -164,6 +164,92 @@ void InterpTests(TestResults& results) {
     CHECK(results, CallOk(results, in, "t.count", {3}) == 2 && !in.aux_reads);
 }
 
+// consts :in aux and :strings aux: where a const :in aux may be read by name, the options that
+// do not go together, and the interpreter reading them from its aux memory
+const char* kAuxTable = "(struct Item ((name (ptr u8)) (cost u8)))\n"
+                        "(const ITEMS (array Item 3) (make (array Item 3)\n"
+                        "    (make Item :name \"YARN\" :cost 4) (make Item :name \"BOX\" :cost 7)\n"
+                        "    (make Item :name \"STAR\" :cost 9)) :in aux)\n";
+
+void AuxConstTests(TestResults& results) {
+    std::string t = kAuxTable;
+    std::string fix =
+        "ITEMS is in aux memory: read it by name inside (with_aux true false ...), or "
+        "in a function only such code calls; outside, (addr_of ITEMS ...) is its aux "
+        "address";
+    ExpectError(results, t + "(fn f ((i u8)) u8 (at ITEMS i cost))", "t.tsp:5:23: " + fix);
+    // a pointer read at a constant place is not a number the checker folds
+    ExpectError(results, t + "(fn f () (ptr u8) (at ITEMS 1 name))", "t.tsp:5:23: " + fix);
+    ExpectError(results, t + "(fn f ((i u8) (b bool)) u8 (with_aux b false (at ITEMS i cost)))",
+                "t.tsp:5:50: " + fix +
+                    " (here RAMRD may be off: the with_aux's reads is not the constant true, or "
+                    "this function is also called with it off)");
+    ExpectError(results,
+                t + "(fn cost ((i u8)) u8 (at ITEMS i cost))\n"
+                    "(fn f ((i u8)) u8 (+ (with_aux true false (cost i)) (cost i)))",
+                "t.tsp:5:26: " + fix +
+                    " (here RAMRD may be off: the with_aux's reads is not the constant true, or "
+                    "this function is also called with it off)");
+    // inside, in what only the inside calls, numbers at constant places, addresses
+    Built ok = BuildText(t + "(fn cost ((i u8)) u8 (at ITEMS i cost))\n"
+                             "(fn name ((i u8)) (ptr u8) (with_aux true true (at ITEMS i name)))\n"
+                             "(fn f ((i u8)) u8\n"
+                             "    (let p (ptr Item) (addr_of (at ITEMS i)))\n"
+                             "    (+ (with_aux true false (+ (cost i) (load p cost)))\n"
+                             "        (at ITEMS 2 cost)))");
+    CHECK(results, ok.ok);
+    ExpectError(results, "(let s (ptr u8) \"HI\" :strings aux)",
+                "t.tsp:1:1: :strings aux is for const tables, whose strings are written in their "
+                "value; make s a const");
+    ExpectError(results,
+                "(const S (array (ptr u8) 1) (make (array (ptr u8) 1) \"A\") :in aux "
+                ":strings aux)",
+                "t.tsp:1:59: :in aux puts S's strings in aux memory already; drop :strings aux");
+    ExpectError(results, "(const S (array u8 2) (make (array u8 2) 1 2) :address 0x0100 :in aux)",
+                "t.tsp:1:1: S is in aux memory at an :address outside $0200-$BFFF, which "
+                "lib/auxmem cannot reach; move it");
+    ExpectError(results, "(const K u8 3 :in aux)",
+                "t.tsp:1:15: placement options are for const tables and top-level lets; K is a "
+                "single value with no address");
+}
+
+void AuxConstInterpTests(TestResults& results) {
+    Built b = BuildText(std::string(kAuxTable) +
+                        "(const NAMES (array (ptr u8) 2) (make (array (ptr u8) 2) \"YARN\" "
+                        "\"OWL\") :strings aux)\n"
+                        "(fn cost ((i u8)) u8 (with_aux true false (at ITEMS i cost)))\n"
+                        "(fn letter ((i u8) (k u8)) u8\n"
+                        "    (with_aux true false (load (+ (at ITEMS i name) k))))\n"
+                        "(fn named ((i u8) (k u8)) u8\n"
+                        "    (let p (ptr u8) (at NAMES i))\n"
+                        "    (with_aux true false (load (+ p k))))\n"
+                        "(fn outside ((i u8)) u8 (load (at NAMES i)))\n"
+                        "(fn main_yarn () u8 (load \"YARN\"))");
+    CHECK(results, b.ok);
+    if (!b.ok) {
+        return;
+    }
+    tisple::Interp in;
+    StartInterp(in, b);
+    CHECK(results, CallOk(results, in, "t.cost", {1}) == 7);
+    CHECK(results, CallOk(results, in, "t.letter", {2, 1}) == 'T');
+    CHECK(results, CallOk(results, in, "t.named", {1, 2}) == 'L');
+    // aux strings of their own, apart from main memory's "YARN": outside a region a load
+    // through an aux pointer reads main memory's byte there
+    CHECK(results, CallOk(results, in, "t.main_yarn", {}) == 'Y');
+    std::int32_t items = tisple::FindVar(b.program, "t.ITEMS");
+    std::int32_t names = tisple::FindVar(b.program, "t.NAMES");
+    CHECK(results, b.program.vars[static_cast<std::size_t>(items)].placement.in_aux &&
+                       !b.program.vars[static_cast<std::size_t>(names)].placement.in_aux);
+    std::size_t aux_strings = 0;
+    for (const tisple::Var& var : b.program.vars) {
+        aux_strings += var.name.rfind("str#a", 0) == 0 && var.placement.in_aux ? 1 : 0;
+    }
+    CHECK(results, aux_strings == 4); // YARN BOX STAR, and OWL (YARN is shared)
+    std::uint16_t at = in.layout->vars[static_cast<std::size_t>(items)].address;
+    CHECK(results, at >= 0x0800 && in.memory[at] == 0);
+}
+
 } // namespace
 
 void RunCheckAuxTests(TestResults& results) {
@@ -171,6 +257,8 @@ void RunCheckAuxTests(TestResults& results) {
     RuleTests(results);
     ModeTests(results);
     InterpTests(results);
+    AuxConstTests(results);
+    AuxConstInterpTests(results);
 }
 
 } // namespace tisple_tests

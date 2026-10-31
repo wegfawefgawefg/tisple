@@ -108,16 +108,20 @@ enum class VarKind : std::uint8_t {
     Local,
 };
 
-// :address, :align, :boundary, :in aux and :reserve on a top-level let, :on disk and
-// :interleave on a const table; 0 means not given
+// :address, :align, :boundary and :in aux on a top-level let or const table, :reserve on a
+// let, :on disk, :interleave and :strings aux on a const table; 0 means not given
 struct Placement {
     bool has_address = false;
     std::uint16_t address = 0;
     std::uint32_t align = 0;
     std::uint32_t boundary = 0;
-    bool in_aux = false;  // :in aux: in auxiliary memory, reached only through lib/auxmem
-    bool reserve = false; // :reserve: memory the program reaches by address; not a variable
-    bool on_disk = false; // :on disk: the bytes live on the boot disk; the var is their record
+    // :in aux: in auxiliary memory only. A let is reached through pointers; a const table also
+    // by name where RAMRD is surely on (check/aux_rules.cpp). The string tables a const :in aux
+    // and a :strings aux one have are in_aux too
+    bool in_aux = false;
+    bool strings_aux = false; // :strings aux: the strings written in a const table's value
+    bool reserve = false;     // :reserve: memory the program reaches by address; not a variable
+    bool on_disk = false;     // :on disk: the bytes live on the boot disk; the var is their record
     std::uint8_t interleave = 0; // :interleave n with :on disk: physical sectors apart (0: 2)
 };
 

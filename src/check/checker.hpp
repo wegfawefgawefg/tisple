@@ -14,6 +14,8 @@
 
 namespace tisple {
 
+struct AuxModes; // check/aux_mode.hpp
+
 enum class DeclKind : std::uint8_t {
     Struct,
     Enum,
@@ -94,6 +96,11 @@ struct Context {
     // outside leaves it), else -1; and the switches it may turn on
     int aux_depth = -1;
     std::uint8_t aux_bits = 0;
+    // folding the value of a const :in aux or :strings aux: its string literals go in aux memory
+    bool aux_strings = false;
+    // inside an arm that never runs (an if or while whose condition folds the other way): a
+    // constant index past an array's end is not an error there
+    int dead = 0;
 };
 
 struct Checker {
@@ -108,7 +115,8 @@ struct Checker {
     std::vector<const Node*> function_forms; // by function id
     std::vector<std::size_t> body_starts;    // by function id
     std::map<std::tuple<int, int, std::uint32_t, int>, TypeId> interned;
-    std::map<std::string, std::int32_t> string_tables; // a string's bytes -> its table var
+    std::map<std::string, std::int32_t> string_tables;     // a string's bytes -> its table var
+    std::map<std::string, std::int32_t> aux_string_tables; // the same, in aux memory
     // function pointers (fnptr.cpp): signatures by their types (the return type last), each
     // function's signature as ReadSignature reads it (lazily for a const table that names it),
     // and each indirect call's function and pointer type, for the callees
@@ -204,6 +212,8 @@ void EnsureGlobal(Checker& ck, std::int32_t var);
 // trimmed, giving the first option or null
 int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value);
 void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_value);
+// a const table's options, its type known: false with an error when they do not go together
+bool CheckConstOptions(Checker& ck, const Node& form, const Node& option, const Var& var);
 const Node* SplitOptions(Checker& ck, const Node& form, Node& trimmed, Var& holder);
 
 // const tables :on disk (disk_consts.cpp). MoveToDisk takes a folded table's bytes into
@@ -252,6 +262,7 @@ struct Arm {
     std::size_t first = 0;
     std::size_t end = 0;
     const Node* owner = nullptr; // where errors about the whole arm point
+    bool dead = false;           // never runs: its condition folds the other way
 };
 // checks arms, each in its own scope. Used: bare literals wait until a type is known and the
 // arms must agree; returns the joint type. Not used: every form is a statement; returns void
@@ -328,8 +339,10 @@ void CheckHandler(Checker& ck);
 ExprId CheckWithAux(Checker& ck, const Node& node, TypeId hint, bool used);
 // a return, break or continue made inside a with_aux: an off first when it leaves the region
 ExprId LeaveAux(Checker& ck, const Node& node, ExprId exit);
-// once every body is checked: what code that runs with the switches on may not do
+// once every body is checked: what code that runs with the switches on may not do, and where
+// a const :in aux may be read by name
 void CheckAuxCode(Checker& ck);
+void CheckAuxConstReads(Checker& ck, const AuxModes& modes); // aux_consts.cpp
 // (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);
 ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string& field);

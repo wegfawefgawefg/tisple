@@ -181,14 +181,15 @@ void EvalConst(Checker& ck, std::int32_t index) {
     Node trimmed;
     Var holder;
     const Node* option = SplitOptions(ck, *cd.form, trimmed, holder);
+    ck.at.aux_strings = holder.placement.in_aux || holder.placement.strings_aux;
     bool ok = FoldConstForm(ck, cd, trimmed);
+    ck.at.aux_strings = false;
     ConstDecl& done = ck.consts[static_cast<std::size_t>(index)];
-    if (ok && done.var >= 0 && (holder.placement.in_aux || holder.placement.reserve)) {
-        Err(ck, *option,
-            std::string(holder.placement.in_aux ? ":in aux" : ":reserve") +
-                " is for top-level lets; make " + done.name + " a let");
-        ok = false;
-    } else if (ok && done.var >= 0) {
+    if (ok && done.var >= 0) {
+        holder.type = ck.out->vars[static_cast<std::size_t>(done.var)].type;
+        ok = CheckConstOptions(ck, *cd.form, option ? *option : *cd.form, holder);
+    }
+    if (ok && done.var >= 0) {
         ck.out->vars[static_cast<std::size_t>(done.var)].placement = holder.placement;
         if (holder.placement.on_disk || holder.placement.interleave != 0) {
             ok = MoveToDisk(ck, done, *option);

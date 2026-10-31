@@ -3,6 +3,8 @@
 // meets and run to a fixed point around loops; a return, break or continue ends a path. Each
 // call passes its state on to its callee, so the walks go round until no function's entry
 // state grows (the call graph has no cycles, so callers-first order settles in a round or two).
+// Beside it the switches surely on: met where paths join, and a function's the meet of all its
+// calls'; they start all on for every function but main and the handler and only shrink.
 
 #include "check/aux_mode.hpp"
 
@@ -10,9 +12,12 @@ namespace tisple {
 
 namespace {
 
+constexpr std::uint8_t kAuxBoth = kAuxReads | kAuxWrites;
+
 struct Flow {
     bool live = true; // false: no path gets here
     std::uint8_t bits = 0;
+    std::uint8_t sure = 0; // on every path here
 };
 
 Flow Dead() {
@@ -30,11 +35,12 @@ Flow Join(Flow a, Flow b) {
     }
     Flow f;
     f.bits = static_cast<std::uint8_t>(a.bits | b.bits);
+    f.sure = static_cast<std::uint8_t>(a.sure & b.sure);
     return f;
 }
 
 bool Same(Flow a, Flow b) {
-    return a.live == b.live && a.bits == b.bits;
+    return a.live == b.live && a.bits == b.bits && a.sure == b.sure;
 }
 
 struct LoopExits {
@@ -48,6 +54,10 @@ struct Walker {
     std::int32_t function = -1;
     std::vector<LoopExits> loops;
     bool changed = false;
+    // this round, by function: the switches surely on at all its calls, and whether it has one
+    std::vector<std::uint8_t> site_sure;
+    std::vector<bool> has_site;
+    std::vector<bool> seen; // by expr: some walk reached it
 };
 
 const Expr& At(const Walker& w, ExprId id) {
@@ -62,10 +72,15 @@ Flow Walk(Walker& w, ExprId id, Flow in);
 
 // a callee runs with the state its call is made in
 void Calls(Walker& w, std::int32_t callee, ExprId site, Flow at) {
-    if (!at.live || at.bits == 0 || callee < 0) {
+    if (!at.live || callee < 0) {
         return;
     }
     std::size_t c = static_cast<std::size_t>(callee);
+    w.site_sure[c] = static_cast<std::uint8_t>(w.site_sure[c] & at.sure);
+    w.has_site[c] = true;
+    if (at.bits == 0) {
+        return;
+    }
     std::uint8_t now = static_cast<std::uint8_t>(w.modes->entry[c] | at.bits);
     if (now != w.modes->entry[c]) {
         w.modes->entry[c] = now;
@@ -108,6 +123,7 @@ Flow WalkSwitch(Walker& w, const Expr& e, Flow in) {
     Flow x = Walk(w, e.a, in);
     if (e.value == 0) {
         x.bits = 0;
+        x.sure = 0;
         return x;
     }
     x = Walk(w, e.b, x);
@@ -116,6 +132,7 @@ Flow WalkSwitch(Walker& w, const Expr& e, Flow in) {
     w.modes->owns[f] = static_cast<std::uint8_t>(w.modes->owns[f] | bits);
     w.modes->any = true;
     x.bits = bits;
+    x.sure = AuxSureBits(*w.program, e);
     return x;
 }
 
@@ -123,8 +140,10 @@ Flow Walk(Walker& w, ExprId id, Flow in) {
     if (id < 0 || !in.live) {
         return in;
     }
-    std::uint8_t& state = w.modes->state[static_cast<std::size_t>(id)];
-    state = static_cast<std::uint8_t>(state | in.bits);
+    std::size_t at = static_cast<std::size_t>(id);
+    w.modes->state[at] = static_cast<std::uint8_t>(w.modes->state[at] | in.bits);
+    w.modes->sure[at] = static_cast<std::uint8_t>(w.modes->sure[at] & in.sure);
+    w.seen[at] = true;
     const Expr& e = At(w, id);
     switch (e.kind) {
     case ExprKind::Literal:
@@ -250,6 +269,32 @@ std::uint8_t AuxOnBits(const Program& program, const Expr& on) {
     return bits;
 }
 
+std::uint8_t AuxSureBits(const Program& program, const Expr& on) {
+    std::uint8_t bits = 0;
+    std::uint16_t value = 0;
+    if (ConstValue(program, on.a, value) && value != 0) {
+        bits |= kAuxReads;
+    }
+    if (ConstValue(program, on.b, value) && value != 0) {
+        bits |= kAuxWrites;
+    }
+    return bits;
+}
+
+namespace {
+
+// every call of it is made with these surely on; never for what runs with no call: main, the
+// handler, and a function nothing calls
+std::uint8_t EntrySure(const Program& program, const Walker& w, std::size_t f) {
+    std::int32_t id = static_cast<std::int32_t>(f);
+    if (!w.has_site[f] || id == program.main || id == program.handler) {
+        return 0;
+    }
+    return w.site_sure[f];
+}
+
+} // namespace
+
 AuxModes FindAuxModes(const Program& program) {
     AuxModes modes;
     std::size_t n = program.functions.size();
@@ -257,12 +302,17 @@ AuxModes FindAuxModes(const Program& program) {
     modes.entry_site.assign(n, -1);
     modes.owns.assign(n, 0);
     modes.state.assign(program.exprs.size(), 0);
+    modes.sure.assign(program.exprs.size(), kAuxBoth);
+    modes.entry_sure.assign(n, kAuxBoth);
     std::vector<std::int32_t> order = CallersFirst(program);
     Walker w;
     w.program = &program;
     w.modes = &modes;
+    w.seen.assign(program.exprs.size(), false);
     for (int round = 0; round < 64; round++) {
         w.changed = false;
+        w.site_sure.assign(n, kAuxBoth);
+        w.has_site.assign(n, false);
         for (std::int32_t f : order) {
             const Function& fn = program.functions[static_cast<std::size_t>(f)];
             if (fn.body < 0) {
@@ -272,11 +322,22 @@ AuxModes FindAuxModes(const Program& program) {
             w.loops.clear();
             Flow in;
             in.bits = modes.entry[static_cast<std::size_t>(f)];
+            in.sure = modes.entry_sure[static_cast<std::size_t>(f)];
             Walk(w, fn.body, in);
+        }
+        for (std::size_t f = 0; f < n; f++) {
+            std::uint8_t now = EntrySure(program, w, f);
+            if (now != modes.entry_sure[f]) {
+                modes.entry_sure[f] = now;
+                w.changed = true;
+            }
         }
         if (!w.changed) {
             break;
         }
+    }
+    for (std::size_t i = 0; i < program.exprs.size(); i++) {
+        modes.sure[i] = w.seen[i] ? modes.sure[i] : 0;
     }
     return modes;
 }

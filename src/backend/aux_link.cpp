@@ -97,8 +97,9 @@ std::vector<AddressRange> MirroredConsts(const Backend& be, const Layout& layout
     }
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const VarPlace& place = layout.vars[v];
-        if (!be.aux.consts[v] || place.dropped || place.interp_only || place.size == 0 ||
-            place.address >= kMirrorEnd) {
+        bool aux_only = program.vars[v].placement.in_aux; // a const :in aux: there already
+        if (!be.aux.consts[v] || aux_only || place.dropped || place.interp_only ||
+            place.size == 0 || place.address >= kMirrorEnd) {
             continue;
         }
         mirrored[v] = true;

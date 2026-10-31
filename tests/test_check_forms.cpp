@@ -112,6 +112,19 @@ void PlaceTests(TestResults& results) {
         "t.tsp:2:26: the index into t (10 elements) needs a u8 but i is u16; write (as u8 i)");
     ExpectError(results, t + "(fn f () u8 (at t 10))",
                 "t.tsp:2:19: index 10 is past the end of t (10 elements)");
+    // not in an arm that never runs: a const that says which build it is picks the arm
+    const std::string k = "(const K u8 255)\n" + t;
+    Built dead = BuildText(k + "(fn main () void\n"
+                               "    (if (!= K 255) (set (at t K) 1))\n"
+                               "    (if (= K 255) (set (at t 0) 2) (set (at t K) 3))\n"
+                               "    (set (at t 1) (if (< K 10) (at t K) 7))\n"
+                               "    (while (!= K 255) (set (at t K) 4))\n"
+                               "    (while true))");
+    CHECK(results, dead.ok);
+    ExpectError(results, k + "(fn f () void (if (= K 255) (set (at t K) 1)))",
+                "t.tsp:3:40: index 255 is past the end of t (10 elements)");
+    ExpectError(results, k + "(fn f ((c bool)) void (if c (set (at t K) 1)))",
+                "t.tsp:3:40: index 255 is past the end of t (10 elements)");
     ExpectError(results, "(let big (array u8 300))\n(fn f ((i u8)) u8 (at big i))",
                 "t.tsp:2:27: the index into big (300 elements) needs a u16 but i is u8; write (as "
                 "u16 i)");
@@ -160,7 +173,8 @@ void DeclarationTests(TestResults& results) {
                 "t.tsp:1:21: :in is given twice; keep one");
     ExpectError(results, "(let x u8 0 :nearby 1)",
                 "t.tsp:1:13: :nearby is not a placement option; use :address, :align, "
-                ":boundary, :in aux, :reserve, or on a const table :on disk and :interleave");
+                ":boundary, :in aux, :reserve, or on a const table :on disk, :interleave and "
+                ":strings aux");
     // :reserve: room at a fixed address the program reaches with pointers
     ExpectError(results, "(let page (array u8 8192) :reserve)",
                 "t.tsp:1:1: :reserve keeps memory at a fixed address; give it one: (let page "
@@ -175,9 +189,8 @@ void DeclarationTests(TestResults& results) {
                 "in (as (ptr u8) 0x2000)");
     ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :reserve)",
                 "t.tsp:1:47: :reserve is for top-level lets; make T a let");
-    // :in aux: reached only through addr_of and lib/auxmem
-    ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :in aux)",
-                "t.tsp:1:47: :in aux is for top-level lets; make T a let");
+    // :in aux: a let reached only through addr_of and lib/auxmem (a const :in aux:
+    // test_check_aux.cpp)
     ExpectError(results, "(let doc (array u8 100) :in aux)\n(fn f () u8 (at doc 3))",
                 "t.tsp:2:17: doc is in aux memory, which code reaches only through pointers: "
                 "(load (addr_of doc)) inside a with_aux that reads, or copy it with (auxmem.read "

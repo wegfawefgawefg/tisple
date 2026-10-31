@@ -1,5 +1,6 @@
 // placement options on a top-level let or const: :address, :align, :boundary, :in aux and
-// :reserve, and :on disk and :interleave on a const table (docs/language.md, Placement)
+// :reserve, and :on disk, :interleave and :strings aux on a const table (docs/language.md,
+// Placement)
 
 #include "check/checker.hpp"
 
@@ -32,6 +33,19 @@ void ReadIn(Checker& ck, Var& var, const Node& key, const Node* value) {
         return;
     }
     var.placement.in_aux = true;
+}
+
+// :strings aux: the strings written in a const table's value live in aux memory
+void ReadStrings(Checker& ck, Var& var, const Node& key, const Node* value) {
+    if (!value || value->kind != NodeKind::Symbol || value->text != "aux") {
+        Err(ck, value ? *value : key, ":strings takes aux; write :strings aux");
+        return;
+    }
+    if (var.placement.strings_aux) {
+        Err(ck, key, ":strings is given twice; keep one");
+        return;
+    }
+    var.placement.strings_aux = true;
 }
 
 // :on names the boot disk: the table's bytes live there, not in memory (docs/disks.md)
@@ -119,6 +133,10 @@ int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
         ReadOn(ck, var, key, value);
         return 2;
     }
+    if (name == ":strings") {
+        ReadStrings(ck, var, key, value);
+        return 2;
+    }
     if (name == ":interleave") {
         ReadInterleave(ck, var, key, value);
         return 2;
@@ -126,7 +144,7 @@ int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
     if (name != ":address" && name != ":align" && name != ":boundary") {
         Err(ck, key,
             name + " is not a placement option; use :address, :align, :boundary, :in aux, "
-                   ":reserve, or on a const table :on disk and :interleave");
+                   ":reserve, or on a const table :on disk, :interleave and :strings aux");
         return 2;
     }
     if (!value) {
@@ -137,10 +155,34 @@ int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
     return 2;
 }
 
+namespace {
+
+// :in aux at an :address: it must be memory RAMRD and RAMWRT switch
+void CheckAuxAddress(Checker& ck, const Node& form, const Var& var) {
+    const Placement& place = var.placement;
+    if (!place.in_aux || !place.has_address || var.type <= kErrorType) {
+        return;
+    }
+    std::uint32_t end = place.address + TypeOf(*ck.out, var.type).size;
+    if (place.address < 0x0200 || end > 0xC000) {
+        Err(ck, form,
+            form.items[1].text +
+                " is in aux memory at an :address outside $0200-$BFFF, which lib/auxmem "
+                "cannot reach; move it");
+    }
+}
+
+} // namespace
+
 // :reserve is room at a fixed address with nothing in it; :in aux lives where lib/auxmem reaches
 void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_value) {
     const Placement& place = var.placement;
     const std::string& name = form.items[1].text;
+    if (place.strings_aux) {
+        Err(ck, form,
+            ":strings aux is for const tables, whose strings are written in their value; make " +
+                name + " a const");
+    }
     if (place.reserve && !place.has_address) {
         Err(ck, form,
             ":reserve keeps memory at a fixed address; give it one: (let " + name +
@@ -156,15 +198,28 @@ void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_
             name + " is :reserve, memory the program reaches by address, so it has no value; "
                    "drop the value or :reserve");
     }
-    if (!place.in_aux || !place.has_address || var.type <= kErrorType) {
-        return;
+    CheckAuxAddress(ck, form, var);
+}
+
+bool CheckConstOptions(Checker& ck, const Node& form, const Node& option, const Var& var) {
+    const Placement& place = var.placement;
+    const std::string& name = form.items[1].text;
+    if (place.reserve) {
+        Err(ck, option, ":reserve is for top-level lets; make " + name + " a let");
+        return false;
     }
-    std::uint32_t end = place.address + TypeOf(*ck.out, var.type).size;
-    if (place.address < 0x0200 || end > 0xC000) {
-        Err(ck, form,
-            name + " is in aux memory at an :address outside $0200-$BFFF, which lib/auxmem "
-                   "cannot reach; move it");
+    if (place.in_aux && place.on_disk) {
+        Err(ck, option, name + " is :in aux and :on disk, which are two places; keep one");
+        return false;
     }
+    if (place.in_aux && place.strings_aux) {
+        Err(ck, option,
+            ":in aux puts " + name + "'s strings in aux memory already; drop :strings aux");
+        return false;
+    }
+    std::size_t before = ck.errors->size();
+    CheckAuxAddress(ck, form, var);
+    return ck.errors->size() == before;
 }
 
 // placement options come last, as on let: (const T (array u8 3) (make ...) :align 256)

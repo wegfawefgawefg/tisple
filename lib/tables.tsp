@@ -5,7 +5,7 @@
 ;   (tables.packed_bytes PIC (0 0 85 ...)) the bytes given, packed
 
 ; (const NAME (array type count) (make (array type count) (f 0) (f 1) ...) options ...).
-; f is a macro or a function of the index, and options are placement: :boundary 256
+; f is a macro or a function of the index; options are placement: :boundary 256, :in aux
 (macro table (name type count f & options)
     `(const ,name (array ,type ,count)
         (make (array ,type ,count) ,@(map f (range 0 count)))

@@ -2036,6 +2036,20 @@ From lib/dhgr and the packed-data examples (2026-10-30):
     Fuzz: 6 shards x 2500-seed chunks after each change, 3,284,368 programs in all; the
     last, on the final code, 779,682 programs (120,000 seeds in 6 shards from 1100000000), 0
     mismatches, 0 invalid.
+60. Catwiz's content text in aux memory, and a bounds check in dead code (2026-10-31, branch
+    aux-const; docs/language.md "Const data in aux memory", design.md the same).
+    - Catwiz built at squeeze 10 of 10, about 5 KB of it string literals in const tables of
+      structs, with aux memory free. `:strings aux` on a const table puts the strings written
+      in its value in aux memory and keeps the table in main memory; `:in aux` puts the table
+      there too, read by name only where RAMRD is surely on. A copy of Catwiz with
+      `:strings aux` on ENEMIES, ITEMS, CHARMS, FIGHTS and MOVES (its text helpers not yet
+      reading inside a with_aux, so only the layout means anything) builds at squeeze 0 with
+      17 functions (2962 bytes) in the card's bank 1, where today's needs squeeze 10 and 10
+      functions there; 9 disk segments, once aux pieces a few pages apart are one segment
+      (the strings fill the gaps between :reserve lets and made 11).
+    - `(if (!= K 255) (set (at a K) 1))` with `K` 255 failed with "index 255 is past the end
+      of a": the checker no longer bounds-checks a constant index in an arm whose condition
+      folds the other way.
 
 ## Gap finder (2026-10-26)
 
