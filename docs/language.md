@@ -963,7 +963,11 @@ unless `:address` lets cut its memory into more than 10 pieces.
 Each piece outside the first is a segment. `tisple run` loads them all and a
 disk built with `--disk` boots them all (docs/disks.md), but one DOS 3.3 BRUN
 file holds one stretch of main memory, so `tisple build -o` refuses a program
-with segments and says to build a disk.
+with segments and says to build a disk. In aux memory, from `$0800` up, pieces
+less than 4 pages apart are one segment with zeros between them (2026-10-31):
+only lets with no value can be there, `:reserve` ones among them, which the
+program fills while it runs, and a segment less is worth a few pages of zeros
+on a disk that holds 10.
 
 The screens. The hi-res pages and text page 2 are ordinary memory unless the
 program keeps them, which takes one `let`:

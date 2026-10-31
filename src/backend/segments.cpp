@@ -17,8 +17,21 @@ MemorySegment SegmentOf(const std::vector<std::uint8_t>& memory, MemoryBank bank
     return segment;
 }
 
-// every :in aux let's bytes and the mirrored ranges: runs of them, a new segment after a gap
-// of a page or more
+namespace {
+
+// aux pieces this close are one segment, with zeros between, from $0800 up: nothing with a
+// starting value is in the gap (a let with no value there, :reserve memory among them, holds
+// whatever memory held, which loading may write: the program fills it at run time), and no
+// loader runs in aux memory. A boot disk holds 10 segments, each from a track of its own, so a
+// few pages of zeros cost less than a segment; the strings of const tables in aux memory fill
+// the small gaps between other aux data, and would otherwise each make one
+constexpr std::uint32_t kAuxGap = 0x400;
+constexpr std::uint32_t kAuxGapFloor = 0x0800; // below, aux memory's text page
+
+} // namespace
+
+// every :in aux let's and const's bytes and the mirrored ranges: runs of them, a new segment
+// after a gap of 4 pages or more
 void AuxSegments(const Program& program, const Layout& layout, const std::vector<std::uint8_t>& aux,
                  const std::vector<AddressRange>& mirrored, std::vector<MemorySegment>& out) {
     std::vector<AddressRange> pieces = mirrored;
@@ -37,7 +50,8 @@ void AuxSegments(const Program& program, const Layout& layout, const std::vector
         std::uint32_t low = pieces[i].start;
         std::uint32_t high = pieces[i].end;
         i++;
-        while (i < pieces.size() && pieces[i].start < high + 0x100) {
+        while (i < pieces.size() && (pieces[i].start < high + 0x100 ||
+                                     (high >= kAuxGapFloor && pieces[i].start < high + kAuxGap))) {
             high = std::max(high, pieces[i].end);
             i++;
         }

@@ -49,8 +49,9 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   one memory that share a page are one on the disk, with zeros between them
   (2026-10-30: two reserved rows of text page 2 split page `$0B` in three, and
   each load cleared the others' bytes there); segments whose bytes overlap are an
-  error. The rest of the disk is an empty DOS 3.3 volume with
-  the program's tracks marked in use, so `tisple disk put` can add files, and
+  error. Aux memory's pieces less than 4 pages apart, from `$0800` up, are one
+  segment already (2026-10-31, docs/language.md, Memory map). The rest of the disk
+  is an empty DOS 3.3 volume with the program's tracks marked in use, so `tisple disk put` can add files, and
   its catalog on track 17 survives a program of any size.
 - Size limits (2026-10-29; the table for every build is in docs/language.md,
   Memory map). Main memory `$0B00-$BFFF`: the loader runs in `$0800-$0AFF`, so
