@@ -47,9 +47,12 @@ std::uint16_t ReadLeftOut(const Interp& in, std::int32_t root, Cursor cursor, st
 Cursor EvalPlace(Interp& in, ExprId id, std::int32_t& root) {
     const Expr& e = At(in, id);
     switch (e.kind) {
-    case ExprKind::VarRef:
+    case ExprKind::VarRef: {
         root = e.ref;
-        return VarCursor(*in.layout, e.ref);
+        Cursor cursor = VarCursor(*in.layout, e.ref);
+        cursor.aux = in.program->vars[static_cast<std::size_t>(e.ref)].placement.in_aux;
+        return cursor;
+    }
     case ExprKind::Field:
         return FieldCursor(EvalPlace(in, e.a, root), e.value);
     case ExprKind::Index: {

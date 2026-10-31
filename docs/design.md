@@ -439,6 +439,34 @@ not run with RAMRD or RAMWRT on. How it is made:
   dhgr.runs (ALTZP for the card; one decoder serves its three places), auxmem.guard (interrupt
   glue in page 3).
 
+### Const data in aux memory (2026-10-31)
+
+docs/language.md, "Const data in aux memory", is the language: `:in aux` and `:strings aux` on
+const tables. Catwiz built at squeeze 10 of 10, about 5 KB of it string literals in content
+tables. How it is made:
+
+- The checker folds the value of such a const with `Context::aux_strings` set, so each string
+  literal in it becomes a table from a second pool (`str#a0`, ...) with `Placement::in_aux`; the
+  const itself gets `in_aux` for `:in aux`. From there the layout, the link's aux segments and
+  the interpreter's aux image treat them as they treat lets `:in aux`; the mirroring of const
+  data with_aux code reads leaves them out (they are only in aux memory), and the link never
+  makes one the interpreter's only (an address inside the code would be main memory's).
+- Where a read by name is allowed (check/aux_consts.cpp): AuxModes has, beside the switches
+  that may be on, the switches surely on (check/aux_mode.cpp): met where paths join, an
+  AuxSwitch on gives the bools that are the constant true, and a function's entry is the meet
+  over all its calls (0 for main, the handler and a function nothing calls; all on to start,
+  then only shrinking, so the existing rounds settle it). A read by name needs RAMRD surely on,
+  or must be a scalar `ConstValue` folds, which the backend does at -O0 too.
+- The interpreter reads a place rooted at an `:in aux` var from its aux image (`Cursor::aux`).
+- `ConstValue` does not fold a load through a constant pointer into aux data: outside a region
+  the machine reads main memory there, and the interpreter does the same.
+- The mid-level passes already treat `in_aux` vars as hardware (never steady, never hoisted,
+  never kept in a local), which is what a read by name in a region needs.
+- The cost is the `with_aux` around each read and the mirrored code that does it. 30 items with
+  two strings (1.2 KB of text): 1067 bytes of main memory saved with `:in aux`, 956 with
+  `:strings aux` (the table's 5 bytes an item stay); 40 cycles more a character read one at a
+  time through a helper, 18 more copied a string at a time.
+
 ## Target
 
 NMOS 6502 (runs on every Apple II), Apple IIe memory map, the extended

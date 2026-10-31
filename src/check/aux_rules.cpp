@@ -5,7 +5,8 @@
 // - RAMWRT on: no set of a global outside zero page (it would go to aux memory's byte at the
 //   global's address).
 // - RAMRD on: no read of a global outside zero page (it would read aux memory's). Const data
-//   is mirrored by the link, so it reads the same.
+//   is mirrored by the link, so it reads the same; a const :in aux is only there
+//   (aux_consts.cpp).
 // - Either: no call through a function pointer, no jsr, io_read or io_write at an address
 //   worked out at run time (each stores into its own code, which aux memory's copy would not
 //   see), and no with_aux in a function that runs inside one.
@@ -211,6 +212,7 @@ std::vector<std::int32_t> FindCallers(const Program& program, const AuxModes& mo
 void CheckAuxCode(Checker& ck) {
     const Program& program = *ck.out;
     AuxModes modes = FindAuxModes(program);
+    CheckAuxConstReads(ck, modes);
     if (!modes.any) {
         return;
     }

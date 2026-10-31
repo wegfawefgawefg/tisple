@@ -65,8 +65,13 @@ using interp::WriteValue;
 
 namespace {
 
-// a byte's memory: aux memory's for a pointer access of $0200-$BFFF with its switch on
+// a byte's memory: aux memory's for a pointer access of $0200-$BFFF with its switch on, and
+// for a const :in aux read by name (the checker allows that only where RAMRD is on, or where
+// the read folds to its value)
 bool InAux(const Interp& in, const Cursor& cursor, std::uint16_t address, bool write) {
+    if (cursor.aux && !in.aux.empty()) {
+        return true;
+    }
     bool on = write ? in.aux_writes : in.aux_reads;
     return on && cursor.pointer && address >= 0x0200 && address < 0xC000 && !in.aux.empty();
 }

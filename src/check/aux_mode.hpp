@@ -25,6 +25,8 @@ constexpr std::uint8_t kAuxWrites = 2;
 // the switches an AuxSwitch on may turn on: RAMRD unless its reads is false, RAMWRT unless
 // its writes is
 std::uint8_t AuxOnBits(const Program& program, const Expr& on);
+// the switches it surely turns on: RAMRD when its reads is the constant true, RAMWRT likewise
+std::uint8_t AuxSureBits(const Program& program, const Expr& on);
 
 struct AuxModes {
     // by function: the switches that may be on while it runs, from the calls inside a
@@ -36,6 +38,13 @@ struct AuxModes {
     std::vector<std::uint8_t> owns;
     // by expr: the switches that may be on when it runs (an AuxSwitch off: before it runs)
     std::vector<std::uint8_t> state;
+    // by expr: the switches that are surely on when it runs, on every path to it: inside a
+    // with_aux whose bool is the constant true, or in a function every call of which is made
+    // with them on (what a read by name of a const :in aux needs)
+    std::vector<std::uint8_t> sure;
+    // by function: the switches surely on whenever it runs (0 for main, the handler, and a
+    // function nothing calls)
+    std::vector<std::uint8_t> entry_sure;
     bool any = false; // some with_aux in the program
 };
 
@@ -57,6 +66,13 @@ inline bool AuxMirrored(const AuxModes& modes, std::int32_t function) {
 inline std::uint8_t AuxStateAt(const AuxModes& modes, ExprId id) {
     return id >= 0 && static_cast<std::size_t>(id) < modes.state.size()
                ? modes.state[static_cast<std::size_t>(id)]
+               : 0;
+}
+
+// the switches surely on when expr id runs
+inline std::uint8_t AuxSureAt(const AuxModes& modes, ExprId id) {
+    return id >= 0 && static_cast<std::size_t>(id) < modes.sure.size()
+               ? modes.sure[static_cast<std::size_t>(id)]
                : 0;
 }
 

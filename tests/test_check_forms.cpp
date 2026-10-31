@@ -173,7 +173,8 @@ void DeclarationTests(TestResults& results) {
                 "t.tsp:1:21: :in is given twice; keep one");
     ExpectError(results, "(let x u8 0 :nearby 1)",
                 "t.tsp:1:13: :nearby is not a placement option; use :address, :align, "
-                ":boundary, :in aux, :reserve, or on a const table :on disk and :interleave");
+                ":boundary, :in aux, :reserve, or on a const table :on disk, :interleave and "
+                ":strings aux");
     // :reserve: room at a fixed address the program reaches with pointers
     ExpectError(results, "(let page (array u8 8192) :reserve)",
                 "t.tsp:1:1: :reserve keeps memory at a fixed address; give it one: (let page "
@@ -188,9 +189,8 @@ void DeclarationTests(TestResults& results) {
                 "in (as (ptr u8) 0x2000)");
     ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :reserve)",
                 "t.tsp:1:47: :reserve is for top-level lets; make T a let");
-    // :in aux: reached only through addr_of and lib/auxmem
-    ExpectError(results, "(const T (array u8 2) (make (array u8 2) 1 2) :in aux)",
-                "t.tsp:1:47: :in aux is for top-level lets; make T a let");
+    // :in aux: a let reached only through addr_of and lib/auxmem (a const :in aux:
+    // test_check_aux.cpp)
     ExpectError(results, "(let doc (array u8 100) :in aux)\n(fn f () u8 (at doc 3))",
                 "t.tsp:2:17: doc is in aux memory, which code reaches only through pointers: "
                 "(load (addr_of doc)) inside a with_aux that reads, or copy it with (auxmem.read "

@@ -107,6 +107,8 @@ struct Cursor {
     bool root = true; // still the Var itself, so its plane_stride applies
     // reached through a pointer: inside a with_aux, the memory the switches pick (interp.hpp)
     bool pointer = false;
+    // a place in a var :in aux by name (a const's, read where RAMRD is on): aux memory's bytes
+    bool aux = false;
 };
 
 Cursor VarCursor(const Layout& layout, std::int32_t var);

@@ -307,7 +307,7 @@ void CheckRegionUses(Checker& ck) {
                          " is on the disk, not in memory; its name holds the record lib/disk "
                          "reads it by: (disk.read (addr_of (at buffer 0)) (addr_of (at " +
                          name + " 0)) disk.MAIN)");
-        } else if (var.placement.in_aux && !under_addr_of[i]) {
+        } else if (var.placement.in_aux && var.kind != VarKind::Const && !under_addr_of[i]) {
             AddError(*ck.errors, e.loc,
                      name +
                          " is in aux memory, which code reaches only through pointers: (load "

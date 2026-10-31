@@ -161,8 +161,8 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 `:name` does two things only:
 
 1. Placement options on a top-level `let` or a `const` table, after the value:
-   `:address`, `:align`, `:boundary`, on a `let` `:in aux` and `:reserve`, and on a
-   `const` table `:on disk` and `:interleave` (see Placement). `:reserve` is the one option without a value. On a `fn`,
+   `:address`, `:align`, `:boundary` and `:in aux`, on a `let` `:reserve`, and on a
+   `const` table `:on disk`, `:interleave` and `:strings aux` (see Placement). `:reserve` is the one option without a value. On a `fn`,
    after the return type, `:interrupt` (see Interrupts), also without one.
 2. Field names in struct values: `(make Sprite :x 10 :y 20 :active true)`.
    Every field, in declared order, none left out. The names exist so a swapped
@@ -519,7 +519,8 @@ main.tsp:12:1: sprite BALL: row 1 is 3 wide, the first is 4 (in macro tables.spr
   `(const NAME (array type count) (make (array type count) (f 0) (f 1) ...)
   options ...)`. `(tables.sprite NAME row ...)` turns rows of `#` and `.` into
   hi-res bytes: 7 pixels a byte, the low bit leftmost, `(width + 6) / 7` bytes
-  a row. `(tables.packed NAME count f options ...)` is the same
+  a row; `(tables.table T u8 256 f :in aux)` is a const in aux memory.
+  `(tables.packed NAME count f options ...)` is the same
   bytes as a table, packed with `pack` (a let with `:in aux`, otherwise a
   const), and `(tables.packed_bytes NAME (b ...) options ...)` packs the bytes
   given; lib/unpack puts them back.
@@ -745,7 +746,8 @@ Added 2026-10-31, so the code that reaches the extended 80-column card's aux mem
     when RAMRD may be on (each an error that names the variable and says to copy
     it to a local first, or give it an `:address` in zero page). Locals and
     parameters are fine: their frames are in zero page. Const data is fine: the
-    link copies what such code reads to aux memory at the same address;
+    link copies what such code reads to aux memory at the same address (a const
+    `:in aux` is only there: Const data in aux memory, below);
   - may not call through a function pointer, nor `io_read`, `io_write` or `jsr` at
     an address worked out at run time (each would store into its own code, which
     aux memory's copy does not see);
@@ -767,13 +769,67 @@ Added 2026-10-31, so the code that reaches the extended 80-column card's aux mem
   language card needs no copy (RAMRD does not reach it).
 - Interrupts: as for any aux memory access, `(auxmem.guard)` first, or interrupts
   off around it (Interrupts).
-- The interpreter has an aux memory too: the lets `:in aux` and the const data the
-  link copies start there, and a pointer access of `$0200`-`$BFFF` in a region
+- The interpreter has an aux memory too: the lets and consts `:in aux` and the
+  const data the link copies start there, and a pointer access of `$0200`-`$BFFF` in a region
   goes to it when its switch is on. So programs using lib/auxmem run in `tisple
   interp`.
 - ALTZP (aux memory's zero page, stack and language card) is not part of it: code
   under ALTZP would find its frames gone. lib/auxcard and dhgr.runs from the aux
   card stay 6502 code (dhgr.md).
+
+### Const data in aux memory
+
+Added 2026-10-31, for content text that no longer fits main memory (Catwiz's item,
+charm and move text, about 5 KB, all string literals in const tables of structs).
+
+```scheme
+(struct Item ((name (ptr u8)) (text (ptr u8)) (cost u8)))
+(const ITEMS (array Item 30) (make (array Item 30) (make Item :name "YARN WAND" ...) ...)
+    :strings aux)                              ; the table in main memory, its strings in aux
+(const LORE (array Item 30) (make ...) :in aux) ; the table and its strings in aux
+
+(fn char_at ((s (ptr u8)) (i u8)) u8 (with_aux true false (load (+ s i))))
+(fn lore_name ((k u8)) (ptr u8) (with_aux true false (at LORE k name)))
+```
+
+- `:strings aux` on a const table: every string literal written in its value is a
+  string table in aux memory (each text once, shared by every such table). The
+  table itself stays in main memory and reads as any const does; its pointer fields
+  hold aux addresses. Strings it takes from elsewhere (a pointer const, `(at NAMES
+  2)`) stay where they are.
+- `:in aux` on a const table: the table and the strings written in its value are
+  in aux memory only.
+  - It is read by name (`(at LORE k cost)`, `LORE.x`) only where RAMRD is surely
+    on: inside a `(with_aux true ...)`, or in a function every call of which is
+    made there. A `with_aux` whose reads is not the constant true does not count.
+    Elsewhere it is an error that says where to read it.
+  - Outside, a number at constant indexes, `(at LORE 3 cost)`, is fine: the code
+    holds the number, at -O0 too, and reads nothing at run time. A pointer at
+    constant indexes is not (-O0 does not fold it).
+  - `(addr_of LORE ...)` works anywhere and gives its aux address.
+  - The reads are the usual absolute and indexed loads (`LDA LORE_cost,X`); RAMRD
+    makes them read aux memory. The code doing them may run with RAMRD on, so it is
+    mirrored like all such code.
+- A pointer into either points into aux memory. Loading through it is the
+  program's business: inside a `with_aux` that reads, as for any aux pointer. The
+  optimiser never folds such a load to the byte's value, though it folds reads by
+  name at constant places as for any const. Reads by name are never moved, merged
+  or hoisted (they are left as they are, like reads of `:address` variables).
+- `tables.table` passes options through, so `(tables.table T u8 256 f :in aux)` is
+  a const in aux memory. `tables.packed` with `:in aux` stays a let there (lib/unpack
+  reaches it through a pointer anyway).
+- The interpreter keeps them in its aux memory; a read by name of a const `:in
+  aux` reads it there.
+
+Which to use: `:strings aux` when code reads the table's numbers all over (Catwiz's
+items: their slot, cost and amount), `:in aux` for a table read in a few places.
+
+What it costs, measured on 30 items with two strings each (about 1.2 KB of text,
+tests/test_backend_aux.cpp): main memory goes from 2789 bytes to 1722 with `:in aux`
+and to 1833 with `:strings aux`. A character read through `char_at` above takes 46
+cycles with its call, 40 more than a load from main memory; copying a whole string
+into a main memory buffer in one `with_aux` (a `LDA (s),Y` / `STA buf,Y` loop) and
+reading it from there costs 18 more a character.
 
 ## Machine code
 
@@ -834,13 +890,14 @@ The linker checks them and fails the build if one can't hold.
 | `:address 0x6000` | start at exactly this address |
 | `:align 256` | start on a multiple of 256 |
 | `:boundary 256` | whole object inside one 256-byte block; for a split table, each byte table |
-| `:in aux` | a `let` in aux memory, reached only through pointers in a `with_aux` or `lib/auxmem` (2026-10-27) |
+| `:in aux` | a `let` in aux memory, reached only through pointers in a `with_aux` or `lib/auxmem` (2026-10-27); a `const` table in aux memory, its strings too, read by name only where RAMRD is surely on (2026-10-31, Aux memory code) |
+| `:strings aux` | on a `const` table: the string literals written in its value live in aux memory; the table stays in main memory (2026-10-31, Aux memory code) |
 | `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
 | `:on disk` | a const `(array u8 n)` that lives on the boot disk, not in memory; its name holds where, for `lib/disk` (2026-10-30, [`disks.md`](disks.md), Disk tables) |
 | `:interleave 2` | with `:on disk`: how many physical sectors apart its sectors go round a track, 1 to 15, 2 when not given |
 
-Placement goes on top-level `let`s and `const` tables, after the value; `:in`
-and `:reserve` on `let`s only, `:on` and `:interleave` on `const` tables only. An explicit `:address` may point anywhere, a
+Placement goes on top-level `let`s and `const` tables, after the value; `:reserve`
+on `let`s only, `:on`, `:interleave` and `:strings` on `const` tables only. An explicit `:address` may point anywhere, a
 hi-res page included (`(let screen (array u8 8192) :address 0x2000)`);
 automatic placement never uses zero page, the stack, text page 1 or `$C000`
 and up, and fills the rest by the memory map below.
@@ -878,7 +935,8 @@ order:
    program still does not fit: whole functions, the coldest for their bytes, called through
    stubs that switch banks, and nothing bank 1 code reads kept in bank 2's `$D000`-`$DFFF`
    (docs/overlays.md, Built).
-4. Lets `:in aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
+4. Lets and const tables `:in aux`, and the strings of const tables `:in aux` and
+   `:strings aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
    above and from the code and const data `with_aux` code may run and read with
    RAMRD on, which the link copies to the same addresses there (Aux memory code);
    an `:address` there must lie in `$0200`-`$BFFF`.
@@ -940,7 +998,8 @@ or plain use is an error that says to reach it through a pointer:
 The pointer `addr_of` gives holds an aux address; `load` through it outside a
 `with_aux` would read main memory. Aux lets never go in zero page, and never on
 the code and const data the link copies to aux memory (Aux memory code). The
-interpreter starts them in its own aux memory (2026-10-31).
+interpreter starts them in its own aux memory (2026-10-31). Const tables and
+their strings may live there too (Aux memory code, Const data in aux memory).
 
 ## Strings
 
@@ -952,7 +1011,9 @@ use and placed with the other const tables; `(const GREETING (ptr u8)
 reader's, `\n \t \r \0 \\ \" \xHH`: `\r` is RETURN, which lib/text40 and
 lib/text80 take as a new line, and a `\0` ends the string early. Nothing writes
 a string; a store through one is undefined. A string is an address the link
-knows, so it may fill a const or start a top-level `let` (Static data).
+knows, so it may fill a const or start a top-level `let` (Static data). The
+strings written in the value of a const table `:in aux` or `:strings aux` are
+tables of their own in aux memory, shared the same way (Aux memory code).
 
 ## Static data
 

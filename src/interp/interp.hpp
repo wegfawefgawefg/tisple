@@ -15,11 +15,12 @@
 //   it is written, so overlapping copies through pointers are well defined.
 // - io_read and io_write go only to IoHooks, never to memory; a u16 access is the low byte
 //   at addr, then the high byte at addr + 1.
-// - Aux memory: a second 64 KB image, holding the :in aux lets' starting bytes and the const
-//   data the link mirrors there (Layout::mirrored). Inside a with_aux a load through a pointer
-//   of $0200-$BFFF reads it when RAMRD is on, a store writes it when RAMWRT is; variables,
-//   zero page, the stack and $C000 up are always main memory's (the checker keeps code there
-//   off globals outside zero page).
+// - Aux memory: a second 64 KB image, holding the starting bytes of the lets and consts :in
+//   aux and the const data the link mirrors there (Layout::mirrored). Inside a with_aux a load
+//   through a pointer of $0200-$BFFF reads it when RAMRD is on, a store writes it when RAMWRT
+//   is; a const :in aux read by name reads it always (the checker allows that only where
+//   RAMRD is on, or where the read folds); other variables, zero page, the stack and $C000 up
+//   are always main memory's (the checker keeps code there off globals outside zero page).
 // - jsr stops the run with an Error ("jsr needs the machine"): machine code runs only on
 //   the 6502. wait_cycles only works out its count: time passes only there too.
 // - Interrupts come only where a test asks for them (Interp::irq_steps): the handler runs

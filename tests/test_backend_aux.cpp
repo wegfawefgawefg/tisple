@@ -9,6 +9,7 @@
 #include "test_backend.hpp"
 #include "test_machine.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace tisple_tests {
@@ -25,12 +26,13 @@ struct AuxRun {
 
 // compiled as tisple run does (the real lib/), run on the machine to its return and in the
 // interpreter
-bool RunBoth(TestResults& results, const std::string& text, AuxRun& r) {
+bool RunBoth(TestResults& results, const std::string& text, AuxRun& r,
+             const tisple::BuildOptions& options = tisple::BuildOptions()) {
     tisple::LoadOptions load;
     load.files.push_back(tisple::VirtualFile{"t.tsp", text});
     std::vector<tisple::Diagnostic> errors;
     bool built = tisple::BuildProgram("t.tsp", load, r.program, errors) &&
-                 tisple::CompileProgram(r.program, tisple::BuildOptions(), r.code, errors);
+                 tisple::CompileProgram(r.program, options, r.code, errors);
     CHECK(results, built);
     if (!built) {
         std::fprintf(stderr, "%s\n%s", text.c_str(),
@@ -328,6 +330,99 @@ void GuardWarning(TestResults& results) {
     CHECK(results, warned);
 }
 
+// Catwiz's content tables: 30 items with two strings each, printed a character at a time
+// through a helper that reads inside a with_aux. The table :in aux (read by name in regions)
+// and :strings aux (the table in main memory) against the same program all in main memory:
+// the same text comes out, and the strings' bytes leave main memory
+std::string ItemsProgram(const std::string& option) {
+    bool aux = !option.empty();
+    bool by_region = option == " :in aux";
+    std::string text = "(struct Item ((name (ptr u8)) (text (ptr u8)) (cost u8)))\n"
+                       "(const ITEMS (array Item 30) (make (array Item 30)\n";
+    for (int k = 0; k < 30; k++) {
+        std::string n = std::to_string(k);
+        text += "    (make Item :name \"ITEM " + n + "\" :text \"" + n + ", AND IT IS TANGLED " +
+                std::to_string(k * 7 % 30) + "\" :cost " + std::to_string(k % 7) + ")\n";
+    }
+    text += ")" + option + ")\n(let out (array u8 1500))\n(let n u16 0)\n(let total u8 0)\n";
+    text += aux ? "(fn char_at ((s (ptr u8)) (i u8)) u8 (with_aux true false (load (+ s i))))\n"
+                : "(fn char_at ((s (ptr u8)) (i u8)) u8 (load (+ s i)))\n";
+    auto read = [&](const std::string& field) {
+        std::string place = "(at ITEMS k " + field + ")";
+        return by_region ? "(with_aux true false " + place + ")" : place;
+    };
+    text += "(fn put_str ((s (ptr u8))) void\n"
+            "    (let i u8 0)\n"
+            "    (while true\n"
+            "        (let c u8 (char_at s i))\n"
+            "        (if (= c 0) (break))\n"
+            "        (set (at out n) c)\n"
+            "        (set n (+ n 1))\n"
+            "        (set i (+ i 1))))\n"
+            "(fn name_of ((k u8)) (ptr u8) " +
+            read("name") + ")\n(fn text_of ((k u8)) (ptr u8) " + read("text") +
+            ")\n(fn cost_of ((k u8)) u8 " + read("cost") +
+            ")\n"
+            "(fn main () void\n"
+            "    (for k u8 0 30\n"
+            "        (put_str (name_of k))\n"
+            "        (put_str (text_of k))\n"
+            "        (set total (+ total (cost_of k))))\n"
+            "    (set total (+ total (at ITEMS 3 cost))))\n";
+    return text;
+}
+
+// bytes of main memory (and the card) the build takes
+std::size_t MainBytes(const tisple::Compiled& code) {
+    std::size_t bytes = code.image.size();
+    for (const tisple::MemorySegment& s : code.segments) {
+        bytes += s.bank == tisple::MemoryBank::kAux ? 0 : s.bytes.size();
+    }
+    return bytes;
+}
+
+bool HasText(const std::vector<std::uint8_t>& bytes, const std::string& text) {
+    return std::search(bytes.begin(), bytes.end(), text.begin(), text.end()) != bytes.end();
+}
+
+void AuxConstTables(TestResults& results) {
+    std::string expected;
+    for (int k = 0; k < 30; k++) {
+        expected += "ITEM " + std::to_string(k) + std::to_string(k) + ", AND IT IS TANGLED " +
+                    std::to_string(k * 7 % 30);
+    }
+    std::size_t main_bytes = 0;
+    for (const std::string option : {"", " :in aux", " :strings aux"}) {
+        for (int level : {1, 0}) {
+            tisple::BuildOptions options;
+            options.opt.level = level;
+            AuxRun r;
+            std::string text = ItemsProgram(option);
+            if (!RunBoth(results, text, r, options)) {
+                return;
+            }
+            CheckSame(results, text, r);
+            std::int32_t out = tisple::FindVar(r.program, "t.out");
+            std::uint16_t at = r.code.layout.vars[static_cast<std::size_t>(out)].address;
+            std::string got(r.machine->cpu.mem + at, r.machine->cpu.mem + at + expected.size());
+            CHECK(results, got == expected);
+            std::size_t bytes = MainBytes(r.code);
+            main_bytes = option.empty() ? bytes : main_bytes;
+            bool in_main = HasText(r.code.image, "TANGLED");
+            for (const tisple::MemorySegment& s : r.code.segments) {
+                in_main =
+                    in_main || (s.bank != tisple::MemoryBank::kAux && HasText(s.bytes, "TANGLED"));
+            }
+            // about 1.2 KB of text leaves main memory
+            CHECK(results, option.empty() ? in_main : !in_main && bytes + 900 < main_bytes);
+            if (level == 1) {
+                std::printf("aux const tables%s: %zu bytes of main memory\n",
+                            option.empty() ? "" : option.c_str(), bytes);
+            }
+        }
+    }
+}
+
 } // namespace
 
 void RunBackendAuxTests(TestResults& results) {
@@ -340,6 +435,7 @@ void RunBackendAuxTests(TestResults& results) {
     Mirrored(results);
     ZeroPageFull(results);
     GuardWarning(results);
+    AuxConstTables(results);
 }
 
 } // namespace tisple_tests

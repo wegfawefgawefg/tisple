@@ -3,6 +3,9 @@
 // it), shared by every use, laid out with the other constant tables when kept code reaches
 // it. The tree is (addr_of (at table 0)), which every later stage already knows; nothing
 // writes the table, so stores through such a pointer are undefined, as for any constant.
+// The strings written in the value of a const :in aux or :strings aux are tables of their own,
+// in aux memory (str#a0, str#a1, ...), shared the same way. Each is placed on its own, so they
+// fill the gaps other aux data leaves.
 
 #include "check/checker.hpp"
 
@@ -16,12 +19,15 @@ std::int32_t StringTable(Checker& ck, const Node& node) {
             return -1;
         }
     }
-    auto found = ck.string_tables.find(node.bytes);
-    if (found != ck.string_tables.end()) {
+    bool aux = ck.at.aux_strings;
+    std::map<std::string, std::int32_t>& tables = aux ? ck.aux_string_tables : ck.string_tables;
+    auto found = tables.find(node.bytes);
+    if (found != tables.end()) {
         return found->second;
     }
     Var var;
-    var.name = "str#" + std::to_string(ck.string_tables.size());
+    var.name = std::string(aux ? "str#a" : "str#") + std::to_string(tables.size());
+    var.placement.in_aux = aux;
     var.kind = VarKind::Const;
     var.type = ArrayOf(ck, kU8Type, static_cast<std::uint32_t>(node.bytes.size() + 1), node);
     var.module = ck.at.module;
@@ -33,7 +39,7 @@ std::int32_t StringTable(Checker& ck, const Node& node) {
         return -1;
     }
     std::int32_t id = AddVar(ck, var);
-    ck.string_tables.emplace(node.bytes, id);
+    tables.emplace(node.bytes, id);
     return id;
 }
 
