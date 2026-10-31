@@ -5,9 +5,9 @@
 // names its disk, its Mockingboard slot and its buttons. On a static site (web/pages.py,
 // games/index.json has "static": true) there is no server to take logs: no log, and a
 // games button goes back to the picker. The buttons, the bar's letters and the layout are
-// pad.js's. The disk button turns the drives' sound on and off (remembered in this browser):
-// on, a disk loads at the Apple's speed and sounds like a Disk II; off, it loads flat out and
-// silent.
+// pad.js's. The disk button turns the drives' sound on and off (remembered in this browser),
+// off until it is pressed (the owner, 2026-10-31: opt in): on, a disk loads at the Apple's
+// speed and sounds like a Disk II; off, it loads flat out and silent.
 
 "use strict";
 
@@ -45,15 +45,15 @@ const state = {
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
     logs: true,       // false on a static site: nowhere to post them
-    diskSound: true,  // the drives' sound, and loading at the Apple's speed to hear it
+    diskSound: false, // the drives' sound, and loading at the Apple's speed to hear it
 };
 
 // the disk button's setting, kept in this browser when it can be
 const DISK_SOUND_KEY = "tisple.diskSound";
 try {
-    state.diskSound = localStorage.getItem(DISK_SOUND_KEY) !== "off";
+    state.diskSound = localStorage.getItem(DISK_SOUND_KEY) === "on";
 } catch (err) {
-    // no storage (private window, blocked): on by default
+    // no storage (private window, blocked): off, as by default
 }
 
 // the bar's and the start's words, in the machine's letters (pad.js)

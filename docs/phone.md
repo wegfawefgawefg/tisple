@@ -6,10 +6,10 @@ the speaker, a Mockingboard and the disk drive, and turns a game's on-screen but
 key presses.
 
 - The bar's `disk` button turns the drive's sound on and off (dim when off; the browser
-  remembers it, default on). On, a disk loads at the Apple's speed so it sounds like a
-  Disk II: the boot's grind, the head stepping, the motor (docs/disks.md, "The drives'
-  sound"); Catwiz takes about 11 s to load. Off, or with no sound running, loading runs
-  flat out and silent as before.
+  remembers it; off until pressed: the owner wants it opt in). On, a disk loads at the
+  Apple's speed so it sounds like a Disk II: the boot's grind, the head stepping, the motor
+  (docs/disks.md, "The drives' sound"); Catwiz takes about 11 s to load. Off, or with no
+  sound running, loading runs flat out and silent as before.
 
 - `web/build.sh`: needs Emscripten (`source <emsdk>/emsdk_env.sh`); builds `web/dist`.
 - `web/publish.py NAME DISK CONFIG`: puts a disk in `~/.local/share/tisple/phone/games`
