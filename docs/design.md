@@ -463,7 +463,7 @@ tables. How it is made:
 - The mid-level passes already treat `in_aux` vars as hardware (never steady, never hoisted,
   never kept in a local), which is what a read by name in a region needs.
 - The cost is the `with_aux` around each read and the mirrored code that does it. 30 items with
-  two strings (1.2 KB of text): 1067 bytes of main memory saved with `:in aux`, 956 with
+  two strings (1.2 KB of text): 1066 bytes of main memory saved with `:in aux`, 956 with
   `:strings aux` (the table's 5 bytes an item stay); 40 cycles more a character read one at a
   time through a helper, 18 more copied a string at a time.
 

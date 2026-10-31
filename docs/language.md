@@ -825,7 +825,7 @@ Which to use: `:strings aux` when code reads the table's numbers all over (Catwi
 items: their slot, cost and amount), `:in aux` for a table read in a few places.
 
 What it costs, measured on 30 items with two strings each (about 1.2 KB of text,
-tests/test_backend_aux.cpp): main memory goes from 2789 bytes to 1722 with `:in aux`
+tests/test_backend_aux.cpp): main memory goes from 2789 bytes to 1723 with `:in aux`
 and to 1833 with `:strings aux`. A character read through `char_at` above takes 46
 cycles with its call, 40 more than a load from main memory; copying a whole string
 into a main memory buffer in one `with_aux` (a `LDA (s),Y` / `STA buf,Y` loop) and

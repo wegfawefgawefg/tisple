@@ -361,8 +361,9 @@ std::string ItemsProgram(const std::string& option) {
             "        (set i (+ i 1))))\n"
             "(fn name_of ((k u8)) (ptr u8) " +
             read("name") + ")\n(fn text_of ((k u8)) (ptr u8) " + read("text") +
-            ")\n(fn cost_of ((k u8)) u8 " + read("cost") +
-            ")\n"
+            ")\n(fn cost_at ((k u8)) u8 (at ITEMS k cost))\n" +
+            (by_region ? "(fn cost_of ((k u8)) u8 (with_aux true false (cost_at k)))\n"
+                       : "(fn cost_of ((k u8)) u8 (cost_at k))\n") +
             "(fn main () void\n"
             "    (for k u8 0 30\n"
             "        (put_str (name_of k))\n"
