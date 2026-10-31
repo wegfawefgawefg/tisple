@@ -165,25 +165,13 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
     std::size_t resident_spans = out.spans.size();
-    // code with_aux may run with RAMRD on first, with the runtime when it calls it: what the
-    // link copies to aux memory (aux_link.hpp)
+    // code with_aux may run with RAMRD on last, with the runtime when it calls it: what the
+    // link copies to aux memory (aux_link.hpp), at the code's end, where the language card
+    // (which needs no copy) or the end of a stretch splits aux memory the least
     std::vector<AsmItem> tables;
     EmitRuntimeTables(be, tables);
     std::vector<bool> mirrored = MirroredFunctions(be, *in.kept, bank1);
     bool runtime_mirrored = MirrorsRuntime(be, mirrored);
-    std::size_t mirror_first = out.spans.size();
-    for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if (mirrored[f]) {
-            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
-        }
-    }
-    if (runtime_mirrored) {
-        Append(items, runtime, out, -1, "runtime");
-        if (!tables.empty()) {
-            Append(items, tables, out, -1, "runtime tables");
-        }
-    }
-    std::size_t mirror_end = out.spans.size();
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         if ((*in.kept)[f] && !in_bank1(f) && !mirrored[f]) {
             Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
@@ -198,6 +186,19 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     if (!tables.empty() && !runtime_mirrored) {
         Append(items, tables, out, -1, "runtime tables");
     }
+    std::size_t mirror_first = out.spans.size();
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (mirrored[f]) {
+            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+        }
+    }
+    if (runtime_mirrored) {
+        Append(items, runtime, out, -1, "runtime");
+        if (!tables.empty()) {
+            Append(items, tables, out, -1, "runtime tables");
+        }
+    }
+    std::size_t mirror_end = out.spans.size();
     Append(items, zp_image, out, -1, "zero-page image");
     std::size_t image_span = out.spans.size() - 1;
     std::size_t first_bank1 = bank1 != nullptr ? out.spans.size() : SIZE_MAX;
@@ -219,6 +220,16 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     std::vector<CodePlace> places;
     std::uint32_t frames_at = 0;
     std::uint32_t code_end = 0;
+    // the mirrored code at the start of the memory below the origin, when the build has it:
+    // lets :in aux fill aux memory from $0800 on, so that splits their room the least
+    EarlySpans early;
+    early.first = mirror_first;
+    early.end = mirror_end;
+    for (std::size_t k = 1; k < shared; k++) {
+        bool low = stretches[k].start < options.origin;
+        early.stretch = low && early.stretch == SIZE_MAX ? k : early.stretch;
+        early.stretch_end = low ? k + 1 : early.stretch_end;
+    }
     for (bool again = true; again;) {
         code_end = LayoutCode(be.as, options.origin);
         std::uint32_t startup_end = options.origin + SpanSize(items, out.spans[0]);
@@ -230,7 +241,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             return LinkResult::kError;
         }
         if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at,
-                        first_bank1)) {
+                        first_bank1, early)) {
             std::string where;
             for (const AddressRange& stretch : stretches) {
                 where +=
@@ -246,7 +257,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         again = MarkFarBranches(be.as, out.spans, places);
     }
     std::vector<AddressRange> runs;
-    bool spilled = places.back().stretch != 0;
+    bool spilled = false;
+    for (const CodePlace& place : places) {
+        spilled = spilled || place.stretch != 0;
+    }
     if (spilled) {
         if (!LayOutRuns(be.as, out.spans, places, runs, errors)) {
             return LinkResult::kError;

@@ -685,7 +685,7 @@ void GenWait(Gen& g, ExprId id);
 // with_aux's switches (gen_aux.cpp): on, or off as a statement; off with its value, which ends
 // in A or a temporary (dst is not written)
 void GenAuxSwitch(Gen& g, ExprId id);
-Opnd EvalAuxOff(Gen& g, const Expr& e, const Opnd* dst);
+Opnd EvalAuxOff(Gen& g, ExprId id, const Opnd* dst);
 
 // ---- conditions (gen_cond.cpp)
 

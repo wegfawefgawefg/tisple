@@ -283,7 +283,7 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
     out.opt = report;
     out.warnings = PackedArrayWarnings(source);
     Diagnostic guard;
-    if (AuxWithoutGuard(be, kept, guard)) {
+    if (AuxWithoutGuard(be, kept, source, guard)) {
         out.warnings.push_back(guard);
     }
     return LinkResult::kOk;

@@ -82,14 +82,43 @@ std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& sp
 }
 
 bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
-                const std::vector<AddressRange>& stretches, std::uint32_t mem_frames,
-                std::vector<CodePlace>& places, std::uint32_t& frames_at, std::size_t first_bank1) {
+                const std::vector<AddressRange>& given, std::uint32_t mem_frames,
+                std::vector<CodePlace>& places, std::uint32_t& frames_at, std::size_t first_bank1,
+                EarlySpans early) {
     places.assign(spans.size(), CodePlace());
+    std::vector<AddressRange> stretches = given;
+    // the early spans at the start of the first stretch that holds them, which the rest then
+    // start after
+    bool early_on = false;
+    if (early.first < early.end) {
+        std::uint32_t size = 0;
+        for (std::size_t s = early.first; s < early.end; s++) {
+            size += SpanSize(items, spans[s]);
+        }
+        std::size_t end = std::min(early.stretch_end, stretches.size());
+        for (std::size_t k = early.stretch; k < end && !early_on; k++) {
+            if (stretches[k].start + size <= stretches[k].end) {
+                early.stretch = k;
+                early_on = true;
+            }
+        }
+    }
+    if (early_on) {
+        std::uint32_t at = stretches[early.stretch].start;
+        for (std::size_t s = early.first; s < early.end; s++) {
+            places[s] = CodePlace{early.stretch, at};
+            at += SpanSize(items, spans[s]);
+        }
+        stretches[early.stretch].start = at;
+    }
     std::size_t last = first_bank1 < spans.size() ? first_bank1 : spans.size();
     std::size_t count = first_bank1 < spans.size() ? stretches.size() - 1 : stretches.size();
     std::size_t k = 0;
     std::uint32_t pc = stretches.empty() ? 0 : stretches[0].start;
     for (std::size_t s = 0; s < last; s++) {
+        if (early_on && s >= early.first && s < early.end) {
+            continue;
+        }
         std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == last ? mem_frames : 0);
         while (k < count && pc + need > stretches[k].end) {
             k++;

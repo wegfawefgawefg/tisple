@@ -272,7 +272,7 @@ Opnd Eval(Gen& g, ExprId id, const Opnd* dst) {
     case ExprKind::Match:
         return EvalMatchValue(g, e, dst);
     case ExprKind::AuxSwitch:
-        return EvalAuxOff(g, e, dst);
+        return EvalAuxOff(g, id, dst);
     default:
         Unsupported(g, id, "this expression");
         return ImmOpnd(0, size == 2 ? 2 : 1);

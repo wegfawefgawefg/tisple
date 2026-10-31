@@ -108,13 +108,27 @@ std::vector<AddressRange> MirroredConsts(const Backend& be, const Layout& layout
     return out;
 }
 
-bool AuxWithoutGuard(const Backend& be, const std::vector<bool>& kept, Diagnostic& warning) {
+bool AuxWithoutGuard(const Backend& be, const std::vector<bool>& kept, const Program& source,
+                     Diagnostic& warning) {
     const Program& program = *be.program;
-    if (!be.aux.any || program.handler < 0) {
+    if (!be.aux.any || program.handler < 0 || source.main < 0) {
         return false;
     }
-    std::int32_t guard = FindFunction(program, "auxmem.guard");
-    if (guard >= 0 && kept[static_cast<std::size_t>(guard)]) {
+    std::int32_t guard = FindFunction(source, "auxmem.guard");
+    std::vector<bool> reached(source.functions.size(), false);
+    std::vector<std::int32_t> work = {source.main};
+    reached[static_cast<std::size_t>(source.main)] = true;
+    while (!work.empty()) {
+        std::int32_t f = work.back();
+        work.pop_back();
+        for (std::int32_t callee : source.functions[static_cast<std::size_t>(f)].callees) {
+            if (!reached[static_cast<std::size_t>(callee)]) {
+                reached[static_cast<std::size_t>(callee)] = true;
+                work.push_back(callee);
+            }
+        }
+    }
+    if (guard >= 0 && reached[static_cast<std::size_t>(guard)]) {
         return false;
     }
     for (std::size_t f = 0; f < program.functions.size(); f++) {
