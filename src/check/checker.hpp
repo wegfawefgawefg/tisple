@@ -94,6 +94,9 @@ struct Context {
     // outside leaves it), else -1; and the switches it may turn on
     int aux_depth = -1;
     std::uint8_t aux_bits = 0;
+    // inside an arm that never runs (an if or while whose condition folds the other way): a
+    // constant index past an array's end is not an error there
+    int dead = 0;
 };
 
 struct Checker {
@@ -252,6 +255,7 @@ struct Arm {
     std::size_t first = 0;
     std::size_t end = 0;
     const Node* owner = nullptr; // where errors about the whole arm point
+    bool dead = false;           // never runs: its condition folds the other way
 };
 // checks arms, each in its own scope. Used: bare literals wait until a type is known and the
 // arms must agree; returns the joint type. Not used: every form is a statement; returns void

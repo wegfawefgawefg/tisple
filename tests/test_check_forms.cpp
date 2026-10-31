@@ -112,6 +112,19 @@ void PlaceTests(TestResults& results) {
         "t.tsp:2:26: the index into t (10 elements) needs a u8 but i is u16; write (as u8 i)");
     ExpectError(results, t + "(fn f () u8 (at t 10))",
                 "t.tsp:2:19: index 10 is past the end of t (10 elements)");
+    // not in an arm that never runs: a const that says which build it is picks the arm
+    const std::string k = "(const K u8 255)\n" + t;
+    Built dead = BuildText(k + "(fn main () void\n"
+                               "    (if (!= K 255) (set (at t K) 1))\n"
+                               "    (if (= K 255) (set (at t 0) 2) (set (at t K) 3))\n"
+                               "    (set (at t 1) (if (< K 10) (at t K) 7))\n"
+                               "    (while (!= K 255) (set (at t K) 4))\n"
+                               "    (while true))");
+    CHECK(results, dead.ok);
+    ExpectError(results, k + "(fn f () void (if (= K 255) (set (at t K) 1)))",
+                "t.tsp:3:40: index 255 is past the end of t (10 elements)");
+    ExpectError(results, k + "(fn f ((c bool)) void (if c (set (at t K) 1)))",
+                "t.tsp:3:40: index 255 is past the end of t (10 elements)");
     ExpectError(results, "(let big (array u8 300))\n(fn f ((i u8)) u8 (at big i))",
                 "t.tsp:2:27: the index into big (300 elements) needs a u16 but i is u8; write (as "
                 "u16 i)");

@@ -449,6 +449,29 @@ void TestFoldedIndices(TestResults& results) {
     CHECK(results, ok);
 }
 
+// a constant index past the end in an arm that never runs (the checker lets it be): at -O0
+// and -O1 the arm is code that is never reached, or none
+void TestDeadArmIndex(TestResults& results) {
+    const char* text = "(const K u8 255)\n"
+                       "(let a (array u8 10))\n"
+                       "(fn f ((x u8)) u8\n"
+                       "    (if (!= K 255) (set (at a K) x))\n"
+                       "    (if (= K 255) (set (at a 2) x) (set (at a K) 3))\n"
+                       "    (set (at a 3) (if (< K 10) (at a K) (+ x 1)))\n"
+                       "    (while (!= K 255) (set (at a K) 4))\n"
+                       "    (at a 3))\n";
+    CheckProgram(results, text, "t.f", {9});
+    tisple::OptOptions none;
+    none.level = 0;
+    Compiled c = CompileText(text, none);
+    Diff d;
+    bool ok = StartDiff(d, c) && DiffCall(d, "t.f", {9});
+    if (!ok) {
+        std::fprintf(stderr, "dead arm index at -O0:\n%s\n  %s\n", text, d.message.c_str());
+    }
+    CHECK(results, ok);
+}
+
 } // namespace
 
 void RunBackendIndexTests(TestResults& results) {
@@ -463,6 +486,7 @@ void RunBackendIndexTests(TestResults& results) {
     TestPagePointers(results);
     TestPagePointerReuse(results);
     TestFoldedIndices(results);
+    TestDeadArmIndex(results);
 }
 
 } // namespace tisple_tests

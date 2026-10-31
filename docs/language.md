@@ -295,6 +295,12 @@ template cannot glue `,s` and `.x` into one symbol: templates write
 `(. ,s x)` (owner, 2026-10-26). In hand code it is an error that says what to
 write: `p.x`, `(at sprites i x)` or `(load p x)`.
 
+A constant index past an array's end is an error, `(at a 10)` into 10 elements,
+except in an arm that never runs: an `if` arm, or a `while` body, whose condition
+folds the other way (2026-10-31). So a const that picks a build can guard code
+written for the other one: `(if (!= K 255) (set (at a K) 1))` with `K` 255.
+Everything else is still checked there.
+
 A built-in name (`at`, `load`, `addr_of`, `as`, `make`, ...) means the
 built-in only as the head of a form, so variables, parameters and fields may
 take one: `(fn hp ((at u8)) u8 (at ENEMIES at hp))`. A function may not, since

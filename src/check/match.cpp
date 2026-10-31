@@ -140,7 +140,9 @@ TypeId CheckArms(Checker& ck, const std::vector<Arm>& arms, TypeId hint, bool us
         bool all_never = !arms.empty();
         for (std::size_t i = 0; i < arms.size(); i++) {
             TypeId type = kVoidType;
+            ck.at.dead += arms[i].dead ? 1 : 0;
             out[i] = CheckStatementArm(ck, arms[i], type);
+            ck.at.dead -= arms[i].dead ? 1 : 0;
             all_never = all_never && type == kNeverType;
         }
         return all_never ? kNeverType : kVoidType;
@@ -156,7 +158,9 @@ TypeId CheckArms(Checker& ck, const std::vector<Arm>& arms, TypeId hint, bool us
     for (std::size_t i = 0; i < arms.size(); i++) {
         const Arm& arm = arms[i];
         ck.at.scopes.emplace_back();
+        ck.at.dead += arm.dead ? 1 : 0;
         std::vector<ExprId> forms = LeadingForms(ck, arm);
+        ck.at.dead -= arm.dead ? 1 : 0;
         if (arm.end == arm.first) {
             ck.at.scopes.pop_back();
             out[i] = ArmExpr(ck, arm, forms, kVoidType);
@@ -170,7 +174,9 @@ TypeId CheckArms(Checker& ck, const std::vector<Arm>& arms, TypeId hint, bool us
             deferred[i] = true;
             continue;
         }
+        ck.at.dead += arm.dead ? 1 : 0;
         forms.push_back(CheckExpr(ck, last, hint));
+        ck.at.dead -= arm.dead ? 1 : 0;
         ck.at.scopes.pop_back();
         TypeId type = ExprType(ck, forms.back());
         out[i] = ArmExpr(ck, arm, forms, type);
