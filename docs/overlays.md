@@ -17,9 +17,9 @@ and the link has filled since 2026-10-27; bank 1 (`$C08B`) is the second, new on
   our startup does). `BIT` reads them without touching A, X or Y. `$C011` bit 7 says which bank
   is in.
 - Aux memory is reached only with RAMRD and RAMWRT, which switch instruction fetches too, so
-  code never runs from it: it must be copied to main memory first. lib/auxmem's mover does it
-  from page 3 with interrupts on (behind `auxmem.guard`), about 10 cycles a byte: 4 KB in
-  about 40,000 cycles, 2.4 frames.
+  code never runs from it: it must be copied to main memory first. lib/auxmem's copies do it
+  (a `with_aux`, its code in both memories) with interrupts on (behind `auxmem.guard`), 16
+  cycles a byte: 4 KB in about 66,000 cycles, 3.9 frames.
 - The disk: after boot the loader at `$0800-$0AFF` is gone. Reading a track needs a resident
   reader (about 400 bytes: seek, nibbles, decode) and takes two turns, 0.4 s for 4 KB.
   Built since for data (2026-10-30): lib/disk reads tables placed `:on disk`, its reader 1.2 KB

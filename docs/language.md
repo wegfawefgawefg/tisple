@@ -46,7 +46,7 @@ tools can tell any form apart by its head alone:
 2. Build: `(make Type ...)` for struct and array values.
 3. Access: `name.x`, `(at arr i path...)`, `(load p path...)`.
 4. Control: `(form head... body...)`: `fn`, `macro`, `while`, `for`, `do`,
-   `match` and its clauses. `if` is the one exception: its two arms are single
+   `with_aux`, `match` and its clauses. `if` is the one exception: its two arms are single
    forms.
 
 Stop there: fewer shapes would force different meanings into one.
@@ -137,18 +137,17 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 - `lib/auxmem`: `(auxmem.read dst src count)` and `(auxmem.write dst src
   count)` copy between main memory and aux memory, and `(auxmem.copy dst src
   count)` inside aux memory (RAMRD and RAMWRT both on), with pointers from
-  `addr_of`. It is the only way code reaches a let `:in aux` (see Memory map),
-  with lib/unpack. Its mover is 45 bytes of our own 6502 code run from page 3,
-  with a copy at the same address in aux memory, since RAMRD sends the
-  instruction fetches there too; `:reserve` lets keep `$0300`-`$03AB` in main
-  memory and all of page 3 in aux memory, so an `:address` let there is an
-  overlap error. Its arguments are four lets at `$F9`-`$FE`, and `auxmem.work`
-  at `$F2`-`$F8` is lib/unpack's and lib/dhgr's (2026-10-30): the program's
-  other variables never take them. A one-byte read takes about 140 cycles with
-  its call (560 before 2026-10-30, when the mover saved the zero page it
-  borrowed), a page about 4100 more. `(auxmem.guard)` makes copies safe while
-  an interrupt handler runs (Interrupts). (Not `aux.tsp`: Windows keeps that
-  name.)
+  `addr_of`. Each is a `with_aux` around a copy loop (Aux memory code, 2026-10-31;
+  it was 45 bytes of our own 6502 code in page 3): whole pages at 16 cycles a byte,
+  then the rest at 18. A one-byte read takes about 90 cycles with its call, a page
+  about 4100. The lets at `$F2`-`$FE` (`auxmem.work`, `pages`, `from`, `to`,
+  `rest`) are the zero page our remaining machine code takes its arguments in
+  (lib/unpack, lib/disk's reader, dhgr.runs; lib/auxcard copies them): the
+  program's other variables never take them. `(auxmem.guard)` makes `with_aux`
+  code safe while an interrupt handler runs (Interrupts); it is our 6502 code in
+  page 3, and `:reserve` lets keep `$0340`-`$03AB` in main memory and all of page 3
+  in aux memory, so an `:address` let there is an overlap error. (Not `aux.tsp`:
+  Windows keeps that name.)
 - `lib/dhgr`: double hi-res, 140 x 192 in 15 colours on two pages with page
   flipping, boxes, sprites, pixels and the mixed window's 80-column text.
   `lib/unpack`: tables packed while compiling (`tables.packed`) back to bytes,
@@ -251,6 +250,7 @@ Naming follows Rust (owner, 2026-10-26): types `PascalCase` (`Sprite`,
 | `name` of a function, `(f args ...)` with `f` holding one | a function's address; a call through it, see Function pointers |
 | `(wait_cycles n)` | exactly n cycles (a variable n: 69 at least); see Exact delays |
 | `(sei)` / `(cli)` | interrupts off / on; see Interrupts |
+| `(with_aux reads writes body ...)` | body with RAMRD on when `reads` is true, RAMWRT when `writes` is: pointers reach aux memory; value the last form's; see Aux memory code |
 | `"text"` | a `(ptr u8)` to the text's ASCII bytes and a 0; see Strings |
 
 An `io_read` or `io_write` at a constant address is one absolute instruction. So
@@ -691,19 +691,83 @@ Added 2026-10-30, for the Mockingboard's timers and the mouse card.
 - The interpreter takes interrupts only where a test asks for them (between two
   steps, when they are on).
 - A `BRK` with the card's ram in runs the handler and returns past it; Tisple
-  code has none. lib/auxmem's mover switches RAMRD and RAMWRT: on an
-  unenhanced IIe an interrupt in it would fetch the vector, and with the card
-  in the handler's code, from aux memory, and with RAMWRT on the handler would
-  write its variables there. Either put `(sei)` and `(cli)` around
-  `auxmem.read` and `auxmem.write` when a handler may run, or call
-  `(auxmem.guard)` once in main: our code in page 3 that the vectors then go
-  through, which runs the handler with main memory in and switches back after
-  (19 cycles a tick, about 65 more for a tick that lands in a copy;
-  docs/mockingboard.md). lib/mouse stays polled (its interrupt modes need
+  code has none. A `with_aux` switches RAMRD and RAMWRT (Aux memory code, and
+  every library that copies to or from aux memory uses one): on an unenhanced
+  IIe an interrupt inside it would fetch the vector, and with the card in the
+  handler's code, from aux memory, and with RAMWRT on the handler would write
+  its variables there. Either put `(sei)` and `(cli)` around the `with_aux` (or
+  the library call) when a handler may run, or call `(auxmem.guard)` once in
+  main: our code in page 3 that the vectors then go through, which runs the
+  handler with main memory in and switches back after (19 cycles a tick, about
+  65 more for a tick that lands in a `with_aux`; docs/mockingboard.md). A
+  program with a handler and a `with_aux` whose main never calls `auxmem.guard`
+  gets a warning that says so. lib/mouse stays polled (its interrupt modes need
   SERVEMOUSE in the handler, which our machine's card does not raise).
 
 What it compiles to, and how each Apple II routes the IRQ: design.md,
 "Interrupt handlers".
+
+## Aux memory code
+
+Added 2026-10-31, so the code that reaches the extended 80-column card's aux memory
+(lib/auxmem's copies, lib/dhgr's boxes) is Tisple, not 6502 code kept as byte arrays.
+
+```scheme
+(fn peek ((p (ptr u8))) u8
+    (with_aux true false (load p)))            ; aux memory's byte at p
+
+(fn copy_row ((aux bool) (dst (ptr u8)) (src (ptr u8)) (w u8)) void
+    (with_aux aux aux                          ; one memory or the other, picked at run time
+        (for i u8 0 w
+            (store (+ dst i) (load (+ src i))))))
+```
+
+- `(with_aux reads writes body ...)`: `reads` and `writes` are bools, constant or
+  not. Inside the body RAMRD is on when `reads` is true (reads of `$0200`-`$BFFF`
+  come from aux memory, instruction fetches too) and RAMWRT when `writes` is
+  (writes of `$0200`-`$BFFF` go there). Zero page, the stack and `$C000` up are
+  the same memory whatever they say. Every way out of the body turns both off
+  again: its end, `return`, and `break` or `continue` to a loop outside it. Its
+  value is the body's last form's, as `do`'s.
+- Loads and stores through pointers in the body reach the memory the switches
+  pick: that is the point. A pointer from `addr_of` of a main memory variable
+  reaches aux memory's byte at that address there, and the compiler assumes
+  nothing of what it reads.
+- Code runs "with the switches on" inside the body and in every function the body
+  calls, and every function those call. That code:
+  - may not set a global outside zero page when RAMWRT may be on, nor read one
+    when RAMRD may be on (each an error that names the variable and says to copy
+    it to a local first, or give it an `:address` in zero page). Locals and
+    parameters are fine: their frames are in zero page. Const data is fine: the
+    link copies what such code reads to aux memory at the same address;
+  - may not call through a function pointer, nor `io_read`, `io_write` or `jsr` at
+    an address worked out at run time (each would store into its own code, which
+    aux memory's copy does not see);
+  - may not have a `with_aux` of its own: no nesting, directly or through a call.
+- A function with a `with_aux` in it is never inlined. Its frame, and the frames
+  of everything its regions call, are all in zero page; the build fails with the
+  functions' names when they do not fit.
+- What it compiles to: `STA $C003` / `STA $C005` for a constant true, nothing for
+  false; a variable bool indexes the pair, `LDX b` / `STA $C002,X` (a bool is 0
+  or 1); `STA $C002` / `STA $C004` at each end, for the switches that may be on.
+  To the optimiser each end is I/O: no load or store moves across it, no value
+  read before it is used after it, and loops around one are left as they are.
+- Code that may run with RAMRD on must be in both memories at the same address:
+  the link puts it (and the runtime routines it calls) at the start of the memory
+  below the origin, or after the other code, and gives aux memory the same bytes
+  as a segment, with the const data that code reads by name; lets `:in aux` are
+  laid out around them. So a program with such code has aux segments: `tisple
+  run` and a boot disk load them, a DOS 3.3 BRUN file cannot. Code in the
+  language card needs no copy (RAMRD does not reach it).
+- Interrupts: as for any aux memory access, `(auxmem.guard)` first, or interrupts
+  off around it (Interrupts).
+- The interpreter has an aux memory too: the lets `:in aux` and the const data the
+  link copies start there, and a pointer access of `$0200`-`$BFFF` in a region
+  goes to it when its switch is on. So programs using lib/auxmem run in `tisple
+  interp`.
+- ALTZP (aux memory's zero page, stack and language card) is not part of it: code
+  under ALTZP would find its frames gone. lib/auxcard and dhgr.runs from the aux
+  card stay 6502 code (dhgr.md).
 
 ## Machine code
 
@@ -764,7 +828,7 @@ The linker checks them and fails the build if one can't hold.
 | `:address 0x6000` | start at exactly this address |
 | `:align 256` | start on a multiple of 256 |
 | `:boundary 256` | whole object inside one 256-byte block; for a split table, each byte table |
-| `:in aux` | a `let` in aux memory, reached only through `lib/auxmem` (2026-10-27) |
+| `:in aux` | a `let` in aux memory, reached only through pointers in a `with_aux` or `lib/auxmem` (2026-10-27) |
 | `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
 | `:on disk` | a const `(array u8 n)` that lives on the boot disk, not in memory; its name holds where, for `lib/disk` (2026-10-30, [`disks.md`](disks.md), Disk tables) |
 | `:interleave 2` | with `:on disk`: how many physical sectors apart its sectors go round a track, 1 to 15, 2 when not given |
@@ -809,7 +873,9 @@ order:
    stubs that switch banks, and nothing bank 1 code reads kept in bank 2's `$D000`-`$DFFF`
    (docs/overlays.md, Built).
 4. Lets `:in aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
-   above; an `:address` there must lie in `$0200`-`$BFFF`.
+   above and from the code and const data `with_aux` code may run and read with
+   RAMRD on, which the link copies to the same addresses there (Aux memory code);
+   an `:address` there must lie in `$0200`-`$BFFF`.
 
 Each let is placed whole, first fit in declaration order: one that does not fit
 what is left of a region goes on to the next, and a later, smaller one may
@@ -857,16 +923,18 @@ so the rule matters once a program spills below `$6000`.
 
 Aux data. `(let doc (array u8 30000) (make ...) :in aux)` is the whole language
 change: code names `doc` only as the root of an `addr_of`, and an `at`, `set`
-or plain use is an error that says to copy it with `lib/auxmem`:
+or plain use is an error that says to reach it through a pointer:
 
 ```scheme
 (auxmem.read (addr_of (at line 0)) (addr_of (at doc offset)) 80)  ; aux to main
 (auxmem.write (addr_of (at doc offset)) (addr_of (at line 0)) 80) ; main to aux
+(with_aux true false (load (addr_of (at doc offset))))             ; one byte
 ```
 
-The pointer `addr_of` gives holds an aux address; `load` through it would read
-main memory, so pass it only to `lib/auxmem`. Aux lets never go in zero page,
-and the interpreter does not model aux memory (its `jsr` needs the machine).
+The pointer `addr_of` gives holds an aux address; `load` through it outside a
+`with_aux` would read main memory. Aux lets never go in zero page, and never on
+the code and const data the link copies to aux memory (Aux memory code). The
+interpreter starts them in its own aux memory (2026-10-31).
 
 ## Strings
 

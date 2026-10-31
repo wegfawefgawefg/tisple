@@ -55,19 +55,47 @@ tisple run examples/dhgr_packed.tsp                # a picture packed while comp
 | --- | --- | ---: |
 | `(dhgr.on mixed)`, `(dhgr.off)` | the mode on and off; off is 40-column text | |
 | `(dhgr.show page)`, `(dhgr.flip)`, `dhgr.shown`, `(dhgr.hidden)` | the page shown | |
-| `(dhgr.clear page colour)` | the whole page | 217,000 |
-| `(dhgr.box page col top w h colour)` | a box of byte columns, both memories | 25 a column, 120 a row |
-| `(dhgr.fill page bank col top w h even odd)` | one memory's bytes of a box, `even` in even columns | 13 a byte, 60 a row |
-| `(dhgr.copy page bank col top w h pic)` | `w` bytes a row from `pic` | 16 a byte, 80 a row |
-| `(dhgr.masked page bank col top w h pic mask)` | each byte `(screen & mask) \| pic` | 26 a byte, 95 a row |
-| `(dhgr.copy_box page bank col top w h from)` | the same box of another screen-shaped page (`from`, a high byte in `$20` steps) | 16 a byte, 70 a row |
-| `(dhgr.plot page x y colour)` | one pixel | 270 |
-| `(dhgr.aux_rmw addr keep set)` | an aux byte becomes `(byte & keep) \| set`; gives what it was | 110 |
-| `(dhgr.text_row page row codes)` | 80 screen codes onto a text row of the page's text page | 2,500 |
+| `(dhgr.clear page colour)` | the whole page | 210,000 |
+| `(dhgr.box page col top w h colour)` | a box of byte columns, both memories | 25 a column, 140 a row |
+| `(dhgr.fill page bank col top w h even odd)` | one memory's bytes of a box, `even` in even columns | 12.5 a byte, 65 a row |
+| `(dhgr.copy page bank col top w h pic)` | `w` bytes a row from `pic` | 16 a byte, 60 a row |
+| `(dhgr.masked page bank col top w h pic mask)` | each byte `(screen & mask) \| pic` | 26 a byte, 70 a row |
+| `(dhgr.copy_box page bank col top w h from)` | the same box of another screen-shaped page (`from`, a high byte in `$20` steps) | 16 a byte, 60 a row |
+| `(dhgr.plot page x y colour)` | one pixel | 220 |
+| `(dhgr.aux_rmw addr keep set)` | an aux byte becomes `(byte & keep) \| set`; gives what it was | 95 |
+| `(dhgr.text_row page row codes)` | 80 screen codes onto a text row of the page's text page | 2,400 |
 | `(dhgr.runs page bank col top h runs flags)` | a sprite half stored as runs (below), from its memory or the aux language card | 16 a byte opaque, 26 masked, about 40 a run |
 
-Cycles from `tisple run --sim`, each call about 200 more (2026-10-30). A 4-byte, 22-row
-sprite masked in both memories is about 9,000 cycles.
+Cycles on the built-in IIe, a call included (2026-10-31; tisple run --sim before, each call
+about 200 more). A 4-byte, 22-row sprite masked in both memories is about 8,000 cycles.
+
+What the move to Tisple (2026-10-31: `with_aux`, docs/language.md, Aux memory code) did to
+each, per call, against the 6502 code it replaced, on the built-in IIe with the buffers on
+page boundaries:
+
+| Call | 6502 code | Tisple | |
+| --- | ---: | ---: | ---: |
+| `masked` aux, 4 x 22 | 4,623 | 3,967 | 0.86 |
+| `masked` main, 4 x 22 | 4,623 | 3,951 | 0.85 |
+| `copy` aux, 4 x 22 | 3,401 | 2,813 | 0.83 |
+| `copy_box` aux, 8 x 30 | 6,152 | 5,717 | 0.93 |
+| `copy_box` main, 8 x 30 | 6,152 | 5,701 | 0.93 |
+| `fill` aux, 10 x 20 | 3,995 | 3,940 | 0.99 |
+| `fill` main, 9 x 20 | 3,735 | 3,724 | 1.00 |
+| `box`, 10 x 20 | 8,208 | 7,986 | 0.97 |
+| `clear` | 216,784 | 210,014 | 0.97 |
+| `plot`, x, y and colour from a counter | 260 | 221 | 0.85 |
+| `aux_rmw`, the address from a counter | 119 | 97 | 0.82 |
+| `text_row` | 2,476 | 2,372 | 0.96 |
+| `dhgr_pixels.row`, 10 groups | 2,384 | 2,180 | 0.91 |
+| `dhgr_pixels.read`, 10 groups | 3,406 | 3,069 | 0.90 |
+| `dhgr_pixels.cells`, 5 blocks | 2,556 | 2,202 | 0.86 |
+| `auxmem.read`, 1 byte | 125 | 87 | 0.70 |
+| `auxmem.read`, 256 bytes | 4,217 | 4,197 | 1.00 |
+| `auxmem.write`, 600 bytes | 9,924 | 9,902 | 1.00 |
+
+The rows go right to left (DEY / BPL), a row's address is a table read, and the per-row work
+the 6502 code did with calls (a step through the band, the source moved on) is inline.
 
 - Pages are `dhgr.PAGE1` and `dhgr.PAGE2` (`$20`, `$40`: their high bytes); banks
   `dhgr.MAIN` and `dhgr.AUX`; colours `dhgr.BLACK` to `dhgr.WHITE` in lo-res order.
@@ -76,18 +104,23 @@ sprite masked in both memories is about 9,000 cycles.
   mask and `from` page are in aux memory (lets `:in aux`), for `dhgr.MAIN` in main memory.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
-- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1FF0` for the code
-  below: about 33 KB of the 128; in main memory `$1D8A`-`$1DDC` for lib/auxcard. Text page 2
+- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1F10` for `runs`
+  (below): about 33 KB of the 128; in main memory `$1D8A`-`$1DDC` for lib/auxcard. Text page 2
   (`$0800`-`$0BFF`, both memories) only with `(import dhgr_text2)`, for a program that shows
   the mixed window's text with page 2 (examples/dhgr_demo); a full-screen one has that 2 KB
   (2026-10-30).
-- Aux memory is written with RAMWRT and read with RAMRD. With RAMRD on the 6502 fetches its
-  instructions from aux memory too, so everything that runs with a switch on is our own 6502
-  code, 497 bytes at `$1E00` in both memories: copied there the first time (main memory's copy
-  from a const, aux memory's with `auxmem.write`). The box routines take their arguments in
-  auxmem's zero page (`$F2`-`$FE`) and X (the memory); a row's address is worked out once and
-  then moved `$400` a row inside each 8-row band. `plot` is Tisple: tables say which byte or
-  two each of a group's 7 pixels falls in, and the colour's bits there.
+- Aux memory is written with RAMWRT and read with RAMRD, in a `with_aux` (2026-10-31; until
+  then 497 bytes of our own 6502 code at `$1E00` in both memories). The boxes take the bank as
+  a bool for both switches, `(with_aux aux aux ...)`, one `LDX` and two `STA $C002,X` a call,
+  so dhgr.MAIN costs nothing more; their code, and `ROW`, which a row's address comes from,
+  are in both memories (the link copies them). `plot` reads tables that say which byte or two
+  each of a group's 7 pixels falls in, and the colour's bits there, and changes an aux byte with
+  `aux_rmw`.
+- `runs` stays our 6502 code, 273 bytes at `$1E00` in both memories, copied there the first
+  time: its runs in the aux language card are reached with ALTZP on, which switches zero page,
+  where compiled code keeps its frames. It takes its arguments in auxmem's zero page
+  (`$F2`-`$FE`) and X (the memory); a row's address is worked out once and then moved `$400` a
+  row inside each 8-row band.
 - An interrupt handler needs `(auxmem.guard)` first, as for lib/auxmem.
 
 ### Runs, and the aux language card
@@ -112,8 +145,10 @@ Added 2026-10-30 for Catwiz, whose sprites do not fit as whole boxes of picture 
   throughout: ticks that come meanwhile are lost but one).
 - lib/dhgr_pixels: `(dhgr_pixels.row page col top groups pixels)` writes a row of colour pixels
   (a byte each in main memory) as whole bytes in both memories, about 210 cycles a group: for
-  a hud drawn in whole pixels (Catwiz's text in colour pixels, its badges and cards). Its code
-  sits where the layout puts it (RAMRD stays off) and finds its tables the first time.
+  a hud drawn in whole pixels (Catwiz's text in colour pixels, its badges and cards). Tisple
+  since 2026-10-31: aux memory's bytes in a `with_aux` that only writes, so its code reads main
+  memory throughout and sits where the layout puts it. `read` is the other way (about 300 a
+  group), `cells` a row of a 4-pixel-cell font in white (about 440 a block of 7 cells).
 - So a game can keep the main memory halves of its sprites in the aux card (12 KB at `$D000`
   in bank 2, 4 KB more in bank 1) and the aux halves there or in aux memory, and main memory
   has none of them. tests/test_dhgr_runs.cpp: made-up halves drawn from each
@@ -197,6 +232,8 @@ offset and one past), noise, our own sources, a PNG and made-up double hi-res pi
 streams refused without reading or writing outside; `(pack ...)` and the table macros.
 tests/test_unpack.cpp: the 6502 unpacker in all four modes on 16 pictures, 48 random samples up
 to 9 KB and 16 KB runs, every byte out and the one after checked. tests/test_dhgr.cpp: lib/dhgr's
-switches, pixels and bytes on both pages. tests/test_unpack_irq.cpp: unpacking and a sprite
+switches, pixels and bytes on both pages. tests/test_backend_aux.cpp: the boxes, plots,
+aux_rmw and text_row on the machine against the interpreter, both pages in both memories byte
+for byte. tests/test_unpack_irq.cpp: unpacking and a sprite
 into aux memory again and again under the Mockingboard's ticks with `(auxmem.guard)`, ticks
 landing while RAMRD and RAMWRT are on, none lost, every byte right.

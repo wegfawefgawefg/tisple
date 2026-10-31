@@ -22,8 +22,9 @@ adds them up by compiled function, source function and source line from the list
 python3 scripts/profile.py g.asm p.txt          # from the project folder: its source paths
 ```
 
-Code the listing does not show (lib/dhgr's kit, lib/unpack, code kept as byte arrays) shows as
-its memory and page.
+Code the listing does not show (lib/dhgr's runs, lib/unpack, code kept as byte arrays) shows as
+its memory and page; `with_aux` code run from aux memory counts as the listing's code at the
+same address.
 
 | Date | Commit | Program | Measure | Result |
 | --- | --- | --- | --- | --- |
@@ -98,3 +99,7 @@ its memory and page.
 | 2026-10-30 | (lib/mockingboard: effects in line started by the tick, fade without the compare; dogfood 56) | mockingboard_demo | the same | 800 to 770, 1030 to 1004, 4489 to 4495, 5647 to 5653; 10631 to 10853 (the effect starts in the tick now) |
 | 2026-10-30 | (lib/auxmem: the mover's arguments in zero page it owns, nothing saved) | 1000 one-byte auxmem.read calls | cycles | 558964 to 141554 |
 | 2026-10-30 | (the size budget squeezed when a program does not fit; dogfood 58) | Catwiz (a copy) without its 128 `--no-inline` names, against the game with them | cycles a pass of the main loop, flat out: battle (frames 1300-1600), title (600-900); with the Mockingboard | 15115 to 14982, 40547 the same; 15817 to 15720, 34060 to 32961 (code 18295 to 18296 bytes; life, plasma byte for byte) |
+| 2026-10-31 | (with_aux; lib/auxmem, lib/dhgr's boxes, plot and text_row, lib/dhgr_pixels in Tisple; DEY / BPL loops; small constant steps in place; short loops kept in a page) | life, plasma | generations, frames in 10 s | 56, 253 (byte for byte) |
+| 2026-10-31 | (the same) | lib/dhgr and lib/dhgr_pixels, a call (docs/dhgr.md) | cycles | masked 4x22 4623 to 3967, copy_box 8x30 6152 to 5717, fill 10x20 3995 to 3940, clear 216784 to 210014, text_row 2476 to 2372, dhgr_pixels.row 10 groups 2384 to 2180, cells 5 blocks 2556 to 2202 |
+| 2026-10-31 | (the same) | auxmem.read | cycles a call | 1 byte 125 to 87, 256 bytes 4217 to 4197 |
+| 2026-10-31 | (the same) | Catwiz (a copy with the title's seed step out, so both play the same fight: the screen at frame 1800 byte for byte), two dice thrown, frames 1300-1800 | cycles a pass of the main loop, flat out; cycles not waiting for the vertical blank | 8203 to 8125; 3,821,113 to 3,765,469 (squeeze 6 to 4, zero page 172 the same) |

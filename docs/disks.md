@@ -206,8 +206,8 @@ reader needs no `(auxmem.guard)`: it never has RAMWRT on with interrupts on.
 
 - A `(fn () void)` of the program's; frames are safe, since the call is a plain pointer call
   in lib/disk's loop.
-- It must not call `disk.read` itself. lib/unpack, lib/dhgr and lib/auxmem are fine: they
-  borrow `$F2`-`$FE`, which the reader reads only when a read starts.
+- It must not call `disk.read` itself. lib/unpack, lib/dhgr and lib/auxmem are fine: lib/unpack
+  and dhgr.runs borrow `$F2`-`$FE`, which the reader reads only when a read starts.
 - Its writes to main memory go where the program's always do; with 80STORE on, keep `dst`
   clear of the screens (lib/dhgr keeps it off).
 

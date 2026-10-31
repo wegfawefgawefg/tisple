@@ -108,7 +108,8 @@ Formatter rules (`tisple fmt`, implemented in `src/reader/format.cpp`):
   `if`: `fn` (name, parameter list and return type stay on the head line),
   `macro` (name and parameter list stay), `if` (the condition stays; both arms
   are body), `while`, `match` (the value stays; each clause a line), `for` (`i`,
-  the type, start and end stay), `do`. With no body they stay on one line:
+  the type, start and end stay), `do`, `with_aux` (reads and writes stay). With no
+  body they stay on one line:
   `(while (not (key_ready)))`, `(do)`, `(fn f () void)`.
 - A `match` clause is a body too, with the pattern as its head: one line when
   it is a single form that fits, `(Action.left (step 255))`, or nothing,
@@ -390,6 +391,53 @@ Now the link decides (src/backend/squeeze.cpp):
   fits that way is also built with the tighter budgets without it, and the one with fewer
   cycles a run, about, is kept; the warning says what was traded. Catwiz: squeeze 3 became
   squeeze 0 with 3.3 KB in bank 1, its loops 3-4% faster.
+
+### Aux memory code (2026-10-31)
+
+docs/language.md, "Aux memory code", is the language: `(with_aux reads writes body ...)`.
+Before it, five libraries carried 6502 code as byte arrays for one reason: compiled code could
+not run with RAMRD or RAMWRT on. How it is made:
+
+- The checker makes the form `(do on body ... off)`: two `AuxSwitch` nodes, on with the two
+  bools, off with the body's last form as its value (worked out before the switches go off).
+  A return in the body gets an off around its value; a return without one, and a break or
+  continue to a loop outside, an off before it (check/with_aux.cpp). No pass needs to know
+  regions: every pass treats the switches as I/O.
+- check/aux_mode.cpp follows the switches through each function's tree in evaluation order
+  (joined where paths meet, to a fixed point around loops, a return or break ending a path)
+  and through calls: a call made where a switch may be on runs its callee with it on, an
+  aux-mode function. The checker's rules (check/aux_rules.cpp), the pointers pass, the backend
+  and the interpreter all read it; it is worked out again on the optimised program, so it
+  holds after inlining, unrolling and unswitching.
+- Frames: every variable an owner (a function with a region) or an aux-mode function names,
+  and their temporaries, are forced into zero page (frames.cpp), and their symbols marked
+  zero page before code generation. An owner is never inlined (FindInlines, the mid-level
+  inliner), so its region stays where its frame is.
+- Memory knowledge: in owners and aux-mode functions the peephole tracks only zero-page
+  symbols and no indexed byte, and the code generator forgets the registers' memory bytes
+  outside zero page at each switch. Loads that may run with RAMRD on have no range (ranges'
+  aux_reads), and the pointers pass leaves those loads, and stores with RAMWRT on, as they are.
+- Mirroring: functions whose code may run with RAMRD on, the runtime when they call it, and
+  the const data such code reads by name go into aux memory segments at the same addresses
+  (backend/aux_link.cpp): the code at the start of the memory below the origin when there is
+  one (lets `:in aux` fill aux memory from `$0800`, so that cuts their room the least), else
+  after the other code; lets `:in aux` are laid out around both (LayoutOptions::aux_reserved;
+  the layout runs a second time when const data needs room there, main memory's coming out
+  the same). Never in the card's bank 1. The interpreter's aux memory gets the same const data
+  (Layout::mirrored).
+- Code: on is `STA $C003`/`$C005` for a constant, `LDX b` / `STA $C002,X` (and `STA
+  $C004,X` when writes is the same bool) for a variable; off is `STA $C002`/`$C004` for what
+  the walk says may be on there.
+- Ported to it: lib/auxmem's copies, lib/dhgr's boxes, plot and text_row, lib/dhgr_pixels.
+  Each runs as fast as the byte arrays did or faster (docs/dhgr.md); three code generator
+  and link changes came out of it (a signed compare of a pinned register with 0 is its N
+  flag, so a count-down loop ends in DEY / BPL; a pointer or word moved by a small constant in
+  place is ADC / BCC / INC; up to 32 bytes before a function keep its innermost short loops
+  inside a page, when the program is not squeezed: link_code.cpp, PadLoops). Left as 6502
+  code: lib/unpack's decoder (it flips RAMRD between the packed bytes and the output in the
+  middle of a run, which one region cannot, and its aux card mode needs ALTZP), lib/auxcard and
+  dhgr.runs (ALTZP for the card; one decoder serves its three places), auxmem.guard (interrupt
+  glue in page 3).
 
 ## Target
 
