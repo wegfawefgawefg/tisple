@@ -66,6 +66,8 @@ void CheckSegmentsApart(TestResults& results, const Compiled& c);
 void RunLinkRegionTests(TestResults& results);
 // lib/text80, lib/text40 and lib/auxmem on the machine (test_text_libs.cpp)
 void RunTextLibTests(TestResults& results);
+// with_aux on the machine against the interpreter, the mirrored bytes (test_backend_aux.cpp)
+void RunBackendAuxTests(TestResults& results);
 // lib/dhgr: switches, pixels and bytes on both pages (test_dhgr.cpp)
 void RunDhgrLibTests(TestResults& results);
 // lib/dhgr's runs from aux memory and the aux language card, under ticks (test_dhgr_runs.cpp)

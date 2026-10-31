@@ -6,6 +6,7 @@
 
 #include "backend/link.hpp"
 
+#include "backend/aux_link.hpp"
 #include "backend/link_code.hpp"
 #include "backend/link_data.hpp"
 #include "backend/runtime.hpp"
@@ -164,20 +165,40 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
     std::size_t resident_spans = out.spans.size();
+    // code with_aux may run with RAMRD on last, with the runtime when it calls it: what the
+    // link copies to aux memory (aux_link.hpp), at the code's end, where the language card
+    // (which needs no copy) or the end of a stretch splits aux memory the least
+    std::vector<AsmItem> tables;
+    EmitRuntimeTables(be, tables);
+    std::vector<bool> mirrored = MirroredFunctions(be, *in.kept, bank1);
+    bool runtime_mirrored = MirrorsRuntime(be, mirrored);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if ((*in.kept)[f] && !in_bank1(f)) {
+        if ((*in.kept)[f] && !in_bank1(f) && !mirrored[f]) {
             Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
         }
     }
-    Append(items, runtime, out, -1, "runtime");
+    if (!runtime_mirrored) {
+        Append(items, runtime, out, -1, "runtime");
+    }
     if (!irq.empty() && bank1 == nullptr) {
         Append(items, irq, out, -1, "interrupt entry");
     }
-    std::vector<AsmItem> tables;
-    EmitRuntimeTables(be, tables);
-    if (!tables.empty()) {
+    if (!tables.empty() && !runtime_mirrored) {
         Append(items, tables, out, -1, "runtime tables");
     }
+    std::size_t mirror_first = out.spans.size();
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (mirrored[f]) {
+            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+        }
+    }
+    if (runtime_mirrored) {
+        Append(items, runtime, out, -1, "runtime");
+        if (!tables.empty()) {
+            Append(items, tables, out, -1, "runtime tables");
+        }
+    }
+    std::size_t mirror_end = out.spans.size();
     Append(items, zp_image, out, -1, "zero-page image");
     std::size_t image_span = out.spans.size() - 1;
     std::size_t first_bank1 = bank1 != nullptr ? out.spans.size() : SIZE_MAX;
@@ -186,6 +207,12 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
             out.spans.back().card_bank1 = true;
         }
+    }
+
+    // short loops kept inside a page, a few bytes before a function at most; not when the
+    // program had to be squeezed to fit
+    if (options.squeeze == 0) {
+        PadLoops(be.as, out.spans, options.origin, first_bank1);
     }
 
     // the code where it fits: one run from the origin when it can be. A branch to another
@@ -199,6 +226,16 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     std::vector<CodePlace> places;
     std::uint32_t frames_at = 0;
     std::uint32_t code_end = 0;
+    // the mirrored code at the start of the memory below the origin, when the build has it:
+    // lets :in aux fill aux memory from $0800 on, so that splits their room the least
+    EarlySpans early;
+    early.first = mirror_first;
+    early.end = mirror_end;
+    for (std::size_t k = 1; k < shared; k++) {
+        bool low = stretches[k].start < options.origin;
+        early.stretch = low && early.stretch == SIZE_MAX ? k : early.stretch;
+        early.stretch_end = low ? k + 1 : early.stretch_end;
+    }
     for (bool again = true; again;) {
         code_end = LayoutCode(be.as, options.origin);
         std::uint32_t startup_end = options.origin + SpanSize(items, out.spans[0]);
@@ -210,7 +247,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             return LinkResult::kError;
         }
         if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at,
-                        first_bank1)) {
+                        first_bank1, early)) {
             std::string where;
             for (const AddressRange& stretch : stretches) {
                 where +=
@@ -226,7 +263,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         again = MarkFarBranches(be.as, out.spans, places);
     }
     std::vector<AddressRange> runs;
-    bool spilled = places.back().stretch != 0;
+    bool spilled = false;
+    for (const CodePlace& place : places) {
+        spilled = spilled || place.stretch != 0;
+    }
     if (spilled) {
         if (!LayOutRuns(be.as, out.spans, places, runs, errors)) {
             return LinkResult::kError;
@@ -281,9 +321,23 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     lo.reserved = runs;
     lo.reserved.push_back(AddressRange{frames_at, frames_end});
     lo.reserved.push_back(AddressRange{data_end, options.limit});
+    std::vector<AddressRange> mirror = SpanRanges(items, out.spans, mirror_first, mirror_end);
+    lo.aux_reserved = mirror;
     if (!LayoutProgram(program, lo, out.layout, errors)) {
         return out.layout.no_room ? LinkResult::kNoRoom : LinkResult::kError;
     }
+    // the const data that code reads by name with RAMRD on is copied to aux memory too: laid
+    // out again with the lets :in aux kept off it (main memory's layout comes out the same)
+    std::vector<bool> mirrored_consts;
+    std::vector<AddressRange> consts = MirroredConsts(be, out.layout, mirrored_consts);
+    if (!consts.empty()) {
+        lo.aux_reserved.insert(lo.aux_reserved.end(), consts.begin(), consts.end());
+        mirror.insert(mirror.end(), consts.begin(), consts.end());
+        if (!LayoutProgram(program, lo, out.layout, errors)) {
+            return out.layout.no_room ? LinkResult::kNoRoom : LinkResult::kError;
+        }
+    }
+    out.layout.mirrored = mirrored_consts;
     for (std::size_t v = 0; v < program.vars.size() && interp_fits; v++) {
         if (use.interp_only[v]) {
             out.layout.vars[v] = interp_places[v];
@@ -368,6 +422,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     }
     std::fill(memory.begin() + frames_at, memory.begin() + frames_end, 0);
 
+    CopyToAux(mirror, memory, aux);
     out.image.assign(memory.begin() + options.origin, memory.begin() + file_end);
     for (std::size_t k = 0; k < shared; k++) {
         if (low[k] < high[k]) {
@@ -380,7 +435,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         out.segments.push_back(
             SegmentOf(bank1_memory, MemoryBank::kCardBank1, bank1_run.start, bank1_run.end));
     }
-    AuxSegments(program, out.layout, aux, out.segments);
+    AuxSegments(program, out.layout, aux, mirror, out.segments);
 
     // a bank 1 function is called through its forward stub (none: only bank 1 calls it)
     out.function_address.resize(program.functions.size());

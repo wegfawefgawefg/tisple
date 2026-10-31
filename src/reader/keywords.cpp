@@ -19,6 +19,7 @@ const char* const kSpecialForms[] = {
     "macro",    "import",
     "quote",    "quasiquote",
     "unquote",  "unquote_splicing",
+    "with_aux",
 };
 
 const char* const kTypeNames[] = {"u8", "i8", "u16", "i16", "bool", "void", "ptr", "array"};

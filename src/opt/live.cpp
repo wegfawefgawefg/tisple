@@ -267,6 +267,7 @@ void Walk(Walker& w, ExprId id, Bits& live) {
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
         OrBits(live, w.globals);
         break;
     case ExprKind::Index:

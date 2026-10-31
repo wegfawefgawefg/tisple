@@ -28,57 +28,6 @@ bool IsScalar(const Interp& in, TypeId type) {
     return IsScalarKind(TypeAt(in, type).kind);
 }
 
-// ---- values as packed bytes, moved through cursors field by field
-
-void ReadValue(const Interp& in, Cursor src, TypeId type, std::vector<std::uint8_t>& bytes,
-               std::uint32_t offset) {
-    const Type& t = TypeAt(in, type);
-    if (IsScalarKind(t.kind)) {
-        std::uint16_t value = ReadScalar(in, src, t.size);
-        bytes[offset] = static_cast<std::uint8_t>(value & 0xFF);
-        if (t.size == 2) {
-            bytes[offset + 1] = static_cast<std::uint8_t>(value >> 8);
-        }
-        return;
-    }
-    if (t.kind == TypeKind::Struct) {
-        for (const Field& field : in.program->structs[static_cast<std::size_t>(t.decl)].fields) {
-            ReadValue(in, FieldCursor(src, field.offset), field.type, bytes, offset + field.offset);
-        }
-        return;
-    }
-    std::uint32_t elem_size = TypeAt(in, t.elem).size;
-    for (std::uint32_t i = 0; i < t.count; i++) {
-        Cursor element = ElementCursor(*in.program, *in.layout, -1, src, type, i);
-        ReadValue(in, element, t.elem, bytes, offset + i * elem_size);
-    }
-}
-
-void WriteValue(Interp& in, Cursor dst, std::int32_t root, TypeId type,
-                const std::vector<std::uint8_t>& bytes, std::uint32_t offset) {
-    const Type& t = TypeAt(in, type);
-    if (IsScalarKind(t.kind)) {
-        std::uint16_t value = bytes[offset];
-        if (t.size == 2) {
-            value = static_cast<std::uint16_t>(value | (bytes[offset + 1] << 8));
-        }
-        WriteScalar(in, dst, t.size, value);
-        return;
-    }
-    if (t.kind == TypeKind::Struct) {
-        for (const Field& field : in.program->structs[static_cast<std::size_t>(t.decl)].fields) {
-            WriteValue(in, FieldCursor(dst, field.offset), root, field.type, bytes,
-                       offset + field.offset);
-        }
-        return;
-    }
-    std::uint32_t elem_size = TypeAt(in, t.elem).size;
-    for (std::uint32_t i = 0; i < t.count; i++) {
-        Cursor element = ElementCursor(*in.program, *in.layout, root, dst, type, i);
-        WriteValue(in, element, root, t.elem, bytes, offset + i * elem_size);
-    }
-}
-
 // a const the link left out: read from its initial bytes
 bool LeftOut(const Interp& in, std::int32_t root) {
     return root >= 0 && static_cast<std::size_t>(root) < in.left_out.size() &&
@@ -113,6 +62,7 @@ Cursor EvalPlace(Interp& in, ExprId id, std::int32_t& root) {
         root = -1;
         Cursor cursor;
         cursor.address = static_cast<std::uint16_t>((Eval(in, e.a) + e.value) & 0xFFFF);
+        cursor.pointer = true;
         return cursor;
     }
     default:
@@ -283,6 +233,23 @@ std::uint16_t EvalIo(Interp& in, const Expr& e) {
     return 0;
 }
 
+// on: RAMRD and RAMWRT from the bools; off: the value first, then both off
+std::uint16_t EvalAuxSwitch(Interp& in, const Expr& e) {
+    if (e.value != 0) {
+        bool reads = Eval(in, e.a) != 0;
+        bool writes = Eval(in, e.b) != 0;
+        if (in.flow == Flow::Normal) {
+            in.aux_reads = reads;
+            in.aux_writes = writes;
+        }
+        return 0;
+    }
+    std::uint16_t value = e.a >= 0 ? Eval(in, e.a) : 0;
+    in.aux_reads = false;
+    in.aux_writes = false;
+    return value;
+}
+
 } // namespace
 
 std::uint16_t Eval(Interp& in, ExprId id) {
@@ -326,6 +293,7 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::Store: {
         Cursor cursor;
         cursor.address = Eval(in, e.a);
+        cursor.pointer = true;
         TypeId elem = TypeAt(in, At(in, e.a).type).elem;
         Assign(in, cursor, -1, elem, e.b);
         return 0;
@@ -333,6 +301,7 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::StoreField: {
         Cursor cursor;
         cursor.address = static_cast<std::uint16_t>((Eval(in, e.a) + e.value) & 0xFFFF);
+        cursor.pointer = true;
         Assign(in, cursor, -1, e.ref, e.b);
         return 0;
     }
@@ -371,6 +340,8 @@ std::uint16_t Eval(Interp& in, ExprId id) {
     case ExprKind::Interrupts:
         in.irq_on = e.value != 0;
         return 0;
+    case ExprKind::AuxSwitch:
+        return EvalAuxSwitch(in, e);
     case ExprKind::Call:
     case ExprKind::CallPtr:
         return EvalCall(in, e);
@@ -442,51 +413,3 @@ std::uint16_t Eval(Interp& in, ExprId id) {
 }
 
 } // namespace tisple::interp
-
-namespace tisple {
-
-using interp::WriteValue;
-
-std::uint16_t ReadScalar(const Interp& in, Cursor cursor, std::uint32_t size) {
-    std::uint16_t low = in.memory[cursor.address];
-    if (size == 1) {
-        return low;
-    }
-    std::uint16_t high = in.memory[CursorByte(cursor, 1)];
-    return static_cast<std::uint16_t>(low | (high << 8));
-}
-
-void WriteScalar(Interp& in, Cursor cursor, std::uint32_t size, std::uint16_t value) {
-    in.memory[cursor.address] = static_cast<std::uint8_t>(value & 0xFF);
-    if (size == 2) {
-        in.memory[CursorByte(cursor, 1)] = static_cast<std::uint8_t>(value >> 8);
-    }
-}
-
-void InitInterp(Interp& in, const Program& program, const Layout& layout) {
-    in.program = &program;
-    in.layout = &layout;
-    in.memory.assign(0x10000, 0);
-    in.left_out.assign(program.vars.size(), {});
-    for (std::size_t i = 0; i < program.vars.size(); i++) {
-        const Var& var = program.vars[i];
-        std::int32_t id = static_cast<std::int32_t>(i);
-        if (var.kind == VarKind::Const && layout.vars[i].dropped) {
-            in.left_out[i] = InitBytes(program, layout, id);
-            in.left_out[i].resize(TypeOf(program, var.type).size, 0);
-            continue;
-        }
-        // aux memory is not modelled (only lib/auxmem's jsr reaches it); left-out tables have none
-        if (var.init.empty() || var.type == kErrorType || var.placement.in_aux ||
-            layout.vars[i].dropped) {
-            continue;
-        }
-        if (var.addr_slots.empty()) {
-            WriteValue(in, VarCursor(layout, id), id, var.type, var.init, 0);
-        } else {
-            WriteValue(in, VarCursor(layout, id), id, var.type, InitBytes(program, layout, id), 0);
-        }
-    }
-}
-
-} // namespace tisple

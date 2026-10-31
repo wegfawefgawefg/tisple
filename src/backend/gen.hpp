@@ -26,6 +26,7 @@
 
 #include "asm/asm.hpp"
 #include "backend/analysis.hpp"
+#include "backend/aux_code.hpp"
 #include "backend/backend.hpp"
 #include "backend/effects.hpp"
 #include "backend/index_alias.hpp"
@@ -119,6 +120,7 @@ struct Backend {
     std::vector<DivRoutine> div_routines; // the ones the code calls
     ValueRanges ranges;
     IoBases io_bases;
+    AuxCode aux; // the code with_aux runs (aux_code.hpp)
     std::vector<std::int32_t> io_sym;       // by var: an I/O base's operand symbol, or -1
     std::vector<std::vector<AsmItem>> code; // by function
     // the copies the generation made, for the size budget (size_budget.hpp), and by for
@@ -680,6 +682,10 @@ Opnd EvalIoRead(Gen& g, const Expr& e, const Opnd* dst); // gen_io.cpp
 Opnd EvalJsr(Gen& g, ExprId id);
 // (wait_cycles n): the exact delay (gen_wait.cpp)
 void GenWait(Gen& g, ExprId id);
+// with_aux's switches (gen_aux.cpp): on, or off as a statement; off with its value, which ends
+// in A or a temporary (dst is not written)
+void GenAuxSwitch(Gen& g, ExprId id);
+Opnd EvalAuxOff(Gen& g, ExprId id, const Opnd* dst);
 
 // ---- conditions (gen_cond.cpp)
 

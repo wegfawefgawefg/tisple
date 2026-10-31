@@ -150,8 +150,8 @@ is one pattern.
 
 ## Songs in aux memory, copies while it plays
 
-The handler runs from main memory, and lib/auxmem's mover switches main memory
-out while it copies (RAMRD on to read aux memory, RAMWRT to write it): an
+The handler runs from main memory, and lib/auxmem's copies switch main memory
+out while they run (a `with_aux`: RAMRD on to read aux memory, RAMWRT to write it): an
 interrupt in a copy would fetch the handler's code from aux memory, or write
 its variables there. So copies needed interrupts off, in pieces short enough
 not to lose a tick. `(auxmem.guard)`, once after `mb.init`, makes them safe
@@ -273,9 +273,11 @@ runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
 
 ## What is left
 
-- The player reading songs where they live, in aux memory: a byte read with
-  RAMRD on has to run from page 3 (a copy in both memories, as lib/auxmem's
-  mover does), so the handler would `jsr` to it, about 21 cycles more a
+- The player reading songs where they live, in aux memory: since 2026-10-31 a
+  `with_aux` in the handler can read a pattern byte there (about 12 cycles more a
+  byte for the switches), with no `jsr`; not done yet. Before, a byte read with
+  RAMRD on had to run from page 3 (a copy in both memories, as lib/auxmem's
+  mover did), so the handler would `jsr` to it, about 21 cycles more a
   pattern byte. But a `jsr` anywhere in the handler makes the checker count
   every global as shared with the handler (src/check/interrupts.cpp: the
   routine may change any let), and Catwiz's main code grew 330 bytes from

@@ -216,6 +216,12 @@ enum class ExprKind : std::uint8_t {
     CallPtr,
     FnRef,      // ref: function; a function's name as a value, its address, of type (fn ...)
     Interrupts, // (cli) value 1: interrupts on; (sei) value 0: off; void
+    // the aux memory switches of a (with_aux reads writes body ...), which the checker makes
+    // into [on, body..., off] (check/aux_mode.hpp). value 1, on: a reads, b writes (bools),
+    // RAMRD and RAMWRT set from them; void. value 0, off: a the value worked out first (-1
+    // for none), then both switches off; the value's type. ref: the switches the region may
+    // turn on (kAuxReads, kAuxWrites), for both
+    AuxSwitch,
 };
 
 struct Expr {

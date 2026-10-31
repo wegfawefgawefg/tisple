@@ -25,6 +25,7 @@
 #include "opt/inline.hpp"
 
 #include "backend/analysis.hpp"
+#include "check/aux_mode.hpp"
 #include "opt/collapse.hpp"
 
 #include <algorithm>
@@ -299,9 +300,11 @@ std::uint64_t InlineStep(Pass& p) {
         bool never = std::find(p.options->no_inline.begin(), p.options->no_inline.end(), fn.name) !=
                      p.options->no_inline.end();
         // a function whose address is taken keeps its body to itself (its calls through
-        // pointers are not these), as does the handler's code
+        // pointers are not these), as does the handler's code, and one with a with_aux of its
+        // own (FindInlines)
         if (calls[f] == 0 || never || static_cast<std::int32_t>(f) == program.main || fn.body < 0 ||
-            fn.address_taken || fn.dispatcher || handler[f]) {
+            fn.address_taken || fn.dispatcher || handler[f] ||
+            HasAuxSwitch(program, static_cast<std::int32_t>(f))) {
             continue;
         }
         in.size[f] = CountExprs(program, fn.body);

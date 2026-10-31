@@ -43,8 +43,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
 // segments.cpp: the bytes [low, high) of a 64 KB memory image as a segment
 MemorySegment SegmentOf(const std::vector<std::uint8_t>& memory, MemoryBank bank, std::uint32_t low,
                         std::uint32_t high);
-// every :in aux let's bytes as segments: runs of them, a new one after a gap of a page or more
+// every :in aux let's bytes, and the mirrored ranges with_aux code runs and reads
+// (aux_link.hpp), as segments: runs of them, a new one after a gap of a page or more
 void AuxSegments(const Program& program, const Layout& layout, const std::vector<std::uint8_t>& aux,
-                 std::vector<MemorySegment>& out);
+                 const std::vector<AddressRange>& mirrored, std::vector<MemorySegment>& out);
 
 } // namespace tisple

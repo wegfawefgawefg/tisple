@@ -183,7 +183,9 @@ Bank1Facts FindBank1Facts(const Backend& be, const std::vector<bool>& kept,
         const Function& fn = program.functions[f];
         bool entry = std::find(be.entries.begin(), be.entries.end(),
                                static_cast<std::int32_t>(f)) != be.entries.end();
-        if (!kept[f] || handler[f] || fn.dispatcher || fn.io_patch >= 0 || entry) {
+        // code that runs with the aux switches on stays where both memories have it
+        bool aux = IsAuxFunction(be.aux, static_cast<std::int32_t>(f));
+        if (!kept[f] || handler[f] || fn.dispatcher || fn.io_patch >= 0 || entry || aux) {
             s.barred[f] = true;
         }
         if (!kept[f]) {

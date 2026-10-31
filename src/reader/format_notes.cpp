@@ -237,6 +237,10 @@ int BodyHeaderCount(const Node& node) {
     if (head == "if" || head == "while" || head == "match") {
         return 1;
     }
+    if (head == "with_aux") {
+        // (with_aux reads writes body ...)
+        return 2;
+    }
     if (head == "for") {
         // (for i type start end body ...); macro code has no type: (for i start end body ...)
         bool typed = node.items.size() > 2 && node.items[2].kind == NodeKind::Symbol &&

@@ -33,6 +33,9 @@ const BuiltinInfo kBuiltinInfo[] = {
     {"break", SymbolKind::SpecialForm, "(break)", "leaves the innermost loop"},
     {"continue", SymbolKind::SpecialForm, "(continue)", "starts the next round of the loop"},
     {"set", SymbolKind::SpecialForm, "(set place value)", "assigns to a name, s.x or (at ...)"},
+    {"with_aux", SymbolKind::SpecialForm, "(with_aux reads writes body ...)",
+     "body with RAMRD on when reads, RAMWRT on when writes: pointers reach aux memory; both "
+     "off at every exit"},
     {"and", SymbolKind::SpecialForm, "(and a b)", "short-circuit, on bool"},
     {"or", SymbolKind::SpecialForm, "(or a b)", "short-circuit, on bool"},
     {".", SymbolKind::SpecialForm, "(. base x ...)", "a field, written only by macro templates"},

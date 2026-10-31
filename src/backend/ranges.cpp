@@ -439,7 +439,8 @@ std::uint32_t ExprMax(const Program& program, const ValueRanges& r, ExprId id) {
         return r.var_max[static_cast<std::size_t>(root)];
     }
     case ExprKind::Load:
-        if (limit != 0xFF) {
+        if (limit != 0xFF || (static_cast<std::size_t>(id) < r.aux_reads.size() &&
+                              r.aux_reads[static_cast<std::size_t>(id)])) {
             return limit;
         }
         return TargetsMax(r, PointsTo(program, r, e.a));

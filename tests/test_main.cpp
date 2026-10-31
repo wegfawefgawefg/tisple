@@ -61,6 +61,7 @@ int main() {
     tisple_tests::RunCheckDataTests(results);
     tisple_tests::RunInterpTests(results);
     tisple_tests::RunInterpArithTests(results);
+    tisple_tests::RunCheckAuxTests(results);
     tisple_tests::RunAsmTests(results);
     tisple_tests::RunWaitTests(results);
     tisple_tests::RunBackendTests(results);
@@ -110,6 +111,7 @@ int main() {
     tisple_tests::RunLinkRegionTests(results);
     tisple_tests::RunBackendBank1Tests(results);
     tisple_tests::RunTextLibTests(results);
+    tisple_tests::RunBackendAuxTests(results);
     tisple_tests::RunMockingboardLibTests(results);
     tisple_tests::RunMockingboardLineTests(results);
     tisple_tests::RunMockingboardAuxTests(results);

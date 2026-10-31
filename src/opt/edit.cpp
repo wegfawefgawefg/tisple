@@ -176,6 +176,7 @@ void Visit(Editor& ed, ExprId id, bool used) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:

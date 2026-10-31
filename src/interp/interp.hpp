@@ -15,6 +15,11 @@
 //   it is written, so overlapping copies through pointers are well defined.
 // - io_read and io_write go only to IoHooks, never to memory; a u16 access is the low byte
 //   at addr, then the high byte at addr + 1.
+// - Aux memory: a second 64 KB image, holding the :in aux lets' starting bytes and the const
+//   data the link mirrors there (Layout::mirrored). Inside a with_aux a load through a pointer
+//   of $0200-$BFFF reads it when RAMRD is on, a store writes it when RAMWRT is; variables,
+//   zero page, the stack and $C000 up are always main memory's (the checker keeps code there
+//   off globals outside zero page).
 // - jsr stops the run with an Error ("jsr needs the machine"): machine code runs only on
 //   the 6502. wait_cycles only works out its count: time passes only there too.
 // - Interrupts come only where a test asks for them (Interp::irq_steps): the handler runs
@@ -68,6 +73,9 @@ struct Interp {
     const Program* program = nullptr;
     const Layout* layout = nullptr;
     std::vector<std::uint8_t> memory; // 64 KB
+    std::vector<std::uint8_t> aux;    // 64 KB: aux memory, for with_aux
+    bool aux_reads = false;           // RAMRD and RAMWRT, as the running with_aux set them
+    bool aux_writes = false;
     // by var: the initial bytes of a const the link left out (no kept code reads it, nothing
     // takes its address), which the program as written may still read; a place in one has
     // address 0 and packed bytes on the layout, so its cursor's address is the byte offset

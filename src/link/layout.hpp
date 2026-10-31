@@ -48,6 +48,9 @@ struct LayoutOptions {
     std::vector<std::int32_t> preset;
     // more ranges automatic and fixed placement must stay out of (code, frames)
     std::vector<AddressRange> reserved;
+    // ranges of aux memory lets :in aux stay out of: main memory's code and const data that
+    // with_aux code runs and reads with RAMRD on, which the link copies there
+    std::vector<AddressRange> aux_reserved;
     // by var id: left out, no address and no bytes (const tables no kept code reaches)
     std::vector<bool> dropped;
     // by var id: automatic placement keeps it out of `avoid` (the language card's
@@ -74,6 +77,9 @@ struct Layout {
     // through a pointer (set by the backend for the functions whose address is taken). Empty
     // or 0: kFunctionValueBase + id, which only the interpreter gives meaning (image.hpp)
     std::vector<std::uint16_t> functions;
+    // by var: const data code that runs with RAMRD on reads by name, which the link copies to
+    // the same address in aux memory (backend/aux_link.hpp); empty: none
+    std::vector<bool> mirrored;
 };
 
 // every Var's shape (size, split, plane stride) with address 0: what code generation needs
@@ -99,6 +105,8 @@ struct Cursor {
     std::uint32_t stride = 1;
     bool split = false;
     bool root = true; // still the Var itself, so its plane_stride applies
+    // reached through a pointer: inside a with_aux, the memory the switches pick (interp.hpp)
+    bool pointer = false;
 };
 
 Cursor VarCursor(const Layout& layout, std::int32_t var);

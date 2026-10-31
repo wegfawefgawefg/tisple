@@ -34,6 +34,8 @@ void MakeSymbols(Backend& be) {
             s.zp = true;
         }
         s.shared = var.irq_shared;
+        // frames.cpp puts what with_aux code names in zero page; the peephole needs to know
+        s.zp = s.zp || (!be.aux.vars.empty() && be.aux.vars[v]);
     }
     // an I/O base's accesses: I/O to the passes (shared, at $C000) until EmitIoPatches
     be.io_sym.assign(program.vars.size(), -1);
@@ -64,6 +66,9 @@ void MakeSymbols(Backend& be) {
         be.as.symbols[static_cast<std::size_t>(be.ptemp_sym[f])].zp = true;
         be.lptr_sym[f] = NewSym(be, name + ".loop_ptrs", SymRole::LoopPtrs, owner);
         be.as.symbols[static_cast<std::size_t>(be.lptr_sym[f])].zp = true;
+        if (IsAuxFunction(be.aux, owner)) {
+            be.as.symbols[static_cast<std::size_t>(be.temp_sym[f])].zp = true;
+        }
     }
     be.scratch = NewSym(be, "scratch", SymRole::Scratch, -1);
     be.rt_a = NewSym(be, "rt_a", SymRole::Scratch, -1);
@@ -135,7 +140,8 @@ void GenerateOne(Backend& be, std::size_t f, WeightsAdded& added) {
     } else {
         GenFunction(be, static_cast<std::int32_t>(f));
         Peephole(be.as, be.code[f], StoreScopes(be, static_cast<std::int32_t>(f)),
-                 FrameSharers(be, static_cast<std::int32_t>(f)));
+                 FrameSharers(be, static_cast<std::int32_t>(f)),
+                 IsAuxFunction(be.aux, static_cast<std::int32_t>(f)));
     }
     added = AddedSince(be, weights);
 }
@@ -265,6 +271,7 @@ bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, 
     prepared.counter_literals = counter_literals;
     prepared.entries = entries;
     prepared.io_bases = io_bases;
+    prepared.aux = FindAuxCode(program);
     prepared.inlines = FindInlines(program, options.no_inline);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         if (program.functions[f].io_patch >= 0) {
@@ -279,6 +286,13 @@ bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, 
     prepared.effects = ComputeEffects(program);
     prepared.div_pairs = FindDivPairs(program);
     prepared.ranges = FindValueRanges(program);
+    if (prepared.aux.reads) {
+        prepared.ranges.aux_reads.assign(program.exprs.size(), false);
+        for (std::size_t id = 0; id < program.exprs.size(); id++) {
+            std::uint8_t state = AuxStateAt(prepared.aux.modes, static_cast<ExprId>(id));
+            prepared.ranges.aux_reads[id] = (state & kAuxReads) != 0;
+        }
+    }
     prepared.fn_runs = FindRunCounts(program);
     prepared.fn_all_runs = FindRunCounts(program, kMaxRunTrips);
     prepared.multiplies.assign(program.functions.size(), {});

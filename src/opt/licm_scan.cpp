@@ -59,6 +59,7 @@ void ScanWrites(const Pass& p, ExprId id, LoopWrites& w) {
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
         w.all = true;
         return;
     case ExprKind::Literal:
@@ -239,6 +240,7 @@ bool MayLeave(const Pass& p, ExprId id, int depth) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:
@@ -387,6 +389,7 @@ void Candidates(Finder& f, ExprId id, bool shared, bool sometimes) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:

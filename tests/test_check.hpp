@@ -45,5 +45,8 @@ void RunLayoutTests(TestResults& results);
 void RunCheckDataTests(TestResults& results);
 void RunInterpTests(TestResults& results);
 void RunInterpArithTests(TestResults& results);
+// with_aux: the form, its rules, where the switches may be on, the interpreter's aux memory
+// (test_check_aux.cpp)
+void RunCheckAuxTests(TestResults& results);
 
 } // namespace tisple_tests

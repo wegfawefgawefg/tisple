@@ -466,6 +466,7 @@ bool CheckProgram(LoadedProgram& loaded, Program& out, std::vector<Diagnostic>& 
     }
     FindMain(ck);
     CheckHandler(ck);
+    CheckAuxCode(ck);
     if (names) {
         CopyConsts(ck);
     }

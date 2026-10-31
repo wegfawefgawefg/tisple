@@ -3,9 +3,10 @@
 #
 # run: python3 scripts/profile.py prog.asm profile.txt [--lines N] [--fns N]
 #   functions: as compiled (an inlined one counts in its caller) and as written (the source
-#   function each line is in, inlined or not); lines: the hottest source lines. Code the
-#   listing does not have (lib/dhgr's kit at $1E00, lib/unpack, the rom) shows by where and
-#   address range.
+#   function each line is in, inlined or not); lines: the hottest source lines. Code run from
+#   aux memory where the listing has main memory's code is that code (with_aux code that may
+#   run with RAMRD on is in both memories). Code the listing does not have (lib/dhgr's runs at
+#   $1E00, lib/unpack, the rom) shows by where and address range.
 
 import os
 import re
@@ -21,7 +22,7 @@ FN = re.compile(r"^\(fn (\S+)")
 KNOWN = [
     ("main aux", 0x1C00, 0x1D8A, "lib/unpack"),
     ("main", 0x1D8A, 0x1DDD, "lib/auxcard"),
-    ("main aux", 0x1E00, 0x1FFF, "lib/dhgr kit"),
+    ("main aux", 0x1E00, 0x1F11, "lib/dhgr runs"),
 ]
 
 
@@ -89,6 +90,8 @@ def main():
         address, cycles = int(address, 16), int(cycles)
         total += cycles
         place = places.get((where, address))
+        if place is None and where == "aux" and address < 0xC000:
+            place = places.get(("main", address))  # mirrored with_aux code
         if place is None:
             name = "%s $%04X" % (where, address & 0xFF00)
             for wheres, lo, hi, known in KNOWN:

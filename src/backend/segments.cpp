@@ -17,10 +17,11 @@ MemorySegment SegmentOf(const std::vector<std::uint8_t>& memory, MemoryBank bank
     return segment;
 }
 
-// every :in aux let's bytes: runs of them, a new segment after a gap of a page or more
+// every :in aux let's bytes and the mirrored ranges: runs of them, a new segment after a gap
+// of a page or more
 void AuxSegments(const Program& program, const Layout& layout, const std::vector<std::uint8_t>& aux,
-                 std::vector<MemorySegment>& out) {
-    std::vector<AddressRange> pieces;
+                 const std::vector<AddressRange>& mirrored, std::vector<MemorySegment>& out) {
+    std::vector<AddressRange> pieces = mirrored;
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const Var& var = program.vars[v];
         const VarPlace& place = layout.vars[v];

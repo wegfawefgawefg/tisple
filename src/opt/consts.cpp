@@ -300,6 +300,7 @@ void Rewrite(Rewriter& r, ExprId id, bool shared) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
     case ExprKind::Jsr:
     case ExprKind::JsrRegs:
     case ExprKind::StructLit:

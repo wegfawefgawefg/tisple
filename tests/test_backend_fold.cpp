@@ -72,8 +72,10 @@ void TestAddChains(TestResults& results) {
     // one add, no CLC pair: (+ (+ 5 t) 3) is (+ t 8)
     Compiled c = CompileText("(fn f ((t u8)) u8 (+ (+ 5 t) 3))");
     CHECK(results, CountMn(c, "t.f", tisple::Mn::ADC) == 1);
+    // (+ w 2) in place: one ADC, the high byte stepped on a carry (BCC / INC w+1)
     Compiled w = CompileText("(let w u16 0)\n(fn f () void (set w (+ (+ w 1) 1)))");
-    CHECK(results, CountMn(w, "t.f", tisple::Mn::ADC) == 2);
+    CHECK(results, CountMn(w, "t.f", tisple::Mn::ADC) == 1);
+    CHECK(results, CountMn(w, "t.f", tisple::Mn::INC) == 1);
 }
 
 void TestOtherChains(TestResults& results) {

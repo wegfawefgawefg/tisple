@@ -90,6 +90,10 @@ struct Context {
     std::int32_t function = -1; // -1: constant context, no locals
     std::vector<Scope> scopes;
     int loop_depth = 0;
+    // inside a with_aux: the loop depth where it started (a break or continue to a loop
+    // outside leaves it), else -1; and the switches it may turn on
+    int aux_depth = -1;
+    std::uint8_t aux_bits = 0;
 };
 
 struct Checker {
@@ -318,6 +322,14 @@ ExprId CheckInterruptsForm(Checker& ck, const Node& node);
 // once main is known: the handler shares no function with main and does not turn interrupts
 // on; marks what it reads and writes (Var::irq_shared)
 void CheckHandler(Checker& ck);
+
+// aux memory code (with_aux.cpp, aux_rules.cpp)
+// (with_aux reads writes body ...): [on, body ..., off], the value the body's last form's
+ExprId CheckWithAux(Checker& ck, const Node& node, TypeId hint, bool used);
+// a return, break or continue made inside a with_aux: an off first when it leaves the region
+ExprId LeaveAux(Checker& ck, const Node& node, ExprId exit);
+// once every body is checked: what code that runs with the switches on may not do
+void CheckAuxCode(Checker& ck);
 // (make Sprite :x 1 ...): the fields are items[2..]
 ExprId CheckStructLit(Checker& ck, const Node& node, TypeId type);
 ExprId FieldAccess(Checker& ck, const Node& node, ExprId base, const std::string& field);

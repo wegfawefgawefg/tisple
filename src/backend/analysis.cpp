@@ -1,6 +1,7 @@
 #include "backend/analysis.hpp"
 
 #include "check/arith.hpp"
+#include "check/aux_mode.hpp"
 
 #include <algorithm>
 
@@ -79,7 +80,7 @@ bool HasWrites(const Program& program, ExprId id) {
     return AnyExpr(program, id, [](const Expr& e) {
         return e.kind == ExprKind::Call || e.kind == ExprKind::CallPtr ||
                e.kind == ExprKind::Store || e.kind == ExprKind::StoreField ||
-               e.kind == ExprKind::Set || e.kind == ExprKind::Jsr;
+               e.kind == ExprKind::Set || e.kind == ExprKind::Jsr || e.kind == ExprKind::AuxSwitch;
     });
 }
 
@@ -122,6 +123,7 @@ bool HasEffects(const Program& program, ExprId id) {
         case ExprKind::Jsr:
         case ExprKind::WaitCycles:
         case ExprKind::Interrupts:
+        case ExprKind::AuxSwitch:
         case ExprKind::Return:
         case ExprKind::Break:
         case ExprKind::Continue:
@@ -246,9 +248,15 @@ std::vector<InlineKind> FindInlines(const Program& program, const std::vector<st
     }
     std::vector<InlineKind> out(count, InlineKind::None);
     std::vector<bool> warm = FindWarmInlines(program);
+    // a function with a with_aux of its own stays one: copied, its with_aux would put its
+    // caller's whole frame in zero page and the caller's code in both memories
+    std::vector<bool> owner(count, false);
+    for (std::size_t f = 0; f < count; f++) {
+        owner[f] = HasAuxSwitch(program, static_cast<std::int32_t>(f));
+    }
     for (std::size_t f = 0; f < count; f++) {
         const Function& fn = program.functions[f];
-        if (std::find(never.begin(), never.end(), fn.name) != never.end()) {
+        if (owner[f] || std::find(never.begin(), never.end(), fn.name) != never.end()) {
             continue;
         }
         if (CountExprs(program, fn.body) <= kMaxInlineExprs || warm[f]) {
@@ -256,7 +264,7 @@ std::vector<InlineKind> FindInlines(const Program& program, const std::vector<st
         }
     }
     for (std::size_t f = 0; f < count; f++) {
-        if (out[f] != InlineKind::None || calls[f] != 1 ||
+        if (out[f] != InlineKind::None || calls[f] != 1 || owner[f] ||
             std::find(never.begin(), never.end(), program.functions[f].name) != never.end()) {
             continue;
         }

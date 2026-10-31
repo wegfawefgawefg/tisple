@@ -30,6 +30,7 @@ bool Keeps(const Pass& p, const Expr& e) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
     case ExprKind::Jsr:
     case ExprKind::WaitCycles:
         return true;
