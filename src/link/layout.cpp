@@ -156,6 +156,16 @@ void PlaceFixed(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
             return;
         }
     }
+    for (const AddressRange& range : pl.options->aux_reserved) {
+        if (aux && start < range.end && range.start < end) {
+            AddError(*pl.errors, var.loc,
+                     name + " (" + Hex(start) + "-" + Hex(end - 1) +
+                         ") overlaps code or const data with_aux reads with RAMRD on (" +
+                         Hex(range.start) + "-" + Hex(range.end - 1) +
+                         "), which the link copies to the same addresses in aux memory; move it");
+            return;
+        }
+    }
     if (const Used* other = Overlap(pl, aux, start, end)) {
         const Var& other_var = pl.program->vars[static_cast<std::size_t>(other->var)];
         AddError(*pl.errors, var.loc,
@@ -182,6 +192,11 @@ std::uint32_t NextCandidate(const Placer& pl, bool aux, std::uint32_t start, con
     }
     for (const AddressRange& range : pl.options->reserved) {
         if (!aux && start < range.end && range.start < end) {
+            return AlignUp(range.end, align);
+        }
+    }
+    for (const AddressRange& range : pl.options->aux_reserved) {
+        if (aux && start < range.end && range.start < end) {
             return AlignUp(range.end, align);
         }
     }

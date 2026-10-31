@@ -279,6 +279,7 @@ bool CodeTerminates(const Pass& p, ExprId id) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
     case ExprKind::StructLit:
     case ExprKind::If:
     case ExprKind::Do:

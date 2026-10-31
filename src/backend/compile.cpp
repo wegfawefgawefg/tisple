@@ -1,3 +1,4 @@
+#include "backend/aux_link.hpp"
 #include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
 #include "backend/generate.hpp"
@@ -281,6 +282,10 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
     out.as = std::move(be.as);
     out.opt = report;
     out.warnings = PackedArrayWarnings(source);
+    Diagnostic guard;
+    if (AuxWithoutGuard(be, kept, guard)) {
+        out.warnings.push_back(guard);
+    }
     return LinkResult::kOk;
 }
 

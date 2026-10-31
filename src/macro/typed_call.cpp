@@ -185,6 +185,8 @@ std::string ExprWhy(const Program& program, ExprId id) {
         return "uses a function pointer";
     case ExprKind::Interrupts:
         return "uses sei or cli";
+    case ExprKind::AuxSwitch:
+        return "uses with_aux";
     case ExprKind::Store:
     case ExprKind::StoreField:
         return "writes through a pointer";

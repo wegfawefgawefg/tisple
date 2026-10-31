@@ -371,6 +371,7 @@ void Visit(Ranger& g, ExprId id, bool shared, ExprId before) {
     case ExprKind::IoWrite:
     case ExprKind::Jsr:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
         EachChild(p, e, [&](ExprId child) { Visit(g, child, shared, -1); });
         ForgetGlobals(g, false);
         return;

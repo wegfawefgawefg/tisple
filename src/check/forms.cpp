@@ -422,7 +422,7 @@ ExprId CheckReturn(Checker& ck, const Node& node) {
     }
     ExprId id = AddExpr(ck, ExprKind::Return, kNeverType, node);
     ExprAt(ck, id).a = value;
-    return id;
+    return LeaveAux(ck, node, id);
 }
 
 ExprId CheckLoopExit(Checker& ck, const Node& node, bool is_break) {
@@ -433,7 +433,8 @@ ExprId CheckLoopExit(Checker& ck, const Node& node, bool is_break) {
     if (ck.at.loop_depth == 0) {
         return Fail(ck, node, std::string(name) + " is only inside while or for");
     }
-    return AddExpr(ck, is_break ? ExprKind::Break : ExprKind::Continue, kNeverType, node);
+    ExprId id = AddExpr(ck, is_break ? ExprKind::Break : ExprKind::Continue, kNeverType, node);
+    return LeaveAux(ck, node, id);
 }
 
 } // namespace tisple

@@ -18,7 +18,10 @@
 // backend an address worked out per access where the pointer is set once (seed 583 69439 to
 // 138860 cycles), and (+ k (as u16 (+ x c))) as an index loses k on main at -O0 (a backend bug,
 // reported with slice 6).
+// Not where a with_aux may have the switch on (check/aux_mode.hpp): with RAMRD on a load
+// through the pointer reaches aux memory, with RAMWRT on a store does, not the element.
 
+#include "check/aux_mode.hpp"
 #include "opt/collapse.hpp"
 
 #include <unordered_map>
@@ -40,6 +43,7 @@ struct Pointers {
     std::unordered_map<std::int32_t, int> writes;         // by local: its lets and sets
     std::unordered_map<std::int32_t, std::int32_t> whole; // by pointer local: the var it names
     std::uint64_t changes = 0;
+    AuxModes aux; // where the aux memory switches may be on
 };
 
 // a pointer local's let: (addr_of (at A k)), k a literal, of a global array of the pointer's
@@ -160,7 +164,10 @@ void Rewrite(Pointers& ps, ExprId id, bool shared) {
     shared = shared || Shared(p, id);
     Expr e = At(p, id);
     Element el;
-    bool access = e.kind == ExprKind::Load || e.kind == ExprKind::Store;
+    // with RAMRD on a load reaches aux memory, with RAMWRT on a store does
+    std::uint8_t aux = AuxStateAt(ps.aux, id);
+    bool access = (e.kind == ExprKind::Load && (aux & kAuxReads) == 0) ||
+                  (e.kind == ExprKind::Store && (aux & kAuxWrites) == 0);
     if (access && !shared && Reaches(ps, e.a, el) &&
         Allow(p, e.kind == ExprKind::Load ? "load of a known element" : "store to a known element",
               id, el.array)) {
@@ -286,6 +293,7 @@ void RewriteFixed(Pass& p, const std::vector<FixedPointer>& fixed, ExprId id, bo
 std::uint64_t PointersToElements(Pass& p) {
     Pointers ps;
     ps.p = &p;
+    ps.aux = FindAuxModes(*p.program);
     for (std::size_t f = 0; f < p.program->functions.size(); f++) {
         ExprId body = p.program->functions[f].body;
         if (body < 0) {

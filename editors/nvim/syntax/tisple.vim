@@ -13,7 +13,7 @@ syn match tispleCaps {\%(^\|[[:space:]()'`,@]\)\@<=\%([^[:space:]()";'`,]*[./]\)
 syn match tispleType {\%(^\|[[:space:]()'`,@]\)\@<=\%(u8\|i8\|u16\|i16\|bool\|void\|ptr\|array\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleBuiltin {\%(^\|[[:space:]()'`,@]\)\@<=\%(at\|load\|store\|addr_of\|io_read\|io_write\|jsr\|wait_cycles\|sei\|cli\|not\|+\|-\|\*\|/\|%\|=\|!=\|<\|<=\|>\|>=\|&\||\|\^\|\~\|<<\|>>\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleConstant {\%(^\|[[:space:]()'`,@]\)\@<=\%(true\|false\)\%($\|[[:space:]()";'`,]\)\@={
-syn match tispleSpecial {\%(^\|[[:space:]()'`,@]\)\@<=\%(fn\|let\|const\|struct\|enum\|if\|do\|while\|for\|match\|return\|break\|continue\|set\|and\|or\|\.\|_\|as\|make\|macro\|import\|quote\|quasiquote\|unquote\|unquote_splicing\)\%($\|[[:space:]()";'`,]\)\@={
+syn match tispleSpecial {\%(^\|[[:space:]()'`,@]\)\@<=\%(fn\|let\|const\|struct\|enum\|if\|do\|while\|for\|match\|return\|break\|continue\|set\|and\|or\|\.\|_\|as\|make\|macro\|import\|quote\|quasiquote\|unquote\|unquote_splicing\|with_aux\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleNumber {\%(^\|[[:space:]()'`,@]\)\@<=-\=\%(0[xX]\x\+\|0[bB][01]\+\|\d\+\)\%($\|[[:space:]()";'`,]\)\@={
 syn match tispleKeyword {\%(^\|[[:space:]()'`,@]\)\@<=:[^[:space:]()";'`,]\+{
 syn match tispleQuote {,@\|['`,]{

@@ -94,6 +94,9 @@ struct Pass {
     std::vector<bool> flags_dead; // FlagsDeadIn, as the round began
     const std::vector<std::int32_t>* frames = nullptr;
     bool changed = false;
+    // code that runs with the aux switches on, or turns them on: only zero page is the same
+    // memory throughout
+    bool aux_code = false;
 
     AsmItem& At(std::size_t i) {
         return (*items)[i];
@@ -432,22 +435,25 @@ KnownLabels FindKnownLabels(const Pass& p) {
     return out;
 }
 
-// symbols are RAM the program owns; numbers may be I/O
-bool Trackable(const Assembly& as, Mode mode, const AsmValue& v) {
+// symbols are RAM the program owns; numbers may be I/O. In aux code only zero page's
+bool Trackable(const Pass& p, Mode mode, const AsmValue& v) {
     if ((mode != Mode::Abs && mode != Mode::Zp) || v.sym < 0 || v.part != Part::Whole) {
         return false;
     }
-    const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
+    const AsmSymbol& sym = p.as->symbols[static_cast<std::size_t>(v.sym)];
+    if (p.aux_code && !sym.zp) {
+        return false;
+    }
     return (!sym.defined || sym.value < 0xC000) && !sym.shared;
 }
 
 // an indexed byte of RAM the program owns, which nothing but stores changes: abs,X and abs,Y of
 // a symbol whose page and the next are below the I/O, (zp),Y through a pointer
-std::uint8_t TrackableIndex(const Assembly& as, Mode mode, const AsmValue& v) {
-    if (v.sym < 0 || v.part != Part::Whole) {
+std::uint8_t TrackableIndex(const Pass& p, Mode mode, const AsmValue& v) {
+    if (v.sym < 0 || v.part != Part::Whole || p.aux_code) {
         return kPlain;
     }
-    const AsmSymbol& sym = as.symbols[static_cast<std::size_t>(v.sym)];
+    const AsmSymbol& sym = p.as->symbols[static_cast<std::size_t>(v.sym)];
     // the offset wraps: arr-1 is arr+65535
     if ((sym.defined && ((sym.value + v.offset) & 0xFFFF) + 0x100 > 0xC000) || sym.shared) {
         return kPlain;
@@ -632,11 +638,11 @@ int BranchOutcome(const Tracker& t, Mn mn) {
 // what a load puts in its register, when the tracker can say
 Content LoadContent(const Pass& p, const Tracker& t, const AsmItem& item) {
     Content c;
-    std::uint8_t index = TrackableIndex(*p.as, item.mode, item.value);
+    std::uint8_t index = TrackableIndex(p, item.mode, item.value);
     if (item.mode == Mode::Imm) {
         c.known = true;
         c.v = item.value;
-    } else if (Trackable(*p.as, item.mode, item.value)) {
+    } else if (Trackable(p, item.mode, item.value)) {
         c = PlainMem(item.value);
         if (const AsmValue* k = t.ConstAt(item.value)) {
             c.mem = false;
@@ -874,10 +880,10 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
         }
         r = StoreReg(mn);
         if (r >= 0) {
-            if (!Trackable(*p.as, item.mode, item.value)) {
+            if (!Trackable(p, item.mode, item.value)) {
                 t.ForgetStore(item);
                 // the register now holds what the indexed byte holds
-                std::uint8_t index = TrackableIndex(*p.as, item.mode, item.value);
+                std::uint8_t index = TrackableIndex(p, item.mode, item.value);
                 if (index != kPlain && !t.reg[r].known) {
                     t.reg[r] = PlainMem(item.value);
                     t.reg[r].index = index;
@@ -945,7 +951,7 @@ void RegisterPass(Pass& p, const BackStates* back, BackStates* record) {
         case Mn::ROR:
             if (item.mode == Mode::Acc) {
                 t.reg[0].known = false;
-            } else if (Trackable(*p.as, item.mode, item.value)) {
+            } else if (Trackable(p, item.mode, item.value)) {
                 t.ForgetByte(item.value);
             } else {
                 t.ForgetStore(item);
@@ -1094,10 +1100,12 @@ void FlowPass(Pass& p) {
 } // namespace
 
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
-              const std::vector<StoreScope>& scopes, const std::vector<std::int32_t>& frames) {
+              const std::vector<StoreScope>& scopes, const std::vector<std::int32_t>& frames,
+              bool aux_code) {
     for (int round = 0; round < kMaxRounds; round++) {
         Pass p;
         p.as = &as;
+        p.aux_code = aux_code;
         p.frames = &frames;
         p.items = &items;
         p.dead.assign(items.size(), false);

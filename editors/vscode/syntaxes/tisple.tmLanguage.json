@@ -49,7 +49,7 @@
     },
     "special": {
       "name": "keyword.control.tisple",
-      "match": "(?<![^\\s()'`,@])(?:fn|let|const|struct|enum|if|do|while|for|match|return|break|continue|set|and|or|\\.|_|as|make|macro|import|quote|quasiquote|unquote|unquote_splicing)(?![^\\s()\";'`,])"
+      "match": "(?<![^\\s()'`,@])(?:fn|let|const|struct|enum|if|do|while|for|match|return|break|continue|set|and|or|\\.|_|as|make|macro|import|quote|quasiquote|unquote|unquote_splicing|with_aux)(?![^\\s()\";'`,])"
     },
     "type": {
       "name": "storage.type.tisple",

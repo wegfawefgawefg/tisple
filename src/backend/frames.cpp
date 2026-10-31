@@ -153,6 +153,55 @@ void PlaceInFrames(const Program& program, std::vector<Item>& items,
     }
 }
 
+// what code that runs with the aux switches on uses goes in zero page (aux_code.hpp): every
+// variable it names, and the whole frame of each function it runs in. False, with an error,
+// when it does not fit
+bool ForceAuxFrames(Backend& be, const FrameShares& shares, const Stack& st,
+                    std::vector<Item>& items, std::vector<std::uint32_t>& zp_sizes,
+                    std::uint32_t globals, std::uint32_t length) {
+    if (!be.aux.any) {
+        return true;
+    }
+    for (Item& item : items) {
+        if (item.forced || item.phantom) {
+            continue;
+        }
+        bool aux = item.function >= 0 && IsAuxFunction(be.aux, item.function);
+        aux = aux || (item.var >= 0 && be.aux.vars[static_cast<std::size_t>(item.var)]);
+        if (item.slot >= 0) {
+            for (std::int32_t v : shares.slots[static_cast<std::size_t>(item.slot)].vars) {
+                aux = aux || be.aux.vars[static_cast<std::size_t>(v)];
+            }
+        }
+        if (!aux) {
+            continue;
+        }
+        item.forced = true;
+        item.zp = true;
+        if (item.function < 0) {
+            globals += item.size;
+        } else {
+            zp_sizes[static_cast<std::size_t>(item.function)] += item.size;
+        }
+    }
+    if (StackSize(st, zp_sizes, nullptr) + globals <= length) {
+        return true;
+    }
+    std::string names;
+    int listed = 0;
+    for (std::size_t f = 0; f < be.program->functions.size(); f++) {
+        if (IsAuxFunction(be.aux, static_cast<std::int32_t>(f)) && listed < 6) {
+            names += (listed++ > 0 ? ", " : "") + be.program->functions[f].name;
+        }
+    }
+    AddError(*be.errors, Loc(),
+             "the frames of the code that runs with the aux switches on (" + names +
+                 ") do not fit in zero page with the dereferenced pointers; with_aux code keeps "
+                 "every variable in zero page, which RAMRD and RAMWRT never switch: use fewer "
+                 "or smaller locals there, or call less from inside the with_aux");
+    return false;
+}
+
 } // namespace
 
 std::vector<std::int32_t> CallersFirst(const Program& program) {
@@ -322,6 +371,9 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
         AddError(*be.errors, Loc(),
                  "the dereferenced pointers do not all fit in zero page; use fewer pointer "
                  "variables at once");
+        return false;
+    }
+    if (!ForceAuxFrames(be, shares, st, items, zp_sizes, globals, length)) {
         return false;
     }
     // the rest by uses per byte, while they fit

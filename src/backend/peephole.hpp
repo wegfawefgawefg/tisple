@@ -39,8 +39,11 @@ std::vector<std::int32_t> FrameSharers(const Backend& be, std::int32_t function)
 // frames: by symbol, for a byte of an inlined callee's frame, the callee (else -1). Frames of
 // functions that never run at the same time share bytes (frames.cpp), and code with several
 // callees inlined holds bytes of each: a write to one callee's byte may change another's.
+// aux_code: the function runs with the aux switches on, or turns them on (aux_code.hpp): only
+// zero-page symbols are tracked, as any other byte may be main or aux memory's
 void Peephole(const Assembly& as, std::vector<AsmItem>& items,
-              const std::vector<StoreScope>& scopes, const std::vector<std::int32_t>& frames);
+              const std::vector<StoreScope>& scopes, const std::vector<std::int32_t>& frames,
+              bool aux_code = false);
 // true if any store went
 bool DropDeadStores(std::vector<AsmItem>& items, const std::vector<StoreScope>& scopes);
 // true if any INC or DEC (or a 16-bit step up) of bytes nothing reads after went

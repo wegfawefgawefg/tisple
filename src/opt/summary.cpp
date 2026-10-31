@@ -105,6 +105,7 @@ void Scan(const Pass& p, Summary& s, ExprId id) {
     case ExprKind::IoRead:
     case ExprKind::IoWrite:
     case ExprKind::Interrupts:
+    case ExprKind::AuxSwitch:
         s.io = true;
         break;
     case ExprKind::Jsr:

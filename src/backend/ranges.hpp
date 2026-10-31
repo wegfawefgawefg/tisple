@@ -32,6 +32,9 @@ struct ValueRanges {
     std::vector<Targets> var_targets;  // by var, for pointer variables
     std::vector<Targets> ret_targets;  // by function returning a pointer
     Targets heap;                      // pointers kept in memory
+    // by expr: may run with RAMRD on (check/aux_mode.hpp), where a load reads aux memory's
+    // byte, whatever the pointer's targets hold; empty: none
+    std::vector<bool> aux_reads;
 };
 
 ValueRanges FindValueRanges(const Program& program);

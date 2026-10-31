@@ -380,6 +380,9 @@ void GenStmt(Gen& g, ExprId id) {
     case ExprKind::Interrupts:
         Emit(g, e.value != 0 ? Mn::CLI : Mn::SEI, Mode::Imp);
         break;
+    case ExprKind::AuxSwitch:
+        GenAuxSwitch(g, id);
+        break;
     default:
         // a value nobody uses: only its effects matter
         if (HasEffects(*g.program, id)) {

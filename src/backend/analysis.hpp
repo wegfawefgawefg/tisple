@@ -16,7 +16,8 @@ ExprId ListItem(const Program& program, const Expr& e, std::uint32_t i);
 TypeKind ExprKindOf(const Program& program, ExprId id);
 std::uint32_t ExprSize(const Program& program, ExprId id); // bytes of its type
 
-// may write memory: calls, stores, sets, jsr (a let only writes a fresh local)
+// may write memory: calls, stores, sets, jsr (a let only writes a fresh local), or change
+// which memory pointers reach (the aux switches)
 bool HasWrites(const Program& program, ExprId id);
 bool HasCalls(const Program& program, ExprId id);
 // may call a runtime routine (they keep their operands in rt_a, rt_b, rt_r): a multiply, a
