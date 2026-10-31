@@ -117,13 +117,23 @@ bool FlagsFromReg(const Gen& g, int r) {
 }
 
 // a byte in a pinned register against a number or a memory byte: CPX or CPY, A untouched.
-// False if the compare is not one of those.
+// A signed one against 0 (< 0, >= 0) is its N flag: none at all after the register's own
+// DEY, INY, LDY or TAY (a count-down loop's DEY / BPL). False if the compare is not one of
+// those.
 bool RegCompare(Gen& g, Op op, bool is_signed, const Opnd& a, const Opnd& b, std::int32_t label) {
     if (a.in_a || b.in_a || a.b[0].kind != ByteKind::Reg) {
         return false;
     }
     ByteKind kind = b.b[0].kind;
     bool equality = op == Op::Eq || op == Op::Ne;
+    if (is_signed && IsImmZero(b) && (op == Op::Lt || op == Op::Ge)) {
+        int r = a.b[0].reg;
+        if (!FlagsFromReg(g, r)) {
+            Emit(g, r == 0 ? Mn::CPX : Mn::CPY, Mode::Imm, Num(0));
+        }
+        Branch(g, op == Op::Lt ? Mn::BMI : Mn::BPL, label);
+        return true;
+    }
     if ((kind != ByteKind::Imm && kind != ByteKind::Mem) || (is_signed && !equality)) {
         return false;
     }

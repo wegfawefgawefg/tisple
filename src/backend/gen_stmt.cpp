@@ -176,14 +176,30 @@ void GenReturn(Gen& g, const Expr& e) {
     Emit(g, Mn::RTS, Mode::Imp);
 }
 
+// (set x (+ x n)) with n a whole number of pages, k * 256: the high byte alone, INC x+1 for one
+bool AddPagesToWord(Gen& g, const Opnd& x, std::uint32_t pages) {
+    if (pages == 1 && CanRmw(g, x, 1)) {
+        RmwByte(g, Mn::INC, x, 1);
+        return true;
+    }
+    LoadA(g, x, 1);
+    Emit(g, Mn::CLC, Mode::Imp);
+    Emit(g, Mn::ADC, Mode::Imm, Num(static_cast<std::int32_t>(pages & 0xFF)));
+    StoreA(g, x, 1);
+    return true;
+}
+
 // (set x (+ x (as u16 b))), x a u16 in memory and b an unsigned byte: the low byte added and
 // the high byte stepped only on a carry, BCC / INC x+1, 3 cycles most of the time instead of
-// LDA / ADC #0 / STA's 8 (a checksum's sum of bytes)
+// LDA / ADC #0 / STA's 8 (a checksum's sum of bytes). The same for a constant below 256, and
+// for a pointer moved by a count whose bytes are (a row's pixels: (set p (+ p 7))); a
+// constant number of pages adds to the high byte only
 bool AddByteToWord(Gen& g, ExprId place, ExprId value) {
     const Expr& p = At(g, place);
     const Expr& v = At(g, value);
-    if (p.kind != ExprKind::VarRef || v.kind != ExprKind::Binary || v.op != Op::Add ||
-        TypeOf(*g.program, p.type).size != 2 || !g.follows.empty() ||
+    bool add = (v.kind == ExprKind::Binary && v.op == Op::Add) || v.kind == ExprKind::PtrAdd;
+    if (p.kind != ExprKind::VarRef || !add || TypeOf(*g.program, p.type).size != 2 ||
+        !g.follows.empty() ||
         g.program->vars[static_cast<std::size_t>(p.ref)].placement.has_address) {
         return false;
     }
@@ -191,20 +207,33 @@ bool AddByteToWord(Gen& g, ExprId place, ExprId value) {
         const Expr& e = At(g, id);
         return e.kind == ExprKind::VarRef && e.ref == p.ref;
     };
-    ExprId other = is_x(v.a) ? v.b : is_x(v.b) ? v.a : -1;
+    ExprId other = is_x(v.a) ? v.b : (is_x(v.b) && v.kind == ExprKind::Binary) ? v.a : -1;
     if (other < 0) {
         return false;
     }
+    std::uint32_t scale = v.kind == ExprKind::PtrAdd ? v.value : 1;
+    std::uint16_t c = 0;
+    bool constant = ConstOf(g, other, c);
+    std::uint32_t bytes = static_cast<std::uint32_t>(c) * scale;
     const Expr& o = At(g, other);
-    if (o.kind != ExprKind::Convert || ExprSize(*g.program, o.a) != 1 ||
-        IsSignedKind(ExprKindOf(*g.program, o.a)) || MayWriteVarIn(g, other, p.ref)) {
+    bool byte = !constant && scale == 1 && o.kind == ExprKind::Convert &&
+                ExprSize(*g.program, o.a) == 1 && !IsSignedKind(ExprKindOf(*g.program, o.a));
+    bool small = constant && bytes > 0 && bytes < 256;
+    bool pages = constant && bytes > 0 && bytes < 0x10000 && bytes % 256 == 0;
+    if (!(byte || small || pages) || MayWriteVarIn(g, other, p.ref)) {
         return false;
     }
     Opnd x = TrySimple(g, place);
     if (x.size != 2 || x.in_a || x.b[0].kind != ByteKind::Mem || x.b[1].kind != ByteKind::Mem) {
         return false;
     }
-    Opnd b = Eval(g, o.a, nullptr);
+    if (pages) {
+        return AddPagesToWord(g, x, bytes >> 8);
+    }
+    if (small && bytes == 1 && GenStep(g, x, true)) {
+        return true; // INC x / BNE / INC x+1
+    }
+    Opnd b = small ? ImmOpnd(static_cast<std::uint16_t>(bytes), 1) : Eval(g, o.a, nullptr);
     if (b.in_a) {
         Emit(g, Mn::CLC, Mode::Imp);
         OpA(g, Mn::ADC, x, 0);
