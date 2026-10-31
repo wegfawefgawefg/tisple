@@ -358,12 +358,12 @@
 ; runs in bank 1 (flags bit 6), where a program's entry may be.
 (const HOME u16 0x1E00)
 (const RUNS u16 0x1E59)
-(const KIT_SIZE u16 273)
+(const KIT_SIZE u16 307)
 (let home_main (array u8 KIT_SIZE) :address 0x1E00 :reserve)
 (let home_aux (array u8 KIT_SIZE) :address 0x1E00 :in aux :reserve)
 
-(const KIT (array u8 273)
-    (make (array u8 273)
+(const KIT (array u8 307)
+    (make (array u8 307)
         0xA5 0xFE 0x29 0x07 0x0A 0x0A      ; row_at: LDA ROWY / AND #$07 / ASL A / ASL A
         0x05 0xF8 0x85 0xFD 0xA5 0xFE      ; ORA PAGEHI / STA DST+1 / LDA ROWY
         0x29 0x38 0x4A 0x4A 0x4A 0x4A      ; AND #$38 / LSR A / LSR A / LSR A / LSR A
@@ -393,7 +393,7 @@
         0xA5 0xF7 0x4C 0xC8 0x1E           ; o_done: LDA N / JMP advance
         0xA9 0x7F                          ; o_white: LDA #$7F
         0x91 0xFC 0x88 0x10 0xFB 0x30 0xF2 ; o_wbyte: STA (DST),Y / DEY / BPL o_wbyte / BMI o_done
-        0xA5 0xFA 0x18 0x65 0xF7 0x85 0xF4 ; masked: LDA SRC / CLC / ADC N / STA MSK
+        0x4C 0x11 0x1F 0x65 0xF7 0x85 0xF4 ; masked: JMP hi / m1: ADC N / STA MSK
         0xA5 0xFB 0x69 0x00 0x85 0xF5      ; LDA SRC+1 / ADC #0 / STA MSK+1
         0xA5 0xF2 0x4A 0xB0 0x0D           ; LDA FLAGS / LSR A / BCS m_white
         0xB1 0xFC 0x31 0xF4 0x11 0xFA      ; m_byte: LDA (DST),Y / AND (MSK),Y / ORA (SRC),Y
@@ -414,7 +414,14 @@
         0x2C 0x8B 0xC0 0x2C 0x8B 0xC0      ; BIT $C08B / BIT $C08B
         0x20 0x31 0x1E 0xF0 0x03           ; r2: JSR next_row / BEQ fin
         0x4C 0x5C 0x1E                     ; JMP row
-        0x4C 0x52 0x1E))                   ; fin: JMP done
+        0x4C 0x52 0x1E                     ; fin: JMP done
+        0xE0 0xC0 0xB0 0x06                ; hi: CPX #$C0 / BCS fill
+        0xA5 0xFA 0x18 0x4C 0x9E 0x1E      ; LDA SRC / CLC / JMP m1
+        0xA5 0xF2 0x4A 0xA0 0x00 0xB1 0xFA ; fill: LDA FLAGS / LSR A / LDY #0 / LDA (SRC),Y
+        0x90 0x02 0xA9 0x7F                ; BCC f_go / LDA #$7F
+        0xA4 0xF7 0x88                     ; f_go: LDY N / DEY
+        0x91 0xFC 0x88 0x10 0xFB           ; f_byte: STA (DST),Y / DEY / BPL f_byte
+        0xA9 0x01 0x4C 0xC8 0x1E))         ; LDA #1 / JMP advance
 
 ; the code to $1E00 of both memories, once
 (fn setup () void
@@ -435,9 +442,10 @@
 ; a sprite half stored as runs onto the page's bank, its top-left at byte column col (even, as
 ; for masked), h rows: per row, control bytes up to a 0: 1-63 skip that many bytes, $40 + n n
 ; picture bytes copied (opaque), $80 + n n picture bytes then their n masks, each screen byte
-; (screen & mask) | picture; n is 1-63. The runs are in the bank's memory, or with FROM_CARD
-; in the aux language card for either bank (FROM_CARD1: in the card's bank 1). AS_WHITE draws
-; the shape in white instead.
+; (screen & mask) | picture, $C0 + n one byte n times (opaque: a solid sprite's black); n is
+; 1-63. The runs are in the bank's memory, or with FROM_CARD in the aux language card for
+; either bank (FROM_CARD1: in the card's bank 1). AS_WHITE draws the shape in white instead (a
+; fill's bytes too).
 (fn runs ((page u8) (bank u8) (col u8) (top u8) (h u8) (stream (ptr u8)) (flags u8)) void
     (setup)
     (set (at auxmem.work 4) col)

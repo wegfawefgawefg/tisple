@@ -27,7 +27,8 @@ struct Half {
     std::vector<uint8_t> runs;
 };
 
-// a row's bytes: clear, opaque or edged, in stretches, a run longer than 63 now and then
+// a row's bytes: clear, opaque or edged, in stretches, a run longer than 63 now and then;
+// opaque ones repeat now and then (fill runs)
 Half MakeHalf(TestRandom& r) {
     Half h;
     for (int y = 0; y < kH; y++) {
@@ -40,11 +41,15 @@ Half MakeHalf(TestRandom& r) {
                         : kind == 1 ? 0x00
                                     : static_cast<uint8_t>(r.Below(126) + 1);
             uint8_t p = static_cast<uint8_t>(r.Below(128)) & static_cast<uint8_t>(~m) & 0x7F;
+            if (kind == 1 && x > 0 && h.mask[y * kW + x - 1] == 0 && r.Below(2) == 0) {
+                p = h.pic[y * kW + x - 1];
+            }
             h.pic.push_back(kind == 0 ? 0 : p);
             h.mask.push_back(m);
         }
     }
-    // runs: per row skips, opaque runs and masked runs (picture bytes, then masks), then 0
+    // runs: per row skips, opaque runs, fills (3 or more of one opaque byte) and masked runs
+    // (picture bytes, then masks), then 0
     for (int y = 0; y < kH; y++) {
         int x = 0;
         int end = kW;
@@ -64,9 +69,21 @@ Half MakeHalf(TestRandom& r) {
             if (m == 0x7F) {
                 h.runs.push_back(static_cast<uint8_t>(n));
             } else if (m == 0) {
-                h.runs.push_back(static_cast<uint8_t>(0x40 + n));
-                for (int i = 0; i < n; i++) {
-                    h.runs.push_back(h.pic[y * kW + x + i]);
+                // a fill when the stretch starts with 3 or more of one byte
+                uint8_t first = h.pic[y * kW + x];
+                int same_n = 1;
+                while (same_n < n && h.pic[y * kW + x + same_n] == first) {
+                    same_n++;
+                }
+                if (same_n >= 3) {
+                    n = same_n;
+                    h.runs.push_back(static_cast<uint8_t>(0xC0 + n));
+                    h.runs.push_back(first);
+                } else {
+                    h.runs.push_back(static_cast<uint8_t>(0x40 + n));
+                    for (int i = 0; i < n; i++) {
+                        h.runs.push_back(h.pic[y * kW + x + i]);
+                    }
                 }
             } else {
                 h.runs.push_back(static_cast<uint8_t>(0x80 + n));
