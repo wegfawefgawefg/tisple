@@ -209,6 +209,12 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
 
+    // short loops kept inside a page, a few bytes before a function at most; not when the
+    // program had to be squeezed to fit
+    if (options.squeeze == 0) {
+        PadLoops(be.as, out.spans, options.origin, first_bank1);
+    }
+
     // the code where it fits: one run from the origin when it can be. A branch to another
     // stretch's code is made far, and the code placed again with its bigger size
     std::vector<AddressRange> stretches = FreeStretches(be, options, data_end, card);

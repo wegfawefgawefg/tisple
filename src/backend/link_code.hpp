@@ -68,4 +68,15 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
                 const std::vector<CodePlace>& places, std::vector<AddressRange>& runs,
                 std::vector<Diagnostic>& errors);
 
+// a taken branch that lands in another page costs a cycle more each time: before each span
+// from 1 to end (not the startup), up to kMaxLoopPad bytes nothing runs (the code before ends
+// in a jump or a return), as many as keep the most of its short loops (a branch back at most
+// kMaxPaddedLoop bytes, the shorter weighing more) inside one page, laid out from the origin.
+// The bytes end the span before, so every span still starts at its entry. Returns the bytes
+// added
+std::uint32_t PadLoops(Assembly& as, std::vector<FunctionSpan>& spans, std::uint16_t origin,
+                       std::size_t end);
+constexpr std::uint32_t kMaxLoopPad = 32;
+constexpr std::uint32_t kMaxPaddedLoop = 64;
+
 } // namespace tisple

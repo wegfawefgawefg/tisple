@@ -146,6 +146,143 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
     return true;
 }
 
+namespace {
+
+// a branch of a span to its own code: the target's and its offsets from the span's start, and
+// how hot it is: hot from the innermost short loops it is in (4096 / their bytes, the shorter
+// the hotter), cold from the loops with others inside them (64 / their bytes) and 1 of its own
+struct SpanBranch {
+    std::uint32_t target = 0;
+    std::uint32_t next = 0; // just past the branch: where the cpu is when it branches
+    std::uint32_t hot = 0;
+    std::uint32_t cold = 1;
+};
+
+// the span's branches, or none when no innermost short loop is in it
+std::vector<SpanBranch> SpanBranches(const Assembly& as, const FunctionSpan& span) {
+    std::vector<SpanBranch> branches;
+    std::uint32_t base = as.items[span.first].address;
+    std::uint32_t end = base + SpanSize(as.items, span);
+    for (std::size_t i = span.first; i < span.end; i++) {
+        const AsmItem& item = as.items[i];
+        bool branch = item.kind == ItemKind::Ins && item.mode == Mode::Rel && !item.long_branch &&
+                      item.value.sym >= 0;
+        if (!branch) {
+            continue;
+        }
+        std::uint32_t target =
+            as.symbols[static_cast<std::size_t>(item.value.sym)].value + item.value.offset;
+        std::uint32_t next = item.address + item.size;
+        if (target >= base && target < end) {
+            branches.push_back(SpanBranch{target - base, next - base, 0, 1});
+        }
+    }
+    auto is_loop = [](const SpanBranch& l) {
+        return l.target < l.next && l.next - l.target <= kMaxPaddedLoop;
+    };
+    auto contains = [](const SpanBranch& outer, const SpanBranch& b) {
+        return outer.target <= b.next - 2 && b.next <= outer.next;
+    };
+    std::vector<SpanBranch> out;
+    bool any_hot = false;
+    for (SpanBranch b : branches) {
+        for (const SpanBranch& loop : branches) {
+            if (!is_loop(loop) || !contains(loop, b)) {
+                continue;
+            }
+            bool innermost = true;
+            for (const SpanBranch& other : branches) {
+                bool smaller = other.target > loop.target || other.next < loop.next;
+                innermost = innermost && !(is_loop(other) && smaller && contains(loop, other));
+            }
+            std::uint32_t bytes = loop.next - loop.target;
+            (innermost ? b.hot : b.cold) += (innermost ? 4096 : 64) / bytes;
+        }
+        any_hot = any_hot || b.hot > 0;
+        out.push_back(b);
+    }
+    if (!any_hot) {
+        out.clear(); // nothing hot enough to move a function for
+    }
+    return out;
+}
+
+// what the branches crossing a page cost with the span at start: the hot ones' weight first
+std::uint64_t Crossings(const std::vector<SpanBranch>& branches, std::uint32_t start) {
+    std::uint64_t hot = 0;
+    std::uint64_t cold = 0;
+    for (const SpanBranch& b : branches) {
+        if (((start + b.target) >> 8) != ((start + b.next) >> 8)) {
+            hot += b.hot;
+            cold += b.cold;
+        }
+    }
+    return (hot << 32) | cold;
+}
+
+} // namespace
+
+std::uint32_t PadLoops(Assembly& as, std::vector<FunctionSpan>& spans, std::uint16_t origin,
+                       std::size_t end) {
+    end = std::min(end, spans.size());
+    LayoutCode(as, origin);
+    std::vector<std::uint32_t> pads(spans.size(), 0);
+    std::uint32_t added = 0;
+    for (std::size_t s = 1; s < end; s++) {
+        if (spans[s].first >= spans[s].end) {
+            continue;
+        }
+        std::vector<SpanBranch> branches = SpanBranches(as, spans[s]);
+        if (branches.empty()) {
+            continue;
+        }
+        // moved only for an innermost loop that crosses a page where it is
+        std::uint32_t start = as.items[spans[s].first].address + added;
+        std::uint64_t here = Crossings(branches, start);
+        std::uint32_t best = 0;
+        std::uint64_t best_cost = here;
+        for (std::uint32_t pad = 1; pad <= kMaxLoopPad && (here >> 32) > 0; pad++) {
+            std::uint64_t cost = Crossings(branches, start + pad);
+            if (cost < best_cost && (cost >> 32) < (here >> 32)) {
+                best = pad;
+                best_cost = cost;
+            }
+        }
+        pads[s] = best;
+        added += best;
+    }
+    if (added == 0) {
+        return 0;
+    }
+    // a span's pad ends the span before it, so each span still starts at its entry
+    std::vector<AsmItem> items;
+    items.reserve(as.items.size() + added);
+    std::size_t at = 0;
+    for (std::size_t s = 0; s < spans.size(); s++) {
+        FunctionSpan& span = spans[s];
+        while (at < span.first) {
+            items.push_back(as.items[at++]);
+        }
+        for (std::uint32_t k = 0; k < pads[s]; k++) {
+            items.push_back(MakeByte(Num(0)));
+        }
+        if (s > 0) {
+            spans[s - 1].end = items.size();
+        }
+        std::size_t first = items.size();
+        while (at < span.end) {
+            items.push_back(as.items[at++]);
+        }
+        span.first = first;
+        span.end = items.size();
+    }
+    while (at < as.items.size()) {
+        items.push_back(as.items[at++]);
+    }
+    as.items.swap(items);
+    return added;
+}
+
 bool MarkFarBranches(Assembly& as, const std::vector<FunctionSpan>& spans,
                      const std::vector<CodePlace>& places) {
     bool changed = false;
