@@ -11,13 +11,18 @@ namespace tisple_tests {
 
 namespace {
 
-// a program with the real lib/, compiled and loaded, run until it returns
-std::unique_ptr<tisple::Apple2> RunWithLib(TestResults& results, const std::string& text) {
+// a program with the real lib/, compiled and loaded, run until it returns; the program and
+// its build in program and code when given
+std::unique_ptr<tisple::Apple2> RunWithLib(TestResults& results, const std::string& text,
+                                           tisple::Program* program_out = nullptr,
+                                           tisple::Compiled* code_out = nullptr) {
     tisple::LoadOptions load;
     load.files.push_back(tisple::VirtualFile{"t.tsp", text});
-    tisple::Program program;
+    tisple::Program local_program;
+    tisple::Compiled local_code;
+    tisple::Program& program = program_out != nullptr ? *program_out : local_program;
+    tisple::Compiled& code = code_out != nullptr ? *code_out : local_code;
     std::vector<tisple::Diagnostic> errors;
-    tisple::Compiled code;
     bool ok = tisple::BuildProgram("t.tsp", load, program, errors) &&
               tisple::CompileProgram(program, tisple::BuildOptions(), code, errors);
     CHECK(results, ok);
@@ -126,27 +131,33 @@ void TestText40(TestResults& results) {
 }
 
 void TestAuxMem(TestResults& results) {
-    auto a =
-        RunWithLib(results, "(import auxmem)\n"
-                            "(macro counting (n)\n"
-                            "    `(make (array u8 ,n) ,@(map (fn (i) (% i 251)) (range 0 n))))\n"
-                            "(let doc (array u8 700) (counting 700) :in aux)\n"
-                            "(let buf (array u8 700))\n"
-                            "(let out u16 0 :address 0x03C0)\n"
-                            "(fn main () void\n"
-                            "    (auxmem.read (addr_of (at buf 0)) (addr_of (at doc 0)) 700)\n"
-                            "    (set (at buf 0) 77)\n"
-                            "    (auxmem.write (addr_of (at doc 600)) (addr_of (at buf 0)) 1)\n"
-                            "    (auxmem.read (addr_of (at buf 5)) (addr_of (at doc 600)) 1)\n"
-                            "    (set out (+ (as u16 (at buf 699)) (as u16 (at buf 5)))))");
+    tisple::Program program;
+    tisple::Compiled code;
+    auto a = RunWithLib(results,
+                        "(import auxmem)\n"
+                        "(macro counting (n)\n"
+                        "    `(make (array u8 ,n) ,@(map (fn (i) (% i 251)) (range 0 n))))\n"
+                        "(let doc (array u8 700) (counting 700) :in aux)\n"
+                        "(let buf (array u8 700))\n"
+                        "(let out u16 0 :address 0x03C0)\n"
+                        "(fn main () void\n"
+                        "    (auxmem.read (addr_of (at buf 0)) (addr_of (at doc 0)) 700)\n"
+                        "    (set (at buf 0) 77)\n"
+                        "    (auxmem.write (addr_of (at doc 600)) (addr_of (at buf 0)) 1)\n"
+                        "    (auxmem.read (addr_of (at buf 5)) (addr_of (at doc 600)) 1)\n"
+                        "    (set out (+ (as u16 (at buf 699)) (as u16 (at buf 5)))))",
+                        &program, &code);
     if (a == nullptr) {
         return;
     }
     // buf[699] is 699 % 251 = 197, buf[5] the 77 written to aux and read back
     CHECK(results, (a->cpu.mem[0x03C0] | (a->cpu.mem[0x03C1] << 8)) == 197 + 77);
-    // the mover in page 3 of both memories (STA $C005, its copy step, first); all switches
-    // off again; zero page as it was
-    CHECK(results, a->cpu.mem[0x0300] == 0x8D && a->aux[0x0300] == 0x8D);
+    // read runs with RAMRD on, so its code is in both memories at the same address, and it
+    // starts by turning RAMRD on (STA $C003); all switches off again
+    std::uint16_t read = code.function_address[static_cast<std::size_t>(
+        tisple::FindFunction(program, "auxmem.read"))];
+    CHECK(results, read != 0 && a->cpu.mem[read] == 0x8D && a->aux[read] == 0x8D);
+    CHECK(results, a->cpu.mem[read + 1] == 0x03 && a->aux[read + 1] == 0x03);
     CHECK(results, !a->sw.ramrd && !a->sw.ramwrt);
 }
 
@@ -155,21 +166,29 @@ void TestAuxMem(TestResults& results) {
 // aux to aux: 600 bytes (two pages and more) into another let, and 300 down a byte inside one
 // (a forward copy, so the overlap is fine); the switches off after
 void TestAuxCopy(TestResults& results) {
-    auto a =
-        RunWithLib(results, "(import auxmem)\n"
-                            "(macro counting (n)\n"
-                            "    `(make (array u8 ,n) ,@(map (fn (i) (% i 251)) (range 0 n))))\n"
-                            "(let doc (array u8 700) (counting 700) :in aux)\n"
-                            "(let copy (array u8 600) :in aux)\n"
-                            "(fn main () void\n"
-                            "    (auxmem.copy (addr_of (at copy 0)) (addr_of (at doc 50)) 600)\n"
-                            "    (auxmem.copy (addr_of (at doc 0)) (addr_of (at doc 1)) 300))");
+    tisple::Program program;
+    tisple::Compiled code;
+    auto a = RunWithLib(results,
+                        "(import auxmem)\n"
+                        "(macro counting (n)\n"
+                        "    `(make (array u8 ,n) ,@(map (fn (i) (% i 251)) (range 0 n))))\n"
+                        "(let doc (array u8 700) (counting 700) :in aux)\n"
+                        "(let copy (array u8 600) :in aux)\n"
+                        "(fn main () void\n"
+                        "    (auxmem.copy (addr_of (at copy 0)) (addr_of (at doc 50)) 600)\n"
+                        "    (auxmem.copy (addr_of (at doc 0)) (addr_of (at doc 1)) 300))",
+                        &program, &code);
     if (a == nullptr) {
         return;
     }
-    // where the two lets went: doc first in aux memory, then copy
-    uint16_t doc = 0x0800;
-    uint16_t copy = doc + 700;
+    // where the two lets went
+    auto address = [&](const char* name) {
+        std::int32_t v = tisple::FindVar(program, name);
+        return v < 0 ? std::uint16_t(0) : code.layout.vars[static_cast<std::size_t>(v)].address;
+    };
+    uint16_t doc = address("t.doc");
+    uint16_t copy = address("t.copy");
+    CHECK(results, doc >= 0x0800 && copy >= 0x0800);
     bool ok = true;
     for (int i = 0; i < 600; i++) {
         ok = ok && a->aux[copy + i] == (50 + i) % 251;

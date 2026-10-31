@@ -4,55 +4,67 @@
 ;   (auxmem.write dst src count)  count bytes from main memory at src to aux memory at dst
 ;   (auxmem.copy dst src count)   count bytes from aux memory at src to aux memory at dst
 ;   (auxmem.guard)                once, in a program with an interrupt handler: from then on
-;                                 read and write may run with interrupts on
+;                                 code inside a with_aux may run with interrupts on
 ; with pointers from addr_of: (auxmem.read (addr_of (at line 0)) (addr_of (at book i)) 80).
-; Code reaches aux data only this way. With 80STORE on, $0400-$07FF (and $2000-$3FFF while
-; HIRES is on) follow PAGE2 instead, so keep data out of the screens; :in aux does.
-; (The file is not called aux.tsp: Windows keeps that name for a device.)
+; Each is a with_aux around a copy loop (docs/language.md, Aux memory code). With 80STORE on,
+; $0400-$07FF (and $2000-$3FFF while HIRES is on) follow PAGE2 instead, so keep data out of the
+; screens; :in aux does. (The file is not called aux.tsp: Windows keeps that name for a device.)
 
-; the mover, our own 6502 code, written for this library. In: X = 0 to read aux (RAMRD on) or
-; 2 to write it (RAMWRT on), from HOME + 3; X = 0 from HOME for both (RAMWRT, then RAMRD);
-; from, to, pages and rest in zero page, which these lets keep from the rest of the program.
-; While RAMRD is on the 6502 fetches its instructions from aux memory too, so the mover runs
-; from page 3 ($0300), which nothing else uses, with a copy at the same address in aux memory:
-; the first read, write or copy puts both there.
-(const HOME u16 0x0300)
-(const MOVE u16 0x0303)
-(const MOVER_SIZE u8 45)
-(let home_main (array u8 172) :address 0x0300 :reserve)        ; the mover, then the guard
-(let home_aux (array u8 256) :address 0x0300 :in aux :reserve) ; and the vectors after it
-(let pages u8 :address 0x00F9)                                 ; whole pages to copy
-(let from (ptr u8) :address 0x00FA)                            ; moves on a page at a time
+; the zero page our machine code takes its arguments in: lib/unpack's unpacker, lib/disk's
+; reader and lib/dhgr's runs (lib/auxcard copies them to aux memory's zero page). These lets
+; keep them from the rest of the program; none of that code runs inside another
+(let pages u8 :address 0x00F9)
+(let from (ptr u8) :address 0x00FA)
 (let to (ptr u8) :address 0x00FC)
-(let rest u8 :address 0x00FE) ; bytes after the whole pages
-; and seven bytes below them for lib/unpack's and lib/dhgr's machine code, which also takes
-; from, to, pages and rest for its own; none of it runs inside another
+(let rest u8 :address 0x00FE)
 (let work (array u8 7) :address 0x00F2)
 
-(const MOVER (array u8 45)
-    (make (array u8 45)
-        0x8D 0x05 0xC0                          ; copy: STA $C005: RAMWRT on, then RAMRD too
-        0x9D 0x03 0xC0                          ; move: STA $C003,X: RAMRD or RAMWRT on
-        0xA0 0x00 0xA6 0xF9 0xF0 0x0E           ; LDY #0 / LDX pages / BEQ rest
-        0xB1 0xFA 0x91 0xFC 0xC8 0xD0 0xF9      ; page: LDA (from),Y / STA (to),Y / INY / BNE page
-        0xE6 0xFB 0xE6 0xFD 0xCA 0xD0 0xF2      ; INC from+1 / INC to+1 / DEX / BNE page
-        0xA6 0xFE 0xF0 0x08                     ; rest: LDX rest / BEQ done
-        0xB1 0xFA 0x91 0xFC 0xC8 0xCA 0xD0 0xF8 ; LDA (from),Y / STA (to),Y / INY / DEX / BNE
-        0x8D 0x02 0xC0 0x8D 0x04 0xC0           ; done: STA $C002 / STA $C004: both off
-        0x60))                                  ; RTS
+; count bytes from src to dst, first to last, in whatever memories the with_aux around it
+; picks: whole pages (LDA (src),Y / STA (dst),Y / INY / BNE, 16 cycles a byte), then the rest
+; (18 a byte, the count in X)
+(fn move ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
+    (let pages u8 (as u8 (>> count 8)))
+    (while (!= pages 0)
+        (for i u8 0 256
+            (store (+ dst i) (load (+ src i))))
+        (set dst (+ dst 256))
+        (set src (+ src 256))
+        (set pages (- pages 1)))
+    (let n u8 (as u8 count))
+    (let i u8 0)
+    (while (!= n 0)
+        (store (+ dst i) (load (+ src i)))
+        (set i (+ i 1))
+        (set n (- n 1))))
 
-; the guard, our own 6502 code too, in page 3 of both memories after the mover. Both $3FE
-; vectors (the rom's way to the handler; with RAMRD on it reads aux memory's) and, when the
-; program runs in the language card, the card's $FFFE come here. With RAMRD and RAMWRT off it
-; jumps straight on to the handler's entry (16 cycles a tick more). With one on, the mover is
-; running: it turns both off, has the entry return to it instead of to the mover (a return
-; address and flags pushed for its RTI), puts them back and returns to the mover. Its install
-; routine, run once with interrupts off, points its jump where $3FE points (the handler's
-; entry), $3FE (and the card's $FFFE when the card's ram is in) to it, and copies $0340-$03FF
-; to aux memory.
+; count bytes from aux memory at src to main memory at dst
+(fn read ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
+    (with_aux true false
+        (move dst src count)))
+
+; count bytes from main memory at src to aux memory at dst
+(fn write ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
+    (with_aux false true
+        (move dst src count)))
+
+; count bytes from aux memory at src to aux memory at dst (RAMRD and RAMWRT both on)
+(fn copy ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
+    (with_aux true true
+        (move dst src count)))
+
+; the guard, our own 6502 code, in page 3 of both memories. Both $3FE vectors (the rom's way to
+; the handler; with RAMRD on it reads aux memory's) and, when the program runs in the language
+; card, the card's $FFFE come here. With RAMRD and RAMWRT off it jumps straight on to the
+; handler's entry (16 cycles a tick more). With one on, a with_aux is running: it turns both
+; off, has the entry return to it instead of to the interrupted code (a return address and
+; flags pushed for its RTI), puts them back and returns there. Its install routine, run once
+; with interrupts off, points its jump where $3FE points (the handler's entry), $3FE (and the
+; card's $FFFE when the card's ram is in) to it, and copies $0340-$03FF to aux memory.
 (const GUARD_HOME u16 0x0340)
 (const GUARD_SIZE u8 108)
 (const INSTALL u16 0x0373)
+(let home_main (array u8 108) :address 0x0340 :reserve)        ; the guard
+(let home_aux (array u8 256) :address 0x0300 :in aux :reserve) ; its copy and the vectors
 
 (const GUARD (array u8 108)
     (make (array u8 108)
@@ -83,58 +95,12 @@
         0xC8 0xC0 0xC0 0xD0 0xF5      ; INY / CPY #192 / BNE copy
         0x8D 0x04 0xC0 0x60))         ; STA $C004 / RTS: RAMWRT off
 
-(let ready bool false)
 (let guarded bool false)
-
-(const READ u8 0)
-(const WRITE u8 2)
-
-; the mover to page 3, then by itself to page 3 of aux memory
-(fn setup () void
-    (let home (ptr u8) (as (ptr u8) HOME))
-    (for i u8 0 MOVER_SIZE
-        (store (+ home i) (at MOVER i)))
-    (set from home)
-    (set to home)
-    (set pages 0)
-    (set rest MOVER_SIZE)
-    (jsr MOVE (x WRITE))
-    (set ready true))
-
-; count bytes from aux memory at src to main memory at dst
-(fn read ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
-    (if (not ready)
-        (setup))
-    (set from src)
-    (set to dst)
-    (set pages (as u8 (>> count 8)))
-    (set rest (as u8 count))
-    (jsr MOVE (x READ)))
-
-; count bytes from main memory at src to aux memory at dst
-(fn write ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
-    (if (not ready)
-        (setup))
-    (set from src)
-    (set to dst)
-    (set pages (as u8 (>> count 8)))
-    (set rest (as u8 count))
-    (jsr MOVE (x WRITE)))
-
-; count bytes from aux memory at src to aux memory at dst (RAMRD and RAMWRT both on)
-(fn copy ((dst (ptr u8)) (src (ptr u8)) (count u16)) void
-    (if (not ready)
-        (setup))
-    (set from src)
-    (set to dst)
-    (set pages (as u8 (>> count 8)))
-    (set rest (as u8 count))
-    (jsr HOME (x READ)))
 
 ; the guard into page 3 of both memories and the interrupt vectors to it, once, after the
 ; startup has put the handler's entry in $3FE (anywhere in main). Turns interrupts on when it
-; returns. Without it, read and write need interrupts off while a handler may run: the handler
-; is in main memory, which RAMRD and RAMWRT switch out.
+; returns. Without it, a with_aux needs interrupts off while a handler may run: the handler is
+; in main memory, which RAMRD and RAMWRT switch out.
 (fn guard () void
     (if guarded
         (return))
