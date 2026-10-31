@@ -39,6 +39,7 @@ struct MachineArgs {
     const char* taps = nullptr; // a game's player config: clicks press its tap boxes' keys
     std::vector<ScreenshotArg> screenshots;
     std::vector<std::pair<uint32_t, uint32_t>> peeks; // address, byte count
+    ScreenshotArg profile; // --profile F.txt[@C]: path empty for none (machine/profile.hpp)
     MachineDisks disks;
 };
 

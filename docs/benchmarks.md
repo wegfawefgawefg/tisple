@@ -12,6 +12,19 @@ changes and add a row; never edit old rows.
 The counters' addresses come from `tisple build <prog> --asm` (search for the
 variable's name); zero-page allocation moves them.
 
+Where the cycles go: `--profile F.txt@C` counts every instruction's cycles from cycle C
+(frames as `300f`) to the end, by address and the memory it ran from; `scripts/profile.py`
+adds them up by compiled function, source function and source line from the listing:
+
+```sh
+./build/tisple build --disk g.dsk --asm > g.asm
+./build/tisple machine --disk g.dsk --frames 1500 --keys "700f:RETURN" --profile p.txt@1300f
+python3 scripts/profile.py g.asm p.txt          # from the project folder: its source paths
+```
+
+Code the listing does not show (lib/dhgr's kit, lib/unpack, code kept as byte arrays) shows as
+its memory and page.
+
 | Date | Commit | Program | Measure | Result |
 | --- | --- | --- | --- | --- |
 | 2026-10-26 | 09c9aba | life | generations in 10 M cycles | 10 |

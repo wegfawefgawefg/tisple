@@ -33,6 +33,8 @@ void PrintMachineUsage() {
         "  --write-back        save written disks back to their files at the end\n"
         "  --load-snapshot F | --save-snapshot F   machine state in and out\n"
         "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
+        "  --profile F.txt[@C] cycles by instruction address and memory, from cycle C to\n"
+        "                      the end (tools/profile.py adds them up by function)\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled)\n"
         "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
         "                      (a game's phone player config, docs/phone.md)\n"
@@ -118,6 +120,10 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
                 return false;
             }
             args.peeks.push_back({static_cast<uint32_t>(number), static_cast<uint32_t>(count)});
+        } else if (std::strcmp(arg, "--profile") == 0 && has_value) {
+            if (!ParseScreenshot(argv[++i], args.profile)) {
+                return false;
+            }
         } else if (std::strcmp(arg, "--wav") == 0 && has_value) {
             args.wav = argv[++i];
         } else if (std::strcmp(arg, "--rom") == 0 && has_value) {

@@ -7,6 +7,7 @@
 #include "machine/mockingboard_audio.hpp"
 #include "machine/mouse.hpp"
 #include "machine/png.hpp"
+#include "machine/profile.hpp"
 #include "machine/scripted_input.hpp"
 #include "machine/speaker_audio.hpp"
 #include "machine/taps.hpp"
@@ -116,6 +117,11 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     std::vector<int16_t> samples;
     bool ok = true;
     uint64_t run_cycles = 0;
+    bool profiling = !args.profile.path.empty();
+    Profile profile;
+    if (profiling) {
+        StartProfile(profile, a, args.profile.at_end ? start : args.profile.cycle);
+    }
 
     auto began = std::chrono::steady_clock::now();
     for (;;) {
@@ -140,7 +146,8 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         uint64_t chunk = next - now;
         chunk = chunk > kCyclesPerFrame ? kCyclesPerFrame : chunk;
         bool was_stopped = a.stopped;
-        RunOutcome outcome = RunApple2(a, chunk);
+        RunOutcome outcome = profiling ? RunApple2Traced(a, chunk, ProfileStep, &profile)
+                                       : RunApple2(a, chunk);
         if (!was_stopped) {
             run_cycles += outcome.cycles;
         }
@@ -162,6 +169,10 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     }
     std::string error;
     if (args.wav != nullptr && !WriteWav(args.wav, samples, error)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        ok = false;
+    }
+    if (profiling && !WriteProfile(profile, args.profile.path.c_str(), error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         ok = false;
     }
