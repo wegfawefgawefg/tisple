@@ -185,7 +185,45 @@ void ValuesAndCalls(TestResults& results) {
                      "            (store (addr_of (at spare i)) (mix (addr_of (at book i)) i)))))");
 }
 
-// lib/auxmem and lib/dhgr's box code on the machine against the interpreter
+// a region is a barrier: no load or store moves across its ends and no value passes them (a
+// pass that did would read main memory's byte where aux memory's is meant, or the other way),
+// and inside it a load reads what the switches pick, whatever the passes know of main memory
+void Barriers(TestResults& results) {
+    CheckProgramBoth(results,
+                     std::string(kBufs) +
+                         "(let mine (array u8 4) (make (array u8 4) 1 2 3 3))\n"
+                         "(let flag u8 0)\n"
+                         "(fn main () void\n"
+                         "    (let p (ptr u8) (addr_of (at mine 1)))\n"
+                         "    (let a u8 (load p))\n"
+                         "    (let b u8 (with_aux true false (load p)))\n" // not a (cse)
+                         "    (with_aux false true (store p 7))\n"         // to aux memory
+                         "    (let c u8 (load p))\n"                       // main's, not 7
+                         "    (let d u8 (with_aux true false (load p)))\n" // aux's 7
+                         "    (store p 5)\n"
+                         "    (let e u8 (with_aux true false (load p)))\n" // still 7, not 5
+                         "    (for i u8 0 4\n"                             // not hoisted
+                         "        (set (at out i) (with_aux true false (load (+ p 1)))))\n"
+                         "    (let q (ptr u8) (addr_of (at mine 2)))\n"
+                         "    (with_aux false true (store q 100))\n" // not (set mine 2)
+                         "    (set (at out 10) (at mine 2))\n"       // main's 3, not 100
+                         "    (let r (ptr u8) (addr_of (at mine 3)))\n"
+                         // 200 at mine 3's address in aux memory, through a pointer the
+                         // analyses do not follow to mine
+                         "    (with_aux false true (store (as (ptr u8) (as u16 r)) 200))\n"
+                         "    (let v u8 (with_aux true false (load r)))\n" // 200, though mine
+                         "    (if (> v 3)\n"                               // only holds 1-3
+                         "        (set flag 1))\n"
+                         "    (set (at out 4) a)\n"
+                         "    (set (at out 5) b)\n"
+                         "    (set (at out 6) c)\n"
+                         "    (set (at out 7) d)\n"
+                         "    (set (at out 8) e)\n"
+                         "    (set (at out 9) v))");
+}
+
+// lib/auxmem, and lib/dhgr's boxes, plot and text_row onto the screens, on the machine against
+// the interpreter
 void Libraries(TestResults& results) {
     CheckProgramBoth(results,
                      std::string("(import auxmem)\n") + kBufs +
@@ -194,6 +232,40 @@ void Libraries(TestResults& results) {
                          "    (auxmem.copy (addr_of (at spare 0)) (addr_of (at book 10)) 246)\n"
                          "    (set (at line 0) 99)\n"
                          "    (auxmem.write (addr_of (at book 255)) (addr_of (at line 0)) 1))");
+    AuxRun r;
+    std::string text = std::string("(import dhgr)\n") + kBufs +
+                       "(fn main () void\n"
+                       "    (dhgr.box dhgr.PAGE1 3 10 9 20 dhgr.ORANGE)\n"
+                       "    (dhgr.fill dhgr.PAGE2 dhgr.AUX 4 100 7 5 0x11 0x22)\n"
+                       "    (dhgr.masked dhgr.PAGE1 dhgr.AUX 4 12 4 6 (addr_of (at book 0))\n"
+                       "        (addr_of (at book 100)))\n"
+                       "    (dhgr.masked dhgr.PAGE1 dhgr.MAIN 4 12 4 6 (addr_of (at line 0))\n"
+                       "        (addr_of (at line 30)))\n"
+                       "    (dhgr.copy dhgr.PAGE2 dhgr.AUX 30 150 3 9 (addr_of (at book 7)))\n"
+                       "    (dhgr.copy_box dhgr.PAGE2 dhgr.AUX 2 8 6 20 dhgr.PAGE1)\n"
+                       "    (dhgr.copy_box dhgr.PAGE2 dhgr.MAIN 2 8 6 20 dhgr.PAGE1)\n"
+                       "    (dhgr.plot dhgr.PAGE1 77 120 dhgr.PINK)\n"
+                       "    (dhgr.plot dhgr.PAGE1 78 120 dhgr.AQUA)\n"
+                       "    (set (at out 0) (dhgr.aux_rmw 0x2003 0x0F 0x40))\n"
+                       "    (dhgr.text_row dhgr.PAGE1 22 (addr_of (at line 0))))";
+    if (!RunBoth(results, text, r)) {
+        return;
+    }
+    CheckSame(results, text, r);
+    // both pages in both memories, and text row 22 (the rest of text page 1 starts as spaces
+    // on the machine, zeros in the interpreter)
+    bool same = true;
+    for (std::uint32_t at = 0x0400; at < 0x6000 && same; at++) {
+        bool screen = (at >= 0x0750 && at < 0x0778) || at >= 0x2000;
+        same = !screen ||
+               (r.machine->cpu.mem[at] == r.in.memory[at] && r.machine->aux[at] == r.in.aux[at]);
+        if (!same) {
+            std::fprintf(stderr, "dhgr: $%04X differs: machine %02X %02X, interpreter %02X %02X\n",
+                         at, r.machine->cpu.mem[at], r.machine->aux[at], r.in.memory[at],
+                         r.in.aux[at]);
+        }
+    }
+    CHECK(results, same);
 }
 
 // the code that may run with RAMRD on, and the const data it reads, are in aux memory at the
@@ -263,6 +335,7 @@ void RunBackendAuxTests(TestResults& results) {
     RunTimeBanks(results);
     Exits(results);
     ValuesAndCalls(results);
+    Barriers(results);
     Libraries(results);
     Mirrored(results);
     ZeroPageFull(results);
