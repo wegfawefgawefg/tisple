@@ -164,14 +164,14 @@ From the 65C02 target (2026-11-01, docs/design.md Target, docs/races.md "The 65C
     and seed 1796 gave the saved bytes to loop padding (+28 bytes, +3% cycles). PadLoops keeps
     short loops in a page; nothing places data or straight-line branches by page.
 32. Catwiz's draw/scene.same, a quarter of a waiting pass, compares two struct arrays at
-    indexes i and d and loads X six times (`LDX i / LDA looks,X / LDX d / CMP drawn,X` per field)
-    where X for one and Y for the other (`LDA looks,X / CMP drawn,Y`) needs neither reload. An
-    NMOS-level register choice, the same on both chips.
+    indexes i and d and loads X six times (`LDX i / LDA looks,X / LDX d / CMP drawn,X` a
+    field) where X for one and Y for the other (`LDA looks,X / CMP drawn,Y`) needs neither
+    reload. An NMOS-level register choice, the same on both chips.
 33. The emulator's IIgs runs the 65C02 (its 65816's own instructions and timings are not
     modelled), and the undefined 65C02 opcodes follow Bruce Clark's table (`$x7`, `$xF`, `$CB`,
     `$DB` 1-byte 1-cycle NOPs, `$5C` 8 cycles), which SingleStepTests' synertek65c02 set does
-    not (its chip reads memory for some). No program Tisple builds uses them; the test that would
-    tell which Apple's chips do needs a real machine.
+    not (its chip reads memory for some). No program Tisple builds uses them; the test that
+    would tell which Apple's chips do needs a real machine.
 34. Apple's 65C02s (NCR, GTE, Synertek parts in the enhancement kits and the IIc) are taken to
     lack Rockwell's bit instructions: Apple documents only the 27 added instructions, the IIgs's
     65816 gives their opcodes other meanings, and disassemblers for Apple code (regenerator2000,

@@ -498,7 +498,8 @@ shifts abs,X 6 without a page crossing). What it uses:
   the interrupt entry: PHX/PHY.
 
 The 6502 target's bytes are unchanged by all of it (every example, program, race kernel and
-300 random programs compared byte for byte). What it gains, measured: docs/races.md, "The 65C02".
+300 random programs compared byte for byte). What it gains, measured: docs/races.md, "The
+65C02".
 
 ## Implementation
 

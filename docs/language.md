@@ -1152,9 +1152,10 @@ What the optimiser does with it (src/opt/const_data.cpp, consts_eval.cpp):
   variable or field (a sum, an element at a computed index), the code working
   it out into a temporary comes first and is not part of the wait.
 - Either keeps A, X, Y and memory (a variable wait counts in the compiler's
-  zero-page scratch) and may change N, V, Z and C. Its instructions take the same
-  cycles on the 65C02, so a wait is exact on either target (decimal mode off). It is an effect like
+  zero-page scratch) and may change N, V, Z and C. It is an effect like
   `io_read`: never dropped, merged or moved. The interpreter does nothing for it.
+  Its instructions take the same cycles on the 65C02, so a wait is exact on either
+  target (decimal mode off).
 
 This is how a program asks for timing. The optimiser may delete an effect-free
 loop when the loop provably terminates (every `for`; a `while` whose counter moves
