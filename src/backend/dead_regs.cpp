@@ -225,6 +225,11 @@ void Successors(const std::vector<AsmItem>& items, const Flow& f, std::size_t i,
             out.push_back(target(item.value.sym));
             return;
         }
+        // the 65C02's JMP (table,X) of a match: where the table's bytes name
+        if (item.mode == Mode::AbsIndX) {
+            out.insert(out.end(), f.dispatch.begin(), f.dispatch.end());
+            return;
+        }
         for (const auto& label : f.labels) {
             out.push_back(label.second);
         }

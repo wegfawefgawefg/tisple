@@ -142,7 +142,8 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
 
 void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats,
              const IrqPlan& irqs = IrqPlan(), const tisple::OptOptions& opt = {}, int squeeze = 0,
-             int bank1 = 0, bool tight = false, int overlay = 0) {
+             int bank1 = 0, bool tight = false, int overlay = 0,
+             tisple::Cpu cpu = tisple::DefaultCpu()) {
     stats.programs++;
     // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
     if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
@@ -152,6 +153,7 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
         }
     }
     tisple::BuildOptions options;
+    options.cpu = cpu;
     options.opt = opt;
     options.squeeze = squeeze;
     options.bank1_test = bank1;
@@ -459,6 +461,21 @@ void RunBackendFuzzTests(TestResults& results) {
                 FuzzOne(seed, (" (stretch)" + overlay_variant).c_str(), stretch, stats, IrqPlan(),
                         {}, 0, overlay_bank1, false, overlay);
             }
+        }
+        // the other chip: one seed in four, its program built for it (TISPLE_TEST_CPU sets
+        // which runs everywhere else); every tables program on both
+        tisple::Cpu other =
+            tisple::DefaultCpu() == tisple::Cpu::k6502 ? tisple::Cpu::k65c02 : tisple::Cpu::k6502;
+        std::string other_variant = std::string(" (") + tisple::CpuName(other) + ")";
+        if (seed % 4 == 2) {
+            FuzzOne(seed, other_variant.c_str(), program, stats, IrqPlan(), {}, 0, 0, false, 0,
+                    other);
+        }
+        std::string tables = GenerateTablesProgram(seed);
+        if (!tables.empty()) {
+            FuzzOne(seed, " (tables)", tables, stats);
+            FuzzOne(seed, (" (tables)" + other_variant).c_str(), tables, stats, IrqPlan(), {}, 0, 0,
+                    false, 0, other);
         }
         std::string partition = GeneratePartitionProgram(seed);
         if (!partition.empty()) {

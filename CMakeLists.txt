@@ -63,7 +63,7 @@ add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp
                tests/fuzz_gen_frames.cpp
                tests/fuzz_gen_io.cpp tests/fuzz_gen_data.cpp
                tests/fuzz_gen_stretch.cpp tests/fuzz_gen_partition.cpp
-               tests/fuzz_gen_places.cpp)
+               tests/fuzz_gen_places.cpp tests/fuzz_gen_tables.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
 target_include_directories(tisple PRIVATE tests)
 tisple_warnings(tisple)

@@ -118,6 +118,11 @@ std::string GeneratePartitionProgram(std::uint64_t seed);
 constexpr int kPlacesPercent = 25;
 std::string GeneratePlacesProgram(std::uint64_t seed);
 
+// for one seed in kTablesPercent hundred, a program of its own with dense matches (jump tables)
+// and calls through a table of function pointers (fuzz_gen_tables.cpp); "" for the others
+constexpr int kTablesPercent = 25;
+std::string GenerateTablesProgram(std::uint64_t seed);
+
 // the seed's program for the random-program race (races/random.py): no I/O, start values set
 // by t.init instead of initializers, the generated main renamed t.run, then a main that calls
 // init, run and t.checksum, which folds every global (and run's value, in rv) into a u16 at
