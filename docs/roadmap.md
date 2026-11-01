@@ -268,4 +268,18 @@ Sources: [cc65 apple2enh target](https://cc65.github.io/doc/apple2enh.html),
 
 ### Round 1 (2026-11-01)
 
-Built in this round: 1, 2, 3 and 9 (the sections below say where each is documented).
+Built: 1, 2, 3 and 9.
+
+- 1: `lib/joystick` ([`hardware.md`](hardware.md)): both axes from one trigger of the timers,
+  PREAD's single paddle, the three buttons; the emulator's `--joystick`, a game controller in
+  the window, stick and button keys on the phone pad.
+- 2: `lib/save` ([`disks.md`](disks.md), Saves): our own sector writer, two copies, tested
+  through 93 power cuts; `--write-back` for `tisple run --disk`; the phone player keeps saves.
+- 3: `lib/machine` ([`hardware.md`](hardware.md)): model (IIgs included), 64K/128K, 65C02,
+  each slot's card; the emulator's `--model` and `--64k`.
+- 9: `lib/dlores`, `lores.mixed`, `hgr.mixed`, `text40.window`/`text80.window`,
+  `lib/mousetext` ([`hardware.md`](hardware.md)).
+
+Next by the ranking: numbers as text (4) and text on the graphics screens (5), both small;
+then ProDOS files (6) and the 65C02 target (10), already approved. Frame timing on the IIc and
+IIgs (11) now has lib/machine to choose by.
