@@ -241,28 +241,47 @@ void TestCompiledRegionsBoot(TestResults& results, int bank1, int overlay = 0) {
     }
 }
 
-// text page 1's 24 rows: spaces, and LOADING in row 12 from column 16
-bool CleanScreen(const tisple::Apple2& a) {
-    const char* loading = "LOADING";
+// text page 1 while the loader runs: spaces but for row 12, LOADING and the percent from
+// column 14 ("LOADING  45%"), and row 14, the meter's 20 cells from column 10, one full (an
+// inverse space) for each 5%, the rest _. Gives the percent, or -1 for anything else
+int LoadingScreen(const tisple::Apple2& a) {
+    if (!a.sw.text || a.sw.page2) {
+        return -1;
+    }
+    const uint8_t* row12 = a.cpu.mem + 0x0628;
+    int percent = 0;
+    for (int col = 22; col < 25; col++) {
+        uint8_t c = row12[col];
+        if (c >= 0xB0 && c <= 0xB9) {
+            percent = percent * 10 + (c - 0xB0);
+        } else if (c != 0xA0 || percent != 0 || col == 24) {
+            return -1;
+        }
+    }
+    char want12[41];
+    std::snprintf(want12, sizeof(want12), "%-14sLOADING %3d%%%-14s", "", percent, "");
     for (int row = 0; row < 24; row++) {
-        int base = 0x0400 + (row % 8) * 0x80 + (row / 8) * 40;
+        const uint8_t* line = a.cpu.mem + 0x0400 + (row % 8) * 0x80 + (row / 8) * 40;
         for (int col = 0; col < 40; col++) {
-            int k = col - 16;
-            bool word = row == 12 && k >= 0 && k < 7;
-            uint8_t want = word ? static_cast<uint8_t>(loading[k] | 0x80) : 0xA0;
-            if (a.cpu.mem[base + col] != want) {
-                std::fprintf(stderr, "screen row %d column %d: %02X\n", row, col,
-                             a.cpu.mem[base + col]);
-                return false;
+            uint8_t want = 0xA0;
+            if (row == 12) {
+                want = static_cast<uint8_t>(want12[col] | 0x80);
+            } else if (row == 14 && col >= 10 && col < 30) {
+                want = col - 10 < percent / 5 ? 0x20 : 0xDF;
+            }
+            if (line[col] != want) {
+                std::fprintf(stderr, "screen row %d column %d: %02X, want %02X\n", row, col,
+                             line[col], want);
+                return -1;
             }
         }
     }
-    return a.sw.text && !a.sw.page2;
+    return percent;
 }
 
 // segments of one memory that share a page (two rows of text page 2 reserved split page $0B
 // in three): each loads whole, and the rows between them are zeros. Meanwhile the screen
-// shows text page 1 blank but for LOADING, aux sectors and all
+// shows text page 1 blank but for LOADING and the meter, aux sectors and all
 void TestSharedPagesBoot(TestResults& results) {
     std::vector<MemorySegment> segments;
     segments.push_back(Noise(MemoryBank::kMain, 0x6000, 0x0300, 11));
@@ -285,7 +304,7 @@ void TestSharedPagesBoot(TestResults& results) {
     for (int frame = 0; frame < 600 && !a->stopped; frame++) {
         tisple::RunApple2(*a, tisple::kCyclesPerFrame);
         if (frame >= 30 && frame % 30 == 0) {
-            clean = clean && CleanScreen(*a);
+            clean = clean && LoadingScreen(*a) >= 0;
         }
     }
     CHECK(results, clean);
@@ -297,6 +316,77 @@ void TestSharedPagesBoot(TestResults& results) {
     CHECK(results, a->aux[0x27C0] == 0 && a->aux[0x27DF] == 0);
 }
 
+// the meter counts the pages in, a track at a time: aux 33 pages (tracks of 16, 16, 1), then
+// main 20 (16, 4) and 1, so 54 in all, and after each track floor(pages * 100 / 54) percent,
+// every one of them shown, the meter a cell for each 5%; 100% and every cell full at the end
+void TestBootMeter(TestResults& results) {
+    std::vector<MemorySegment> segments;
+    segments.push_back(Noise(MemoryBank::kMain, 0x6000, 0x1301, 21)); // pages $60-$73
+    segments[0].bytes[0] = 0x60;                                      // RTS at the entry
+    segments.push_back(Noise(MemoryBank::kAux, 0x0800, 0x2100, 22));  // $08-$28
+    segments.push_back(Noise(MemoryBank::kMain, 0x0B00, 0x0100, 23));
+    auto disk = std::make_unique<tisple::DiskSectors>();
+    tisple::BootDiskInfo info;
+    std::string error;
+    CHECK(results, tisple::MakeBootDisk(segments, 0x6000, *disk, info, error));
+    CHECK(results, info.pages == 54);
+    std::unique_ptr<tisple::Apple2> a = MachineWithDisk(*disk);
+    a->return_pc = info.return_pc;
+    tisple::StartDiskBoot(*a);
+    // a track's count takes under 3,000 cycles, so a screen the same 5,000 cycles on is not
+    // one caught in the middle of it
+    std::vector<int> shown;
+    bool clean = true;
+    for (int frame = 0; frame < 600 && !a->stopped; frame++) {
+        tisple::RunApple2(*a, tisple::kCyclesPerFrame - 5000);
+        uint8_t before[0x0400];
+        std::memcpy(before, a->cpu.mem + 0x0400, sizeof(before));
+        tisple::RunApple2(*a, 5000);
+        if (frame < 30 || std::memcmp(before, a->cpu.mem + 0x0400, sizeof(before)) != 0) {
+            continue; // the loader is still being read, or the meter is counting
+        }
+        int percent = LoadingScreen(*a);
+        clean = clean && percent >= 0;
+        if (percent >= 0 && (shown.empty() || shown.back() != percent)) {
+            shown.push_back(percent);
+        }
+    }
+    CHECK(results, clean);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    std::vector<int> want = {0, 29, 59, 61, 90, 98, 100};
+    CHECK(results, shown == want);
+    if (shown != want) {
+        for (int p : shown) {
+            std::fprintf(stderr, "meter: %d%%\n", p);
+        }
+    }
+    for (const MemorySegment& s : segments) {
+        CHECK(results, Loaded(*a, s));
+    }
+}
+
+// the largest loader, ten segments, still fits its three sectors with the meter
+void TestTenSegmentLoader(TestResults& results) {
+    tisple::LoaderPlan plan;
+    plan.entry = 0x6000;
+    plan.slot_at = 0x1706;
+    for (size_t i = 0; i < tisple::kMaxBootSegments; i++) {
+        tisple::LoaderSegment segment;
+        segment.first_page = static_cast<uint8_t>(0x10 + i * 0x10);
+        segment.pages = 40;
+        segment.bank = i == 0 ? tisple::LoaderBank::kAux : tisple::LoaderBank::kMain;
+        plan.segments.push_back(segment);
+    }
+    uint8_t out[tisple::kBootLoaderSectors][tisple::kSectorBytes];
+    uint16_t return_pc = 0;
+    std::string error;
+    bool built = tisple::BuildLoader(plan, out, return_pc, error);
+    CHECK(results, built);
+    if (!built) {
+        std::fprintf(stderr, "%s\n", error.c_str());
+    }
+}
+
 } // namespace
 
 void RunDiskSegmentTests(TestResults& results) {
@@ -306,6 +396,8 @@ void RunDiskSegmentTests(TestResults& results) {
     TestCompiledRegionsBoot(results, 1);
     TestCompiledRegionsBoot(results, 0, 1);
     TestSharedPagesBoot(results);
+    TestBootMeter(results);
+    TestTenSegmentLoader(results);
 }
 
 } // namespace tisple_tests

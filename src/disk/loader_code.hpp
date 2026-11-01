@@ -37,6 +37,7 @@ constexpr int kWait = 0xDF;
 constexpr int kSegment = 0xDE; // the next segment's offset in the table
 constexpr int kMode = 0xDD;    // this segment's bank: 0 main, 1 language card, 2 aux
 constexpr int kDest = 0xDB;    // and $DC: an aux sector's page
+constexpr int kMeter = 0xD9;   // and $DA: pages in times 100, less the pages to read each percent
 
 // where the seek and wait routines keep their bytes: the boot loader's zero page, or lib/disk's
 // reader's own memory (disk_reader.cpp)
