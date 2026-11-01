@@ -9,7 +9,8 @@
 // $0296-$02FF the nibble table it builds: $0200 + n is disk nibble n's 6-bit value
 // $0300-$0355 the low bits of the sector being read
 // $0356-$0365 which sectors of the track are in
-// $0400-$07FF text page 1, cleared to spaces with LOADING in the middle (not its holes)
+// $0400-$07FF text page 1, cleared to spaces with LOADING, the percent and the meter in the
+//             middle (not its holes)
 // the bounce page, the first page of a main segment that loads after the aux ones: where an
 //             aux sector is read before it is copied over
 //
@@ -18,7 +19,8 @@
 // (2.5 ms each way per half-track, 25 ms to settle), then reads whichever wanted sector comes
 // under the head next, straight to its page, until the track's sectors are all in. putting a
 // sector's low bits back takes about a sector's time, so a track takes two turns. track 17
-// is skipped: the DOS 3.3 catalog beside the program lives there.
+// is skipped: the DOS 3.3 catalog beside the program lives there. once a track is in, the
+// meter counts its pages, before the seek.
 // the read loops never take more than 22 cycles a nibble; the latch reads are patched for
 // the slot at the start, which leaves X and Y free.
 
@@ -34,18 +36,17 @@ namespace tisple {
 
 namespace {
 
-// the next track, past the catalog's
-void EmitNextTrack(Loader& l, std::int32_t next_track) {
+// the next track, past the catalog's (in line: it is the one place, and the loader's room is
+// short)
+void EmitNextTrack(Loader& l) {
     Code6502& c = l.c;
     std::int32_t done = c.Label("next.done");
-    c.Place(next_track);
     c.Mem(Mn::INC, kTrack);
     c.Mem(Mn::LDA, kTrack);
     c.Imm(Mn::CMP, kBootCatalogTrack);
     c.Br(Mn::BNE, done);
     c.Mem(Mn::INC, kTrack);
     c.Place(done);
-    c.Op(Mn::RTS);
 }
 
 // the sector at the bounce page to the aux page at kDest: RAMWRT on, copy, off
@@ -65,15 +66,23 @@ void EmitToAux(Loader& l, std::int32_t to_aux) {
     c.Op(Mn::RTS);
 }
 
-constexpr char kLoading[] = "LOADING";
-constexpr int kLoadingAt = 0x0628 + 16; // row 12, column 16
+// LOADING and the percent, 0% to start, in row 12 from column 14; under it, in row 14 from
+// column 10, the meter's 20 cells (5% each), empty to start
+constexpr char kLoading[] = "LOADING   0%";
+constexpr int kLoadingAt = 0x0628 + 14;
+constexpr int kPercentAt = kLoadingAt + 8; // hundreds, tens, ones
+constexpr int kMeterCells = 20;
+constexpr int kMeterAt = 0x0728 + 10;
+constexpr int kEmptyCell = 0xDF; // _
+constexpr int kFullCell = 0x20;  // an inverse space
 
-// text page 1 shown, 40 columns, cleared to spaces but for LOADING; the screen holes (the
-// last 8 bytes of each 128) are the cards' and stay as they are
+// text page 1 shown, 40 columns, cleared to spaces but for LOADING and the empty meter; the
+// screen holes (the last 8 bytes of each 128) are the cards' and stay as they are
 void EmitScreen(Loader& l, std::int32_t message) {
     Code6502& c = l.c;
     std::int32_t clear = c.Label("screen.clear");
     std::int32_t show = c.Label("screen.show");
+    std::int32_t empty = c.Label("screen.empty");
     c.Mem(Mn::STA, 0xC00C); // 80 columns off
     c.Mem(Mn::LDA, 0xC051); // text
     c.Mem(Mn::LDA, 0xC054); // page 1
@@ -91,13 +100,79 @@ void EmitScreen(Loader& l, std::int32_t message) {
     c.MemX(Mn::STA, kLoadingAt);
     c.Op(Mn::DEX);
     c.Br(Mn::BPL, show);
+    c.Imm(Mn::LDX, kMeterCells - 1);
+    c.Imm(Mn::LDA, kEmptyCell);
+    c.Place(empty);
+    c.MemX(Mn::STA, kMeterAt);
+    c.Op(Mn::DEX);
+    c.Br(Mn::BPL, empty);
+}
+
+// the meter once a track is in (in line, like the next track): for each of its kCount pages,
+// 100 more in kMeter, and a percent more for each total pages there. The percent counts up on
+// the screen itself, from the ones digit (a space counts as 0), and each 5% fills the next cell
+// (the STA's address moves on). About 35 cycles a page and 60 a percent, before the seek, so no
+// sector waits for it
+void EmitProgress(Loader& l, uint32_t total) {
+    Code6502& c = l.c;
+    std::int32_t page = c.Label("progress.page");
+    std::int32_t check = c.Label("progress.check");
+    std::int32_t digit = c.Label("progress.digit");
+    std::int32_t up = c.Label("progress.up");
+    std::int32_t cell = c.Label("progress.cell");
+    std::int32_t fill = c.Label("progress.fill");
+    std::int32_t next = c.Label("progress.next");
+    c.Mem(Mn::LDY, kCount);
+    c.Place(page);
+    c.Mem(Mn::LDA, kMeter);
+    c.Op(Mn::CLC);
+    c.Imm(Mn::ADC, 100);
+    c.Mem(Mn::STA, kMeter);
+    c.Br(Mn::BCC, check);
+    c.Mem(Mn::INC, kMeter + 1);
+    c.Place(check);
+    c.Mem(Mn::LDA, kMeter);
+    c.Op(Mn::SEC);
+    c.Imm(Mn::SBC, static_cast<int>(total & 0xFF));
+    c.Op(Mn::TAX);
+    c.Mem(Mn::LDA, kMeter + 1);
+    c.Imm(Mn::SBC, static_cast<int>(total >> 8));
+    c.Br(Mn::BCC, next);
+    c.Mem(Mn::STA, kMeter + 1);
+    c.Mem(Mn::STX, kMeter);
+    c.Imm(Mn::LDX, 2);
+    c.Place(digit);
+    c.MemX(Mn::LDA, kPercentAt);
+    c.Imm(Mn::ORA, 0x30); // a space ($A0) reads as 0 ($B0)
+    c.Imm(Mn::CMP, '9' | 0x80);
+    c.Br(Mn::BCC, up);
+    c.Imm(Mn::LDA, '0' | 0x80); // 9: 0, and the next digit up
+    c.MemX(Mn::STA, kPercentAt);
+    c.Op(Mn::DEX);
+    c.Br(Mn::BPL, digit);
+    c.Place(up);
+    c.Imm(Mn::ADC, 1); // the carry is clear
+    c.MemX(Mn::STA, kPercentAt);
+    c.Mem(Mn::LDA, kPercentAt + 2);
+    c.Imm(Mn::CMP, '0' | 0x80);
+    c.Br(Mn::BEQ, cell);
+    c.Imm(Mn::CMP, '5' | 0x80);
+    c.Br(Mn::BNE, check);
+    c.Place(cell);
+    c.Imm(Mn::LDA, kFullCell);
+    c.Place(fill);
+    c.Mem(Mn::STA, kMeterAt);
+    c.MemLabel(Mn::INC, fill, 1);
+    c.Jump(Mn::JMP, check);
+    c.Place(next);
+    c.Op(Mn::DEY);
+    c.Br(Mn::BNE, page);
 }
 
 struct LoaderLabels {
     std::int32_t seek = -1;
     std::int32_t address = -1;
     std::int32_t data = -1;
-    std::int32_t next_track = -1;
     std::int32_t to_aux = -1;
     std::int32_t table = -1;
     std::int32_t ret = -1;
@@ -137,6 +212,15 @@ void EmitSegmentStart(Loader& l, const LoaderLabels& at, std::int32_t segment, s
     c.Mem(Mn::LDA, 0xC083);
 }
 
+// the pages the loader reads, in every segment: the meter's 100%
+uint32_t PlanPages(const LoaderPlan& plan) {
+    uint32_t pages = 0;
+    for (const LoaderSegment& segment : plan.segments) {
+        pages += segment.pages;
+    }
+    return pages;
+}
+
 // $0801: set up, then segment by segment, track by track
 void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     Code6502& c = l.c;
@@ -162,6 +246,8 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     c.Mem(Mn::STA, kHead);
     c.Mem(Mn::STA, kPtr);
     c.Mem(Mn::STA, kSegment);
+    c.Mem(Mn::STA, kMeter);
+    c.Mem(Mn::STA, kMeter + 1);
     c.Imm(Mn::LDA, kBootFirstTrack);
     c.Mem(Mn::STA, kTrack);
     c.Op(Mn::TXA); // the latch reads: $C08C + slot * 16
@@ -172,6 +258,10 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     EmitScreen(l, at.message);
     EmitNibbleTable(l);
     EmitSegmentStart(l, at, segment, track, finish);
+    c.Jump(Mn::JMP, track);
+    c.Place(elsewhere); // the head is on another track: start from there
+    c.OpA(Mn::ASL);
+    c.Mem(Mn::STA, kHead);
 
     c.Place(track);
     c.Mem(Mn::LDA, kTrack);
@@ -231,15 +321,12 @@ void EmitMain(Loader& l, const LoaderPlan& plan, const LoaderLabels& at) {
     c.Op(Mn::SEC);
     c.Mem(Mn::SBC, kCount);
     c.Mem(Mn::STA, kLeft);
-    c.Jump(Mn::JSR, at.next_track); // every segment starts on a track of its own
+    EmitProgress(l, PlanPages(plan));
+    EmitNextTrack(l); // every segment starts on a track of its own
     c.Mem(Mn::LDA, kLeft);
     c.Br(Mn::BNE, more);
     c.Jump(Mn::JMP, segment);
     c.Place(more);
-    c.Jump(Mn::JMP, track);
-    c.Place(elsewhere); // the head is on another track: start from there
-    c.OpA(Mn::ASL);
-    c.Mem(Mn::STA, kHead);
     c.Jump(Mn::JMP, track);
 
     c.Place(finish);
@@ -282,7 +369,6 @@ bool BuildLoader(const LoaderPlan& plan, uint8_t out[kBootLoaderSectors][kSector
     std::int32_t nibble = c.Label("nibble");
     at.address = c.Label("address");
     at.data = c.Label("data");
-    at.next_track = c.Label("next_track");
     at.to_aux = c.Label("to_aux");
     at.table = c.Label("table");
     at.ret = c.Label("return");
@@ -291,7 +377,6 @@ bool BuildLoader(const LoaderPlan& plan, uint8_t out[kBootLoaderSectors][kSector
     EmitNibble(l, nibble);
     EmitAddress(l, at.address, nibble);
     EmitData(l, at.data, nibble);
-    EmitNextTrack(l, at.next_track);
     EmitToAux(l, at.to_aux);
     c.Place(at.table);
     for (const LoaderSegment& segment : plan.segments) {

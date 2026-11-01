@@ -73,16 +73,27 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   sector passes the head next: about two turns a track, 0.75 s for a one-track
   program in the emulator; an aux track can take three, since the copy can
   miss the next sector. programs/text_demo, 20 tracks, shows its first page
-  10.5 s after power on with our ROM, 12.2 s through Apple's (2026-10-29).
+  10.5 s after power on with our ROM, 12.3 s through Apple's (2026-11-01).
 - The screen while it loads: text page 1 in 40 columns, cleared to spaces but
-  for LOADING in row 12 (the screen holes, the last 8 bytes of each 128, are the
-  cards' and stay as they were). Nothing loads there, so it stays so until the
-  program shows something else. Before (version 2), aux sectors went through
-  `$0400-$04FF` and showed as rows of garbage for the whole load.
+  for `LOADING  45%` in row 12 from column 14 and the meter under it, 20 cells
+  in row 14 from column 10: `_` empty, an inverse space full, one for each 5%
+  (the screen holes, the last 8 bytes of each 128, are the cards' and stay as
+  they were). Nothing loads there, so it stays so until the program shows
+  something else. Before (version 2), aux sectors went through `$0400-$04FF`
+  and showed as rows of garbage for the whole load.
+- The meter (2026-11-01): the loader knows the pages it will read (every
+  segment's), and once a track is in, before it seeks the next, it counts that
+  track's pages: the percent is pages in * 100 / pages, rounded down, so 100%
+  comes with the last track. It counts up on the screen itself, a percent at a
+  time, about 35 cycles a page and 60 a percent: under a millisecond a track,
+  while the head would wait for its sector anyway. Catwiz's 23 tracks end 312
+  cycles later than without it. It took 93 of the loader's bytes (653 to 746 for
+  10 segments, the most; 752 fit), with the next track and the meter in line.
+  Test: tests/test_disk_segments.cpp, TestBootMeter.
 - At the jump: stack `$FF` (then the JSR), A = X = Y = 0, interrupts off,
   decimal off, 80STORE off, RAMRD and RAMWRT off, language card `$C082` (as a
   direct load), motor off, text page 1 shown. It also used `$0296-$0365` and
-  zero page `$DB-$EF`. A program in the language card
+  zero page `$D9-$EF`. A program in the language card
   switches its RAM in itself, in the startup.
 - If the program returns, the loader switches to text and enters the monitor
   (`$FF69`). The emulator stops there instead ("returned from the entry

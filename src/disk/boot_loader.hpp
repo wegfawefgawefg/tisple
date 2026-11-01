@@ -20,10 +20,11 @@
 // - the rest is an empty DOS 3.3 volume (VTOC and catalog on track 17) with the tracks
 //   above marked in use, so `tisple disk put` can add files beside it.
 // at run time the loader keeps to $0800-$0AFF, $0296-$0365 (its nibble table and scratch,
-// clear of the vectors at $03F0) and zero page $DB-$EF. an aux sector is read to the first
+// clear of the vectors at $03F0) and zero page $D9-$EF. an aux sector is read to the first
 // page of a main segment, which loads after every aux one. it switches 80store off first,
-// shows text page 1 cleared to spaces but for LOADING in the middle (the screen holes are
-// left alone; nothing loads there), and the language card's bank 2 (or bank 1) in to write its
+// shows text page 1 cleared to spaces but for LOADING, the percent, and a meter under them
+// that fills a track at a time (the screen holes are left alone; nothing loads there), and
+// the language card's bank 2 (or bank 1) in to write its
 // segments. then
 // it sets the stack to $FF, A = X = Y = 0, interrupts off, the language card to $C082 (rom
 // reads, as a direct load starts), turns the motor off and calls the origin. if the program
