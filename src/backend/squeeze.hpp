@@ -30,6 +30,9 @@ struct Squeezed {
     bool overlay_aux_short = false;
     // the plan's groups were not in the code (fewer than two, or none for tests)
     bool overlay_none = false;
+    // the roots of the groups found in the code (the plan's others were too small or broke a
+    // rule)
+    std::vector<std::int32_t> overlay_roots;
 };
 
 Squeezed NoteSqueezed(const Backend& be, const std::vector<bool>& kept, const SizeChoices& choices,

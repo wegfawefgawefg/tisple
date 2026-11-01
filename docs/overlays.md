@@ -1,11 +1,12 @@
-# Overlays and the card's bank 1 (design note; step 1 built)
+# Overlays and the card's bank 1 (design note; steps 1 and 2 built)
 
 Written 2026-10-30 for the owner to decide. Catwiz fills main memory and the language card;
 the card's bank 1 (4 KB at `$D000-$DFFF`) is unused, and aux memory (46 KB) holds only data.
 The game would like per-screen code and data loaded when the screen starts. This is what the
 feature could look like in Tisple, what it costs, and how it meets the interrupt handler.
 Step 1 of the recommendation below, whole functions in bank 1 behind stubs, is built: see
-"Built: code in bank 1" at the end.
+"Built: code in bank 1". Step 2, groups that take turns in one region, copied in from aux
+memory, is built too: see "Built: overlay groups" at the end.
 
 Names: bank 1 and bank 2 are Apple's. Bank 2 (`$C083`) is the one the startup switches in
 and the link has filled since 2026-10-27; bank 1 (`$C08B`) is the second, new one.
@@ -164,4 +165,117 @@ src/backend/card_bank.hpp. No syntax; the link decides.
   from 13,270 to 12,836 cycles a pass, the title's from 22,470 to 21,571 (tools/measure.py).
   The disk is one track longer (22 tracks), so the title is up by frame 750 instead of 700.
 
-Not built: groups loaded from aux into bank 1 (step 2), disk overlays.
+## Built: overlay groups (2026-11-01)
+
+src/backend/overlay_guards.cpp (when code runs), overlay_plan.cpp and overlay_graph.cpp (which
+groups), overlay.cpp (the groups in the code, the stubs and the copy), link_overlay.cpp (the
+link's part); BuildOptions::use_overlays.
+
+- **What a group is.** A set of roots and every function the program reaches only through
+  them (from main, the handler or a function pointer), the barred ones left out: what the
+  handler runs, main, a function whose address is taken (its entry and dispatcher too), an
+  I/O base's patch function, code with an aux switch on or a with_aux. The roots are never
+  copied into their callers (they go into BuildOptions::no_inline), so they keep their code;
+  inside a group anything may be copied. The backend finds each group again in the generated
+  code by its references (calls, tail jumps, branches, the program's calls for pointer calls),
+  and leaves a group out when other code names one of its labels but by calling or jumping to
+  a root's entry, when another group's code names it, when its code reaches another group's
+  root through resident code, or when it has under 256 bytes.
+- **When two groups take turns** (overlay_guards.hpp). The checker's program gives each
+  function its facts: a global compared with constants (a `match` arm, `=` or `!=` with a
+  constant, a bool global, `not`, `and`, `or`) as the set of values it holds or does not, in
+  the code's order: a set of the global, or a call that may set it, forgets it; a loop forgets
+  what its body sets; an `if` whose one branch returns leaves the other's facts after it
+  (`(if (!= state.page none) (do ... (return)))`). A function's facts are what holds at all its
+  calls. Two groups take turns when every root of one and every root of the other have facts
+  that contradict (`page = 0` against `page in 1 2`), neither reaches the other's roots, and
+  they share no code (what the two together reach is not more than an eighth of the smaller
+  beyond what each reaches): roots that share code are parts of one screen, which change
+  often, and go in one group.
+- **Which groups, no syntax.** Only the facts a loop's own dispatch makes count (a `match` or
+  `if` inside a `while` or `for`, in the function with the loop): Catwiz's main loop matches
+  on `state.screen`, and a program whose loop does the same for its screens gets them as
+  groups. The candidates are the functions with such facts and more than 24 expressions (a
+  smaller one is copied into every caller anyway; the functions it calls take its place), the
+  ones no other candidate reaches alone, each opened in turn for the ones inside it, and the
+  sets of them that share code. The plan takes the set of them that frees the most (their sum
+  less the biggest, which the region holds), each worth a load (64 expressions or more).
+  Dispatches deeper in (Catwiz's `match state.phase` in battle.step) do not count: the compiler
+  cannot tell a screen from the phases of a turn, which change every few frames, and a load
+  at each would cost the battle's loop frames. That was the guess that went wrong: with every
+  dispatch counted, Catwiz's plan put the dice's landing, the enemies' turn and the roll in
+  three groups, a load at every phase change.
+- **The fallback, `:overlay`.** `(fn step ((key u8)) bool :overlay ...)` says the function is a
+  screen's entry. When any function is marked, only marked ones are roots: each with what
+  only it reaches, and marked roots that cannot take turns (their facts do not contradict,
+  one reaches the other, they share code) made one group, until every two can; then the same
+  choice of the set that frees the most. Every fact counts for marked roots, not only a
+  loop's. A mark on a function that cannot be in a group (the handler's, main, a pointer's
+  target, aux code) is a warning that says it stays resident.
+- **When.** At the first level of squeeze the build without groups comes first; when it does
+  not fit, the build with them (and with bank 1 too if it still does not). Past the first
+  level the build with groups comes first, and only when it fits the one without (which
+  would be faster): a compile a level. A group the code did not keep (too small, a rule
+  broken) is dropped from the plan for the next levels, so its roots are copied again. A
+  build with groups and bank 1 is still weighed against the tighter budgets without bank 1
+  (with groups), as before. The build says what it did, a warning: the groups, their roots,
+  functions, bytes and a load's cycles and frames, the stubs' and copy's bytes, the bytes
+  freed. TISPLE_OVERLAY_NOTES=1 prints the plan's groups and their functions.
+- **Where the images live: aux memory.** Only programs that already use aux memory (a let or
+  const `:in aux`, a with_aux) get groups: the machine has it. The images go one after another
+  next to what aux memory holds (so they join its segment: a boot disk holds 10, and Catwiz
+  has 10), never in its text page or hi-res page 1 (80STORE). The copy is 16 cycles a byte:
+  Catwiz's 2.8 KB page group loads in about 45,000 cycles, 2.7 frames. Not the disk: lib/disk
+  reads 8.9 KB a second, 0.3 s for the same group, and Catwiz's aux memory has the room (2.7 KB
+  left after both images); the owner's choice is the faster load. The cost of aux is at boot:
+  the images load with the program (Catwiz's title 36 frames later, a track more).
+- **The region.** The biggest group's bytes, after the resident code in the first stretch that
+  holds it, the frames in memory after it; main memory or the card's bank 2 (Catwiz's is at
+  $D99F). Not bank 1: it holds 4 KB either way, and with bank 1 already full of cold
+  functions a region there would push as many bytes of them back. Each group's code is laid
+  out at the region's address; the binary has its bytes only in its image.
+- **Stubs.** `ov.r: JMP ov.r.load` for each root r, which the load points at r while its
+  group is in: 3 cycles a call. `ov.r.load: JSR ov.g.enter / JMP r`. `ov.g.enter` pushes P, A,
+  X and Y, points every other group's stubs at their loads, copies g's image (rt_a, rt_b and
+  rt_r, the runtime's scratch, which no call keeps live), points g's stubs at its roots, and
+  pulls them back. 6 bytes a root and about 45 a group, plus the copy (51 bytes).
+- **Interrupts.** No handler code is in a group. The copy turns RAMRD on for a page at a time
+  with interrupts off (PHP / SEI ... PLP): a tick waits at most a page's 4,100 cycles, and the
+  handler never runs with RAMRD on, so no auxmem.guard is needed. The copy is the one piece
+  of code that runs with RAMRD on: it goes with the mirrored code, in both memories. A tick
+  in group code returns to it (the handler never touches the region).
+- **Frames.** As before, by the call graph: groups that take turns never run together, so
+  their frames share bytes.
+- **Simulator.** Compiled::aux_switches are the copy's writes of $C003/$C002; the simulator
+  loads the aux segments and, while the copy has RAMRD on, reads $0200-$BFFF from aux memory
+  (its I/O hook widened), writes main memory. The program's own switches stay I/O to compare.
+- **Tests.** tests/test_backend_overlay.cpp: three screens dispatched by the loop, and the
+  same marked where the dispatch is not the loop's own (and unmarked: no groups), each built
+  only because it does not fit, run on the simulator against the interpreter and on the
+  emulated IIe; groups forced to take turns call after call; what stays out (the handler's
+  code, a pointer's target, main); 300 ticks every 997 cycles on the emulated IIe while three
+  groups load and run, all taken and counted right (162 landed in the copy, 21 in group
+  code). The fuzzer's `(overlay N)` runs the fourth seed in four (its program and its
+  (fnptr), (irq) and (stretch) ones) with groups of every function that may be in one (N = 1)
+  or a seeded share, for even N with bank 1 functions too; `TISPLE_FUZZ_OVERLAY=n` reproduces
+  one with `TISPLE_FUZZ_FILE`.
+- **Catwiz** (2026-11-01, a copy of 195903b with seven marks: `title.step`, `title.draw`,
+  `reward.start`, `reward.step`, `battle.ending`, `page.open`, `page.step`). Unmarked, the
+  build is byte for byte main's: its loop's dispatch gives only the title, 91 bytes, too small.
+  Marked: squeeze 8 instead of 10, two groups in a 2,795-byte region: the pages (page.open and
+  page.step, the kit and rules pages, 16 functions, 2,795 bytes, a load 2.7 frames) and what
+  comes between fights (battle.ending, reward.start, reward.step, 13 functions, 2,228 bytes,
+  2.1 frames); the title's was dropped (91 bytes). 1,948 bytes of main memory and the card
+  freed, 280 bytes of stubs and copy. A pass of the battle's loop flat out 5,721 cycles (was
+  5,812, measure.py "900f:RETURN" 1500 1800); a pick shows in 2 frames (was 3); the title at frame 799 (was 763: the images load
+  at boot, the disk a track longer); the fight ready 265 frames after RETURN (was 271); the
+  kit page, its first open of a fight (a load), drawn whole in 61 frames as before, its first
+  change 5 frames after B (was 3); the rules page as the first open 75 frames (was 77);
+  closing a page 66 frames (was 68); the reward up at frame 1,211 (was 1,217, a fight won at
+  once). Build 7.9 s (was 7.3 s).
+
+Not built: images on the disk (for when aux memory is full: lib/disk's reader is the
+program's, so it would be a disk table per group read by the stub, 0.1 s a KB), data only a
+group reads in its image (Catwiz: 190 bytes), a region in bank 1, and a name on `:overlay`
+to put marked roots in one group (the fight's phases as one group would need 10 KB of aux
+memory Catwiz does not have).

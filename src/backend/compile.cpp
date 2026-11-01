@@ -262,6 +262,9 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
     if (overlays != nullptr) {
         bool test = options.overlay_test > 0;
         groups = FindOverlayGroups(be, kept, *overlays, {}, runtime, test ? 0 : kMinGroupBytes);
+        for (const std::vector<std::int32_t>& roots : groups.roots) {
+            squeezed.overlay_roots.insert(squeezed.overlay_roots.end(), roots.begin(), roots.end());
+        }
         std::size_t least = test ? 1 : 2;
         if (groups.roots.size() < least) {
             squeezed.overlay_none = true;
@@ -378,6 +381,19 @@ LinkResult CompileOverlaid(const Program& source, const BuildOptions& options, O
         if (result == LinkResult::kOk) {
             out = std::move(built);
         }
+        // a planned group not in the code stays out at the next levels, its roots copied again
+        std::vector<OverlayGroupPlan> found;
+        for (const OverlayGroupPlan& group : plan.groups) {
+            bool in = !group.roots.empty();
+            for (std::int32_t r : group.roots) {
+                in = in && std::find(squeezed.overlay_roots.begin(), squeezed.overlay_roots.end(),
+                                     r) != squeezed.overlay_roots.end();
+            }
+            if (in || squeezed.overlay_none) {
+                found.push_back(group);
+            }
+        }
+        plan.groups = found;
         bool fewer = squeezed.overlay_aux_short && !squeezed.overlay_none;
         if (result != LinkResult::kNoRoom || !fewer || plan.groups.size() <= 2) {
             errors.insert(errors.end(), tried.begin(), tried.end());
@@ -421,15 +437,29 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
         }
     }
     bool overlaid = !overlay_test && plan.groups.size() >= 2;
-    // with no room, the size budget tightens a level at a time until the program fits; when
-    // the plan has groups, at each level the build with them comes after the one without
+    // with no room, the size budget tightens a level at a time until the program fits. With
+    // groups in the plan: at the first level the build without them comes first; past it the
+    // build with them, and only when that fits the one without (which would be the faster): a
+    // compile a level, not two
     Squeezed usual;
     BuildOptions tighter = options;
     for (;;) {
+        bool first = tighter.squeeze == options.squeeze;
+        Compiled built;
+        std::vector<Diagnostic> overlaid_tried;
+        Squeezed with;
+        LinkResult r = LinkResult::kNoRoom;
+        if (overlaid && !first) {
+            r = CompileOverlaid(source, tighter, plan, built, overlaid_tried, with);
+            overlaid = plan.groups.size() >= 2 && !with.overlay_none;
+        }
         std::vector<Diagnostic> tried;
         Squeezed squeezed;
-        LinkResult result = CompileAt(source, tighter, out, tried, squeezed, !overlaid, nullptr);
-        if (tighter.squeeze == options.squeeze) {
+        LinkResult result = LinkResult::kNoRoom;
+        if (first || r == LinkResult::kOk || !overlaid) {
+            result = CompileAt(source, tighter, out, tried, squeezed, !overlaid, nullptr);
+        }
+        if (first) {
             usual = squeezed;
         }
         if (result == LinkResult::kOk && !squeezed.bank1.empty() && options.bank1_test == 0) {
@@ -438,40 +468,37 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
             errors.insert(errors.end(), tried.begin(), tried.end());
             return true;
         }
-        if (result == LinkResult::kNoRoom && overlaid) {
-            Compiled built;
-            std::vector<Diagnostic> overlaid_tried;
-            Squeezed with;
-            LinkResult r = CompileOverlaid(source, tighter, plan, built, overlaid_tried, with);
-            if (r == LinkResult::kOk) {
-                out = std::move(built);
-                if (!with.bank1.empty() && options.bank1_test == 0) {
-                    ChooseBank1OrSqueeze(source, tighter, usual, with, out, overlaid_tried, &plan);
-                } else if (tighter.squeeze != options.squeeze) {
-                    out.warnings.push_back(SqueezeNote(source, usual, with));
-                }
-                out.warnings.push_back(OverlayNote(source, out));
-                out.warnings.insert(out.warnings.end(), marks.begin(), marks.end());
-                errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
-                return true;
-            }
-            if (r == LinkResult::kError) {
-                errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
-                return false;
-            }
+        if (result == LinkResult::kNoRoom && overlaid && first) {
+            r = CompileOverlaid(source, tighter, plan, built, overlaid_tried, with);
             overlaid = plan.groups.size() >= 2 && !with.overlay_none;
+        }
+        if (result != LinkResult::kOk && r == LinkResult::kOk) {
+            out = std::move(built);
+            if (!with.bank1.empty() && options.bank1_test == 0) {
+                ChooseBank1OrSqueeze(source, tighter, usual, with, out, overlaid_tried, &plan);
+            } else if (!first) {
+                out.warnings.push_back(SqueezeNote(source, usual, with));
+            }
+            out.warnings.push_back(OverlayNote(source, out));
+            out.warnings.insert(out.warnings.end(), marks.begin(), marks.end());
+            errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
+            return true;
+        }
+        if (r == LinkResult::kError) {
+            errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
+            return false;
         }
         bool again = result == LinkResult::kNoRoom && tighter.squeeze < kMaxSqueeze;
         if (!again) {
             errors.insert(errors.end(), tried.begin(), tried.end());
-            if (result == LinkResult::kNoRoom && tighter.squeeze != options.squeeze) {
+            if (result == LinkResult::kNoRoom && !first) {
                 AddError(errors, Loc(),
                          "the program does not fit even with the tightest size budget (squeeze " +
                              std::to_string(kMaxSqueeze) +
                              ": no copy or unrolled loop that adds bytes, multiplies by shift "
                              "and add)");
             }
-            if (result == LinkResult::kOk && tighter.squeeze != options.squeeze) {
+            if (result == LinkResult::kOk && !first) {
                 out.warnings.push_back(SqueezeNote(source, usual, squeezed));
             }
             if (result == LinkResult::kOk) {
