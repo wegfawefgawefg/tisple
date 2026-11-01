@@ -18,7 +18,16 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     std::int32_t empty = c.Label("begin.empty");
     c.Place(at.begin);
     c.Op(Mn::CLD);
-    c.Mem(Mn::STX, r.Var(kRvMode));
+    // X: bit 0 aux memory, bit 1 drive 2. Where the head is, an address field says first (each
+    // drive has its own: a sector's time at most)
+    c.Op(Mn::TXA);
+    c.Imm(Mn::AND, 1);
+    c.Mem(Mn::STA, r.Var(kRvMode));
+    c.Op(Mn::TXA);
+    c.Imm(Mn::AND, 2);
+    c.Mem(Mn::STA, r.Drive());
+    c.Imm(Mn::LDA, 0xFF);
+    c.Mem(Mn::STA, r.Var(kRvHead));
     c.Mem(Mn::LDA, 0xFC);
     c.Mem(Mn::STA, r.Var(kRvDstLo));
     c.Mem(Mn::LDA, 0xFD);
@@ -32,7 +41,12 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     c.Mem(Mn::STA, r.Var(kRvLenHi));
     c.Op(Mn::INY);
     c.IndY(Mn::LDA, 0xFA);
+    c.Mem(Mn::STA, r.Compact()); // a second disk's record: the track plus $80
+    c.Imm(Mn::AND, 0x7F);
     c.Mem(Mn::STA, r.Var(kRvFirst));
+    c.Op(Mn::INY);
+    c.IndY(Mn::LDA, 0xFA); // and its first slot (a boot disk record's first entry: unused)
+    c.Mem(Mn::STA, r.Start());
     // pieces: the high byte, and one more for a part page
     c.Mem(Mn::LDA, r.Var(kRvLenLo));
     c.Imm(Mn::CMP, 1);
@@ -43,14 +57,10 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     c.Mem(Mn::LDA, 0xFA);
     c.Op(Mn::CLC);
     c.Imm(Mn::ADC, 3);
-    for (std::int32_t site : at.entry_reads) {
-        c.MemLabel(Mn::STA, site, 1);
-    }
+    c.MemLabel(Mn::STA, at.entry_read, 1);
     c.Mem(Mn::LDA, 0xFB);
     c.Imm(Mn::ADC, 0);
-    for (std::int32_t site : at.entry_reads) {
-        c.MemLabel(Mn::STA, site, 2);
-    }
+    c.MemLabel(Mn::STA, at.entry_read, 2);
     c.Imm(Mn::LDA, 0);
     c.Mem(Mn::STA, r.Var(kRvEntry));
     c.Mem(Mn::STA, r.Var(kRvGot));
@@ -65,7 +75,8 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     c.Imm(Mn::LDA, 0x60);
     c.Mem(Mn::STA, r.Var(kRvSlot));
     c.Place(has_slot);
-    // a disk ii card's rom: $Cn01 = $20, $Cn03 = $00, $Cn05 = $03
+    // a disk ii card's rom: $Cn01 = $20 and $Cn05 = $03 (the autostart rom's $Cn03 = $00 left
+    // out: two of its three bytes, and room for the second drive)
     c.OpA(Mn::LSR);
     c.OpA(Mn::LSR);
     c.OpA(Mn::LSR);
@@ -79,9 +90,6 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     c.Imm(Mn::CMP, 0x20);
     c.Br(Mn::BNE, no_card);
     c.Place(at.signature[1]);
-    c.Mem(Mn::LDA, 0xC603);
-    c.Br(Mn::BNE, no_card);
-    c.Place(at.signature[2]);
     c.Mem(Mn::LDA, 0xC605);
     c.Imm(Mn::CMP, 0x03);
     c.Br(Mn::BNE, no_card);
@@ -93,8 +101,14 @@ void EmitBegin(Reader& r, const ReaderLabels& at) {
     c.Mem(Mn::LDA, r.Var(kRvSectors));
     c.Br(Mn::BEQ, empty);
     c.Mem(Mn::LDX, r.Var(kRvSlot));
-    c.MemX(Mn::LDA, 0xC089); // motor on, drive 1, read mode
+    c.MemX(Mn::LDA, 0xC089); // motor on, the drive, read mode
+    std::int32_t drive1 = c.Label("begin.drive1");
+    c.Mem(Mn::LDA, r.Drive());
+    c.Br(Mn::BEQ, drive1);
+    c.Op(Mn::INX); // $C08B: drive 2
+    c.Place(drive1);
     c.MemX(Mn::LDA, 0xC08A);
+    c.Mem(Mn::LDX, r.Var(kRvSlot));
     c.MemX(Mn::LDA, 0xC08E);
     c.MemX(Mn::LDA, 0xC08C);
     c.Imm(Mn::LDA, kReaderMore);
@@ -121,8 +135,7 @@ void EmitTrackSetup(Reader& r, const ReaderLabels& at) {
     c.Op(Mn::DEX);
     c.Br(Mn::BPL, clear);
     c.Mem(Mn::LDY, r.Var(kRvEntry));
-    c.Place(at.entry_reads[0]);
-    c.MemY(Mn::LDA, 0x0300); // patched: the record's entries
+    c.Jump(Mn::JSR, at.entry);
     c.Imm(Mn::AND, 0xF0);
     c.Mem(Mn::STA, r.Var(kRvOffset));
     c.OpA(Mn::LSR);
@@ -135,13 +148,11 @@ void EmitTrackSetup(Reader& r, const ReaderLabels& at) {
     c.Place(loop);
     c.Mem(Mn::CPY, r.Var(kRvSectors));
     c.Br(Mn::BEQ, done);
-    c.Place(at.entry_reads[1]);
-    c.MemY(Mn::LDA, 0x0300);
+    c.Jump(Mn::JSR, at.entry);
     c.Imm(Mn::AND, 0xF0);
     c.Mem(Mn::CMP, r.Var(kRvOffset));
     c.Br(Mn::BNE, done);
-    c.Place(at.entry_reads[2]);
-    c.MemY(Mn::LDA, 0x0300);
+    c.Jump(Mn::JSR, at.entry);
     c.Imm(Mn::AND, 0x0F);
     c.Op(Mn::TAX);
     c.Op(Mn::TYA);
@@ -151,6 +162,33 @@ void EmitTrackSetup(Reader& r, const ReaderLabels& at) {
     c.Br(Mn::BNE, loop);
     c.Place(done);
     c.Mem(Mn::STY, r.Var(kRvEntry));
+    c.Op(Mn::RTS);
+
+    // piece Y's entry: the record's byte, or on the second disk worked out from the slot
+    // (start + Y): its track offset the high four bits, its sector the slot's 2n or 2n - 15
+    std::int32_t compute = c.Label("entry.compute");
+    std::int32_t low = c.Label("entry.low");
+    c.Place(at.entry);
+    c.Mem(Mn::BIT, r.Compact());
+    c.Br(Mn::BMI, compute);
+    c.Place(at.entry_read);
+    c.MemY(Mn::LDA, 0x0300); // patched: the record's entries
+    c.Op(Mn::RTS);
+    c.Place(compute);
+    c.Op(Mn::TYA);
+    c.Op(Mn::CLC);
+    c.Mem(Mn::ADC, r.Start());
+    c.Op(Mn::PHA);
+    c.Imm(Mn::AND, 0x0F);
+    c.OpA(Mn::ASL);
+    c.Imm(Mn::CMP, 0x10);
+    c.Br(Mn::BCC, low);
+    c.Imm(Mn::SBC, 0x0F);
+    c.Place(low);
+    c.Mem(Mn::STA, r.Var(kRvTemp));
+    c.Op(Mn::PLA);
+    c.Imm(Mn::AND, 0xF0);
+    c.Mem(Mn::ORA, r.Var(kRvTemp));
     c.Op(Mn::RTS);
 }
 
@@ -428,8 +466,9 @@ bool BuildDiskReader(std::uint16_t origin, std::vector<std::uint8_t>& out, std::
     at.place = c.Label("place");
     at.tables = c.Label("tables");
     at.track_setup = c.Label("track_setup");
-    for (int i = 0; i < 3; i++) {
-        at.entry_reads[i] = c.Label("entry_read");
+    at.entry = c.Label("entry");
+    at.entry_read = c.Label("entry_read");
+    for (int i = 0; i < 2; i++) {
         at.signature[i] = c.Label("signature");
     }
     // the routines with latch reads first, since begin patches them

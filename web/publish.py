@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Puts a disk on the phone player: the next reload on the phone plays it.
 
-    web/publish.py NAME DISK CONFIG [--home ~/.local/share/tisple/phone]
+    web/publish.py NAME DISK CONFIG [--disk2 DISK2] [--home ~/.local/share/tisple/phone]
 
 CONFIG is the game's player config, kept with the game (docs/phone.md), e.g.
     {"title": "Catwiz", "mockingboard": 4,
      "pad": [{"size": "big", "keys": [{"label": "END TURN", "key": "E", "look": "white"}]}],
      "taps": [{"x": 240, "y": 126, "w": 40, "h": 17, "key": "E"}]}
 A key is a character, a number, or RETURN ESC SPACE LEFT RIGHT UP DOWN TAB DELETE.
-The game becomes the default one the player opens.
+The game becomes the default one the player opens. --disk2: a program with tables on a
+second disk (tisple build writes it beside the first) plays with it in drive 2.
 """
 
 import argparse
@@ -24,6 +25,7 @@ def main():
     parser.add_argument("name")
     parser.add_argument("disk")
     parser.add_argument("config")
+    parser.add_argument("--disk2")
     parser.add_argument("--home", default=os.path.expanduser("~/.local/share/tisple/phone"))
     args = parser.parse_args()
 
@@ -38,9 +40,14 @@ def main():
     folder = os.path.join(args.home, "games", args.name)
     os.makedirs(folder, exist_ok=True)
     shutil.copyfile(args.disk, os.path.join(folder, game["disk"]))
+    if args.disk2:
+        with open(args.disk2, "rb") as f:
+            game["disk2"] = "disk2-" + hashlib.sha1(f.read()).hexdigest()[:8] + ".dsk"
+        shutil.copyfile(args.disk2, os.path.join(folder, game["disk2"]))
     # the disks the game.json no longer names go
     for old in os.listdir(folder):
-        if old.startswith("disk-") and old != game["disk"]:
+        if old.startswith("disk") and old.endswith(".dsk") and old not in (game["disk"],
+                                                                          game.get("disk2")):
             os.remove(os.path.join(folder, old))
     with open(os.path.join(folder, "game.json"), "w") as f:
         json.dump(game, f, indent=1)
@@ -48,6 +55,8 @@ def main():
     keep = os.path.join(args.home, "disks")
     os.makedirs(keep, exist_ok=True)
     shutil.copyfile(args.disk, os.path.join(keep, digest + ".dsk"))
+    if args.disk2:
+        shutil.copyfile(args.disk2, os.path.join(keep, digest + "-2.dsk"))
 
     index_path = os.path.join(args.home, "games", "index.json")
     index = {"games": []}

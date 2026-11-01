@@ -71,7 +71,8 @@ bool NoiseBit(Disk2State& card) {
 void ReadOneCell(Disk2State& card, DiskDrive& d, const DiskTrack* t) {
     bool flux = t != nullptr && ReadCell(*t, d.bit_pos);
     d.head_window = static_cast<uint8_t>(((d.head_window << 1) | (flux ? 1 : 0)) & 0x0F);
-    bool bit = d.head_window != 0 ? ((d.head_window >> 1) & 1) != 0 : NoiseBit(card);
+    // no flux: the read amplifier's noise; no drive at all: nothing, so no byte ever comes
+    bool bit = d.head_window != 0 ? ((d.head_window >> 1) & 1) != 0 : !d.missing && NoiseBit(card);
     card.shift = static_cast<uint8_t>((card.shift << 1) | (bit ? 1 : 0));
     if (card.latch_hold > 0) {
         card.latch_hold = static_cast<int8_t>(card.latch_hold - 4);

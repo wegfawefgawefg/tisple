@@ -75,10 +75,19 @@ def add_game(out, name, disk, config, tisple, frames):
     folder = os.path.join(out, "games", name)
     os.makedirs(folder)
     shutil.copyfile(disk, os.path.join(folder, game["disk"]))
+    # a second disk beside it, as tisple build names it (game.dsk, game2.dsk): in drive 2
+    stem, ext = os.path.splitext(disk)
+    disk2 = stem + "2" + ext
+    if os.path.exists(disk2):
+        with open(disk2, "rb") as f:
+            game["disk2"] = "disk2-" + hashlib.sha1(f.read()).hexdigest()[:8] + ".dsk"
+        shutil.copyfile(disk2, os.path.join(folder, game["disk2"]))
     with open(os.path.join(folder, "game.json"), "w") as f:
         json.dump(game, f, indent=1)
     shot = os.path.join(folder, "shot.png")
     cmd = [tisple, "machine", "--disk", disk, "--frames", str(frames), "--screenshot", shot]
+    if os.path.exists(disk2):
+        cmd += ["--disk2", disk2]
     if game.get("mockingboard"):
         cmd += ["--mockingboard", str(game["mockingboard"])]
     run(cmd)

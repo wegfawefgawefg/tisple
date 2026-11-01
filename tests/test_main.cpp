@@ -50,12 +50,16 @@ int main() {
     }
 
     // TISPLE_TEST_GROUP=emu runs only the cpu cores' tests (SingleStepTests, Dormann's);
-    // =fuzz only the fuzzer (TISPLE_FUZZ, TISPLE_FUZZ_SEED: a burst); =cmos the 65C02 target's
+    // =fuzz only the fuzzer (TISPLE_FUZZ, TISPLE_FUZZ_SEED: a burst); =cmos the 65C02 target's;
+    // =disk the disks' (images, booting, the reader, both drives)
     const char* group = std::getenv("TISPLE_TEST_GROUP");
     bool one = group && (std::strcmp(group, "emu") == 0 || std::strcmp(group, "fuzz") == 0 ||
-                         std::strcmp(group, "cmos") == 0);
+                         std::strcmp(group, "cmos") == 0 || std::strcmp(group, "disk") == 0);
     if (one) {
-        if (std::strcmp(group, "emu") == 0) {
+        if (std::strcmp(group, "disk") == 0) {
+            tisple_tests::RunDiskTests(results);
+            tisple_tests::RunDiskReadTests(results);
+        } else if (std::strcmp(group, "emu") == 0) {
             tisple_tests::RunEmuTests(results);
         } else if (std::strcmp(group, "cmos") == 0) {
             tisple_tests::RunBackendCmosTests(results);

@@ -7,6 +7,8 @@
 ;   (disk.read dst (addr_of (at MAP 0)) disk.MAIN)        or to main memory
 ;   (disk.read_with dst table disk.AUX step)              step, a (fn () void), after each
 ;                                                          sector but the last
+;   (const LEVELS (array u8 9000) (make ...) :on disk2)   ; on the second disk: from drive 2,
+;   (disk.disk2_in 1)                                      or drive 1 once it is swapped in
 ; each gives disk.DONE (0) when every byte is in, or an error: disk.NO_CARD, NO_DISK,
 ; BAD_SECTOR, BAD_TRACK. Exactly the table's bytes are written. 8.9 KB a second; step has
 ; about 8,700 cycles a sector before the read slows (docs/disks.md, Disk tables). Interrupts
@@ -35,14 +37,25 @@
 (const BAD_SECTOR u8 4) ; a wanted sector did not read in four turns
 (const BAD_TRACK u8 5)  ; the head did not reach the track in five seeks
 
+; where the second disk is: drive 2 (2 here), or drive 1 (0 here) on a machine with one drive,
+; once the program has asked for it to be put there (disk2_in). A table :on disk2 is read from
+; that drive, one :on disk from drive 1
+(let disk2_bit u8 2)
+
+(fn disk2_in ((drive u8)) void
+    (set disk2_bit (if (= drive 2)
+        2
+        0)))
+
 ; motor on and the table's record read; MORE, or DONE for nothing to read, or NO_CARD (none
-; without the reader: its first byte is the JMP to BEGIN's code)
+; without the reader: its first byte is the JMP to BEGIN's code). A table :on disk2 has $80 in
+; its record's third byte (a track is 34 at most): bit 1 of X asks the reader for drive 2
 (fn start ((dst (ptr u8)) (table (ptr u8)) (bank u8)) u8
     (if (!= (load (as (ptr u8) BEGIN)) 0x4C)
         (return NO_CARD))
     (set auxmem.from table)
     (set auxmem.to dst)
-    (jsr BEGIN (x bank)))
+    (jsr BEGIN (x (| bank (& (>> (load (+ table 2)) 6) disk2_bit)))))
 
 (fn read ((dst (ptr u8)) (table (ptr u8)) (bank u8)) u8
     (let status u8 (start dst table bank))

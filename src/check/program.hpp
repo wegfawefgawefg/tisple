@@ -123,6 +123,7 @@ struct Placement {
     bool reserve = false;     // :reserve: memory the program reaches by address; not a variable
     bool on_disk = false;     // :on disk: the bytes live on the boot disk; the var is their record
     std::uint8_t interleave = 0; // :interleave n with :on disk: physical sectors apart (0: 2)
+    std::uint8_t disk = 0;       // with on_disk: 1 the boot disk (:on disk), 2 :on disk2
 };
 
 // an address the link knows, inside a var's initial bytes (Var::init holds zeros there): a
@@ -284,6 +285,7 @@ struct DiskTable {
     std::int32_t var = -1;
     std::vector<std::uint8_t> bytes;
     int interleave = 2;
+    int disk = 1; // 1 the boot disk, 2 the second disk (:on disk2)
     // where each 256-byte piece is, in order: the track and the physical sector
     std::vector<std::uint8_t> tracks;
     std::vector<std::uint8_t> sectors;

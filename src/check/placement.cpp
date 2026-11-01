@@ -48,10 +48,13 @@ void ReadStrings(Checker& ck, Var& var, const Node& key, const Node* value) {
     var.placement.strings_aux = true;
 }
 
-// :on names the boot disk: the table's bytes live there, not in memory (docs/disks.md)
+// :on names the disk the table's bytes live on, not in memory (docs/disks.md): disk, the boot
+// disk, or disk2, the second disk (in drive 2, or swapped into drive 1)
 void ReadOn(Checker& ck, Var& var, const Node& key, const Node* value) {
-    if (!value || value->kind != NodeKind::Symbol || value->text != "disk") {
-        Err(ck, value ? *value : key, ":on takes disk; write :on disk");
+    bool known = value && value->kind == NodeKind::Symbol &&
+                 (value->text == "disk" || value->text == "disk2");
+    if (!known) {
+        Err(ck, value ? *value : key, ":on takes disk or disk2; write :on disk");
         return;
     }
     if (var.placement.on_disk) {
@@ -59,6 +62,7 @@ void ReadOn(Checker& ck, Var& var, const Node& key, const Node* value) {
         return;
     }
     var.placement.on_disk = true;
+    var.placement.disk = value->text == "disk2" ? 2 : 1;
 }
 
 void ReadInterleave(Checker& ck, Var& var, const Node& key, const Node* value) {

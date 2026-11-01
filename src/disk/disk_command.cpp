@@ -269,8 +269,12 @@ bool WriteBootDisk(const std::string& path, const std::vector<MemorySegment>& se
                 path.c_str(), bytes, pieces.c_str(), entry, BootTracksText(info).c_str(),
                 DosFreeSectors(*disk));
     if (info.table_track != 0) {
-        std::printf("%s: %zu tables :on disk in tracks %d-%d\n", path.c_str(),
-                    extras.tables->size(), info.table_track, kBootLastTrack);
+        size_t count = 0;
+        for (const DiskTable& table : *extras.tables) {
+            count += table.disk == 2 ? 0 : 1;
+        }
+        std::printf("%s: %zu tables :on disk in tracks %d-%d\n", path.c_str(), count,
+                    info.table_track, kBootLastTrack);
     }
     return true;
 }

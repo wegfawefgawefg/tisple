@@ -52,14 +52,20 @@ void StartAudio(Player& p) {
 
 extern "C" {
 
-// a fresh machine with the disk in drive 1 and a Mockingboard in slot (0: none), booting
-EMSCRIPTEN_KEEPALIVE int tp_boot(const uint8_t* disk, int size, int mockingboard_slot) {
+// a fresh machine with the disk in drive 1, the second (disk2, size2 bytes; 0 for none) in
+// drive 2, and a Mockingboard in slot (0: none), booting
+EMSCRIPTEN_KEEPALIVE int tp_boot(const uint8_t* disk, int size, const uint8_t* disk2, int size2,
+                                 int mockingboard_slot) {
     Player& p = g_player;
     p.a = NewApple2();
     p.a->cpu.cpu_kind = ModelCpu(p.a->model); // the enhanced IIe's 65C02, as tisple machine
     MachineDisks disks;
     disks.images[0].assign(disk, disk + size);
     disks.formats[0] = DiskFormat::kDos;
+    if (size2 > 0) {
+        disks.images[1].assign(disk2, disk2 + size2);
+        disks.formats[1] = DiskFormat::kDos;
+    }
     if (!SetUpDisks(*p.a, disks, p.error)) {
         std::fprintf(stderr, "player: %s\n", p.error.c_str());
         return 0;

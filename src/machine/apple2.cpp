@@ -19,7 +19,7 @@ namespace {
 constexpr uint32_t kSnapshotMagic = 0x32415054; // "TPA2"
 // 4: auxiliary memory; 5: the Mockingboard; 6: the disk ii's event log; 7: the game port's
 // scripted input, the machine's model
-constexpr uint32_t kSnapshotVersion = 7;
+constexpr uint32_t kSnapshotVersion = 8; // 8: DiskDrive::missing
 
 struct SnapshotHeader {
     uint32_t magic = kSnapshotMagic;

@@ -127,6 +127,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     }
 
     auto began = std::chrono::steady_clock::now();
+    size_t swapped = 0;
     for (;;) {
         uint64_t now = Cycles(a);
         // take every screenshot due now
@@ -145,6 +146,11 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         // once the program stops, only pending screenshots keep the clock going
         if (a.stopped && next == end) {
             break;
+        }
+        std::string swap_error;
+        if (!SwapDisks(a, args.disks, swapped, swap_error)) {
+            std::fprintf(stderr, "tisple: %s\n", swap_error.c_str());
+            return 1;
         }
         uint64_t chunk = next - now;
         chunk = chunk > kCyclesPerFrame ? kCyclesPerFrame : chunk;
@@ -368,7 +374,7 @@ int RunMachineCommand(int argc, char** argv, MachineWindowFn window) {
 }
 
 int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int argc, char** argv,
-                     MachineWindowFn window, Cpu target) {
+                     MachineWindowFn window, Cpu target, const std::vector<uint8_t>& image2) {
     MachineArgs args;
     if (!ParseMachineArgs(argc, argv, false, args)) {
         PrintMachineUsage();
@@ -377,6 +383,10 @@ int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int a
     args.needs_65c02 = target == Cpu::k65c02;
     args.disks.images[0] = image;
     args.disks.formats[0] = format;
+    if (!image2.empty() && args.disks.paths[1].empty() && args.disks.drives == 2) {
+        args.disks.images[1] = image2;
+        args.disks.formats[1] = format;
+    }
     return RunWithArgs(nullptr, {}, args, window);
 }
 
