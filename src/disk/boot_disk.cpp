@@ -5,6 +5,8 @@
 #include "disk/boot_loader.hpp"
 #include "disk/disk_reader.hpp"
 #include "disk/disk_tables.hpp"
+#include "disk/disk_writer.hpp"
+#include "disk/disk_tables.hpp"
 #include "disk/dos33.hpp"
 
 #include <algorithm>
@@ -146,6 +148,31 @@ bool PutDiskTables(const BootExtras& extras, DiskSectors& disk, BootDiskInfo& in
     return true;
 }
 
+// lib/save's writer, built for this disk: it may write from the lowest table's track up, and
+// finds the boot slot in the reader. Without tables it is left out (its writes give NO_CARD)
+bool AddWriter(const BootExtras& extras, std::vector<MemorySegment>& program, std::string& error) {
+    int floor = extras.tables != nullptr ? DiskTablesFirstTrack(*extras.tables) : 0;
+    if (extras.writer == 0 || floor == 0) {
+        return true;
+    }
+    if (extras.reader == 0) {
+        error = "lib/save's writer needs lib/disk's reader on the disk (import disk)";
+        return false;
+    }
+    MemorySegment writer;
+    writer.bank = MemoryBank::kMain;
+    writer.address = extras.writer;
+    if (!BuildDiskWriter(extras.writer, floor, extras.reader, writer.bytes, error)) {
+        return false;
+    }
+    if (extras.writer_room < static_cast<uint32_t>(kWriterBytes)) {
+        error = "lib/save's save.writer must keep " + std::to_string(kWriterBytes) + " bytes";
+        return false;
+    }
+    program.push_back(writer);
+    return true;
+}
+
 int NextTrack(int track) {
     track++;
     return track == kBootCatalogTrack ? track + 1 : track;
@@ -178,6 +205,9 @@ bool MakeBootDisk(const std::vector<MemorySegment>& segments_in, uint16_t entry,
             return false;
         }
         program.push_back(reader);
+    }
+    if (!AddWriter(extras, program, error)) {
+        return false;
     }
     for (size_t i = 0; i < program.size(); i++) {
         if (!CheckSegment(program[i], error)) {

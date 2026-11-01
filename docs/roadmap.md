@@ -167,3 +167,119 @@ Open bugs:
   interrupt ticks (found 2026-10-31 adding cutout draws to tests/test_dhgr_runs.cpp; with the
   card's ram in, as a program in the language card runs, it is fine). lib/auxcard's rom path
   (the guard vector at $FFFE, the bank put back after) is the place to look.
+
+## 5. Libraries: what Apple II programs reach for
+
+Survey 2026-11-01 (owner: make Tisple a general Apple II language, not one game's). What
+programmers have always called (the monitor and Applesoft routines, cc65's Apple II drivers,
+the classic toolkits and game code) and what today's scene runs on, against what `lib/` has.
+
+### What Tisple has
+
+Keyboard (`keys`), the speaker as clicks and buzzes (`speaker`), the Mockingboard with a
+tracker-style player and effects (`mockingboard`), the AppleMouse (`mouse`), 40- and 80-column
+text (`text40`, `text80`), lo-res, hi-res plot/flip/line (`hgr`), double hi-res with sprites
+and page flipping (`dhgr`), aux memory and the language card (`auxmem`, `:in aux`, bank 1
+code), packed data (`unpack`), tables read from the boot disk while running (`disk`), frame
+timing on a IIe (`timing`), random numbers, and interrupt handlers in the language.
+
+### What programs reach for, and where we stand
+
+- **The monitor and Applesoft.** Programs of every era call `PREAD` (`$FB1E`, a paddle),
+  `WAIT` (`$FCA8`), `BELL` (`$FF3A`), `HOME`/`COUT`/`VTAB` for text, `PRBYTE`/`PRNTAX` for hex,
+  and Applesoft's `HGR`, `HCOLOR`, `HPLOT`, `DRAW`/`XDRAW` (shape tables) and `PDL`/`PEEK
+  (-16287)` for paddles and buttons. Tisple has text, delays and lines; it lacks paddles and
+  buttons, coloured hi-res drawing (HCOLOR), shape tables, number printing and a bell. The
+  ROM listings are on 6502disassembly.com.
+- **cc65's Apple II target.** Its drivers are what C programmers get on day one: a joystick
+  driver (two analog sticks, both axes read in one timed loop), the AppleMouse, Super Serial
+  and IIgs serial, TGI graphics for lo-res (with `tgi_apple2_mix` for the four text lines)
+  and hi-res, the aux-memory extended memory driver, `conio` with MouseText box drawing
+  (`mt_chline`, `CH_ULCORNER`...), full ProDOS 8 file I/O (`fopen`, `_filetype`, direct
+  block I/O through `dio_open`), `get_ostype` (II, II+, IIe, enhanced IIe, IIc variants, IIgs),
+  `waitvsync`, `videomode` (40/80) and `beep`. Of those Tisple has the mouse, aux memory and
+  text; it lacks the joystick, machine identification, mixed graphics and text, ProDOS files,
+  serial and MouseText helpers.
+- **Machine identification.** Apple's own method (Miscellaneous Technical Notes #7 and #2):
+  the ROM bytes at `$FBB3`, `$FBC0`, `$FBBF` (and `$FB1E`, `$FBDD`, `$FBBE` for the rarer
+  ones), `SEC`/`JSR $FE1F` for a IIgs, and on a IIe a probe of aux memory run from a page RAMRD
+  does not switch (the sparse `$0800`/`$0C00` test finds the 1K 80-column card). Libraries need
+  it themselves: the vertical blank reads differently on the IIc and IIgs, MouseText exists
+  only on enhanced machines, and only some have 128K.
+- **Game code.** Paddle and joystick reads with the two buttons (open- and closed-apple on a
+  IIe) in nearly every action game; two-voice speaker music (Paul Lutus's Electric Duet, still
+  "probably the most popular music format in the Apple II world") and sampled-speaker
+  effects; hi-res sprites pre-shifted seven ways; text drawn on the hi-res screen; high-score
+  tables saved back to the game's own disk with RWTS.
+- **Classic toolkits.** MouseText menus and windows (MouseDesk, the IIc utilities, and today
+  a2stuff's Apple II DeskTop), the 80-column firmware's text windows, Applesoft's shape
+  tables, the Beagle Bros utilities; double lo-res (80 x 48) and double hi-res for the 128K
+  machines, which only the IIc and IIgs firmware supports from BASIC.
+- **Today's scene.** Storage is mostly flash: the Floppy Emu (5.25" images on any II, and
+  SmartPort hard disks up to 32 MB on the IIc, IIgs or a Yellowstone/Liron controller), the
+  CFFA3000 (floppy images and 32 MB ProDOS volumes), the MicroDrive/Turbo (ProDOS volumes over
+  DMA, fast) and BOOTI; all but the Floppy Emu's 5.25" mode are ProDOS block devices, so
+  ProDOS file I/O is how a program reaches them. Memory: RamWorks-style aux banks. Networking:
+  Uthernet II and FujiNet (KansasFest 2025 had a FujiNet talk). KansasFest's talks and HackFest
+  entries are mostly cc65 and assembly, ProDOS tools and demos.
+
+### The gaps, ranked
+
+Want: how much the programs above lean on it. Rough cost in a Tisple library.
+
+| # | Gap | Want | Cost | Round |
+| --- | --- | --- | --- | --- |
+| 1 | Joystick and paddles: both axes in one timed read, the three buttons | every action game | small (a 6502 loop, a lib) | 1 |
+| 2 | Saving to the boot disk: high scores, saves, settings | most games | medium (a sector writer, two copies) | 1 |
+| 3 | Machine detection: model, 128K, 65C02, the cards in the slots | every library that differs by machine | small | 1 |
+| 4 | Numbers as text: `u8`/`u16`/`i16` in decimal and hex on the text screens | every program with a score or a debug line | small | not yet |
+| 5 | Text on the graphics screens (a hi-res font, HRCG-style) | most hi-res games | small to medium | not yet |
+| 6 | ProDOS 8 files and block devices (the CFFA3000, MicroDrive, Floppy Emu SmartPort, BOOTI), 800K and hard disk images | today's real machines; tools | large | approved, later |
+| 7 | Colour hi-res drawing: HCOLOR plots and lines, fills, shape tables, pre-shifted sprites | most hi-res games | medium | not yet |
+| 8 | Speaker music in two voices (Electric Duet style) and a speaker effects kit | most games without a Mockingboard | medium | not yet |
+| 9 | Mixed graphics and text, double lo-res, MouseText menus and boxes | menus, status lines, 128K games | small | 1 |
+| 10 | The 65C02 target (enhanced IIe, IIc) | speed and size on the owner's machines | large (backend) | approved, later |
+| 11 | Frame timing on the IIc and IIgs (their vertical blank reads differ) | anything synced to the screen | small, needs 3 | not yet |
+| 12 | A clock (ProDOS's, the No-Slot Clock, ThunderClock) | tools, saves with dates | small | not yet |
+| 13 | Serial and printer (Super Serial Card, the IIc ports) | tools, ADTPro-style transfers | medium | approved, later |
+| 14 | RAM expansion (RamWorks banks, slot RAM cards) | big programs, demos | medium | approved, later |
+| 15 | Mockingboard speech (SC-01, SSI-263) | a few games | medium (the emulator first) | approved, later |
+| 16 | Networking (Uthernet II, FujiNet) | a growing niche | large | not yet |
+
+Two rank above parts of round 1 and were not swapped in: numbers as text (4) and hi-res text
+(5) are wanted by more programs than double lo-res and MouseText (9), and both are cheap.
+
+Sources: [cc65 apple2enh target](https://cc65.github.io/doc/apple2enh.html),
+[cc65 apple2.h](https://github.com/cc65/cc65/blob/master/include/apple2.h),
+[cc65 wiki, Apple II joystick](https://github.com/cc65/wiki/wiki/Apple-II-12.-Joystick),
+[Apple II Misc. Technical Note #7, family identification](https://prodos8.com/docs/technote/misc/07/),
+[Misc. Technical Note #2, identification routines](https://prodos8.com/docs/technote/misc/02/),
+[ProDOS 8 Technical Reference, MLI calls](https://prodos8.com/docs/techref/calls-to-the-mli/),
+[Apple II ROM disassemblies](https://6502disassembly.com/a2-rom/),
+[Electric Duet](https://arachnoid.com/electric_duet/) and
+[Making the Apple II sing](https://www.xtof.info/blog/?p=807),
+[MouseText](https://en.wikipedia.org/wiki/MouseText),
+[Apple II graphics](https://en.wikipedia.org/wiki/Apple_II_graphics),
+[Apple II DeskTop](https://github.com/a2stuff/a2d),
+[Floppy Emu](https://www.bigmessowires.com/floppy-emu/),
+[Floppy Emu vs CFFA3000/BOOTI](https://www.applefritter.com/node/32169),
+[KansasFest 2025 videos](https://a2central.com/2025/07/kansasfest-2025-video-playlist/),
+[FujiNet](https://fujinet.online/).
+
+### Round 1 (2026-11-01)
+
+Built: 1, 2, 3 and 9.
+
+- 1: `lib/joystick` ([`hardware.md`](hardware.md)): both axes from one trigger of the timers,
+  PREAD's single paddle, the three buttons; the emulator's `--joystick`, a game controller in
+  the window, stick and button keys on the phone pad.
+- 2: `lib/save` ([`disks.md`](disks.md), Saves): our own sector writer, two copies, tested
+  through 93 power cuts; `--write-back` for `tisple run --disk`; the phone player keeps saves.
+- 3: `lib/machine` ([`hardware.md`](hardware.md)): model (IIgs included), 64K/128K, 65C02,
+  each slot's card; the emulator's `--model` and `--64k`.
+- 9: `lib/dlores`, `lores.mixed`, `hgr.mixed`, `text40.window`/`text80.window`,
+  `lib/mousetext` ([`hardware.md`](hardware.md)).
+
+Next by the ranking: numbers as text (4) and text on the graphics screens (5), both small;
+then ProDOS files (6) and the 65C02 target (10), already approved. Frame timing on the IIc and
+IIgs (11) now has lib/machine to choose by.

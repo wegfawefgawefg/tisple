@@ -126,6 +126,30 @@ From a review of Catwiz's build (2026-11-01):
     NMOS is built). Disks, bank switching and aux memory are checked only in Tisple's own
     emulator, never on real hardware.
 
+From the round 1 hardware libraries (2026-11-01, docs/hardware.md):
+
+26. Miscompile: a pure function that gives an address as a number is worked out while
+    compiling with the interpreter's address, not the link's. With `(let code (array u8 4)
+    (make ...))`, `(fn entry ((offset u8)) u16 (as u16 (addr_of (at code offset))))` and
+    `(jsr (entry 0))` in main, -O1 compiles `JSR $0C00` (the opt-bisect names "call worked out",
+    the compile-time eval pass); -O0, or the `as u16` written at the `jsr` itself, gives the
+    let's real address. lib/joystick writes it at the `jsr`. Left to the compiler's owners
+    (src/opt), outside this round.
+27. Twice now a library could only be machine code in a `let` or `const` of bytes, run where it
+    lies (lib/joystick: cycle-counted paddle loops) or copied somewhere RAMRD and the language
+    card cannot switch (lib/machine: page 1). Both are hex with comments, assembled outside
+    the repository. Hand assembly is error-prone; a `tables.code` macro that assembles a few
+    lines of 6502 while compiling (labels, the opcodes, no expressions beyond `<` `>` and
+    `+`) would let libraries keep the source. Not a language feature: a macro library.
+28. A function with a `jsr` never goes to the language card's bank 1 (card_bank.cpp bars any
+    absolute `JSR`), which is right for ROM and slot calls and safe for page-1 code, but means
+    lib/machine's and lib/joystick's callers run their `jsr` from bank 2 or main memory. Fine
+    so far; worth knowing when bank 1 fills.
+29. examples/ holds keys.tsp, so its programs can't import lib/keys (12); the same bit
+    examples/joystick.tsp (renamed stick_paint.tsp): an example named after a library imports
+    itself. A rule (examples are never named after a library) or the libraries first in the
+    import order would end it.
+
 ## Fixed
 
 1. `(store p 0)`: the literal gets no type, yet `(as u8 0)` is rejected as

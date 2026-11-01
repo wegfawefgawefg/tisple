@@ -70,6 +70,10 @@ struct BootExtras {
     uint32_t reader_room = 0;
     uint16_t work = 0; // and the room for its bounce page and tables, just below it
     uint32_t work_room = 0;
+    // lib/save's writer (disk_writer.hpp), built for this disk; 0 without. It is only put on
+    // a disk that has tables (save areas among them) and lib/disk's reader
+    uint16_t writer = 0;
+    uint32_t writer_room = 0;
 };
 
 // one stretch of main memory from origin: the program's entry

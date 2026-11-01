@@ -123,7 +123,7 @@ Every hardware address under its name from Apple's manuals (`KBD`, `KBDSTRB`,
 `KEY_RETURN`, `KEY_ESC`, `KEY_SPACE`, `KEY_DELETE`). Write `(import apple2 a2)`
 and `a2.SPKR`; never type an I/O address or key code by hand.
 
-### lib/text80, lib/text40, lib/auxmem, lib/dhgr, lib/unpack and lib/disk
+### lib/text80, lib/text40, lib/auxmem, lib/dhgr, lib/unpack, lib/disk and the rest
 
 - `lib/text80`: 80-column text on the extended 80-column card. `(text80.on)`,
   `(text80.print "Hello")` (a macro: a `put` call a character),
@@ -155,6 +155,11 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 - `lib/disk`: tables placed `:on disk` read into main or aux memory while the
   program runs, with a step function called between sectors
   ([`disks.md`](disks.md), Disk tables). Its reader keeps `$1400`-`$1BFF`.
+- `lib/save`: saves written back to the boot disk, two copies so a power cut never loses
+  the last one ([`disks.md`](disks.md), Saves). Its writer keeps `$0E00`-`$13FF`.
+- `lib/joystick`, `lib/machine`, `lib/dlores`, `lib/mousetext`, and the mixed modes of
+  `lib/lores` and `lib/hgr` with `text40.window`/`text80.window`: the joystick and paddles,
+  the model, memory, CPU and cards, double lo-res and MouseText ([`hardware.md`](hardware.md)).
 
 ## Keywords
 

@@ -20,6 +20,7 @@ SOURCES=(
     src/machine/disk2_rom.cpp
     src/machine/drive_audio.cpp
     src/machine/font.cpp
+    src/machine/input.cpp
     src/machine/memory_map.cpp
     src/machine/mockingboard.cpp
     src/machine/mockingboard_audio.cpp

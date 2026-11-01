@@ -1,6 +1,8 @@
 ; hi-res graphics, page 1: 280 x 192 pixels, 7 to a byte (bit 0 leftmost), rows interleaved
 ; (import hgr) then (hgr.show), (hgr.clear), (hgr.plot x y), (hgr.flip x y),
 ; (hgr.line x0 y0 x1 y1). Pixels are bits, so a lone one shows in colour on a colour screen.
+; (hgr.mixed): 280 x 160 over four lines of text, text rows 20-23 of text page 1 (lib/text40
+; with (text40.window 20) writes them)
 
 (import apple2 a2)
 (import tables)
@@ -31,6 +33,13 @@
 (fn show () void
     (io_read u8 a2.TXTCLR)
     (io_read u8 a2.MIXCLR)
+    (io_read u8 a2.LOWSCR)
+    (io_read u8 a2.HIRES))
+
+; graphics over four lines of text: rows 0-159, then text rows 20-23
+(fn mixed () void
+    (io_read u8 a2.TXTCLR)
+    (io_read u8 a2.MIXSET)
     (io_read u8 a2.LOWSCR)
     (io_read u8 a2.HIRES))
 

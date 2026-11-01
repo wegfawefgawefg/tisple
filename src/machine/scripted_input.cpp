@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace tisple {
 
@@ -119,6 +120,63 @@ bool ScheduleMouseInput(Apple2& a, const char* spec, std::string& error) {
         }
     }
     return true;
+}
+
+bool ScheduleJoystickInput(Apple2& a, const char* spec, std::string& error) {
+    std::string text = spec;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t semi = text.find(';', pos);
+        std::string entry =
+            text.substr(pos, semi == std::string::npos ? std::string::npos : semi - pos);
+        pos = semi == std::string::npos ? text.size() : semi + 1;
+        uint64_t cycle = 0;
+        int x = 0;
+        int y = 0;
+        int buttons = 0;
+        int used = 0;
+        size_t colon = entry.find(':');
+        bool ok = colon != std::string::npos && ParseCycle(entry.substr(0, colon), cycle);
+        std::string rest = ok ? entry.substr(colon + 1) : "";
+        ok = ok && std::sscanf(rest.c_str(), "%d,%d,%d%n", &x, &y, &buttons, &used) == 3 &&
+             static_cast<size_t>(used) == rest.size() && x >= 0 && x <= 255 && y >= 0 &&
+             y <= 255 && buttons >= 0 && buttons <= 7;
+        if (!ok) {
+            error = "bad joystick input '" + entry + "', want cycle:x,y,buttons (0-255, 0-7)";
+            return false;
+        }
+        ScheduledJoystick input;
+        input.cycle = cycle;
+        input.x = static_cast<uint8_t>(x);
+        input.y = static_cast<uint8_t>(y);
+        input.buttons = static_cast<uint8_t>(buttons);
+        if (!ScheduleJoystick(a, input)) {
+            error = "too much scripted joystick input";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ParseModel(const char* name, MachineModel& out) {
+    struct Named {
+        const char* name;
+        MachineModel model;
+    };
+    static const Named kModels[] = {
+        {"iie-enhanced", MachineModel::kIIeEnhanced},
+        {"iie", MachineModel::kIIe},
+        {"iic", MachineModel::kIIc},
+        {"iiplus", MachineModel::kIIPlus},
+        {"iigs", MachineModel::kIIgs},
+    };
+    for (const Named& n : kModels) {
+        if (std::strcmp(name, n.name) == 0) {
+            out = n.model;
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace tisple

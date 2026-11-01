@@ -189,9 +189,11 @@ there. Only the NMOS 6502 is targeted so far. Details in
 | Mockingboard music and effects | `tisple run examples/mockingboard_demo.tsp --mockingboard 4 --rom Apple2e.rom` (its interrupts go through Apple's ROM: your own copy) |
 
 Libraries are in `lib/`: the hardware by its Apple names (`apple2`), 40- and 80-column
-text, lo-res, hi-res and double hi-res, aux memory, packed tables, keyboard, mouse, speaker,
-frame timing, Mockingboard music ([`docs/mockingboard.md`](docs/mockingboard.md)), random
-numbers, and table and unrolling macros. `(import name)` finds them after the program's own
+text, lo-res, hi-res, double lo-res and double hi-res (each with the mixed mode's four text
+lines), MouseText, aux memory, packed tables, keyboard, joystick and paddles, mouse, speaker,
+frame timing, Mockingboard music ([`docs/mockingboard.md`](docs/mockingboard.md)), what
+machine and cards a program runs on, saves on the boot disk, random numbers, and table and
+unrolling macros ([`docs/hardware.md`](docs/hardware.md)). `(import name)` finds them after the program's own
 folder.
 
 ## Catwiz
@@ -206,7 +208,8 @@ logs what it needed. Playable in the [web demo](https://wegfawefgawefg.github.io
 
 In [`docs/`](docs/): [`design.md`](docs/design.md) why the language looks like this and
 how the backend works, [`language.md`](docs/language.md) the language,
-[`disks.md`](docs/disks.md) disks and the boot ROM, [`phone.md`](docs/phone.md) the web
+[`disks.md`](docs/disks.md) disks, saves and the boot ROM, [`hardware.md`](docs/hardware.md)
+the joystick, machine detection and the video modes, [`phone.md`](docs/phone.md) the web
 player, [`mockingboard.md`](docs/mockingboard.md) sound, [`dhgr.md`](docs/dhgr.md) double
 hi-res and packed data, [`races.md`](docs/races.md) the compiler races,
 [`benchmarks.md`](docs/benchmarks.md) speed history,
