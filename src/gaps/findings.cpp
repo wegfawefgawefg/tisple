@@ -143,7 +143,7 @@ void FindBranch(const Compiled& compiled, const SiteMap& map, const SiteView& v,
         std::uint64_t compare_cycles = 2;
         std::uint32_t at = static_cast<std::uint32_t>(s.compare_site - compiled.origin);
         if (s.compare_site >= compiled.origin && at < compiled.image.size()) {
-            compare_cycles = OpcodeInfoFor(compiled.image[at]).cycles;
+            compare_cycles = OpcodeInfoFor(compiled.image[at], compiled.cpu).cycles;
         }
         std::uint64_t per = compare_cycles + (never ? 2 : 0);
         Finding f =
@@ -178,7 +178,7 @@ std::uint64_t NoteCycles(const SiteMap& map, const Profiler& p, std::uint16_t ad
 bool IsStrided(const Compiled& compiled, const SiteMap& map, const Profiler& p,
                const FindOptions& options, std::uint32_t a) {
     const SiteStats& s = p.sites[a];
-    Mn mn = OpcodeInfoFor(CompiledByte(compiled, static_cast<std::uint16_t>(a))).mn;
+    Mn mn = OpcodeInfoFor(CompiledByte(compiled, static_cast<std::uint16_t>(a)), compiled.cpu).mn;
     if (!IsStoreMn(mn) || map.at[a].item < 0 || map.at[a].note < 0 || s.count < options.min_count ||
         s.count < 3 || s.last_step == 0 || s.volatile_count > 0) {
         return false;
@@ -216,7 +216,7 @@ void FindStrided(const Compiled& compiled, const SiteMap& map, const Profiler& p
         if (block <= replacement) {
             continue;
         }
-        const OpcodeInfo& info = OpcodeInfoFor(compiled.image[a - lo]);
+        const OpcodeInfo& info = OpcodeInfoFor(compiled.image[a - lo], compiled.cpu);
         SiteView v;
         v.address = static_cast<std::uint16_t>(a);
         v.s = &s;
@@ -318,7 +318,7 @@ std::vector<Finding> FindGaps(const Compiled& compiled, const SiteMap& map, cons
         if (s.count == 0 || map.at[a].item < 0) {
             continue;
         }
-        const OpcodeInfo& info = OpcodeInfoFor(compiled.image[a - lo]);
+        const OpcodeInfo& info = OpcodeInfoFor(compiled.image[a - lo], compiled.cpu);
         SiteView v;
         v.address = static_cast<std::uint16_t>(a);
         v.s = &s;

@@ -26,6 +26,7 @@ struct RawIns {
 };
 
 struct Window {
+    Cpu cpu = Cpu::k6502;      // the chip: its instructions candidates may use, its cycles
     std::uint16_t address = 0; // of the first instruction
     std::vector<SoIns> code;
     std::vector<Cell> cells;
@@ -40,7 +41,7 @@ struct Window {
 // false with a reason when the window cannot be modelled (an instruction or operand the
 // evaluator does not have, i/o, a pointer it writes, an index it moves before use)
 bool MakeWindow(const std::vector<RawIns>& code, const std::vector<RawIns>& after, Window& out,
-                std::string& why);
+                std::string& why, Cpu cpu = Cpu::k6502);
 
 // the instructions that follow code at `item` in its span, up to the first label, branch,
 // jump, call or return (that one included)

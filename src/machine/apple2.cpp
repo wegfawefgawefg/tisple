@@ -27,16 +27,17 @@ struct SnapshotHeader {
     uint64_t size = sizeof(Apple2);
 };
 
-// opcodes that stop a direct-loaded program: BRK and the undocumented ones
-std::array<bool, 256> BuildStopTable() {
+// opcodes that stop a direct-loaded program: BRK and the undocumented ones, by cpu
+std::array<bool, 256> BuildStopTable(Cpu cpu) {
     std::array<bool, 256> table = {};
     for (int op = 0; op < 256; op++) {
-        table[op] = op == 0x00 || !IsDocumentedOpcode(static_cast<uint8_t>(op));
+        table[op] = op == 0x00 || !IsDocumentedOpcode(static_cast<uint8_t>(op), cpu);
     }
     return table;
 }
 
-const std::array<bool, 256> kStopsDirectLoad = BuildStopTable();
+const std::array<bool, 256> kStopsDirectLoad = BuildStopTable(Cpu::k6502);
+const std::array<bool, 256> kStopsDirectLoad65c02 = BuildStopTable(Cpu::k65c02);
 
 void Stop(Apple2& a, MachineStop reason, uint16_t pc, uint8_t opcode) {
     a.stopped = true;
@@ -108,7 +109,7 @@ void PowerOn(Apple2& a) {
     // built in place: the struct is too big for a temporary on the stack
     std::memset(static_cast<void*>(&a), 0, sizeof(Apple2));
     new (&a) Apple2();
-    InitMachine(a.cpu);
+    InitMachine(a.cpu, DefaultCpu());
     InstallBus(a);
     ResetSoftSwitches(a);
     // a cleared text screen, as HOME leaves it
@@ -122,6 +123,34 @@ std::unique_ptr<Apple2> NewApple2() {
     auto a = std::make_unique<Apple2>();
     PowerOn(*a);
     return a;
+}
+
+Cpu ModelCpu(MachineModel model) {
+    switch (model) {
+    case MachineModel::kIIe:
+    case MachineModel::kIIPlus:
+        return Cpu::k6502;
+    default:
+        return Cpu::k65c02;
+    }
+}
+
+bool RomModel(const Apple2& a, MachineModel& model) {
+    if (!a.rom.present) {
+        return false;
+    }
+    uint8_t fbb3 = a.rom.bytes[0xFBB3 - 0xC000];
+    uint8_t fbc0 = a.rom.bytes[0xFBC0 - 0xC000];
+    if (fbb3 != 0x06) {
+        model = MachineModel::kIIPlus;
+    } else if (fbc0 == 0xEA) {
+        model = MachineModel::kIIe;
+    } else if (fbc0 == 0x00) {
+        model = MachineModel::kIIc;
+    } else {
+        model = MachineModel::kIIeEnhanced;
+    }
+    return true;
 }
 
 bool LoadRom(Apple2& a, const uint8_t* bytes, size_t size, std::string& error) {
@@ -221,9 +250,7 @@ void ResetApple2(Apple2& a) {
     a.stopped = false;
     a.stop_reason = MachineStop::kRunning;
     // the chip's own reset sequence: 7 cycles, then the vector at $FFFC
-    m6502_desc_t desc = {};
-    a.cpu.pins = m6502_init(&a.cpu.cpu, &desc);
-    StepInstruction(a.cpu);
+    ResetCpu(a.cpu);
 }
 
 RunOutcome RunApple2(Apple2& a, uint64_t cycles) {
@@ -267,12 +294,14 @@ RunOutcome RunApple2Traced(Apple2& a, uint64_t cycles, MachineTraceFn trace, voi
             }
             opcode = PeekMemory(a, pc);
         }
-        if (a.direct_load && kStopsDirectLoad[opcode]) {
+        const std::array<bool, 256>& stops =
+            m.cpu_kind == Cpu::k65c02 ? kStopsDirectLoad65c02 : kStopsDirectLoad;
+        if (a.direct_load && stops[opcode]) {
             Stop(a, opcode == 0x00 ? MachineStop::kBrk : MachineStop::kIllegalOpcode, pc, opcode);
             break;
         }
         // the chip would hang there for good; the clock and the screen go on
-        if (IsJamOpcode(opcode)) {
+        if (IsJamOpcode(opcode, m.cpu_kind)) {
             Stop(a, MachineStop::kJammed, pc, opcode);
             break;
         }

@@ -74,6 +74,7 @@ struct PendingIns {
 };
 
 struct Profiler {
+    Cpu cpu = Cpu::k6502; // the machine's, noted at each instruction
     std::vector<SiteStats> sites = std::vector<SiteStats>(65536);
     std::vector<BusCycle> bus; // the bus cycles of the pending instruction
     PendingIns pending;

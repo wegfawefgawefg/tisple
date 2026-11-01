@@ -99,9 +99,12 @@ form per command-line flag, paths from the file's folder.
 (taps tools/phone/catwiz.json)
 ```
 
-- `program` is required. `origin` and `disk` go to build, run and check; with
-  a disk, build writes it and run boots it. `mockingboard`, `scale`, `taps` and
-  `rom` go to run only, as the machine flags of the same names.
+- `program` is required. `origin`, `disk` and `cpu` go to build, run and check;
+  with a disk, build writes it and run boots it. `(cpu "65c02")` compiles for the
+  65C02 of the enhanced IIe and the IIc (`--cpu 65c02`; docs/design.md, Target): the
+  program then needs one, and `tisple run` refuses a machine with the 6502. The value
+  is a string, since `65c02` does not read as a number. `mockingboard`, `scale`, `taps`
+  and `rom` go to run only, as the machine flags of the same names.
 - The command finds the nearest `tisple.project` in the current folder or
   above. Flags on the command line come after the file's and win:
   `tisple run --scale 3`, `tisple build --asm > game.asm`.
@@ -885,6 +888,10 @@ there is no inline assembler.
   local whose address is not taken. It must return with `RTS`, the stack as it found it and
   decimal mode off, and leave zero page alone: Tisple keeps variables in all of it. So
   monitor routines that use zero page (`COUT` at `$FDED` among them) need care.
+- Machine code in a `let` of bytes is the program's own: built for the 65C02 nothing
+  checks it, and its 6502 timing loops count the same cycles there but for `JMP ($nnnn)`
+  (6, not 5), shifts and rotates `abs,X` (6 without a page crossing) and decimal adds (a
+  cycle more).
 - The reference interpreter cannot run machine code: a `jsr` stops it with "jsr needs the
   machine", so a function that uses one cannot run at compile time, and the fuzz generator
   never writes one. Test such code in the emulator (`tisple run`).
@@ -1147,6 +1154,8 @@ What the optimiser does with it (src/opt/const_data.cpp, consts_eval.cpp):
 - Either keeps A, X, Y and memory (a variable wait counts in the compiler's
   zero-page scratch) and may change N, V, Z and C. It is an effect like
   `io_read`: never dropped, merged or moved. The interpreter does nothing for it.
+  Its instructions take the same cycles on the 65C02, so a wait is exact on either
+  target (decimal mode off).
 
 This is how a program asks for timing. The optimiser may delete an effect-free
 loop when the loop provably terminates (every `for`; a `while` whose counter moves

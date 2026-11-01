@@ -32,7 +32,8 @@ import toolchains
 from toolchains import BuildError
 
 ALL_COMPILERS = ["cc65", "llvm-mos", "oscar64", "tisple"]
-DEFAULT_OUT = os.path.join(toolchains.HERE, "out", "random")
+DEFAULT_OUT = os.path.join(toolchains.HERE, "out",
+                           "random65c02" if toolchains.race_cpu() == "65c02" else "random")
 MAX_CYCLES = 400000000
 
 
@@ -65,7 +66,7 @@ def measure(compiler, program_dir):
         out["error"] = "build: %s" % str(e)[-2000:]
         return out
     outdir = os.path.join(os.path.abspath(program_dir), compiler)
-    cmd = [toolchains.tisple_binary(), "race"]
+    cmd = [toolchains.tisple_binary(), "race", "--cpu", toolchains.race_cpu()]
     for i, (address, data) in enumerate(build.loads):
         path = os.path.join(outdir, "load%d.bin" % i)
         with open(path, "wb") as f:

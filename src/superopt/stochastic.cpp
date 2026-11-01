@@ -70,7 +70,7 @@ void Score(const Chain& c, const std::vector<int>& slots, int& wrong, int& cycle
     cycles = 0;
     bytes = 0;
     for (const SoIns& ins : code) {
-        cycles += InsCycles(ins);
+        cycles += InsCycles(ins, c.w->cpu);
         bytes += InsBytes(ins);
     }
 }

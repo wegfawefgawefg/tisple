@@ -56,6 +56,9 @@ int ItemSize(const Assembly& as, const AsmItem& item) {
         if (item.mode == Mode::Rel && item.long_branch) {
             return 5;
         }
+        if (item.short_jump) {
+            return 2;
+        }
         return ModeSize(EncodedMode(as, item));
     case ItemKind::Byte:
         return 1;
@@ -139,6 +142,10 @@ std::string OperandText(Mode mode, std::uint32_t v) {
         return " (" + Hex2(v) + ",X)";
     case Mode::IndY:
         return " (" + Hex2(v) + "),Y";
+    case Mode::ZpInd:
+        return " (" + Hex2(v) + ")";
+    case Mode::AbsIndX:
+        return " (" + Hex4(v) + ",X)";
     default:
         return "";
     }
@@ -217,15 +224,90 @@ AsmValue SymValue(std::int32_t sym, std::int32_t offset, Part part) {
 }
 
 Mode EncodedMode(const Assembly& as, const AsmItem& item) {
-    if (item.mode == Mode::Abs && KnownZp(as, item.value) && OpcodeFor(item.mn, Mode::Zp) >= 0) {
+    if (item.mode == Mode::Abs && KnownZp(as, item.value) &&
+        OpcodeFor(item.mn, Mode::Zp, as.cpu) >= 0) {
         return Mode::Zp;
     }
     return item.mode;
 }
 
-std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin) {
-    for (AsmItem& item : as.items) {
+namespace {
+
+// a JMP whose operand the code rewrites: a label just before it is stored to at +1 or +2
+// (backend/overlay.cpp's stubs, backend/dispatch.cpp's jump)
+std::vector<bool> PatchedLabels(const Assembly& as) {
+    std::vector<bool> patched(as.symbols.size(), false);
+    for (const AsmItem& item : as.items) {
+        bool store = item.kind == ItemKind::Ins &&
+                     (item.mn == Mn::STA || item.mn == Mn::STX || item.mn == Mn::STY ||
+                      item.mn == Mn::STZ || item.mn == Mn::INC || item.mn == Mn::DEC);
+        if (store && item.value.sym >= 0 && (item.value.offset == 1 || item.value.offset == 2)) {
+            patched[static_cast<std::size_t>(item.value.sym)] = true;
+        }
+    }
+    return patched;
+}
+
+// by item: a JMP the 65C02 may encode as BRA, to a label of these items with nothing added,
+// not marked far and not rewritten by the code
+std::vector<bool> ShortenableJumps(const Assembly& as) {
+    std::vector<bool> local(as.symbols.size(), false);
+    for (const AsmItem& item : as.items) {
+        if (item.kind == ItemKind::Label) {
+            local[static_cast<std::size_t>(item.value.sym)] = true;
+        }
+    }
+    std::vector<bool> patched = PatchedLabels(as);
+    std::vector<bool> out(as.items.size(), false);
+    bool after_patched = false; // a patched label since the last instruction or byte
+    for (std::size_t i = 0; i < as.items.size(); i++) {
+        const AsmItem& item = as.items[i];
+        if (item.kind == ItemKind::Label) {
+            after_patched = after_patched || patched[static_cast<std::size_t>(item.value.sym)];
+            continue;
+        }
+        if (item.kind == ItemKind::Note) {
+            continue;
+        }
+        out[i] = item.kind == ItemKind::Ins && item.mn == Mn::JMP && item.mode == Mode::Abs &&
+                 !item.far && !after_patched && item.value.sym >= 0 && item.value.offset == 0 &&
+                 item.value.part == Part::Whole && local[static_cast<std::size_t>(item.value.sym)];
+        after_patched = false;
+    }
+    return out;
+}
+
+// a short jump that does not reach its label in reach and in the BRA's next page (in reach
+// only, when keep); true when it had to grow
+bool GrowShortJump(const Assembly& as, AsmItem& item, bool keep) {
+    std::uint32_t target = 0;
+    if (!Resolve(as, item.value, target)) {
+        item.short_jump = false;
+        return true;
+    }
+    std::uint32_t after = item.address + 2u;
+    std::int32_t delta = static_cast<std::int32_t>(target) - static_cast<std::int32_t>(after);
+    if (delta >= -128 && delta <= 127 && (keep || ((after ^ target) & 0xFF00) == 0)) {
+        return false;
+    }
+    item.short_jump = false;
+    return true;
+}
+
+} // namespace
+
+std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_jumps) {
+    std::vector<bool> shortenable;
+    std::vector<bool> keep(as.items.size(), false);
+    if (as.cpu == Cpu::k65c02) {
+        shortenable = ShortenableJumps(as);
+    }
+    for (std::size_t i = 0; i < as.items.size(); i++) {
+        AsmItem& item = as.items[i];
         item.long_branch = item.far;
+        bool was_short = item.short_jump;
+        keep[i] = keep_jumps && was_short;
+        item.short_jump = as.cpu == Cpu::k65c02 && shortenable[i] && (!keep_jumps || was_short);
     }
     std::uint32_t end = origin;
     // grow branches until every one reaches; sizes only grow, so this ends
@@ -241,7 +323,12 @@ std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin) {
         }
         end = pc;
         bool changed = false;
-        for (AsmItem& item : as.items) {
+        for (std::size_t i = 0; i < as.items.size(); i++) {
+            AsmItem& item = as.items[i];
+            if (item.short_jump && GrowShortJump(as, item, keep[i])) {
+                changed = true;
+                continue;
+            }
             if (item.kind != ItemKind::Ins || item.mode != Mode::Rel || item.long_branch) {
                 continue;
             }
@@ -286,6 +373,12 @@ bool EncodeCode(const Assembly& as, std::vector<std::uint8_t>& out, std::string&
             continue;
         }
         Mode mode = EncodedMode(as, item);
+        if (item.short_jump) {
+            std::int32_t delta = static_cast<std::int32_t>(v) - (item.address + 2);
+            out.push_back(static_cast<std::uint8_t>(OpcodeFor(Mn::BRA, Mode::Rel, Cpu::k65c02)));
+            out.push_back(static_cast<std::uint8_t>(delta & 0xFF));
+            continue;
+        }
         if (mode == Mode::Rel && item.long_branch) {
             // inverted branch over a JMP
             out.push_back(static_cast<std::uint8_t>(OpcodeFor(InvertBranch(item.mn), Mode::Rel)));
@@ -295,9 +388,10 @@ bool EncodeCode(const Assembly& as, std::vector<std::uint8_t>& out, std::string&
             out.push_back(static_cast<std::uint8_t>(v >> 8));
             continue;
         }
-        int opcode = OpcodeFor(item.mn, mode);
+        int opcode = OpcodeFor(item.mn, mode, as.cpu);
         if (opcode < 0) {
-            error = std::string("no ") + MnName(item.mn) + " in this addressing mode";
+            error = std::string("no ") + MnName(item.mn) + " in this addressing mode" +
+                    (OpcodeFor(item.mn, mode, Cpu::k65c02) >= 0 ? " on the 6502" : "");
             return false;
         }
         out.push_back(static_cast<std::uint8_t>(opcode));
@@ -341,6 +435,10 @@ std::string ItemText(const Assembly& as, const AsmItem& item) {
     }
     Mode mode = EncodedMode(as, item);
     std::string text = MnName(item.mn);
+    if (item.short_jump) {
+        text = "BRA";
+        mode = Mode::Rel;
+    }
     if (mode == Mode::Rel && item.long_branch) {
         text = std::string(MnName(InvertBranch(item.mn))) + " *+5 / JMP";
         mode = Mode::Abs;
@@ -359,12 +457,15 @@ int ItemCycles(const Assembly& as, const AsmItem& item) {
     if (item.kind != ItemKind::Ins) {
         return 0;
     }
+    if (item.short_jump) {
+        return 3; // BRA in its page, as the JMP
+    }
     Mode mode = EncodedMode(as, item);
-    int opcode = OpcodeFor(item.mn, mode);
+    int opcode = OpcodeFor(item.mn, mode, as.cpu);
     if (opcode < 0) {
         return 0;
     }
-    return OpcodeInfoFor(static_cast<std::uint8_t>(opcode)).cycles;
+    return OpcodeInfoFor(static_cast<std::uint8_t>(opcode), as.cpu).cycles;
 }
 
 } // namespace tisple

@@ -33,7 +33,7 @@ RunResult Run(Machine& m, const RunOptions& options) {
             result.reason = StopReason::kStopAddress;
         } else if (opcode == 0x00) {
             result.reason = StopReason::kBrk;
-        } else if (!IsDocumentedOpcode(opcode)) {
+        } else if (!IsDocumentedOpcode(opcode, m.cpu_kind)) {
             result.reason = StopReason::kIllegalOpcode;
         } else if (m.cycles - start_cycles >= options.max_cycles) {
             result.reason = StopReason::kCycleLimit;

@@ -12,6 +12,8 @@ mkdir -p web/dist web/obj
 SOURCES=(
     web/player.cpp
     src/emu/machine.cpp
+    src/emu/cpu65c02.cpp
+    src/emu/cpu65c02_ops.cpp
     src/emu/chips_impl.cpp
     src/machine/apple2.cpp
     src/machine/ay8910.cpp
@@ -37,6 +39,7 @@ SOURCES=(
     src/disk/dos33.cpp
     src/asm/asm.cpp
     src/asm/opcodes.cpp
+    src/asm/cpu.cpp
     src/emu/disasm.cpp
     src/asm/wait.cpp
     src/disk/loader_read.cpp

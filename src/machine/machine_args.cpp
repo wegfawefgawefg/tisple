@@ -32,6 +32,8 @@ void PrintMachineUsage() {
         "                      4 button 2)\n"
         "  --model M           with no rom, the Apple II it says it is to a program that asks:\n"
         "                      iie-enhanced (default), iie, iic, iiplus, iigs\n"
+        "  --cpu C             6502 or 65c02 (default: the model's, or the rom's: the 65C02 on\n"
+        "                      the enhanced iie, iic and iigs, the 6502 on the iie and ii+)\n"
         "  --64k               no extended 80-column card: a 64 KB iie\n"
         "  --mouse-rom F       the card's real firmware (MouseInterface.rom) instead of ours;\n"
         "                      it needs an Apple rom too (--rom)\n"
@@ -67,6 +69,15 @@ bool ParseScreenshot(const char* text, ScreenshotArg& shot) {
 }
 
 } // namespace
+
+Cpu MachineCpu(const Apple2& a, const MachineArgs& args) {
+    if (args.cpu_given) {
+        return args.cpu;
+    }
+    MachineModel model = args.model;
+    RomModel(a, model);
+    return ModelCpu(model);
+}
 
 bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& args) {
     for (int i = 0; i < argc; i++) {
@@ -114,6 +125,11 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             if (!ParseModel(argv[++i], args.model)) {
                 return false;
             }
+        } else if (std::strcmp(arg, "--cpu") == 0 && has_value) {
+            if (!ParseCpu(argv[++i], args.cpu)) {
+                return false;
+            }
+            args.cpu_given = true;
         } else if (std::strcmp(arg, "--64k") == 0) {
             args.aux_ram = false;
         } else if (std::strcmp(arg, "--mouse-rom") == 0 && has_value) {

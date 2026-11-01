@@ -1,5 +1,15 @@
 // checks the simulator against SingleStepTests/65x02 (data fetched by
-// scripts/fetch_singlestep.sh): final registers, final memory and every bus cycle
+// scripts/fetch_singlestep.sh): final registers, final memory and every bus cycle.
+// - the NMOS core: the 151 documented opcodes of the 6502 set
+// - the 65C02 core: all 256 opcodes of the synertek65c02 set (the 65C02 without Rockwell's bit
+//   instructions) but 35. That set's chip treats $x7, $xF, $CB, $DB and $5C as its own NOPs
+//   ($07 a 2-byte zero-page read, $5C 4 cycles, ...); ours are the documented ones (Bruce
+//   Clark's table: 1 byte 1 cycle, $5C 8 cycles), which Dormann's 65C02 test checks instead.
+//   And ADC # and SBC # in decimal mode: its extra cycle reads a fixed $0056 or $0000, an
+//   artefact of the generating emulator; ours reads the operand again, as every other mode
+//   does in that set. Everything but that one cycle is compared.
+// B is not a flag the chip keeps (only pushes), so P is compared without it: the 65C02 set's
+// SBC files have it set in every state, the others never.
 
 #include "emu/harness.hpp"
 #include "test_emu.hpp"
@@ -102,7 +112,9 @@ bool ReadCases(const char* path, std::vector<StepCase>& cases) {
 }
 
 // first difference between what the simulator did and the expected case, or null
-const char* RunCase(tisple::Machine& m, const StepCase& c, std::vector<tisple::BusCycle>& log) {
+// loose_last: the last bus cycle's address is not compared (decimal ADC # and SBC #)
+const char* RunCase(tisple::Machine& m, const StepCase& c, std::vector<tisple::BusCycle>& log,
+                    bool loose_last) {
     for (const RamEntry& e : c.initial.ram) {
         m.mem[e.addr] = e.value;
     }
@@ -120,14 +132,17 @@ const char* RunCase(tisple::Machine& m, const StepCase& c, std::vector<tisple::B
     for (size_t i = 0; problem == nullptr && i < log.size(); i++) {
         const tisple::BusCycle& a = log[i];
         const tisple::BusCycle& b = c.cycles[i];
-        if (a.addr != b.addr || a.value != b.value || a.is_write != b.is_write) {
+        bool loose = loose_last && i + 1 == log.size();
+        if ((a.addr != b.addr || a.value != b.value || a.is_write != b.is_write) &&
+            !(loose && a.is_write == b.is_write)) {
             problem = "bus cycle";
             std::fprintf(stderr, "  cycle %zu got %04x %02x %d want %04x %02x %d\n", i, a.addr,
                          a.value, a.is_write, b.addr, b.value, b.is_write);
         }
     }
-    if (problem == nullptr && (got.pc != want.pc || got.a != want.a || got.x != want.x ||
-                               got.y != want.y || got.s != want.s || got.p != want.p)) {
+    if (problem == nullptr &&
+        (got.pc != want.pc || got.a != want.a || got.x != want.x || got.y != want.y ||
+         got.s != want.s || (got.p | tisple::kFlagB) != (want.p | tisple::kFlagB))) {
         problem = "registers";
         std::fprintf(stderr, "  got pc=%04x a=%02x x=%02x y=%02x s=%02x p=%02x\n", got.pc, got.a,
                      got.x, got.y, got.s, got.p);
@@ -157,19 +172,27 @@ void PrintMismatch(int opcode, const StepCase& c, const char* problem) {
                  c.initial.regs.y, c.initial.regs.s, c.initial.regs.p);
 }
 
-} // namespace
+// the 65C02 opcodes whose synertek65c02 cases are not ours (above)
+bool SkipsSynertek(int opcode) {
+    int low = opcode & 0x0F;
+    return low == 0x07 || low == 0x0F || opcode == 0xCB || opcode == 0xDB || opcode == 0x5C;
+}
 
-void RunSingleStepTests(TestResults& results) {
+// one directory of opcode files on one core; false when it has no data
+bool RunSet(TestResults& results, const char* dir, tisple::Cpu cpu) {
     auto machine = std::make_unique<tisple::Machine>();
-    tisple::InitMachine(*machine);
+    tisple::InitMachine(*machine, cpu);
     std::vector<tisple::BusCycle> log;
     tisple::SetBusLog(*machine, &log);
 
     int files = 0;
     int total_cases = 0;
     for (int opcode = 0; opcode < 256; opcode++) {
+        if (cpu == tisple::Cpu::k65c02 && SkipsSynertek(opcode)) {
+            continue;
+        }
         char path[128];
-        std::snprintf(path, sizeof(path), "tests/data/singlestep/%02x.bin", opcode);
+        std::snprintf(path, sizeof(path), "%s/%02x.bin", dir, opcode);
         std::vector<StepCase> cases;
         if (!ReadCases(path, cases)) {
             continue;
@@ -178,7 +201,9 @@ void RunSingleStepTests(TestResults& results) {
         int passed = 0;
         int failed = 0;
         for (const StepCase& c : cases) {
-            const char* problem = RunCase(*machine, c, log);
+            bool loose = cpu == tisple::Cpu::k65c02 && (opcode == 0x69 || opcode == 0xE9) &&
+                         (c.initial.regs.p & tisple::kFlagD) != 0;
+            const char* problem = RunCase(*machine, c, log, loose);
             if (problem == nullptr) {
                 passed++;
                 continue;
@@ -191,14 +216,27 @@ void RunSingleStepTests(TestResults& results) {
         results.passed += passed;
         results.failed += failed;
         if (std::getenv("TISPLE_TEST_VERBOSE") != nullptr || failed != 0) {
-            std::printf("singlestep %02x: %d passed, %d failed\n", opcode, passed, failed);
+            std::printf("singlestep %s %02x: %d passed, %d failed\n", tisple::CpuName(cpu), opcode,
+                        passed, failed);
         }
     }
     if (files == 0) {
-        std::printf("singlestep: skipped (no data; run scripts/fetch_singlestep.sh)\n");
-        return;
+        return false;
     }
-    std::printf("singlestep: %d opcode files, %d cases\n", files, total_cases);
+    std::printf("singlestep %s: %d opcode files, %d cases\n", tisple::CpuName(cpu), files,
+                total_cases);
+    return true;
+}
+
+} // namespace
+
+void RunSingleStepTests(TestResults& results) {
+    if (!RunSet(results, "tests/data/singlestep", tisple::Cpu::k6502)) {
+        std::printf("singlestep: skipped (no data; run scripts/fetch_singlestep.sh)\n");
+    }
+    if (!RunSet(results, "tests/data/singlestep65c02", tisple::Cpu::k65c02)) {
+        std::printf("singlestep 65c02: skipped (no data; run scripts/fetch_singlestep.sh 65c02)\n");
+    }
 }
 
 } // namespace tisple_tests

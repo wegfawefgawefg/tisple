@@ -25,12 +25,18 @@
 // 2.5 KB of main memory ("(bank1 N tight)"), so the data spills into the card, $D000-$DFFF
 // too, where bank 1 code must not look (one that does not fit then is not counted); and the
 // fourth seed in four's own, (fnptr), (irq), (stretch) programs with overlay groups ("(overlay N)",
-// all that may be for 1, else a seeded share; for even N bank 1 too: "(overlay N bank1)").
+// all that may be for 1, else a seeded share; for even N bank 1 too: "(overlay N bank1)"); and
+// the third seed in four's own and (irq) programs built for the other chip ("(65c02)",
+// "(irq) (65c02)", or "(6502)" when TISPLE_TEST_CPU makes the 65C02 the default), and one
+// seed in four a program of dense matches and calls through pointers on both chips
+// ("(tables)", "(tables) (65c02)").
+// TISPLE_FUZZ_FILE runs one program (test_backend_fuzz_file.cpp).
 
 #include "backend/size_budget.hpp"
 #include "fuzz_gen.hpp"
 #include "source_file.hpp"
 #include "test_backend.hpp"
+#include "test_backend_fuzz_internal.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -43,64 +49,6 @@ namespace tisple_tests {
 namespace {
 
 constexpr std::uint64_t kDefaultPrograms = 300;
-
-std::uint64_t EnvNumber(const char* name, std::uint64_t fallback) {
-    const char* text = std::getenv(name);
-    if (!text || !*text) {
-        return fallback;
-    }
-    return std::strtoull(text, nullptr, 0);
-}
-
-// the interrupts an (irq) program runs with: early in main on both, from the seed; half
-// straight to the entry ($FFFE), half through a rom-like STA $45 / JMP ($03FE)
-struct IrqPlan {
-    bool on = false;
-    std::vector<std::uint64_t> cycles;
-    std::vector<std::uint64_t> steps;
-    bool rom = false;
-};
-
-IrqPlan MakeIrqPlan(std::uint64_t seed) {
-    IrqPlan plan;
-    plan.on = true;
-    std::uint64_t s = seed * 0x9E3779B97F4A7C15ull + 77;
-    auto next = [&](std::uint64_t n) {
-        s ^= s << 13;
-        s ^= s >> 7;
-        s ^= s << 17;
-        return (s >> 11) % n;
-    };
-    int count = 1 + static_cast<int>(next(8));
-    std::uint64_t cycle = 20;
-    std::uint64_t step = 5;
-    for (int i = 0; i < count; i++) {
-        cycle += 1 + next(400);
-        step += 1 + next(40);
-        plan.cycles.push_back(cycle);
-        plan.steps.push_back(step);
-    }
-    plan.rom = next(2) == 0;
-    return plan;
-}
-
-void StartIrqs(Diff& d, const IrqPlan& plan) {
-    tisple::Machine& m = *d.sim.machine;
-    std::uint16_t vector = d.c->code.irq_direct;
-    if (plan.rom) {
-        const std::uint8_t kRomLike[] = {0x85, 0x45, 0x6C, 0xFE, 0x03};
-        for (std::size_t i = 0; i < sizeof(kRomLike); i++) {
-            m.mem[0xFF00 + i] = kRomLike[i];
-        }
-        vector = 0xFF00;
-    }
-    m.mem[0xFFFE] = static_cast<std::uint8_t>(vector & 0xFF);
-    m.mem[0xFFFF] = static_cast<std::uint8_t>(vector >> 8);
-    for (std::uint64_t k : plan.cycles) {
-        tisple::RequestIrq(m, m.cycles + k);
-    }
-    d.in.irq_steps = plan.steps;
-}
 
 struct FuzzStats {
     std::uint64_t programs = 0;
@@ -142,7 +90,8 @@ void Report(const char* what, std::uint64_t seed, const char* variant, const std
 
 void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, FuzzStats& stats,
              const IrqPlan& irqs = IrqPlan(), const tisple::OptOptions& opt = {}, int squeeze = 0,
-             int bank1 = 0, bool tight = false, int overlay = 0) {
+             int bank1 = 0, bool tight = false, int overlay = 0,
+             tisple::Cpu cpu = tisple::DefaultCpu()) {
     stats.programs++;
     // TISPLE_FUZZ_PRINT=variant: print the programs of that variant ((fnptr), or "" for all)
     if (const char* print = std::getenv("TISPLE_FUZZ_PRINT")) {
@@ -152,6 +101,7 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
         }
     }
     tisple::BuildOptions options;
+    options.cpu = cpu;
     options.opt = opt;
     options.squeeze = squeeze;
     options.bank1_test = bank1;
@@ -215,123 +165,6 @@ void FuzzOne(std::uint64_t seed, const char* variant, const std::string& text, F
     }
     stats.mismatches++;
     Report("mismatch", seed, variant, text, d.message, stats.mismatches);
-}
-
-// TISPLE_FUZZ_FILE=path: run that one program's main both ways and say how they differ
-// (TISPLE_FUZZ_OPT adds pass options)
-bool DiffFile(TestResults& results) {
-    const char* path = std::getenv("TISPLE_FUZZ_FILE");
-    if (!path || !*path) {
-        return false;
-    }
-    tisple::SourceFile file;
-    std::string error;
-    if (!tisple::LoadSourceFile(path, file, error)) {
-        std::fprintf(stderr, "%s\n", error.c_str());
-        CHECK(results, false);
-        return true;
-    }
-    // TISPLE_FUZZ_OPT="--opt-bisect 12" (or -O0, --no-pass NAME): those pass options
-    tisple::OptOptions opt;
-    std::vector<std::string> words;
-    if (const char* flags = std::getenv("TISPLE_FUZZ_OPT")) {
-        std::string word;
-        for (const char* c = flags;; c++) {
-            if (*c == ' ' || *c == 0) {
-                if (!word.empty()) {
-                    words.push_back(word);
-                }
-                word.clear();
-                if (*c == 0) {
-                    break;
-                }
-            } else {
-                word += *c;
-            }
-        }
-    }
-    std::vector<char*> argv;
-    for (std::string& word : words) {
-        argv.push_back(word.data());
-    }
-    for (int i = 0; i < static_cast<int>(argv.size()); i++) {
-        if (!tisple::ParseOptFlag(static_cast<int>(argv.size()), argv.data(), i, opt, error)) {
-            std::fprintf(stderr, "TISPLE_FUZZ_OPT: %s\n", error.empty() ? argv[i] : error.c_str());
-            CHECK(results, false);
-            return true;
-        }
-    }
-    // TISPLE_FUZZ_BANK1=n: functions in the card's bank 1 as "(bank1 n)" puts them
-    tisple::BuildOptions options;
-    options.opt = opt;
-    options.bank1_test = static_cast<int>(EnvNumber("TISPLE_FUZZ_BANK1", 0));
-    // TISPLE_FUZZ_OVERLAY=n: overlay groups as "(overlay n)" makes them
-    options.overlay_test = static_cast<int>(EnvNumber("TISPLE_FUZZ_OVERLAY", 0));
-    // TISPLE_FUZZ_TIGHT=1: in 2.5 KB of main memory, as "(bank1 n tight)"
-    if (EnvNumber("TISPLE_FUZZ_TIGHT", 0) != 0) {
-        options.limit = options.origin + 0x0A00;
-        options.low_start = options.origin;
-    }
-    Compiled c = CompileMainWith(file.text, options);
-    Diff d;
-    d.in.max_steps = 300000;
-    d.max_cycles = 40000000;
-    // TISPLE_FUZZ_IRQ=seed: the interrupts that seed's (irq) program runs with
-    std::uint64_t irq_seed = EnvNumber("TISPLE_FUZZ_IRQ", 0);
-    bool ok = StartDiff(d, c);
-    if (ok && irq_seed != 0) {
-        StartIrqs(d, MakeIrqPlan(irq_seed));
-    }
-    ok = ok && DiffCall(d, "t.main", {});
-    if (ok && irq_seed != 0 && d.sim.machine->irqs_taken != d.in.irqs_taken) {
-        d.message = std::to_string(d.sim.machine->irqs_taken) + " interrupts on the 6502, " +
-                    std::to_string(d.in.irqs_taken) + " in the interpreter";
-        ok = false;
-    }
-    if (opt.bisect >= 0) {
-        std::printf("%s\n", tisple::DescribeOptReport(c.code.opt).c_str());
-    }
-    std::printf("%s: %s\n", path, ok ? "same" : d.message.c_str());
-    if (c.ok) {
-        std::printf("%s", tisple::ListProgram(c.built.program, c.code).c_str());
-    }
-    CHECK(results, ok);
-    return true;
-}
-
-// the programs of fuzz farm miscompiles, as the generator wrote them then (seed.tsp, and
-// run6/ for the 227 of the sixth run), so they stay covered whatever the generator writes for
-// those seeds now
-void RunFarmPrograms(TestResults& results) {
-    std::string dir = std::string(TISPLE_SOURCE_DIR) + "/tests/programs/fuzz_farm";
-    std::vector<std::string> paths;
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
-        if (entry.path().extension() == ".tsp") {
-            paths.push_back(entry.path().string());
-        }
-    }
-    std::sort(paths.begin(), paths.end());
-    for (const std::string& path : paths) {
-        tisple::SourceFile file;
-        std::string error;
-        CHECK(results, tisple::LoadSourceFile(path, file, error));
-        // and with no mid-level passes, which fold away some of what the backend got wrong
-        for (int level : {1, 0}) {
-            tisple::OptOptions opt;
-            opt.level = level;
-            Compiled c = CompileMainText(file.text, opt);
-            Diff d;
-            d.in.max_steps = 300000;
-            d.max_cycles = 40000000;
-            bool ok = StartDiff(d, c) && DiffCall(d, "t.main", {});
-            if (!ok) {
-                std::fprintf(stderr, "fuzz farm program %s at -O%d: %s\n", path.c_str(), level,
-                             d.message.c_str());
-            }
-            CHECK(results, ok);
-        }
-    }
-    CHECK(results, paths.size() >= 14 + 227);
 }
 
 } // namespace
@@ -459,6 +292,25 @@ void RunBackendFuzzTests(TestResults& results) {
                 FuzzOne(seed, (" (stretch)" + overlay_variant).c_str(), stretch, stats, IrqPlan(),
                         {}, 0, overlay_bank1, false, overlay);
             }
+        }
+        // the other chip: one seed in four, its program (and its interrupt program) built for
+        // it (TISPLE_TEST_CPU sets which runs everywhere else); every tables program on both
+        tisple::Cpu other =
+            tisple::DefaultCpu() == tisple::Cpu::k6502 ? tisple::Cpu::k65c02 : tisple::Cpu::k6502;
+        std::string other_variant = std::string(" (") + tisple::CpuName(other) + ")";
+        if (seed % 4 == 2) {
+            FuzzOne(seed, other_variant.c_str(), program, stats, IrqPlan(), {}, 0, 0, false, 0,
+                    other);
+            if (!irq.empty()) {
+                FuzzOne(seed, (" (irq)" + other_variant).c_str(), irq, stats, MakeIrqPlan(seed), {},
+                        0, 0, false, 0, other);
+            }
+        }
+        std::string tables = GenerateTablesProgram(seed);
+        if (!tables.empty()) {
+            FuzzOne(seed, " (tables)", tables, stats);
+            FuzzOne(seed, (" (tables)" + other_variant).c_str(), tables, stats, IrqPlan(), {}, 0, 0,
+                    false, 0, other);
         }
         std::string partition = GeneratePartitionProgram(seed);
         if (!partition.empty()) {

@@ -31,8 +31,12 @@ struct MachineArgs {
     const char* mouse_rom = nullptr; // the owner's MouseInterface.rom; null for ours
     const char* joystick = nullptr;  // scripted paddles 0-1 and buttons
     MachineModel model = MachineModel::kIIeEnhanced; // what the rom-less machine says it is
-    bool aux_ram = true;                             // false: --64k
-    int mockingboard = 0;            // its slot; 0 for none
+    // the cpu, when --cpu gives it; else the rom's model's, or --model's (ModelCpu)
+    Cpu cpu = Cpu::k65c02;
+    bool cpu_given = false;
+    bool needs_65c02 = false; // tisple run of a 65C02 build: refuse a 6502 machine
+    bool aux_ram = true;      // false: --64k
+    int mockingboard = 0;     // its slot; 0 for none
     uint32_t origin = kDefaultOrigin;
     uint64_t cycles = kDefaultCycles;
     bool cycles_given = false;
@@ -48,6 +52,10 @@ struct MachineArgs {
 };
 
 void PrintMachineUsage();
+
+// the cpu a machine set up from args runs: --cpu's, else the loaded rom's model's, else
+// --model's
+Cpu MachineCpu(const Apple2& a, const MachineArgs& args);
 
 // want_program: the first argument that is not a flag is the binary to run
 bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& args);

@@ -263,21 +263,44 @@ std::size_t HoistPlace(const CarryFlow& f, std::size_t i) {
     return first;
 }
 
-} // namespace
-
-bool CarryPass(std::vector<AsmItem>& items) {
-    CarryFlow f;
+// the carry on the way into every item; false when it does not settle. entries: labels code
+// elsewhere jumps or calls to, with any carry
+bool Analyse(CarryFlow& f, const std::vector<AsmItem>& items,
+             const std::set<std::int32_t>* entries = nullptr) {
     f.items = &items;
     f.in.assign(items.size(), CarryState::None);
     f.fall.assign(items.size(), CarryState::None);
     FindLabels(f);
+    if (entries != nullptr) {
+        f.unknown.insert(entries->begin(), entries->end());
+    }
     for (int sweep = 0; sweep < kMaxSweeps; sweep++) {
         if (!Sweep(f)) {
-            break;
+            return true;
         }
-        if (sweep + 1 == kMaxSweeps) {
-            return false; // not settled: change nothing
-        }
+    }
+    return false;
+}
+
+} // namespace
+
+std::vector<std::int8_t> CarryKnownIn(const std::vector<AsmItem>& items,
+                                      const std::set<std::int32_t>* entries) {
+    CarryFlow f;
+    std::vector<std::int8_t> out(items.size(), -1);
+    if (!Analyse(f, items, entries)) {
+        return out;
+    }
+    for (std::size_t i = 0; i < items.size(); i++) {
+        out[i] = f.in[i] == CarryState::Clear ? 0 : f.in[i] == CarryState::Set ? 1 : -1;
+    }
+    return out;
+}
+
+bool CarryPass(std::vector<AsmItem>& items) {
+    CarryFlow f;
+    if (!Analyse(f, items)) {
+        return false; // not settled: change nothing
     }
     std::vector<bool> drop(items.size(), false);
     std::vector<bool> clc_before(items.size(), false);

@@ -14,7 +14,26 @@ struct Case {
     std::int32_t label = -1;
 };
 
-// push target-1 and RTS into it: A holds the scrutinee
+// the 65C02's: ASL, TAX, JMP (table,X) through a table of targets, 10 cycles where the NMOS
+// form takes 22 (X must be free, and 128 entries at most)
+void JumpTableIndirect(Gen& g, const std::vector<Case>& cases, std::uint32_t lo, std::uint32_t span,
+                       std::int32_t fallback) {
+    Emit(g, Mn::ASL, Mode::Acc);
+    Emit(g, Mn::TAX, Mode::Imp);
+    std::int32_t table = NewLabel(g);
+    Emit(g, Mn::JMP, Mode::AbsIndX, SymValue(table));
+    std::vector<std::int32_t> targets(span, fallback);
+    for (const Case& c : cases) {
+        targets[c.value - lo] = c.label;
+    }
+    PlaceLabel(g, table);
+    for (std::int32_t target : targets) {
+        g.out->push_back(MakeByte(SymValue(target, 0, Part::Low)));
+        g.out->push_back(MakeByte(SymValue(target, 0, Part::High)));
+    }
+}
+
+// push target-1 and RTS into it: A holds the scrutinee (the 65C02 jumps through the table)
 void JumpTable(Gen& g, const std::vector<Case>& cases, std::uint32_t lo, std::uint32_t span,
                std::int32_t fallback) {
     if (lo != 0) {
@@ -24,6 +43,10 @@ void JumpTable(Gen& g, const std::vector<Case>& cases, std::uint32_t lo, std::ui
     if (span < 256) {
         Emit(g, Mn::CMP, Mode::Imm, Num(static_cast<std::int32_t>(span)));
         Branch(g, Mn::BCS, fallback);
+    }
+    if (g.be->as.cpu == Cpu::k65c02 && g.pin[0] < 0 && span <= 128) {
+        JumpTableIndirect(g, cases, lo, span, fallback);
+        return;
     }
     int r = g.pin[0] < 0 ? 0 : 1;
     Emit(g, r == 0 ? Mn::TAX : Mn::TAY, Mode::Imp);

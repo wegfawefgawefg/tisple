@@ -26,8 +26,10 @@ void FuzzOne(ProgramTextFn generate, std::uint64_t seed, const GapsOptions& opti
     Program program;
     Compiled compiled;
     std::vector<Diagnostic> errors;
+    BuildOptions build;
+    build.cpu = options.cpu;
     if (!BuildProgram("t.tsp", load, program, errors) ||
-        !CompileProgram(program, BuildOptions(), compiled, errors)) {
+        !CompileProgram(program, build, compiled, errors)) {
         bulk.failed++;
         return;
     }

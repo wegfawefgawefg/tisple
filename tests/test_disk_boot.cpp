@@ -179,9 +179,10 @@ void TestBootSnapshot(TestResults& results) {
 }
 
 // Apple's roms, when the owner has them: their autostart finds the card, their disk rom
-// boots our loader; and their autostart with our disk rom
-void TestBootAppleRoms(TestResults& results) {
-    std::vector<uint8_t> main_rom = OwnerRom("Apple2e.rom");
+// boots our loader; and their autostart with our disk rom. The iie's rom on the nmos 6502, the
+// enhanced iie's on the 65C02
+void TestBootAppleRoms(TestResults& results, const char* rom, tisple::Cpu cpu) {
+    std::vector<uint8_t> main_rom = OwnerRom(rom);
     std::vector<uint8_t> disk_rom = OwnerRom("DISK2.rom");
     if (main_rom.empty() || disk_rom.size() != 256) {
         std::printf("disk: Apple ROMs not found, skipping the Apple ROM boot\n");
@@ -191,9 +192,13 @@ void TestBootAppleRoms(TestResults& results) {
     if (!MakeCase(results, kBootProgram, c)) {
         return;
     }
+    if (c.program.code.cpu == tisple::Cpu::k65c02 && cpu == tisple::Cpu::k6502) {
+        return; // a 65C02 build (TISPLE_TEST_CPU) cannot run on the nmos chip
+    }
     std::unique_ptr<tisple::Apple2> direct = DirectRun(c);
     for (int ours = 0; ours < 2; ours++) {
         std::unique_ptr<tisple::Apple2> a = MachineWithDisk(*c.disk);
+        a->cpu.cpu_kind = cpu;
         std::string error;
         CHECK(results, tisple::LoadRom(*a, main_rom.data(), main_rom.size(), error));
         if (ours == 0) {
@@ -225,9 +230,9 @@ std::string ScreenText(const tisple::Apple2& a) {
 
 // Zellyn Hunter's a2audit (scripts/fetch_a2audit.sh) through Apple's roms: it finds 128K, and
 // its language card, aux memory and soft switch tests pass. its video tests need a person to
-// look
-void TestA2Audit(TestResults& results) {
-    std::vector<uint8_t> main_rom = OwnerRom("Apple2e.rom");
+// look. The iie's rom on the nmos 6502, the enhanced iie's on the 65C02
+void TestA2Audit(TestResults& results, const char* rom, tisple::Cpu cpu) {
+    std::vector<uint8_t> main_rom = OwnerRom(rom);
     std::vector<uint8_t> disk_rom = OwnerRom("DISK2.rom");
     std::vector<uint8_t> audit;
     std::string path = std::string(TISPLE_SOURCE_DIR) + "/tests/data/a2audit/audit.dsk";
@@ -236,6 +241,7 @@ void TestA2Audit(TestResults& results) {
         return;
     }
     std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
+    a->cpu.cpu_kind = cpu;
     std::string error;
     CHECK(results, tisple::LoadRom(*a, main_rom.data(), main_rom.size(), error));
     tisple::InsertDisk2Card(*a, 6, disk_rom.data());
@@ -262,8 +268,10 @@ void RunDiskBootTests(TestResults& results) {
     TestBootOurRom(results);
     TestBootBigProgram(results);
     TestBootSnapshot(results);
-    TestBootAppleRoms(results);
-    TestA2Audit(results);
+    TestBootAppleRoms(results, "Apple2e.rom", tisple::Cpu::k6502);
+    TestBootAppleRoms(results, "Apple2e_Enhanced.rom", tisple::Cpu::k65c02);
+    TestA2Audit(results, "Apple2e.rom", tisple::Cpu::k6502);
+    TestA2Audit(results, "Apple2e_Enhanced.rom", tisple::Cpu::k65c02);
 }
 
 } // namespace tisple_tests

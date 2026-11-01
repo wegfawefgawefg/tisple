@@ -70,7 +70,8 @@ void ItemBytes(const Backend& be, const AsmItem& item, std::vector<Byte>& bytes)
     }
     AddByte(bytes, item.value.sym, item.value.offset);
     // a pointer: both its bytes
-    if (item.mode == Mode::IndX || item.mode == Mode::IndY || item.mode == Mode::Ind) {
+    if (item.mode == Mode::IndX || item.mode == Mode::IndY || item.mode == Mode::Ind ||
+        item.mode == Mode::ZpInd || item.mode == Mode::AbsIndX) {
         AddByte(bytes, item.value.sym, item.value.offset + 1);
     }
 }
@@ -90,11 +91,13 @@ std::uint8_t ChangedIndexRegs(const AsmItem& item) {
     case Mn::TSX:
     case Mn::INX:
     case Mn::DEX:
+    case Mn::PLX:
         return kX;
     case Mn::LDY:
     case Mn::TAY:
     case Mn::INY:
     case Mn::DEY:
+    case Mn::PLY:
         return kY;
     case Mn::JSR:
     case Mn::JMP:
@@ -102,6 +105,26 @@ std::uint8_t ChangedIndexRegs(const AsmItem& item) {
     default:
         return 0;
     }
+}
+
+// TXA, PHA (or the 65C02's PHX)
+void PushIndex(std::vector<AsmItem>& out, bool cmos, Mn transfer, Mn push) {
+    if (cmos) {
+        out.push_back(MakeIns(push, Mode::Imp));
+        return;
+    }
+    out.push_back(MakeIns(transfer, Mode::Imp));
+    out.push_back(MakeIns(Mn::PHA, Mode::Imp));
+}
+
+// PLA, TAX (or the 65C02's PLX)
+void PullIndex(std::vector<AsmItem>& out, bool cmos, Mn transfer, Mn pull) {
+    if (cmos) {
+        out.push_back(MakeIns(pull, Mode::Imp));
+        return;
+    }
+    out.push_back(MakeIns(Mn::PLA, Mode::Imp));
+    out.push_back(MakeIns(transfer, Mode::Imp));
 }
 
 } // namespace
@@ -158,13 +181,13 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
     out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kIrqSaveA)));
     out.push_back(MakeLabel(plan.entry_sym));
     out.push_back(MakeIns(Mn::CLD, Mode::Imp));
+    // the 65C02 pushes and pulls X and Y itself
+    bool cmos = be.as.cpu == Cpu::k65c02;
     if (regs & kX) {
-        out.push_back(MakeIns(Mn::TXA, Mode::Imp));
-        out.push_back(MakeIns(Mn::PHA, Mode::Imp));
+        PushIndex(out, cmos, Mn::TXA, Mn::PHX);
     }
     if (regs & kY) {
-        out.push_back(MakeIns(Mn::TYA, Mode::Imp));
-        out.push_back(MakeIns(Mn::PHA, Mode::Imp));
+        PushIndex(out, cmos, Mn::TYA, Mn::PHY);
     }
     for (const Byte& b : bytes) {
         out.push_back(MakeIns(Mn::LDA, Mode::Abs, SymValue(b.first, b.second)));
@@ -177,12 +200,10 @@ void EmitIrqEntry(Backend& be, const std::vector<bool>& kept, const std::vector<
         out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(bytes[i].first, bytes[i].second)));
     }
     if (regs & kY) {
-        out.push_back(MakeIns(Mn::PLA, Mode::Imp));
-        out.push_back(MakeIns(Mn::TAY, Mode::Imp));
+        PullIndex(out, cmos, Mn::TAY, Mn::PLY);
     }
     if (regs & kX) {
-        out.push_back(MakeIns(Mn::PLA, Mode::Imp));
-        out.push_back(MakeIns(Mn::TAX, Mode::Imp));
+        PullIndex(out, cmos, Mn::TAX, Mn::PLX);
     }
     std::size_t restore = out.size();
     out.push_back(MakeIns(Mn::LDA, Mode::Zp, Num(kIrqSaveA)));

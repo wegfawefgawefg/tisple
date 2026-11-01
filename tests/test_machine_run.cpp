@@ -76,6 +76,7 @@ void TestStops(TestResults& results) {
     // which ran its step forever and the machine with it (Catwiz's garbage code, 2026-10-30).
     // Now it stops there, the clock goes on, and a step of a jammed cpu ends
     auto jam = MachineWithBytes({0xA9, 0x05, 0x85, 0x00, 0x12});
+    jam->cpu.cpu_kind = tisple::Cpu::k6502;
     jam->direct_load = false;
     r = RunToStop(*jam);
     CHECK(results, r.reason == MachineStop::kJammed && jam->stop_pc == 0x6004);
@@ -90,6 +91,12 @@ void TestStops(TestResults& results) {
         jams += tisple::IsJamOpcode(static_cast<uint8_t>(op)) ? 1 : 0;
     }
     CHECK(results, jams == 12 && !tisple::IsJamOpcode(0x82) && tisple::IsJamOpcode(0xF2));
+    // the 65C02 has no JAM: $12 is ORA ($zp)
+    auto ora = MachineWithBytes({0xA9, 0x05, 0x85, 0x00, 0x12, 0x00, 0x00});
+    ora->cpu.cpu_kind = tisple::Cpu::k65c02;
+    ora->direct_load = false;
+    tisple::RunApple2(*ora, 9);
+    CHECK(results, !ora->stopped && !tisple::IsJamOpcode(0x12, tisple::Cpu::k65c02));
 
     // no rom: $D000-$FFFF read as a pattern and ignore writes
     auto pattern =

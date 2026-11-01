@@ -45,9 +45,10 @@ tisple_warnings(tisple_core)
 target_compile_definitions(tisple_core PRIVATE TISPLE_LIB_DIR="${CMAKE_SOURCE_DIR}/lib")
 # vendored single-file C library: no warnings-as-errors for its one compile unit
 set_source_files_properties(src/emu/chips_impl.cpp PROPERTIES COMPILE_OPTIONS "-w;-O2")
-# the simulator runs millions of cycles per test run (differential tests, fuzzing): optimise
+# the simulators run millions of cycles per test run (differential tests, fuzzing): optimise
 # it even in debug builds
-set_source_files_properties(src/emu/machine.cpp src/emu/harness.cpp PROPERTIES COMPILE_OPTIONS "-O2")
+set_source_files_properties(src/emu/machine.cpp src/emu/harness.cpp src/emu/cpu65c02.cpp
+                            src/emu/cpu65c02_ops.cpp PROPERTIES COMPILE_OPTIONS "-O2")
 # the gap finder traces every instruction and the superoptimizer runs millions of candidate
 # sequences: optimise them too
 file(GLOB TISPLE_FAST_SOURCES CONFIGURE_DEPENDS src/superopt/*.cpp src/gaps/profile.cpp)
@@ -63,7 +64,7 @@ add_executable(tisple src/main.cpp tests/fuzz_gen.cpp tests/fuzz_gen_expr.cpp
                tests/fuzz_gen_frames.cpp
                tests/fuzz_gen_io.cpp tests/fuzz_gen_data.cpp
                tests/fuzz_gen_stretch.cpp tests/fuzz_gen_partition.cpp
-               tests/fuzz_gen_places.cpp)
+               tests/fuzz_gen_places.cpp tests/fuzz_gen_tables.cpp)
 target_link_libraries(tisple PRIVATE tisple_core)
 target_include_directories(tisple PRIVATE tests)
 tisple_warnings(tisple)

@@ -60,6 +60,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     const FramePlan& plan = *in.plan;
     be.errors = &errors;
     out = Compiled();
+    out.cpu = options.cpu;
     out.origin = options.origin;
     out.main = program.main;
     out.card_ram = card;
@@ -192,8 +193,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
 
     // short loops kept inside a page, a few bytes before a function at most; not when the
     // program had to be squeezed to fit
+    bool laid_out = false; // the jumps' forms are set: later layouts keep them (asm.hpp)
     if (options.squeeze == 0) {
         PadLoops(be.as, out.spans, options.origin, std::min(first_bank1, region.first));
+        laid_out = true;
     }
 
     // the code where it fits: one run from the origin when it can be. A branch to another
@@ -218,7 +221,8 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         early.stretch_end = low ? k + 1 : early.stretch_end;
     }
     for (bool again = true; again;) {
-        code_end = LayoutCode(be.as, options.origin);
+        code_end = LayoutCode(be.as, options.origin, laid_out);
+        laid_out = true;
         std::uint32_t startup_end = options.origin + SpanSize(items, out.spans[0]);
         if (stretches.empty() || stretches[0].start != options.origin ||
             stretches[0].end < startup_end) {

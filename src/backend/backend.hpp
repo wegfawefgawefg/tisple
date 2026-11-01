@@ -34,6 +34,8 @@
 namespace tisple {
 
 struct BuildOptions {
+    // the chip the code runs on: the 65C02 lets the backend use its instructions (cmos.hpp)
+    Cpu cpu = DefaultCpu();
     std::uint16_t origin = 0x6000;
     std::uint32_t limit = 0x9600;     // one past the last byte code and data may use
     std::uint32_t low_start = 0x0800; // the memory below the origin, from here, when needed
@@ -88,6 +90,7 @@ struct OverlayBuilt {
 };
 
 struct Compiled {
+    Cpu cpu = Cpu::k6502; // BuildOptions::cpu: run it on this chip
     std::uint16_t origin = 0x6000;
     std::vector<std::uint8_t> image; // the file: bytes from origin
     // the rest of a program that did not fit: below the origin, the language card, aux memory

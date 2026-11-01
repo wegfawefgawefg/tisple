@@ -335,10 +335,21 @@ void EntryTests(TestResults& results) {
         return;
     }
     std::vector<tisple::AsmItem> entry = Code(c, "interrupt entry");
-    CHECK(results, Count(entry, Mn::TXA, Mode::Imp) == 1 && Count(entry, Mn::TAX, Mode::Imp) == 1);
-    CHECK(results, Count(entry, Mn::TYA, Mode::Imp) == 0 && Count(entry, Mn::TAY, Mode::Imp) == 0);
-    // STA $45 CLD TXA PHA JSR PLA TAX LDA $45 RTI: 13 bytes (and the saved vector after)
-    CHECK(results, Bytes(entry) == 13);
+    if (c.code.cpu == tisple::Cpu::k65c02) {
+        // STA $45 CLD PHX JSR PLX LDA $45 RTI: 11 bytes
+        CHECK(results,
+              Count(entry, Mn::PHX, Mode::Imp) == 1 && Count(entry, Mn::PLX, Mode::Imp) == 1);
+        CHECK(results,
+              Count(entry, Mn::PHY, Mode::Imp) == 0 && Count(entry, Mn::PLY, Mode::Imp) == 0);
+        CHECK(results, Bytes(entry) == 11);
+    } else {
+        CHECK(results,
+              Count(entry, Mn::TXA, Mode::Imp) == 1 && Count(entry, Mn::TAX, Mode::Imp) == 1);
+        CHECK(results,
+              Count(entry, Mn::TYA, Mode::Imp) == 0 && Count(entry, Mn::TAY, Mode::Imp) == 0);
+        // STA $45 CLD TXA PHA JSR PLA TAX LDA $45 RTI: 13 bytes (and the saved vector after)
+        CHECK(results, Bytes(entry) == 13);
+    }
     // the handler runs as often as a while loop's body, its callees with it
     std::vector<std::uint64_t> runs = tisple::FindRunCounts(c.built.program);
     std::int32_t irq = tisple::FindFunction(c.built.program, "t.irq");

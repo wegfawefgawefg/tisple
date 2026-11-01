@@ -149,8 +149,8 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         uint64_t chunk = next - now;
         chunk = chunk > kCyclesPerFrame ? kCyclesPerFrame : chunk;
         bool was_stopped = a.stopped;
-        RunOutcome outcome = profiling ? RunApple2Traced(a, chunk, ProfileStep, &profile)
-                                       : RunApple2(a, chunk);
+        RunOutcome outcome =
+            profiling ? RunApple2Traced(a, chunk, ProfileStep, &profile) : RunApple2(a, chunk);
         if (!was_stopped) {
             run_cycles += outcome.cycles;
         }
@@ -250,6 +250,12 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
             std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
             return 1;
         }
+    }
+    a->cpu.cpu_kind = MachineCpu(*a, args);
+    if (args.needs_65c02 && a->cpu.cpu_kind != Cpu::k65c02) {
+        std::fprintf(stderr, "tisple machine: the program is built for the 65C02 (--cpu 65c02) "
+                             "and this machine's cpu is the 6502 (its --model, --rom or --cpu)\n");
+        return 1;
     }
     // a snapshot carries its cards and disks; --disk then only names the write-back files
     if (args.disks.any() && args.load_snapshot == nullptr && !SetUpDisks(*a, args.disks, error)) {
@@ -362,12 +368,13 @@ int RunMachineCommand(int argc, char** argv, MachineWindowFn window) {
 }
 
 int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int argc, char** argv,
-                     MachineWindowFn window) {
+                     MachineWindowFn window, Cpu target) {
     MachineArgs args;
     if (!ParseMachineArgs(argc, argv, false, args)) {
         PrintMachineUsage();
         return 1;
     }
+    args.needs_65c02 = target == Cpu::k65c02;
     args.disks.images[0] = image;
     args.disks.formats[0] = format;
     return RunWithArgs(nullptr, {}, args, window);
@@ -375,12 +382,13 @@ int RunMachineOnDisk(const std::vector<uint8_t>& image, DiskFormat format, int a
 
 int RunMachineOnBinary(const std::vector<uint8_t>& binary, uint16_t origin,
                        const std::vector<MemorySegment>& segments, int argc, char** argv,
-                       MachineWindowFn window) {
+                       MachineWindowFn window, Cpu target) {
     MachineArgs args;
     if (!ParseMachineArgs(argc, argv, false, args)) {
         PrintMachineUsage();
         return 1;
     }
+    args.needs_65c02 = target == Cpu::k65c02;
     args.origin = origin;
     return RunWithArgs(&binary, segments, args, window);
 }

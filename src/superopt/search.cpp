@@ -50,8 +50,12 @@ const Mn kSearchMns[] = {
     Mn::DEY, Mn::TAX, Mn::TAY, Mn::TXA, Mn::TYA, Mn::CLC, Mn::SEC, Mn::CLV,
 };
 
+// the 65C02's own instructions with memory operands (INC A, DEC A and BIT # come with the
+// 6502's mnemonics, in modes only the 65C02 has)
+const Mn kCmosSearchMns[] = {Mn::STZ, Mn::TSB, Mn::TRB};
+
 void AddIfValid(const Window& w, std::vector<SoIns>& set, const SoIns& ins) {
-    if (OpcodeFor(ins.mn, ins.mode) < 0) {
+    if (OpcodeFor(ins.mn, ins.mode, w.cpu) < 0) {
         return;
     }
     LocEffects e = EffectsOf(ins.mn, ins.mode);
@@ -67,7 +71,7 @@ void AddIfValid(const Window& w, std::vector<SoIns>& set, const SoIns& ins) {
 void BuildSet(Searcher& s) {
     s.set = CandidateSet(*s.w);
     for (const SoIns& ins : s.set) {
-        s.set_cycles.push_back(InsCycles(ins));
+        s.set_cycles.push_back(InsCycles(ins, s.w->cpu));
         s.set_bytes.push_back(InsBytes(ins));
         LocEffects e = EffectsOf(ins.mn, ins.mode);
         std::uint32_t reads = e.reads;
@@ -343,7 +347,7 @@ void SeedByDeletion(Searcher& s) {
     int cycles = 0;
     int bytes = 0;
     for (const SoIns& ins : code) {
-        cycles += InsCycles(ins);
+        cycles += InsCycles(ins, s.w->cpu);
         bytes += InsBytes(ins);
     }
     if (code.size() < s.w->code.size() && Better(s, cycles, bytes)) {
@@ -372,10 +376,10 @@ bool Confirm(const Window& w, const std::vector<SoIns>& code, const Facts& facts
     return true;
 }
 
-int CodeCycles(const std::vector<SoIns>& code) {
+int CodeCycles(const std::vector<SoIns>& code, Cpu cpu) {
     int total = 0;
     for (const SoIns& ins : code) {
-        total += InsCycles(ins);
+        total += InsCycles(ins, cpu);
     }
     return total;
 }
@@ -392,7 +396,11 @@ int CodeBytes(const std::vector<SoIns>& code) {
 
 std::vector<SoIns> CandidateSet(const Window& w) {
     std::vector<SoIns> set;
-    for (Mn mn : kSearchMns) {
+    std::vector<Mn> mns(std::begin(kSearchMns), std::end(kSearchMns));
+    if (w.cpu == Cpu::k65c02) {
+        mns.insert(mns.end(), std::begin(kCmosSearchMns), std::end(kCmosSearchMns));
+    }
+    for (Mn mn : mns) {
         SoIns ins;
         ins.mn = mn;
         ins.mode = Mode::Imp;
@@ -411,9 +419,9 @@ std::vector<SoIns> CandidateSet(const Window& w) {
             AddIfValid(w, set, ins);
         }
     }
-    std::stable_sort(set.begin(), set.end(), [](const SoIns& x, const SoIns& y) {
-        int cx = InsCycles(x);
-        int cy = InsCycles(y);
+    std::stable_sort(set.begin(), set.end(), [&w](const SoIns& x, const SoIns& y) {
+        int cx = InsCycles(x, w.cpu);
+        int cy = InsCycles(y, w.cpu);
         return cx != cy ? cx < cy : InsBytes(x) < InsBytes(y);
     });
     return set;
@@ -456,7 +464,7 @@ SearchResult Superoptimize(const Window& w, const Facts& facts, const SearchOpti
         if (Confirm(w, accepted[i], facts, options, out)) {
             out.found = true;
             out.code = accepted[i];
-            out.cycles = CodeCycles(out.code);
+            out.cycles = CodeCycles(out.code, w.cpu);
             out.bytes = CodeBytes(out.code);
             break;
         }

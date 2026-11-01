@@ -230,8 +230,13 @@ void GenDispatcher(Backend& be, std::int32_t function) {
     const Function& fn = program.functions[static_cast<std::size_t>(function)];
     std::vector<AsmItem>& out = be.code[static_cast<std::size_t>(function)];
     std::int32_t pointer = be.var_sym[static_cast<std::size_t>(fn.params[0])];
-    std::int32_t jump = NewSym(be, fn.name + ".jump", SymRole::Label, function);
     out.push_back(MakeLabel(be.fn_sym[static_cast<std::size_t>(function)]));
+    // the 65C02's JMP (abs) has no page bug: straight through the pointer, 6 cycles for 19
+    if (be.as.cpu == Cpu::k65c02) {
+        out.push_back(MakeIns(Mn::JMP, Mode::Ind, SymValue(pointer)));
+        return;
+    }
+    std::int32_t jump = NewSym(be, fn.name + ".jump", SymRole::Label, function);
     out.push_back(MakeIns(Mn::LDA, Mode::Abs, SymValue(pointer)));
     out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(jump, 1)));
     out.push_back(MakeIns(Mn::LDA, Mode::Abs, SymValue(pointer, 1)));

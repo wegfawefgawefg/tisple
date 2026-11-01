@@ -166,8 +166,11 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
                 std::min(static_cast<std::size_t>(options.window), ins.size() - start);
             int cycles = 0;
             for (std::size_t i = start; i < start + len; i++) {
-                int opcode = OpcodeFor(ins[i].mn, ins[i].mode);
-                cycles += opcode < 0 ? 0 : OpcodeInfoFor(static_cast<std::uint8_t>(opcode)).cycles;
+                int opcode = OpcodeFor(ins[i].mn, ins[i].mode, compiled.cpu);
+                cycles +=
+                    opcode < 0
+                        ? 0
+                        : OpcodeInfoFor(static_cast<std::uint8_t>(opcode), compiled.cpu).cycles;
             }
             starts.push_back({count * static_cast<std::uint64_t>(cycles), r, start, len});
         }
@@ -188,7 +191,7 @@ std::vector<WindowFinding> SuperoptHotWindows(const Compiled& compiled, const Si
                 FollowingIns(compiled, run.span, run.items[c.start + len - 1]);
             Window w;
             std::string why;
-            if (TouchedIo(code, p) || !MakeWindow(code, after, w, why)) {
+            if (TouchedIo(code, p) || !MakeWindow(code, after, w, why, compiled.cpu)) {
                 continue;
             }
             stats.windows++;

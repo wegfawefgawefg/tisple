@@ -13,10 +13,9 @@
 #include "machine/mockingboard_audio.hpp"
 #include "machine/speaker_audio.hpp"
 
-#include <emscripten/emscripten.h>
-
 #include <cstdint>
 #include <cstdio>
+#include <emscripten/emscripten.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -57,6 +56,7 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE int tp_boot(const uint8_t* disk, int size, int mockingboard_slot) {
     Player& p = g_player;
     p.a = NewApple2();
+    p.a->cpu.cpu_kind = ModelCpu(p.a->model); // the enhanced IIe's 65C02, as tisple machine
     MachineDisks disks;
     disks.images[0].assign(disk, disk + size);
     disks.formats[0] = DiskFormat::kDos;

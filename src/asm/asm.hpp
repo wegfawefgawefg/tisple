@@ -10,6 +10,10 @@
 //   number below $100. Indexed modes are never shrunk, since zp,X wraps inside page zero
 //   while abs,X does not.
 // - A branch whose target is out of range becomes the inverted branch over a JMP.
+// - For the 65C02 (Assembly::cpu), a JMP to a label of the same layout becomes BRA when the
+//   label is in reach and in the page after the BRA, so it costs the JMP's 3 cycles and a
+//   byte less; not a JMP marked far, nor one the code rewrites (a label just before it is
+//   stored to at +1 or +2). 65C02 instructions are refused for the NMOS chip.
 // - A wait (asm/wait.hpp) is one item whose bytes depend on its address and whose size does
 //   not: an exact delay that keeps the registers and memory and may change the flags.
 
@@ -64,8 +68,10 @@ struct AsmItem {
     std::uint8_t size = 0;
     bool long_branch = false;
     // a branch whose target may be in another stretch of memory: always the long form
-    // (backend/link_code.hpp)
+    // (backend/link_code.hpp); a 65C02 JMP so marked never becomes BRA
     bool far = false;
+    // set by LayoutCode: a JMP encoded as the 65C02's BRA
+    bool short_jump = false;
 };
 
 struct AsmSymbol {
@@ -79,6 +85,7 @@ struct AsmSymbol {
 };
 
 struct Assembly {
+    Cpu cpu = Cpu::k6502; // the chip the code is for: its instructions and cycle counts
     std::vector<AsmSymbol> symbols;
     std::vector<AsmItem> items;
     std::vector<std::string> notes;
@@ -102,8 +109,11 @@ Mode EncodedMode(const Assembly& as, const AsmItem& item);
 int ItemBytes(const Assembly& as, const AsmItem& item);
 
 // sizes and addresses from origin; defines labels; relaxes branches. Returns the end address
-// (one past the last byte), which may be past $FFFF if the code does not fit.
-std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin);
+// (one past the last byte), which may be past $FFFF if the code does not fit. keep_jumps: the
+// items were laid out before and placed or padded by those sizes (backend/link.cpp,
+// link_code.cpp): each JMP keeps its form, a BRA while it reaches (across a page or not), so
+// no size changes but a far JMP's.
+std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_jumps = false);
 
 // bytes from origin to the end; every symbol must be defined. False with a message on a
 // missing symbol or an operand that does not fit its mode.

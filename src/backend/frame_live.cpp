@@ -165,6 +165,11 @@ void Successors(const Live& l, std::size_t i, std::vector<std::size_t>& out) {
                 out.push_back(target(item.value.sym));
                 return;
             }
+            // the 65C02's JMP (table,X) of a match: where the table's bytes name
+            if (item.mode == Mode::AbsIndX) {
+                out.insert(out.end(), l.dispatch.begin(), l.dispatch.end());
+                return;
+            }
             for (const auto& label : l.labels) {
                 out.push_back(label.second);
             }
@@ -210,6 +215,11 @@ const Bits& ExitReads(const Live& l, const AsmItem& item) {
     }
     if (item.mn == Mn::JMP && item.mode == Mode::Abs) {
         return CallReads(l, item.value.sym);
+    }
+    // the 65C02 dispatcher's JMP (pointer) into an entry (dispatch.hpp), as the NMOS one's JMP
+    // to the address it patched in: the entry is its callee, whose frame stacks on its own
+    if (item.mn == Mn::JMP && item.mode == Mode::Ind) {
+        return CallReads(l, -1);
     }
     if (item.mn == Mn::JMP || IsBranch(item.mn)) {
         return l.exposed;

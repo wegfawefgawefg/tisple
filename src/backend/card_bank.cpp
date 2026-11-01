@@ -29,8 +29,10 @@ bool IsTransfer(const AsmItem& item) {
            item.mode == Mode::Rel;
 }
 
+// (the 65C02's JMP (table,X) of a match reads a table in its own function's code, which goes
+// where the code goes: not a pointer)
 bool IsPointerMode(Mode mode) {
-    return mode == Mode::IndX || mode == Mode::IndY || mode == Mode::Ind;
+    return mode == Mode::IndX || mode == Mode::IndY || mode == Mode::Ind || mode == Mode::ZpInd;
 }
 
 // which piece of code defines each label: a function, or the runtime

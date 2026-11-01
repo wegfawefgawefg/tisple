@@ -20,6 +20,8 @@
 
 #include "backend/gen.hpp"
 
+#include <set>
+
 namespace tisple {
 
 // by symbol: what the dead-store pass may assume about who reads its bytes
@@ -52,14 +54,21 @@ bool DropFaintSteps(const Assembly& as, std::vector<AsmItem>& items,
                     const std::vector<StoreScope>& scopes);
 // true if any CLC or SEC went or moved
 bool CarryPass(std::vector<AsmItem>& items);
+// by item: the carry on every way into it, 0 clear, 1 set, -1 either (carry.cpp). entries:
+// labels code elsewhere reaches too (a runtime routine's), with any carry
+std::vector<std::int8_t> CarryKnownIn(const std::vector<AsmItem>& items,
+                                      const std::set<std::int32_t>* entries = nullptr);
 // true if any load or ALU result nothing reads went (dead_regs.cpp)
 bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items);
 // by item: the registers and flags read before they are written, from there on, as bits
 // (dead_regs.cpp)
 constexpr std::uint8_t kLiveA = 1;
+constexpr std::uint8_t kLiveX = 2;
+constexpr std::uint8_t kLiveY = 4;
 constexpr std::uint8_t kLiveN = 8;
 constexpr std::uint8_t kLiveZ = 16;
 constexpr std::uint8_t kLiveC = 32;
+constexpr std::uint8_t kLiveV = 64;
 std::vector<std::uint8_t> LiveRegsIn(const Assembly& as, const std::vector<AsmItem>& items);
 // true if a 16-bit test against zero at a loop's bottom was split (zero_tests.cpp)
 bool SplitZeroTests(const Assembly& as, std::vector<AsmItem>& items);

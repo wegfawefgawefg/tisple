@@ -23,6 +23,31 @@ INCLUDE = os.path.join(HERE, "include")
 TISPLE_ORIGIN = 0x6000
 
 
+def race_cpu():
+    """the chip the race is run on: TISPLE_RACE_CPU=65c02 (race.py --cpu), else the 6502.
+    On the 65C02 each compiler builds for it where it can: Tisple --cpu 65c02, cc65 --cpu
+    65c02 (with the sim65c02 library when it is built, the sim6502 one otherwise), LLVM-MOS
+    -mcpu=mos65c02; Oscar64 has no 65C02 target and races with its 6502 code."""
+    return os.environ.get("TISPLE_RACE_CPU", "6502")
+
+
+def cc65_target():
+    """-t and --cpu for cc65"""
+    if race_cpu() != "65c02":
+        return ["-t", "sim6502"]
+    if os.path.exists(os.path.join(CC65, "lib", "sim65c02.lib")):
+        return ["-t", "sim65c02"]
+    return ["-t", "sim6502", "--cpu", "65c02"]
+
+
+def llvm_mos_cpu():
+    return "-mcpu=mos65c02" if race_cpu() == "65c02" else "-mcpu=mos6502"
+
+
+def tisple_cpu_flags():
+    return ["--cpu", "65c02"] if race_cpu() == "65c02" else []
+
+
 def tisple_binary():
     path = os.environ.get("TISPLE")
     if path:
@@ -215,7 +240,7 @@ def _cc65_labels(path):
 
 def build_cc65(kernel, variant, outdir):
     write_c_sources(kernel, variant, outdir)
-    cmd = [os.path.join(CC65, "bin", "cl65"), "-t", "sim6502",
+    cmd = [os.path.join(CC65, "bin", "cl65")] + cc65_target() + [
            "-C", os.path.join(HERE, "toolchains", "cc65-race.cfg")] + variant.flags
     cmd += ["-I", INCLUDE, "-I", ".", "-DRACE_CC65"]
     if variant.mode == "extern":
@@ -276,7 +301,7 @@ def _nm_objects(nm_text):
 
 def build_llvm_mos(kernel, variant, outdir):
     write_c_sources(kernel, variant, outdir)
-    cmd = [os.path.join(LLVM_MOS, "bin", "mos-sim-clang"), "-mcpu=mos6502"] + variant.flags
+    cmd = [os.path.join(LLVM_MOS, "bin", "mos-sim-clang"), llvm_mos_cpu()] + variant.flags
     cmd += ["-I", INCLUDE, "-I", ".", "-DRACE_LLVM_MOS"]
     if variant.mode == "extern":
         cmd += ["-Wl,--defsym=%s=0x%04X" % (b.name, b.address) for b in kernel.buffers]
@@ -390,7 +415,8 @@ def build_tisple(kernel, variant, outdir):
     src = os.path.join(kernel_dir(kernel), variant.source)
     module = os.path.splitext(variant.source)[0]
     listing = run([tisple_binary(), "build", src, "--origin", "0x%04X" % TISPLE_ORIGIN,
-                   "--asm", "-o", os.path.join(outdir, "k.bin")], outdir, "tisple build")
+                   "--asm", "-o", os.path.join(outdir, "k.bin")] + tisple_cpu_flags(), outdir,
+                  "tisple build")
     build = Build()
     with open(os.path.join(outdir, "k.bin"), "rb") as f:
         build.loads.append((TISPLE_ORIGIN, f.read()))

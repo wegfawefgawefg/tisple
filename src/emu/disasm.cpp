@@ -1,8 +1,10 @@
 #include "emu/disasm.hpp"
 
+#include "asm/opcodes.hpp"
 #include "m6502dasm.h"
 
 #include <array>
+#include <cstdio>
 
 namespace tisple {
 
@@ -45,9 +47,92 @@ std::array<bool, 256> BuildDocumentedTable() {
     return table;
 }
 
+// the bytes of a 65C02 opcode that is not an instruction (cpu65c02.hpp: the documented NOPs)
+int UndefinedLength65c02(uint8_t opcode) {
+    int low = opcode & 0x0F;
+    if (low == 0x02) {
+        return 2;
+    }
+    if (opcode == 0x44 || opcode == 0x54 || opcode == 0xD4 || opcode == 0xF4) {
+        return 2;
+    }
+    if (opcode == 0x5C || opcode == 0xDC || opcode == 0xFC) {
+        return 3;
+    }
+    return 1;
+}
+
+std::string Operand65c02(Mode mode, uint16_t pc, uint8_t lo, uint8_t hi) {
+    char text[32];
+    unsigned word = static_cast<unsigned>(lo | (hi << 8));
+    switch (mode) {
+    case Mode::Imp:
+    case Mode::Acc: // as the chips disassembler: ASL, INC
+        return "";
+    case Mode::Imm:
+        std::snprintf(text, sizeof(text), " #$%02X", lo);
+        break;
+    case Mode::Zp:
+        std::snprintf(text, sizeof(text), " $%02X", lo);
+        break;
+    case Mode::ZpX:
+        std::snprintf(text, sizeof(text), " $%02X,X", lo);
+        break;
+    case Mode::ZpY:
+        std::snprintf(text, sizeof(text), " $%02X,Y", lo);
+        break;
+    case Mode::Abs:
+        std::snprintf(text, sizeof(text), " $%04X", word);
+        break;
+    case Mode::AbsX:
+        std::snprintf(text, sizeof(text), " $%04X,X", word);
+        break;
+    case Mode::AbsY:
+        std::snprintf(text, sizeof(text), " $%04X,Y", word);
+        break;
+    case Mode::Ind:
+        std::snprintf(text, sizeof(text), " ($%04X)", word);
+        break;
+    case Mode::IndX:
+        std::snprintf(text, sizeof(text), " ($%02X,X)", lo);
+        break;
+    case Mode::IndY:
+        std::snprintf(text, sizeof(text), " ($%02X),Y", lo);
+        break;
+    case Mode::ZpInd:
+        std::snprintf(text, sizeof(text), " ($%02X)", lo);
+        break;
+    case Mode::AbsIndX:
+        std::snprintf(text, sizeof(text), " ($%04X,X)", word);
+        break;
+    default: // Rel
+        std::snprintf(
+            text, sizeof(text), " $%04X",
+            static_cast<unsigned>(static_cast<uint16_t>(pc + 2 + static_cast<int8_t>(lo))));
+        break;
+    }
+    return text;
+}
+
+std::string Disassemble65c02(const Machine& m, uint16_t pc, int& length) {
+    uint8_t opcode = m.mem[pc];
+    uint8_t lo = m.mem[static_cast<uint16_t>(pc + 1)];
+    uint8_t hi = m.mem[static_cast<uint16_t>(pc + 2)];
+    const OpcodeInfo& info = OpcodeInfoFor(opcode, Cpu::k65c02);
+    if (!info.valid) {
+        length = UndefinedLength65c02(opcode);
+        return "*NOP";
+    }
+    length = ModeSize(info.mode);
+    return std::string(MnName(info.mn)) + Operand65c02(info.mode, pc, lo, hi);
+}
+
 } // namespace
 
 std::string Disassemble(const Machine& m, uint16_t pc, int& length) {
+    if (m.cpu_kind == Cpu::k65c02) {
+        return Disassemble65c02(m, pc, length);
+    }
     DasmState state;
     state.mem = m.mem;
     state.next = pc;
@@ -59,6 +144,13 @@ std::string Disassemble(const Machine& m, uint16_t pc, int& length) {
 bool IsDocumentedOpcode(uint8_t opcode) {
     static const std::array<bool, 256> table = BuildDocumentedTable();
     return table[opcode];
+}
+
+bool IsDocumentedOpcode(uint8_t opcode, Cpu cpu) {
+    if (cpu == Cpu::k65c02) {
+        return OpcodeInfoFor(opcode, Cpu::k65c02).valid;
+    }
+    return IsDocumentedOpcode(opcode);
 }
 
 } // namespace tisple

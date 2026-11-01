@@ -929,3 +929,92 @@ sanitizers (`--host`), and every host checksum was the interpreter's.
   Tisple's division is slow (it is not; the kernels race it).
 - Bytes count whole functions that ran while the clock ran, as in the kernel race; cc65's
   module is cut at its function labels.
+
+## The 65C02 (2026-11-01)
+
+`TISPLE_RACE_CPU=65c02` (races/README.md) times every build on our 65C02 core, each compiler
+building for the 65C02 where it can: Tisple `--cpu 65c02`, cc65 `-t sim65c02` (`--cpu 65c02`
+code, its runtime built for the 65C02 too), LLVM-MOS `-mcpu=mos65c02`. Oscar64 has no 65C02
+target (nothing in its source emits a 65C02 instruction; it has a Commander X16 target but
+generates 6502 code for it), so it races with its 6502 code, which the 65C02 runs: its cycles
+come out the same to the cycle. Like with like: each compiler at its fastest setting, the
+same kernels, inputs and checks as the 6502 race. Tisple 673f449.
+
+Kernels, Tisple's cycles and bytes on each chip, and the race on the 65C02:
+
+| Kernel | Tisple 6502 | Tisple 65C02 | cc65 | LLVM-MOS | Oscar64 (6502 code) | Tisple / best other |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| mul8 | 29331 / 111 | 29315 / 108 | 80901 / 181 | 102281 / 111 | 63165 / 113 | 0.46 |
+| mul16 | 31296 / 222 | 30989 / 213 | 101304 / 293 | 90410 / 127 | 65477 / 131 | 0.47 |
+| fill | 43022 / 109 | 43022 / 109 | 63992 / 164 | 214320 / 56 | 90467 / 57 | 0.67 |
+| memcpy | 38151 / 102 | 38151 / 102 | 59876 / 142 | 145204 / 66 | 65824 / 69 | 0.64 |
+| sieve | 1086425 / 154 | 1086423 / 152 | 2153886 / 194 | 2239907 / 249 | 1258060 / 128 | 0.86 |
+| strlen | 31642 / 54 | 31642 / 53 | 36153 / 39 | 180086 / 78 | 39103 / 36 | 0.88 |
+| search | 128734 / 74 | 128734 / 74 | 522416 / 136 | 129614 / 142 | 150500 / 63 | 0.99 |
+| sort | 356260 / 51 | 356260 / 51 | 1967983 / 120 | 463203 / 54 | 422725 / 47 | 0.84 |
+| crc16 | 188348 / 202 | 188348 / 202 | 641917 / 206 | 255274 / 251 | 221527 / 78 | 0.85 |
+| mandel | 4180008 / 543 | 4127034 / 534 | 11210666 / 648 | 9953489 / 550 | 7601337 / 422 | 0.54 |
+| life | 161089 / 340 | 161077 / 336 | 1302173 / 667 | 227505 / 156 | 238566 / 163 | 0.71 |
+| line | 506033 / 360 | 503415 / 349 | 2425124 / 783 | 719982 / 380 | 576133 / 335 | 0.87 |
+| sprites | 65957 / 78 | 65957 / 78 | 807205 / 411 | 112356 / 113 | 76125 / 85 | 0.87 |
+
+Tisple still wins all 13 (geomean 0.723 of the best other, 0.720 on the 6502). Its kernels
+are single tight loops already in registers, where the 65C02 adds little: at most 1.3%
+(mandel; mul16 1.0%) and a few bytes. LLVM-MOS gains most (fill 10%, search 5%, line 6%):
+its 6502 code leaves more for STZ and the others to take.
+
+Programs (the program race on the 65C02):
+
+| Program | Tisple 6502 | Tisple 65C02 | cc65 | LLVM-MOS | Oscar64 (6502 code) | Tisple / best other |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| bytesieve | 12090810 / 202 | 12090810 / 200 | 19310727 / 309 | 20334254 / 3827 | 14349970 / 177 | 0.84 |
+| sort | 1316840 / 1734 | 1302751 / 1716 | 3748546 / 2453 | 1947956 / 5531 | 1202552 / 1452 | 1.08 |
+| dhrystone | 782736 / 2675 | 779120 / 2605 | 2176863 / 3119 | 817843 / 2497 | 391865 / 1289 | 1.99 |
+| parser | 1433335 / 1748 | 1415352 / 1737 | 8120944 / 2315 | 1702522 / 6140 | 2280481 / 1974 | 0.83 |
+| lz4 | 1032306 / 449 | 1029779 / 443 | 3111779 / 795 | 1241743 / 627 | 901828 / 372 | 1.14 |
+| vm | 4433013 / 1239 | 4041267 / 1220 | 12336329 / 2680 | 6381873 / 4115 | 5628776 / 1137 | 0.72 |
+| bfs | 3413444 / 755 | 3397812 / 746 | 9832833 / 1030 | 5436467 / 1963 | 3157011 / 726 | 1.08 |
+| blit | 2222239 / 719 | 2196781 / 716 | 6641151 / 1599 | 4357132 / 2175 | 2186965 / 873 | 1.00 |
+| scroll | 9227568 / 682 | 9226549 / 671 | 45136173 / 1053 | 12535094 / 1745 | 8869763 / 459 | 1.04 |
+| bignum | 1691976 / 1244 | 1674609 / 1211 | 10123064 / 1728 | 6329184 / 5288 | 3365122 / 840 | 0.50 |
+
+Tisple's geomean against the best other 0.964 (0.974 on the 6502). The bytecode VM gains
+8.8%: its dispatch is a dense `match`, which on the 65C02 is `JMP (table,X)` (10 cycles a
+bytecode where the 6502's push and `RTS` take 22). The others gain 0 to 1.3% and 1 to 3%
+of their bytes.
+
+Random programs, seeds 1-2000 (`races/random.sh`), each compiler on the 65C02 against
+itself on the 6502:
+
+| Compiler | Cycles, geomean 65C02 / 6502 | Bytes | Faster / slower programs |
+| --- | ---: | ---: | ---: |
+| Tisple | 0.990 | 0.976 | 1143 / 99 |
+| LLVM-MOS | 0.986 | 0.966 | 957 / 385 |
+| cc65 | 0.986 | 0.973 | 1720 / 89 |
+| Oscar64 (6502 code) | 1.000 | 1.000 | 0 / 0 |
+
+On the 65C02 Tisple wins 70.0% of the programs (69.7% on the 6502) with a geomean of 0.800
+of the fastest other (0.802). The 99 programs that got slower are layout, not code: code a
+few bytes shorter moves a branch or an indexed table across a page (a cycle each; seeds
+1518, 223), or the loop padding takes the bytes the 65C02 saved (seed 1796).
+
+### Catwiz (Catwiz c341c4a, built from a copy)
+
+| | 6502 build | 65C02 build |
+| --- | ---: | ---: |
+| squeeze level | 10 of 10 | 10 of 10 |
+| functions and routines at that level, at the usual budget | 33,464, 44,001 | 32,869, 42,897 |
+| code (main file) | 34,674 | 33,720 (-2.75%) |
+| language card bank 1 | 11 functions, 1,919 bytes | 6 functions, 1,302 bytes |
+| overlay region | 2,662 | 2,595 |
+| boot disk | 70,813 | 69,750 |
+| a pass waiting for a key, flat out (measure.py "950f:RETURN" 1500 3000) | 5,719 cycles | 5,632 (-1.5%) |
+| a scripted turn, busy frames (passlog SEED=5, keys below) | 401 | 398 (-0.75%) |
+
+The turn: "950f:RETURN,1500f:1,1600f:Z,1700f:2,1800f:Z,1900f:3,2000f:Z,2100f:E", frames 1490
+to 2700, counting every pass but the 1-frame idle ones. The 6502 build run on the 65C02 takes
+the same (5,719 cycles; 402 frames). The game does not fit at the usual budget on either
+chip, so the 65C02 does not lift the squeeze; the smaller code moves 5 functions back out of
+bank 1. Its time goes to drawing (lib/dhgr's hand-written runs, unpacking) and to code the
+65C02 does not change: draw/scene.same, a quarter of a waiting pass, reloads X between two
+struct arrays six times (an NMOS-level register choice, the same on both chips).

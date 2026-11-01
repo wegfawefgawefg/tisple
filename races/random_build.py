@@ -52,7 +52,7 @@ def run(cmd, cwd, what, timeout=BUILD_TIMEOUT):
 
 
 def build_cc65(src, outdir):
-    cmd = [os.path.join(toolchains.CC65, "bin", "cl65"), "-t", "sim6502",
+    cmd = [os.path.join(toolchains.CC65, "bin", "cl65")] + toolchains.cc65_target() + [
            "-C", os.path.join(toolchains.HERE, "toolchains", "cc65-random.cfg")]
     cmd += SETTINGS["cc65"] + ["-I", toolchains.INCLUDE, "-DRACE_CC65"]
     cmd += ["-m", "k.map", "-Ln", "k.lbl", "-l", "k.lst", "-o", "k.bin", src]
@@ -90,7 +90,7 @@ def split_by_labels(objects, labels):
 
 
 def build_llvm_mos(src, outdir):
-    cmd = [os.path.join(toolchains.LLVM_MOS, "bin", "mos-sim-clang"), "-mcpu=mos6502"]
+    cmd = [os.path.join(toolchains.LLVM_MOS, "bin", "mos-sim-clang"), toolchains.llvm_mos_cpu()]
     cmd += SETTINGS["llvm-mos"] + ["-I", toolchains.INCLUDE, "-DRACE_LLVM_MOS", "-w"]
     cmd += ["-o", "k.bin", src]
     run(cmd, outdir, "mos-sim-clang")
@@ -142,7 +142,8 @@ def build_tisple(src, outdir):
     # the C's RACE_NOINLINE
     listing = run([toolchains.tisple_binary(), "build", src, "--origin", "0x%04X" % TISPLE_ORIGIN,
                    "--no-inline", "t.init", "--no-inline", "t.checksum",
-                   "--asm", "-o", os.path.join(outdir, "k.bin")], outdir, "tisple build")
+                   "--asm", "-o", os.path.join(outdir, "k.bin")] + toolchains.tisple_cpu_flags(),
+                  outdir, "tisple build")
     b = Build()
     with open(os.path.join(outdir, "k.bin"), "rb") as f:
         b.loads.append((TISPLE_ORIGIN, f.read()))

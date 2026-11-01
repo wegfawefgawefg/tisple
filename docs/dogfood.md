@@ -122,9 +122,9 @@ From a review of Catwiz's build (2026-11-01):
     messages contradict each other (13); errors cascade ("the value of const X is not
     constant" after an overflow).
 25. Docs that claim more than is built: design.md's placement table lists `in tables` and `in
-    zero_page` (the checker takes only `:in aux`); language.md describes 65C02 jump tables (only
-    NMOS is built). Disks, bank switching and aux memory are checked only in Tisple's own
-    emulator, never on real hardware.
+    zero_page` (the checker takes only `:in aux`). Disks, bank switching and aux memory are
+    checked only in Tisple's own emulator, never on real hardware. (language.md's 65C02 jump
+    tables are built since 2026-11-01.)
 
 From the round 1 hardware libraries (2026-11-01, docs/hardware.md):
 
@@ -149,6 +149,35 @@ From the round 1 hardware libraries (2026-11-01, docs/hardware.md):
     examples/joystick.tsp (renamed stick_paint.tsp): an example named after a library imports
     itself. A rule (examples are never named after a library) or the libraries first in the
     import order would end it.
+
+From the 65C02 target (2026-11-01, docs/design.md Target, docs/races.md "The 65C02"):
+
+30. The 65C02 gains are small where Tisple is already good: kernels at most 1.3%, random
+    programs 1.0% (bytes 2.4%), Catwiz's waiting pass 1.5% and a turn 0.75%; the bytecode VM's
+    dense `match` 8.8%. Everything but the jump tables, dispatchers and interrupt entry is a
+    pass after the peephole (backend/cmos.cpp), so the generator still plans with the 6502's
+    instructions: it never keeps Y free because `(zp)` needs none, never prefers a store of 0
+    because STZ leaves A alone, never tests a bit with `BIT #` to keep A. Teaching the
+    generator (choices by cost, `pin` decisions) is the next step if the owner wants more.
+31. Code shorter by a few bytes moves branches and indexed tables across pages: 99 of 2000
+    random programs got a cycle or a few slower on the 65C02 for that alone (seeds 1518, 223),
+    and seed 1796 gave the saved bytes to loop padding (+28 bytes, +3% cycles). PadLoops keeps
+    short loops in a page; nothing places data or straight-line branches by page.
+32. Catwiz's draw/scene.same, a quarter of a waiting pass, compares two struct arrays at
+    indexes i and d and loads X six times (`LDX i / LDA looks,X / LDX d / CMP drawn,X` a
+    field) where X for one and Y for the other (`LDA looks,X / CMP drawn,Y`) needs neither
+    reload. An NMOS-level register choice, the same on both chips.
+33. The emulator's IIgs runs the 65C02 (its 65816's own instructions and timings are not
+    modelled), and the undefined 65C02 opcodes follow Bruce Clark's table (`$x7`, `$xF`, `$CB`,
+    `$DB` 1-byte 1-cycle NOPs, `$5C` 8 cycles), which SingleStepTests' synertek65c02 set does
+    not (its chip reads memory for some). No program Tisple builds uses them; the test that
+    would tell which Apple's chips do needs a real machine.
+34. Apple's 65C02s (NCR, GTE, Synertek parts in the enhancement kits and the IIc) are taken to
+    lack Rockwell's bit instructions: Apple documents only the 27 added instructions, the IIgs's
+    65816 gives their opcodes other meanings, and disassemblers for Apple code (regenerator2000,
+    dumpapple) say so; no Apple manual says it outright in what could be found online. Some
+    enhancement kits are said to carry Rockwell parts, which have them; the target never emits
+    them either way.
 
 ## Fixed
 

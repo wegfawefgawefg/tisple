@@ -30,6 +30,8 @@ Compiled CompileMainText(const std::string& text);
 Compiled CompileMainText(const std::string& text, const tisple::OptOptions& opt);
 // with these build options (a squeeze, say)
 Compiled CompileMainWith(const std::string& text, const tisple::BuildOptions& options);
+// every function kept (callable by address, like CompileText), with these build options
+Compiled CompileTextWith(const std::string& text, const tisple::BuildOptions& options);
 
 // the interpreter and the simulator side by side, calls made on both
 struct Diff {
@@ -52,7 +54,8 @@ void CheckDiff(TestResults& results, Diff& d, const std::string& function,
 void CheckProgram(TestResults& results, const std::string& text, const std::string& function,
                   const std::vector<std::uint16_t>& args);
 
-// instructions of one mnemonic in a function's code
+// instructions with this mnemonic in function's code (for STA, the 65C02's STZ too; for INC
+// and DEC, not the 65C02's INC A and DEC A)
 int CountMn(const Compiled& c, const std::string& function, tisple::Mn mn);
 
 // compares every global byte; false with a message
@@ -105,6 +108,8 @@ void RunBackendBuildTests(TestResults& results);
 void RunBackendInlineTests(TestResults& results);
 // match dispatch (test_backend_match.cpp)
 void RunBackendMatchTests(TestResults& results);
+// the 65C02 target against the 6502 one (test_backend_cmos.cpp)
+void RunBackendCmosTests(TestResults& results);
 // shifts (test_backend_shift.cpp)
 void RunBackendShiftTests(TestResults& results);
 // 8-bit subtractions (test_backend_sub8.cpp)

@@ -239,7 +239,9 @@ std::vector<SpanBranch> SpanBranches(const Assembly& as, const FunctionSpan& spa
     std::uint32_t end = base + SpanSize(as.items, span);
     for (std::size_t i = span.first; i < span.end; i++) {
         const AsmItem& item = as.items[i];
-        bool branch = item.kind == ItemKind::Ins && item.mode == Mode::Rel && !item.long_branch &&
+        // (a 65C02 JMP that is a BRA costs a cycle across a page too)
+        bool branch = item.kind == ItemKind::Ins &&
+                      ((item.mode == Mode::Rel && !item.long_branch) || item.short_jump) &&
                       item.value.sym >= 0;
         if (!branch) {
             continue;
@@ -372,7 +374,11 @@ bool MarkFarBranches(Assembly& as, const std::vector<FunctionSpan>& spans,
         for (std::size_t i = spans[s].first; i < spans[end - 1].end; i++) {
             AsmItem& item = as.items[i];
             bool branch = item.kind == ItemKind::Ins && item.mode == Mode::Rel;
-            if (branch && !item.far && item.value.sym >= 0 && !labels.count(item.value.sym)) {
+            // a 65C02 JMP to another run's code must stay a JMP (asm.hpp: BRA)
+            bool jump = as.cpu == Cpu::k65c02 && item.kind == ItemKind::Ins && item.mn == Mn::JMP &&
+                        item.mode == Mode::Abs;
+            if ((branch || jump) && !item.far && item.value.sym >= 0 &&
+                !labels.count(item.value.sym)) {
                 item.far = true;
                 changed = true;
             }
@@ -393,7 +399,7 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
         std::vector<AsmItem> run(as.items.begin() + static_cast<std::ptrdiff_t>(first_item),
                                  as.items.begin() + static_cast<std::ptrdiff_t>(end_item));
         std::swap(as.items, run);
-        std::uint32_t run_end = LayoutCode(as, static_cast<std::uint16_t>(places[s].address));
+        std::uint32_t run_end = LayoutCode(as, static_cast<std::uint16_t>(places[s].address), true);
         std::swap(as.items, run);
         std::copy(run.begin(), run.end(),
                   as.items.begin() + static_cast<std::ptrdiff_t>(first_item));

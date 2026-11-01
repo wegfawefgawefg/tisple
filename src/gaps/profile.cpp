@@ -29,6 +29,7 @@ bool HasMemoryOperand(Mode mode) {
     case Mode::AbsY:
     case Mode::IndX:
     case Mode::IndY:
+    case Mode::ZpInd:
         return true;
     default:
         return false;
@@ -65,6 +66,8 @@ std::uint16_t EffectiveAddress(const Machine& m, const Regs& r, Mode mode) {
         return ZpWord(m, static_cast<std::uint8_t>(zp + r.x));
     case Mode::IndY:
         return static_cast<std::uint16_t>(ZpWord(m, zp) + r.y);
+    case Mode::ZpInd:
+        return ZpWord(m, zp);
     default:
         return 0;
     }
@@ -249,7 +252,7 @@ bool AlreadyHeld(const PendingIns& in, Mn mn, const Regs& b, const Regs& a) {
 
 void Judge(Profiler& p, const Regs& after) {
     const PendingIns& in = p.pending;
-    const OpcodeInfo& info = OpcodeInfoFor(in.opcode);
+    const OpcodeInfo& info = OpcodeInfoFor(in.opcode, p.cpu);
     Mn mn = info.mn;
     SiteStats& s = p.sites[in.pc];
     s.count++;
@@ -292,7 +295,8 @@ void NotePending(Profiler& p, const Machine& m) {
     in.before = GetRegs(m);
     in.pc = in.before.pc;
     in.opcode = m.mem[in.pc];
-    const OpcodeInfo& info = OpcodeInfoFor(in.opcode);
+    p.cpu = m.cpu_kind;
+    const OpcodeInfo& info = OpcodeInfoFor(in.opcode, p.cpu);
     in.has_ea = HasMemoryOperand(info.mode);
     in.ea = in.has_ea ? EffectiveAddress(m, in.before, info.mode) : 0;
     in.volatile_ea = in.has_ea && in.ea >= 0xC000;
