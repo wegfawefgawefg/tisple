@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <set>
 
 namespace tisple {
 
@@ -249,12 +250,27 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
         return LinkResult::kError;
     }
     if (options.cpu == Cpu::k65c02) {
+        // the runtime's labels other code names: entered there with any carry
+        std::set<std::int32_t> named;
         for (std::size_t f = 0; f < be.code.size(); f++) {
-            if (kept[f]) {
-                UseCmos(be.as, be.code[f], true);
+            if (!kept[f]) {
+                continue;
+            }
+            UseCmos(be.as, be.code[f]);
+            for (const AsmItem& item : be.code[f]) {
+                if (item.kind != ItemKind::Label && item.value.sym >= 0) {
+                    named.insert(item.value.sym);
+                }
             }
         }
-        UseCmos(be.as, runtime, false);
+        for (const std::vector<AsmItem>* entry : {&irq, &irq_banked}) {
+            for (const AsmItem& item : *entry) {
+                if (item.kind != ItemKind::Label && item.value.sym >= 0) {
+                    named.insert(item.value.sym);
+                }
+            }
+        }
+        UseCmos(be.as, runtime, &named);
     }
     squeezed = NoteSqueezed(be, kept, choices, runtime);
     LinkInput in;

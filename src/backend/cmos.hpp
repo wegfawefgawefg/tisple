@@ -24,11 +24,14 @@
 
 #include "backend/gen.hpp"
 
+#include <set>
+
 namespace tisple {
 
-// true when anything changed. whole: items are all the code that reaches their labels (a
-// function's); the runtime routines are entered from outside at inner labels (rt.divu8.ge),
-// so the carry is not followed there
-bool UseCmos(const Assembly& as, std::vector<AsmItem>& items, bool whole);
+// true when anything changed. entries: null for a function's code, which only its own start
+// and jumps of its own reach; for the runtime routines, every label other code names (they
+// are entered at inner labels too, rt.divu8.ge), where the carry may be anything
+bool UseCmos(const Assembly& as, std::vector<AsmItem>& items,
+             const std::set<std::int32_t>* entries = nullptr);
 
 } // namespace tisple

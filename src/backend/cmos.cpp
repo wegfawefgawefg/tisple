@@ -248,11 +248,11 @@ Mn StepWithCarry(const AsmItem& op, std::int8_t carry) {
 }
 
 // the rewrites of two and three instructions in a row, by the liveness of the code before
-// (and the carry it leaves, when every way into its labels is in it)
-bool UsePairs(const Assembly& as, std::vector<AsmItem>& items, bool whole) {
+// and the carry it leaves
+bool UsePairs(const Assembly& as, std::vector<AsmItem>& items,
+              const std::set<std::int32_t>* entries) {
     std::vector<std::uint8_t> live = LiveRegsIn(as, items);
-    std::vector<std::int8_t> carry =
-        whole ? CarryKnownIn(items) : std::vector<std::int8_t>(items.size(), -1);
+    std::vector<std::int8_t> carry = CarryKnownIn(items, entries);
     std::vector<AsmItem> out;
     out.reserve(items.size());
     bool changed = false;
@@ -301,12 +301,13 @@ bool UsePairs(const Assembly& as, std::vector<AsmItem>& items, bool whole) {
 
 } // namespace
 
-bool UseCmos(const Assembly& as, std::vector<AsmItem>& items, bool whole) {
-    bool changed = UsePairs(as, items, whole);
+bool UseCmos(const Assembly& as, std::vector<AsmItem>& items,
+             const std::set<std::int32_t>* entries) {
+    bool changed = UsePairs(as, items, entries);
     changed = UseKnownZeros(items) || changed;
-    // a CLC or SEC an INC A made redundant, then the loads of 0 and the LDY #0 nothing reads
-    // any more
-    while (whole && CarryPass(items)) {
+    // a CLC or SEC an INC A made redundant (in a function's code: CarryPass knows nothing of
+    // other entries), then the loads of 0 and the LDY #0 nothing reads any more
+    while (entries == nullptr && CarryPass(items)) {
         changed = true;
     }
     while (DropDeadValues(as, items)) {
