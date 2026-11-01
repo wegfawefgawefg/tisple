@@ -29,6 +29,9 @@ struct MachineArgs {
     const char* keys = nullptr;
     const char* mouse = nullptr;     // scripted mouse input
     const char* mouse_rom = nullptr; // the owner's MouseInterface.rom; null for ours
+    const char* joystick = nullptr;  // scripted paddles 0-1 and buttons
+    MachineModel model = MachineModel::kIIeEnhanced; // what the rom-less machine says it is
+    bool aux_ram = true;                             // false: --64k
     int mockingboard = 0;            // its slot; 0 for none
     uint32_t origin = kDefaultOrigin;
     uint64_t cycles = kDefaultCycles;

@@ -1,4 +1,5 @@
 #include "check.hpp"
+#include "test_apple2_libs.hpp"
 #include "source_file.hpp"
 #include "test_backend.hpp"
 #include "test_check.hpp"
@@ -120,6 +121,7 @@ int main() {
     tisple_tests::RunUnpackIrqTests(results);
     tisple_tests::RunDhgrLibTests(results);
     tisple_tests::RunDhgrRunsTests(results);
+    tisple_tests::RunJoystickLibTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);
     tisple_tests::RunSuperoptTests(results);

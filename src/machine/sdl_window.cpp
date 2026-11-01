@@ -1,5 +1,6 @@
 // `tisple machine --window`: the machine at real speed in an SDL3 window, with keyboard,
-// speaker, Mockingboard and disk drive audio and the mouse card. built only with TISPLE_SDL.
+// speaker, Mockingboard and disk drive audio, the mouse card, and a game controller as the
+// joystick (sdl_gamepad.cpp). built only with TISPLE_SDL.
 // it never raises itself, and closing the window returns at once.
 //
 // the mouse: while the pointer is over the window, its motion moves the card's mouse (one
@@ -12,6 +13,7 @@
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
 #include "machine/mouse.hpp"
+#include "machine/sdl_gamepad.hpp"
 #include "machine/speaker_audio.hpp"
 #include "machine/window.hpp"
 
@@ -264,6 +266,9 @@ bool HandleEvent(WindowState& w, Apple2& a, const WindowOptions& options, const 
     if ((HasMouseCard(a) || !options.taps.empty()) && HandleMouseEvent(w, a, options, e)) {
         return true;
     }
+    if (HandleGamepadEvent(a, e)) {
+        return true;
+    }
     switch (e.type) {
     case SDL_EVENT_QUIT:
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -383,7 +388,7 @@ bool Open(WindowState& w, const WindowOptions& options) {
     // a fixed app id so window managers can match the window (WM_CLASS "tisple")
     SDL_SetAppMetadata("Tisple ][", "0.1", "tisple");
     SDL_SetHint(SDL_HINT_APP_ID, "tisple");
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "tisple machine: SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }

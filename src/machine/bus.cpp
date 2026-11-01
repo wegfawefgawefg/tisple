@@ -18,6 +18,37 @@ uint8_t NoRomByte(uint16_t addr) {
     return static_cast<uint8_t>(addr >> 8);
 }
 
+// $D000-$FFFF with no rom: the model's identification bytes (Apple's Miscellaneous Technical
+// Note #7) and the routine at $FE1F (an RTS; a IIgs's LDY #0 / CLC / RTS); the rest is
+// NoRomByte
+uint8_t IdRomByte(const Apple2& a, uint16_t addr) {
+    MachineModel m = a.model;
+    bool plus = m == MachineModel::kIIPlus;
+    switch (addr) {
+    case 0xFB1E:
+        return 0xAD; // PREAD's LDA PTRIG
+    case 0xFBB3:
+        return plus ? 0xEA : 0x06;
+    case 0xFBC0:
+        if (m == MachineModel::kIIc) {
+            return 0x00;
+        }
+        return plus || m == MachineModel::kIIe ? 0xEA : 0xE0;
+    case 0xFBBF:
+        return m == MachineModel::kIIc ? 0xFF : plus ? 0xEA : m == MachineModel::kIIe ? 0xC1 : 0x00;
+    case 0xFE1F:
+        return m == MachineModel::kIIgs ? 0xA0 : 0x60;
+    case 0xFE20:
+        return m == MachineModel::kIIgs ? 0x00 : NoRomByte(addr);
+    case 0xFE21:
+        return m == MachineModel::kIIgs ? 0x18 : NoRomByte(addr);
+    case 0xFE22:
+        return m == MachineModel::kIIgs ? 0x60 : NoRomByte(addr);
+    default:
+        return NoRomByte(addr);
+    }
+}
+
 uint64_t AccessCycle(const Apple2& a) {
     // the wrapper counts the cycle before performing it
     return a.cpu.cycles - 1;
@@ -315,7 +346,7 @@ uint8_t BusRead(void* ctx, uint16_t addr) {
     if (a.lc.read_ram) {
         return *LanguageCardByte(a, addr);
     }
-    return a.rom.present ? a.rom.bytes[addr - 0xC000] : NoRomByte(addr);
+    return a.rom.present ? a.rom.bytes[addr - 0xC000] : IdRomByte(a, addr);
 }
 
 void BusWrite(void* ctx, uint16_t addr, uint8_t value) {
@@ -359,7 +390,9 @@ bool CanExecute(const Apple2& a, uint16_t addr) {
         return false;
     }
     if (addr >= 0xD000) {
-        return a.lc.read_ram || a.rom.present;
+        // with no rom, the identification routine at $FE1F still runs
+        bool id_routine = addr >= 0xFE1F && addr <= 0xFE22;
+        return a.lc.read_ram || a.rom.present || id_routine;
     }
     const SoftSwitches& sw = a.sw;
     int slot = (addr >> 8) & 0x07;
@@ -393,7 +426,7 @@ uint8_t PeekMemory(const Apple2& a, uint16_t addr) {
     if (a.lc.read_ram) {
         return *LanguageCardRam(a, addr);
     }
-    return a.rom.present ? a.rom.bytes[addr - 0xC000] : NoRomByte(addr);
+    return a.rom.present ? a.rom.bytes[addr - 0xC000] : IdRomByte(a, addr);
 }
 
 void ResetSoftSwitches(Apple2& a) {

@@ -237,6 +237,8 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
 int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySegment>& segments,
                 const MachineArgs& args, MachineWindowFn window) {
     std::unique_ptr<Apple2> a = NewApple2();
+    a->model = args.model;
+    a->aux_ram = args.aux_ram;
     std::string error;
     if (args.rom != nullptr) {
         std::vector<uint8_t> rom;
@@ -299,6 +301,10 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         return 1;
     }
     if (args.mouse != nullptr && !ScheduleMouseInput(*a, args.mouse, error)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        return 1;
+    }
+    if (args.joystick != nullptr && !ScheduleJoystickInput(*a, args.joystick, error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         return 1;
     }

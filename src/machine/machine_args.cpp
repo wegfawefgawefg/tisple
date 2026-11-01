@@ -27,6 +27,12 @@ void PrintMachineUsage() {
         "  --disk-rom F        the card's boot rom (Apple's DISK2.rom) instead of ours\n"
         "  --mouse \"C:X,Y,B;...\"  the mouse card (slot 4) is at X,Y with the button B (0 or\n"
         "                      1) from cycle C\n"
+        "  --joystick \"C:X,Y,B;...\"  from cycle C paddles 0 and 1 read X and Y (0-255) and\n"
+        "                      the buttons are down by B's bits (1 open-apple, 2 closed-apple,\n"
+        "                      4 button 2)\n"
+        "  --model M           with no rom, the Apple II it says it is to a program that asks:\n"
+        "                      iie-enhanced (default), iie, iic, iiplus, iigs\n"
+        "  --64k               no extended 80-column card: a 64 KB iie\n"
         "  --mouse-rom F       the card's real firmware (MouseInterface.rom) instead of ours;\n"
         "                      it needs an Apple rom too (--rom)\n"
         "  --mockingboard N    a Mockingboard in slot N (1-7; 4 is usual: then no mouse card);\n"
@@ -102,6 +108,14 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.keys = argv[++i];
         } else if (std::strcmp(arg, "--mouse") == 0 && has_value) {
             args.mouse = argv[++i];
+        } else if (std::strcmp(arg, "--joystick") == 0 && has_value) {
+            args.joystick = argv[++i];
+        } else if (std::strcmp(arg, "--model") == 0 && has_value) {
+            if (!ParseModel(argv[++i], args.model)) {
+                return false;
+            }
+        } else if (std::strcmp(arg, "--64k") == 0) {
+            args.aux_ram = false;
         } else if (std::strcmp(arg, "--mouse-rom") == 0 && has_value) {
             args.mouse_rom = argv[++i];
         } else if (std::strcmp(arg, "--mockingboard") == 0 && has_value) {
