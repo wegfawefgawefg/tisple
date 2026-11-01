@@ -45,15 +45,15 @@ const state = {
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
     logs: true,       // false on a static site: nowhere to post them
-    diskSound: false, // the drives' sound, and loading at the Apple's speed to hear it
+    diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
 };
 
 // the disk button's setting, kept in this browser when it can be
 const DISK_SOUND_KEY = "tisple.diskSound";
 try {
-    state.diskSound = localStorage.getItem(DISK_SOUND_KEY) === "on";
+    state.diskSound = localStorage.getItem(DISK_SOUND_KEY) !== "off";
 } catch (err) {
-    // no storage (private window, blocked): off, as by default
+    // no storage (private window, blocked): on, as by default
 }
 
 // the bar's and the start's words, in the machine's letters (pad.js)

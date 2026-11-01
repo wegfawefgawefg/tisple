@@ -6,7 +6,7 @@ the speaker, a Mockingboard and the disk drive, and turns a game's on-screen but
 key presses.
 
 - The bar's `disk` button turns the drive's sound on and off (dim when off; the browser
-  remembers it; off until pressed: the owner wants it opt in). On, a disk loads at the
+  remembers it; on until pressed: the owner, 2026-11-01, wants the real loading by default). On, a disk loads at the
   Apple's speed so it sounds like a Disk II: the boot's grind, the head stepping, the motor
   (docs/disks.md, "The drives' sound"); Catwiz takes about 11 s to load. Off, or with no
   sound running, loading runs flat out and silent as before.
