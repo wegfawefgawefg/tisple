@@ -359,10 +359,11 @@
 (const HOME u16 0x1E00)
 (const RUNS u16 0x1E59)
 (const KIT_SIZE u16 343)
-(let home_main (array u8 KIT_SIZE) :address 0x1E00 :reserve)
 (let home_aux (array u8 KIT_SIZE) :address 0x1E00 :in aux :reserve)
 
-(const KIT (array u8 343)
+; the kit at its home in main memory, loaded there with the program (a boot disk's loader puts
+; it there; other builds' startup copies it in), so it costs no other bytes
+(let kit (array u8 343)
     (make (array u8 343)
         0xA5 0xFE 0x29 0x07 0x0A 0x0A      ; row_at: LDA ROWY / AND #$07 / ASL A / ASL A
         0x05 0xF8 0x85 0xFD 0xA5 0xFE      ; ORA PAGEHI / STA DST+1 / LDA ROWY
@@ -428,16 +429,14 @@
         0x4C 0x92 0x1E                     ; JMP o_white
         0x4A 0xB0 0x03 0x4C 0x86 0x1E      ; o_cut: LSR A / BCS c_byte / JMP o_byte
         0xB1 0xFA 0xF0 0x02 0x91 0xFC      ; c_byte: LDA (SRC),Y / BEQ c_skip / STA (DST),Y
-        0x88 0x10 0xF7 0x4C 0x8D 0x1E))    ; c_skip: DEY / BPL c_byte / JMP o_done
+        0x88 0x10 0xF7 0x4C 0x8D 0x1E)     ; c_skip: DEY / BPL c_byte / JMP o_done
+    :address 0x1E00)
 
-; the code to $1E00 of both memories, once
+; the code to $1E00 of aux memory too, once
 (fn setup () void
     (if ready
         (return))
-    (let home (ptr u8) (as (ptr u8) HOME))
-    (for i u16 0 KIT_SIZE
-        (store (+ home i) (at KIT i)))
-    (auxmem.write home (addr_of (at KIT 0)) KIT_SIZE)
+    (auxmem.write (addr_of (at kit 0)) (addr_of (at kit 0)) KIT_SIZE) ; aux home, same address
     (set ready true))
 
 ; runs flags: the runs are in the aux language card (lib/auxcard reaches them), the shape

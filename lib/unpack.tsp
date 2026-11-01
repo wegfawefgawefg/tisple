@@ -27,10 +27,11 @@
 ; byte with the low 7 bits; the length's first bit is that byte's bit 0).
 (const HOME u16 0x1C00)
 (const CODE_SIZE u16 394)
-(let home_main (array u8 CODE_SIZE) :address 0x1C00 :reserve)
 (let home_aux (array u8 CODE_SIZE) :address 0x1C00 :in aux :reserve)
 
-(const CODE (array u8 394)
+; the code at its home in main memory, loaded there with the program (a boot disk's loader puts
+; it there; other builds' startup copies it in), so it costs no other bytes
+(let code (array u8 394)
     (make (array u8 394)
         0x8A 0x29 0x01 0x85 0xF2 0x8A 0x4A ; unpack: TXA / AND #1 / STA RDSRC / TXA / LSR A
         0xAA 0x9D 0x04 0xC0 0x86 0xF3      ; TAX / STA $C004,X / STX RDDST
@@ -111,27 +112,21 @@
         0x98 0x18 0x65 0xFC 0x85 0xFC      ; c_dst: TYA / CLC / ADC DST / STA DST
         0x90 0x02 0xE6 0xFD                ; BCC c_end / INC DST+1
         0xA0 0x00                          ; c_end: LDY #0
-        0x60))                             ; c_done: RTS
+        0x60)                              ; c_done: RTS
+    :address 0x1C00)
 
 (const MAIN_TO_MAIN u8 0)
 (const AUX_TO_MAIN u8 1)
 (const MAIN_TO_AUX u8 2)
 (const AUX_TO_AUX u8 3)
 
-(let in_main bool false)
 (let in_aux bool false)
 
-; the code to $1C00 in main memory, and in aux memory too when the mode reaches it
+; the code to $1C00 in aux memory too, once, when the mode reaches it
 (fn setup ((mode u8)) void
-    (if (not in_main)
-        (do
-            (let home (ptr u8) (as (ptr u8) HOME))
-            (for i u16 0 CODE_SIZE
-                (store (+ home i) (at CODE i)))
-            (set in_main true)))
     (if (and (!= mode MAIN_TO_MAIN) (not in_aux))
         (do
-            (auxmem.write (as (ptr u8) HOME) (addr_of (at CODE 0)) CODE_SIZE)
+            (auxmem.write (addr_of (at code 0)) (addr_of (at code 0)) CODE_SIZE) ; aux home
             (set in_aux true))))
 
 (fn run ((dst (ptr u8)) (src (ptr u8)) (mode u8)) void

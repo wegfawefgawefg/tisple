@@ -948,6 +948,16 @@ whatever memory held (zero in a fresh interpreter or simulator), unless it lies
 inside the binary's own bytes, which loading the binary writes. Every other
 top-level `let` without a value starts at zero.
 
+A global with `:address` and a value outside the program's memory (2026-11-01): on a boot disk
+(`--disk`) it is a segment of its own, which the loader puts in place, so its bytes are
+nowhere else (a boot disk merges segments that share a page, and holds 10); below `$0B00`,
+where the loader cannot write, and in every other build, the startup writes it, a run of 16
+bytes or more copied from an image in the startup. lib/unpack, lib/auxcard and lib/dhgr keep
+their machine code so at its homes (`$1C00`, `$1D8A`, `$1E00`), which freed 820 bytes of a boot
+disk program's memory (Catwiz). `TISPLE_DATA_NOTES=1 tisple build --disk ...` lists every
+global's bytes, address and memory; `TISPLE_FIT_NOTES=1` each try of the link at each squeeze
+and why it found no room.
+
 ### Memory map
 
 Implemented 2026-10-27, for programs bigger than one stretch of memory. A

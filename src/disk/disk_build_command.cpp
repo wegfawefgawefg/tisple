@@ -228,6 +228,7 @@ void UseBootDiskLayout(BuildOptions& options) {
     // the origin
     options.limit = 0xC000;
     options.low_start = kBootLoadLow;
+    options.homes_in_segments = true;
 }
 
 bool HasDiskFlag(int argc, char** argv) {
@@ -267,6 +268,17 @@ int RunBuildDiskCommand(int argc, char** argv) {
         return 1;
     }
     std::fputs(DescribeSegments(compiled).c_str(), stdout);
+    if (std::getenv("TISPLE_DATA_NOTES") != nullptr) {
+        for (std::size_t v = 0; v < program.vars.size(); v++) {
+            const VarPlace& place = compiled.layout.vars[v];
+            const Var& var = program.vars[v];
+            if (var.function >= 0 || place.size == 0 || place.dropped || place.interp_only) {
+                continue;
+            }
+            std::printf("data %5u $%04X %s %s\n", place.size, place.address,
+                        var.placement.in_aux ? "aux " : "main", var.name.c_str());
+        }
+    }
     if (args.tables) {
         std::fputs(DescribeDiskTables(program).c_str(), stdout);
     }

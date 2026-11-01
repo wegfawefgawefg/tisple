@@ -327,6 +327,7 @@ void RunDiskReadTests(TestResults& results) {
     TestExact(results);
     RunDiskReadFailTests(results);
     RunDiskReadTwoTests(results);
+    RunDiskHomesTests(results);
     RunDiskReadTimingTests(results);
     RunDiskStreamTests(results);
 }
