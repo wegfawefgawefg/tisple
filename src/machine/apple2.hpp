@@ -33,8 +33,12 @@
 //   execute them); with a rom and no program loaded, they run as on the chip, but a JAM
 //   opcode stops the machine there (the chip hangs until a reset; the clock goes on)
 // - interrupts: only the Mockingboard raises them (mockingboard.hpp)
-// - the extended 80-column card is always in (a2audit reports 128K); there is no 64 KB iie
-//   and no plain 80-column card with 1 KB
+// - the extended 80-column card is in (a2audit reports 128K) unless aux_ram is off: then
+//   reads of aux memory give the floating bus and writes go nowhere, a 64 KB iie (the video
+//   still fetches the aux array in 80 columns); there is no plain 80-column card with 1 KB
+// - without a rom it answers the identification bytes of its model (MachineModel) and
+//   $FE1F is an RTS (a IIgs's clears the carry): the rest of $D000-$FFFF reads as the
+//   address's high byte
 // - auxiliary memory (memory_map.cpp): the card's ram as Sather describes it, checked for
 //   every RAMRD, RAMWRT, ALTZP, 80STORE, PAGE2 and HIRES combination at each memory edge
 //   (tests/test_machine_aux.cpp) and by a2audit; with every switch off the cpu reaches main
@@ -147,10 +151,24 @@ struct Keyboard {
     uint32_t queue_count = 0;
 };
 
+constexpr uint32_t kMaxScheduledJoystick = 1024;
+
+// scripted input: from this cycle paddles 0 and 1 read x and y, and the buttons are down by
+// the bits of buttons (bit 0 button 0, open-apple; bit 1 button 1; bit 2 button 2)
+struct ScheduledJoystick {
+    uint64_t cycle = 0;
+    uint8_t x = kPaddleCentre;
+    uint8_t y = kPaddleCentre;
+    uint8_t buttons = 0;
+};
+
 struct GamePort {
     uint8_t paddle[4] = {kPaddleCentre, kPaddleCentre, kPaddleCentre, kPaddleCentre};
     bool button[3] = {};
     uint64_t paddle_end[4] = {}; // timer i reads bit 7 set while cycle < paddle_end[i]
+    ScheduledJoystick queue[kMaxScheduledJoystick] = {};
+    uint32_t queue_head = 0;
+    uint32_t queue_count = 0;
 };
 
 struct Speaker {
@@ -334,6 +352,17 @@ struct SlotCards {
     MockingboardState mockingboard; // one Mockingboard, in mockingboard.slot
 };
 
+// which Apple II the machine says it is when it runs without a rom: the identification bytes
+// at $FBB3, $FBC0, $FBBF and the routine at $FE1F that programs read (Apple's Miscellaneous
+// Technical Note #7). The hardware stays the same iie with an nmos 6502 whatever it says.
+enum class MachineModel : uint8_t {
+    kIIeEnhanced = 0, // the default: our alternate character set is the enhanced one
+    kIIe,
+    kIIc,
+    kIIPlus,
+    kIIgs, // a IIgs in emulation: $FE1F clears the carry and Y
+};
+
 enum class MachineStop : uint8_t {
     kRunning = 0, // the cycle budget ran out; the machine can go on
     kReturned,    // the entry's final RTS
@@ -354,6 +383,10 @@ struct Apple2 {
     Speaker speaker;
     VideoScan video;
     SlotCards slots;
+    MachineModel model = MachineModel::kIIeEnhanced;
+    bool aux_ram = true;      // false: a 64 KB iie, no extended 80-column card (aux_float)
+    uint8_t aux_float = 0;    // what a read of the missing aux memory gave (the floating bus)
+    uint8_t aux_nowhere = 0;  // where writes to the missing aux memory go
     bool direct_load = false; // stop on BRK, illegal opcodes and the entry's RTS
     // reaching this pc means the program returned (0: no such place). a disk made by
     // `tisple disk boot` returns there: its loader's call to the program comes back to it
@@ -405,6 +438,8 @@ void ReleaseKey(Apple2& a);
 bool ScheduleKey(Apple2& a, uint64_t cycle, uint8_t code); // pressed then released
 void SetPaddle(Apple2& a, int index, uint8_t value);
 void SetButton(Apple2& a, int index, bool down);
+// in cycle order, as ScheduleKey; false when the queue is full
+bool ScheduleJoystick(Apple2& a, const ScheduledJoystick& input);
 
 // memory as the cpu would read it, without side effects
 uint8_t PeekMemory(const Apple2& a, uint16_t addr);

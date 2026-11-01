@@ -39,6 +39,16 @@ key presses.
   gets no pad there, any other has it in a column beside the screen. The buttons and the bar
   letter in the machine's own font (`web/font.py` writes `font.js` from
   `src/machine/font.cpp` at build).
+- A pad key may hold the joystick instead of a key: `{"label": "LEFT", "stick": "left"}`
+  (`right`, `up`, `down`) holds paddle 0 or 1 at its end while pressed, back at 127 after;
+  `{"label": "FIRE", "button": 0}` holds button 0 (open-apple; 1 closed-apple, 2). They are
+  not in the playtest log, which replays keys.
+- Saves (lib/save, docs/disks.md): what a program writes to its disk is kept in the browser's
+  localStorage under the game's name, as the 256-byte blocks of the `.dsk` that differ from
+  the published disk, once a second while the drive is off. At boot each kept block goes back
+  where the published disk has all zeros (an empty save area), so saves outlive a new build
+  that keeps its save areas where they were and never land on its program or other tables.
+  Clearing the site's data clears them.
 - `tisple machine --window --taps <config>` reads the same `taps` for the desktop window:
   a left click on a box presses its key until the button comes up.
 - `?autostart` runs without the tap and without sound (so loading is flat out), for

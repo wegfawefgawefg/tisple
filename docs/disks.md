@@ -30,7 +30,8 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   boot once, snapshot, restore. With `--load-snapshot`, the disks come from
   the snapshot and `--disk` only names the files `--write-back` writes.
 - `--write-back` saves written disks to their files at the end, in the
-  file's own format. A sector image is not saved if a track no longer reads
+  file's own format (`tisple run --disk game.dsk` boots the disk from its file, so its
+  `--write-back` saves there). A sector image is not saved if a track no longer reads
   as 16 good sectors (the error names the track and sector).
 
 ## The self-booting disk
@@ -227,6 +228,111 @@ reader needs no `(auxmem.guard)`: it never has RAMWRT on with interrupts on.
   picture before it on the page shown, but for the ball.
 - On a real machine: not yet. The budgets allow for a drive still coming up to speed after
   the motor goes on (three turns for an address field); the step timing is the loader's.
+
+## Saves
+
+Bytes the program writes back to its own disk (2026-11-01): high scores, a saved game,
+settings. `lib/save` keeps them in save areas, disk tables the build sets aside, and our own
+writer puts them there a sector at a time.
+
+```scheme
+(import save)
+
+(save.area GAME 300)                  ; room for a save of up to 300 bytes
+(let state (array u8 300))
+
+(fn save_game () u8
+    (save.write (addr_of (at GAME 0)) (addr_of (at state 0)) 300))
+
+(fn load_game () u8                   ; save.OK, or save.EMPTY on a fresh disk
+    (save.read (addr_of (at GAME 0)) (addr_of (at state 0)) 300))
+```
+
+```sh
+tisple run examples/save_count.tsp --disk build/save_count.dsk --write-back
+tisple machine --disk build/save_count.dsk --write-back --window   # boots it again
+```
+
+| Call | Does |
+| --- | --- |
+| `(save.area NAME n)` | top level: a save area for up to n bytes (1 to 4096) |
+| `(save.write area src n)` | n bytes of main memory from `src` to the disk; `save.OK` or an error |
+| `(save.read area dst n)` | the newest whole save back to `dst`; `save.OK`, `save.EMPTY`, or an error |
+
+The errors: `save.EMPTY` (read: nothing saved yet, or no copy that checks), `save.PROTECTED`
+(the write protect is on), `save.TOO_BIG` (n is 0 or more than the area holds), and lib/disk's
+`NO_CARD` (also every call in a build without `--disk`), `NO_DISK`, `BAD_SECTOR`,
+`BAD_TRACK`. `REFUSED` only comes from handing the writer a record that is not a save area.
+
+- **What an area is.** `save.area` is a macro for a zero-filled table `:on disk :interleave 3`
+  of two copies, each a header sector and the data's sectors: `2 * (1 + (n + 255) / 256)`
+  sectors. It goes on the last tracks with the other tables, so its place is known while
+  checking and stays put while the program grows; the record in memory is 3 bytes and one a
+  sector.
+- **A write** reads both headers, writes the data's sectors to the copy that is not there or
+  is older, then that copy's header: "TSAV", a generation number one past the newer one's,
+  the length, two check bytes of the data (Fletcher's sums, mod 256), and a check of the
+  header. **A read** reads both headers and takes the newest copy whose header checks, whose
+  length is n and whose data's sums match; if that copy's data does not check, the other.
+  A save with another length is not read (a new build that changes the save's size starts
+  fresh). On `EMPTY`, `dst` may hold a copy's bytes that did not check.
+- **Power cuts.** A write cut short, by a power cut, a reset or the window closing, leaves at
+  worst one torn sector in the copy it was writing. That copy's header is the last thing
+  written, so until it is whole the read takes the copy before; once it is, the new one. The
+  writer refuses any track below the lowest disk table (and track 17, and past 34), so
+  nothing it does reaches the loader's or the program's tracks: the disk always boots.
+  tests/test_save.cpp cuts the power at 93 moments of a write (across all of it, then every
+  250 cycles through the header's sector), turning 200 bits under the head to noise when the
+  drive was writing, and boots the disk each time: it boots, its tracks below the save areas
+  are bit for bit as they were, and the read gives the save before or the new one, whole.
+- **Cost.** A write of n bytes writes `(n + 255) / 256 + 1` sectors after two header reads;
+  300 bytes take well under half a second (their 3 sectors 0.17 s). Each sector's 343
+  nibbles are worked out first (about 17,000 cycles), then its address field waited for and
+  its data field written; an area's sectors go every third one round the track, so the next
+  one's nibbles are ready as it comes (every other one would miss it and wait a turn). Interrupts are off from
+  an address field's first mark to the end of its data field, about 12,000 cycles, as for
+  reads. A read costs what lib/disk's reads cost, two headers and the data.
+- **Where the bytes come from.** Main memory (or the language card), a page at a time: the
+  last sector also takes the bytes after the save up to its page's end, which are never read
+  back. A save is up to 4096 bytes.
+
+### The writer
+
+`src/disk/disk_writer.cpp` and `writer_write.cpp`: our own 6502 code (MIT as well, like the
+loader and the reader), 1,276 bytes. lib/save keeps `$0E00`-`$13FF` for it
+(`save.writer`, `:reserve`), and `tisple build --disk` writes it there for that disk, as one
+more segment, when the program has tables: built with the lowest table's track as its floor,
+and reading the boot slot from lib/disk's reader. Its 256 high nibbles go in lib/disk's
+bounce page (`disk.work`, which the reader only uses while it reads), its 86 low ones in its
+own last page.
+
+- `begin` (`$0E00`): the record in `auxmem.from`, the bytes in `auxmem.to`, as the reader
+  takes them. Checks the card in the boot slot, every track the record names against the
+  floor, turns the motor on and looks at the write protect.
+- `next` (`$0E03`): one sector: its nibbles worked out, the head to its track (found from an
+  address field when the reader moved it, as the reader finds it), then its address field with
+  the epilogue's `DE AA`, and from the `EB` on the data field written the way DOS 3.3's RWTS
+  writes it: five self-sync bytes 40 cycles apart, `D5 AA AD`, the 343 nibbles, `DE AA EB`
+  and one more `$FF`, a nibble every 32 cycles (each `STA $C08D,X` loads the data register
+  on its last cycle; the timed branches never cross a page). The new field starts a little
+  before the old one did and ends inside the gap after it, so the next sector's address field
+  is never touched. tests/test_save.cpp times every load of every write. When the head is on
+  the sector's track already it does not seek (a seek ends with 25 ms for the head to settle,
+  which would cost the next sector a turn).
+- The emulator's card writes the bits under the head while Q7 is on (src/machine/disk2.cpp);
+  the whole disk reads back as 16 good sectors a track after every write in the tests.
+
+### Where saves are kept
+
+- `tisple machine --disk game.dsk --write-back`, and `tisple run main.tsp --disk game.dsk
+  --write-back` (the build's disk, booted from its file since 2026-11-01), write the disk back
+  at the end. A run that ends in the middle of a sector's write leaves a track that does not
+  read as 16 sectors, which a `.dsk` cannot hold: that disk is then not saved. A rebuilt disk
+  has empty save areas again.
+- The phone player keeps what a program writes in the browser (docs/phone.md).
+- On a real machine: not tried yet. The timing is the Disk II's own (DOS 3.3 writes the
+  same way); a FloppyEmu writes `.dsk` images back to its card (check its manual for the
+  image format your firmware writes), so saves stay on the SD card.
 
 ## Our boot ROM
 

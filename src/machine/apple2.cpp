@@ -17,8 +17,9 @@ static_assert(std::is_trivially_copyable_v<Apple2>, "a snapshot is a struct copy
 namespace {
 
 constexpr uint32_t kSnapshotMagic = 0x32415054; // "TPA2"
-// 4: auxiliary memory; 5: the Mockingboard; 6: the disk ii's event log
-constexpr uint32_t kSnapshotVersion = 6;
+// 4: auxiliary memory; 5: the Mockingboard; 6: the disk ii's event log; 7: the game port's
+// scripted input, the machine's model
+constexpr uint32_t kSnapshotVersion = 7;
 
 struct SnapshotHeader {
     uint32_t magic = kSnapshotMagic;
@@ -70,8 +71,22 @@ uint64_t ServiceEvents(Apple2& a) {
         k.queue_head = (k.queue_head + 1) % kMaxScheduledKeys;
         k.queue_count--;
     }
-    uint64_t keys = NextKeyEvent(a);
-    return keys < a.video.next_check ? keys : a.video.next_check;
+    GamePort& g = a.game;
+    while (g.queue_count > 0 && g.queue[g.queue_head].cycle <= now) {
+        const ScheduledJoystick& j = g.queue[g.queue_head];
+        g.paddle[0] = j.x;
+        g.paddle[1] = j.y;
+        for (int i = 0; i < 3; i++) {
+            g.button[i] = ((j.buttons >> i) & 1) != 0;
+        }
+        g.queue_head = (g.queue_head + 1) % kMaxScheduledJoystick;
+        g.queue_count--;
+    }
+    uint64_t next = NextKeyEvent(a);
+    if (g.queue_count > 0 && g.queue[g.queue_head].cycle < next) {
+        next = g.queue[g.queue_head].cycle;
+    }
+    return next < a.video.next_check ? next : a.video.next_check;
 }
 
 // a pc at $C000 or above: the stop address, or rom space with nothing to run
@@ -324,49 +339,6 @@ std::string DescribeStop(const Apple2& a) {
 
 uint64_t Cycles(const Apple2& a) {
     return a.cpu.cycles;
-}
-
-void PressKey(Apple2& a, uint8_t code) {
-    a.keys.latch = static_cast<uint8_t>(code | 0x80);
-    a.keys.key_down = true;
-    a.keys.release_cycle = UINT64_MAX;
-}
-
-void ReleaseKey(Apple2& a) {
-    a.keys.key_down = false;
-    a.keys.release_cycle = UINT64_MAX;
-}
-
-bool ScheduleKey(Apple2& a, uint64_t cycle, uint8_t code) {
-    Keyboard& k = a.keys;
-    if (k.queue_count == kMaxScheduledKeys) {
-        return false;
-    }
-    // keep the queue sorted by cycle: insert from the back
-    uint32_t i = k.queue_count;
-    while (i > 0) {
-        const ScheduledKey& prev = k.queue[(k.queue_head + i - 1) % kMaxScheduledKeys];
-        if (prev.cycle <= cycle) {
-            break;
-        }
-        k.queue[(k.queue_head + i) % kMaxScheduledKeys] = prev;
-        i--;
-    }
-    k.queue[(k.queue_head + i) % kMaxScheduledKeys] = {cycle, code};
-    k.queue_count++;
-    return true;
-}
-
-void SetPaddle(Apple2& a, int index, uint8_t value) {
-    if (index >= 0 && index < 4) {
-        a.game.paddle[index] = value;
-    }
-}
-
-void SetButton(Apple2& a, int index, bool down) {
-    if (index >= 0 && index < 3) {
-        a.game.button[index] = down;
-    }
 }
 
 uint64_t SpeakerToggleCycle(const Apple2& a, uint64_t n) {

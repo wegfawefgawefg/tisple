@@ -34,6 +34,7 @@ struct Player {
     DriveSoundRenderer drives;
     bool drive_sound = true;
     std::vector<int16_t> samples;
+    std::vector<uint8_t> image; // the disk as a .dsk, for tp_disk_image
     std::string error;
 };
 
@@ -136,7 +137,14 @@ EMSCRIPTEN_KEEPALIVE void tp_key_up() {
     }
 }
 
-// open apple (0) and closed apple (1)
+// paddle index (0-3) reads value (0-255): the pad's stick ways
+EMSCRIPTEN_KEEPALIVE void tp_paddle(int index, int value) {
+    if (g_player.a) {
+        SetPaddle(*g_player.a, index, static_cast<uint8_t>(value));
+    }
+}
+
+// buttons 0-2: open apple (0) and closed apple (1)
 EMSCRIPTEN_KEEPALIVE void tp_button(int index, int down) {
     if (g_player.a) {
         SetButton(*g_player.a, index, down != 0);
@@ -146,6 +154,28 @@ EMSCRIPTEN_KEEPALIVE void tp_button(int index, int down) {
 // the motor is on: player.js runs flat out and mutes, unless the drives' sound is on
 EMSCRIPTEN_KEEPALIVE int tp_disk_busy() {
     return g_player.a && g_player.a->slots.disk2.motor_on ? 1 : 0;
+}
+
+// a program wrote to the disk (lib/save) and the motor is off: player.js keeps what changed
+EMSCRIPTEN_KEEPALIVE int tp_disk_written() {
+    Player& p = g_player;
+    return p.a && p.a->slots.disk2.drives[0].dirty && !p.a->slots.disk2.motor_on ? 1 : 0;
+}
+
+// the disk as a .dsk (tp_disk_image_size bytes), the written flag cleared; null when a track
+// does not read as 16 sectors
+EMSCRIPTEN_KEEPALIVE const uint8_t* tp_disk_image() {
+    Player& p = g_player;
+    p.image.clear();
+    if (!p.a || !SaveDiskImage(*p.a, 0, p.image, p.error)) {
+        return nullptr;
+    }
+    p.a->slots.disk2.drives[0].dirty = false;
+    return p.image.data();
+}
+
+EMSCRIPTEN_KEEPALIVE int tp_disk_image_size() {
+    return static_cast<int>(g_player.image.size());
 }
 
 EMSCRIPTEN_KEEPALIVE double tp_cycles() {

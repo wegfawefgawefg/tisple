@@ -38,7 +38,18 @@ bool ReachesAux(const SoftSwitches& sw, uint16_t addr, bool is_write) {
 }
 
 uint8_t* RamByte(Apple2& a, uint16_t addr, bool is_write) {
-    return ReachesAux(a.sw, addr, is_write) ? &a.aux[addr] : &a.cpu.mem[addr];
+    if (!ReachesAux(a.sw, addr, is_write)) {
+        return &a.cpu.mem[addr];
+    }
+    if (a.aux_ram) {
+        return &a.aux[addr];
+    }
+    // a 64 KB iie: nothing answers, so the read sees what the video put on the bus
+    if (is_write) {
+        return &a.aux_nowhere;
+    }
+    a.aux_float = FloatingBus(a, a.cpu.cycles - 1);
+    return &a.aux_float;
 }
 
 void UpdateMemoryMap(Apple2& a) {

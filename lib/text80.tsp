@@ -9,8 +9,12 @@
 ;   (text80.inverse true)         what follows in inverse, until (text80.inverse false)
 ;   (text80.clear)                spaces everywhere, the cursor home
 ;   (text80.put_row r p)          80 screen codes from p across row r, a line at once
+;   (text80.poke col row code)    one screen code at a place; the cursor stays
+;   (text80.window 20)            the text from row 20 down only: clear, the cursor's home and
+;                                 scrolling keep to rows 20-23 (the mixed modes' four lines,
+;                                 lib/dlores and lib/dhgr); (text80.window 0) the whole screen
 ;   (text80.off)                  back to 40 columns
-; Past the last row the screen scrolls up a line. The screen is reached with io_read and
+; Past the last row the text scrolls up a line. The screen is reached with io_read and
 ; io_write, so nothing moves across the PAGE2 switch that picks aux or main memory.
 
 (import apple2 a2)
@@ -29,6 +33,7 @@
 (let col u8 0)
 (let row u8 0)
 (let inverse_on bool false)
+(let top u8 0) ; the window's first row
 
 (fn on () void
     (io_write u8 a2.SET80VID 0)
@@ -44,9 +49,9 @@
     (io_write u8 a2.CLR80STORE 0)
     (io_read u8 a2.LOWSCR))
 
-; 40 bytes of one memory's half of every row
+; 40 bytes of one memory's half of every row in the window
 (fn fill_half ((code u8)) void
-    (for r u8 0 ROWS
+    (for r u8 top ROWS
         (let base u16 (at ROW r))
         (for i u16 0 40
             (io_write u8 (+ base i) code))))
@@ -57,7 +62,12 @@
     (io_read u8 a2.LOWSCR)
     (fill_half SPACE)
     (set col 0)
-    (set row 0))
+    (set row top))
+
+(fn window ((first u8)) void
+    (set top first)
+    (if (< row top)
+        (set row top)))
 
 (fn move ((c u8) (r u8)) void
     (set col c)
@@ -82,7 +92,7 @@
         (if (= half 0)
             (io_read u8 a2.HISCR)
             (io_read u8 a2.LOWSCR))
-        (for r u8 1 ROWS
+        (for r u8 (+ top 1) ROWS
             (let from u16 (at ROW r))
             (let to u16 (at ROW (- r 1)))
             (for i u16 0 40

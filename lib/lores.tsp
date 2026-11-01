@@ -1,5 +1,7 @@
 ; lo-res graphics, page 1: 40 x 48 blocks in 16 colors, two blocks per byte of text page 1
 ; (import lores) then (lores.show), (lores.plot x y color), (lores.clear)
+; (lores.mixed): 40 x 40 blocks over four lines of text, text rows 20-23 (lib/text40 with
+; (text40.window 20) writes them); (lores.clear) leaves those rows alone then
 
 (import apple2 a2)
 (import tables)
@@ -27,20 +29,33 @@
 (const AQUA u8 14)
 (const WHITE u8 15)
 
+; the rows clear fills: 24, or 20 under the mixed text
+(let rows u8 24)
+
 ; graphics, full screen, page 1, lo-res
 (fn show () void
     (io_read u8 a2.TXTCLR)
     (io_read u8 a2.MIXCLR)
     (io_read u8 a2.LOWSCR)
-    (io_read u8 a2.LORES))
+    (io_read u8 a2.LORES)
+    (set rows 24))
+
+; graphics over four lines of text: blocks 0-39 down, then text rows 20-23
+(fn mixed () void
+    (io_read u8 a2.TXTCLR)
+    (io_read u8 a2.MIXSET)
+    (io_read u8 a2.LOWSCR)
+    (io_read u8 a2.LORES)
+    (set rows 20))
 
 ; a pointer to the start of text row r, which holds block rows 2r (low nibble) and 2r + 1
 (fn row ((r u8)) (ptr u8)
     (as (ptr u8) (at ROW_START r)))
 
-; every block black; leaves the 8 hidden bytes after each row alone
+; every block black; leaves the 8 hidden bytes after each row alone, and in mixed mode the
+; text rows
 (fn clear () void
-    (for r u8 0 24
+    (for r u8 0 rows
         (let p (ptr u8) (row r))
         (for x u8 0 40
             (store (+ p x) BLACK))))
