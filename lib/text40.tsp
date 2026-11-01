@@ -7,7 +7,11 @@
 ;   (text40.move col row)         the cursor; text40.col and text40.row read it
 ;   (text40.inverse true)         what follows in inverse, until (text40.inverse false)
 ;   (text40.clear)                spaces everywhere, the cursor home
-; Past the last row the screen scrolls up a line. Inverse lower case needs the alternate
+;   (text40.poke col row code)    one screen code at a place; the cursor stays
+;   (text40.window 20)            the text from row 20 down only: clear, the cursor's home and
+;                                 scrolling keep to rows 20-23 (the mixed modes' four lines,
+;                                 lib/lores and lib/hgr); (text40.window 0) the whole screen
+; Past the last row the text scrolls up a line. Inverse lower case needs the alternate
 ; set, (io_write u8 a2.SETALTCHAR 0); the primary one flashes those codes.
 
 (import apple2 a2)
@@ -25,6 +29,7 @@
 (let col u8 0)
 (let row u8 0)
 (let inverse_on bool false)
+(let top u8 0) ; the window's first row
 
 (fn row_at ((r u8)) (ptr u8)
     (as (ptr u8) (at ROW r)))
@@ -35,12 +40,20 @@
     (clear))
 
 (fn clear () void
-    (for r u8 0 ROWS
+    (for r u8 top ROWS
         (let p (ptr u8) (row_at r))
         (for i u8 0 COLUMNS
             (store (+ p i) SPACE)))
     (set col 0)
-    (set row 0))
+    (set row top))
+
+(fn window ((first u8)) void
+    (set top first)
+    (if (< row top)
+        (set row top)))
+
+(fn poke ((c u8) (r u8) (code u8)) void
+    (store (+ (row_at r) c) code))
 
 (fn move ((c u8) (r u8)) void
     (set col c)
@@ -50,7 +63,7 @@
     (set inverse_on on_now))
 
 (fn scroll () void
-    (for r u8 1 ROWS
+    (for r u8 (+ top 1) ROWS
         (let from (ptr u8) (row_at r))
         (let to (ptr u8) (row_at (- r 1)))
         (for i u8 0 COLUMNS

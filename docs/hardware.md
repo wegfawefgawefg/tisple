@@ -129,3 +129,80 @@ Apple2e_Enhanced.rom and Apple2_Plus.rom when the owner's copies are there).
 Not covered: the IIc's and IIgs's vertical blank, which `lib/timing` reads the IIe's way;
 a II or II+'s 16K language card; the IIe card for the Macintosh LC (it answers as an
 enhanced IIe).
+
+## Mixed modes, double lo-res and MouseText
+
+<p>
+<img src="images/dlores_demo.png" width="280" alt="double lo-res over four lines of 80-column text">
+<img src="images/stick_paint.png" width="280" alt="lo-res over four lines of 40-column text">
+</p>
+
+*examples/dlores_demo.tsp and examples/stick_paint.tsp.*
+
+### Graphics over four lines of text
+
+The Apple's mixed mode shows the bottom 32 lines as text rows 20-23 of the text page that goes
+with the graphics page shown. Each graphics library has it now, and the text libraries keep to
+those rows:
+
+| Call | Shows |
+| --- | --- |
+| `(lores.mixed)` | lo-res 40 x 40 over four 40-column lines; `lores.clear` then leaves the text rows |
+| `(hgr.mixed)` | hi-res 280 x 160 over four 40-column lines |
+| `(dlores.on true)` | double lo-res 80 x 40 over four 80-column lines |
+| `(dhgr.on true)` | double hi-res 140 x 160 over four 80-column lines (lib/dhgr, as before) |
+| `(text40.window 20)`, `(text80.window 20)` | the text from row 20 down only: `clear`, the cursor's home and scrolling keep to rows 20-23; `(window 0)` is the whole screen again |
+
+```scheme
+(lores.mixed)
+(lores.clear)
+(text40.window 20)
+(text40.clear)                  ; rows 20-23 only
+(text40.print "SCORE")          ; past row 23 the four lines scroll, the picture stays
+```
+
+`text40.poke` and `text80.poke` put one screen code at a place without moving the cursor.
+
+### Double lo-res
+
+`lib/dlores`: 80 x 48 blocks in the 16 lo-res colours (`dlores.BLACK` to `WHITE`), the even
+block columns from aux memory, on a 128K IIe (Rev B board), IIc or IIgs; `machine.aux` says.
+
+| Call | Does |
+| --- | --- |
+| `(dlores.on mixed)` | 80VID, 80STORE, graphics, lo-res, AN3 off (double res); with `true` the four text lines |
+| `(dlores.plot x y colour)`, `(dlores.get x y)` | one block, x 0-79, y 0-47 |
+| `(dlores.clear colour)` | every block (not the text rows when mixed) |
+| `(dlores.off)` | back to 40-column text |
+
+- Memory: text page 1 in both memories. Block x is in aux memory when x is even, at row
+  `y / 2`'s byte `x / 2`, the low nibble for even y, as lo-res.
+- The hardware shows an aux nibble rotated right one bit, so `plot` stores aux colours
+  rotated left and `get` turns them back; tests/test_video_modes.cpp checks that every colour
+  shows the same in both columns and as the plain lo-res screen shows it.
+- Aux memory is reached the way lib/text80 reaches it: 80STORE on, PAGE2 picking aux memory
+  for `$0400`-`$07FF`, through `io_read` and `io_write` so nothing moves across the switch.
+  So lib/text80's calls work on the mixed window's text with no switching between the two.
+  A plot costs about 100 cycles; a whole screen takes 5 frames (the demo redraws every block
+  each pass).
+
+### MouseText
+
+`lib/mousetext`: the 32 pictures at screen codes `$40`-`$5F` of the alternate character set,
+on an enhanced IIe, a IIc and a IIgs (`machine.mousetext`; an unenhanced IIe shows inverse
+capitals there).
+
+- Names for all 32: `mousetext.CLOSED_APPLE`, `OPEN_APPLE`, `POINTER`, `HOURGLASS`, `CHECK`,
+  `CHECK_INVERSE`, `RUNNER_INVERSE`, `RUNNER`, `LEFT_ARROW`, `ELLIPSIS`, `DOWN_ARROW`,
+  `UP_ARROW`, `TOP_BAR`, `RETURN`, `BLOCK`, `SCROLL_LEFT`, `SCROLL_RIGHT`, `SCROLL_DOWN`,
+  `SCROLL_UP`, `MIDDLE_BAR`, `CORNER`, `RIGHT_ARROW`, `CHECKER_1`, `CHECKER_2`,
+  `FOLDER_LEFT`, `FOLDER_RIGHT`, `RIGHT_BAR`, `DIAMOND`, `TOP_BOTTOM`, `CROSS`, `SQUARE_DOT`,
+  `LEFT_BAR`; written with `text80.put_code` or `text40.put_code` (or `poke`).
+- `(mousetext.on)` turns the alternate set on in 40 columns (`text80.on` does it already).
+- `(mousetext.frame80 col row w h)` and `frame40`: the frame Apple's own MouseText windows
+  use, round the w x h text at col, row and outside it: underscores along the row above,
+  `RIGHT_BAR` down the column to the left, `LEFT_BAR` down the column to the right, `TOP_BAR`
+  along the row below.
+- `(mousetext.bar80 row)` and `bar40`: `TOP_BAR` across a row, the line under a menu bar.
+
+The emulator draws its own MouseText (src/machine/font.cpp), whatever `--model` says.
