@@ -105,7 +105,7 @@ bool ScanOne(Scan& s, const RawIns& ins) {
         AllLive(s);
         return false;
     }
-    if (ins.mode == Mode::IndY) {
+    if (ins.mode == Mode::IndY || ins.mode == Mode::ZpInd) {
         ByteRead(s, ins.operand);
         ByteRead(s, static_cast<std::uint8_t>(ins.operand + 1));
     }
@@ -129,7 +129,7 @@ void AddImm(std::vector<std::uint8_t>& imms, unsigned v) {
 
 bool IsIo(const RawIns& ins) {
     return IsMemoryMode(ins.mode) && ins.mode != Mode::IndX && ins.mode != Mode::IndY &&
-           ins.operand >= 0xC000;
+           ins.mode != Mode::ZpInd && ins.operand >= 0xC000;
 }
 
 RawIns RawFromItem(const Compiled& compiled, const AsmItem& item) {
@@ -151,8 +151,9 @@ RawIns RawFromItem(const Compiled& compiled, const AsmItem& item) {
 } // namespace
 
 bool MakeWindow(const std::vector<RawIns>& code, const std::vector<RawIns>& after, Window& out,
-                std::string& why) {
+                std::string& why, Cpu cpu) {
     out = Window();
+    out.cpu = cpu;
     if (code.empty()) {
         why = "empty";
         return false;
@@ -167,7 +168,8 @@ bool MakeWindow(const std::vector<RawIns>& code, const std::vector<RawIns>& afte
     bool any_pseudo = false;
     std::vector<std::uint16_t> pointer_bytes;
     for (const RawIns& raw : code) {
-        if (!IsModelled(raw.mn) || raw.mode == Mode::Ind || raw.mode == Mode::Rel) {
+        bool cmos_mode = raw.mode == Mode::ZpInd || raw.mode == Mode::AbsIndX;
+        if (!IsModelled(raw.mn) || raw.mode == Mode::Ind || raw.mode == Mode::Rel || cmos_mode) {
             why = std::string("not modelled: ") + MnName(raw.mn);
             return false;
         }
@@ -220,7 +222,7 @@ bool MakeWindow(const std::vector<RawIns>& code, const std::vector<RawIns>& afte
         written |= e.writes;
         index_moved |= e.writes & (kLocX | kLocY);
         out.code.push_back(ins);
-        out.cycles += InsCycles(ins);
+        out.cycles += InsCycles(ins, cpu);
         out.bytes += InsBytes(ins);
     }
     for (const Cell& c : out.cells) {

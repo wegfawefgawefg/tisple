@@ -142,6 +142,9 @@ bool IsModelled(Mn mn) {
     case Mn::TAY:
     case Mn::TXA:
     case Mn::TYA:
+    case Mn::STZ:
+    case Mn::TSB:
+    case Mn::TRB:
         return true;
     default:
         return false;
@@ -185,6 +188,11 @@ LocEffects EffectsOf(Mn mn, Mode mode) {
     case Mn::STY:
         e.reads |= kLocY;
         break;
+    case Mn::TSB:
+    case Mn::TRB:
+        e.reads |= kLocA;
+        e.writes = kLocZ;
+        break;
     case Mn::ADC:
     case Mn::SBC:
         e.reads |= kLocA | kLocC;
@@ -210,7 +218,7 @@ LocEffects EffectsOf(Mn mn, Mode mode) {
         break;
     case Mn::BIT:
         e.reads |= kLocA;
-        e.writes = nz | kLocV;
+        e.writes = mode == Mode::Imm ? kLocZ : nz | kLocV; // the 65C02's BIT #: only Z
         break;
     case Mn::ASL:
     case Mn::LSR:
@@ -224,7 +232,8 @@ LocEffects EffectsOf(Mn mn, Mode mode) {
         break;
     case Mn::INC:
     case Mn::DEC:
-        e.writes = nz;
+        e.reads |= mode == Mode::Acc ? kLocA : 0; // the 65C02's INC A, DEC A
+        e.writes = (mode == Mode::Acc ? kLocA : 0) | nz;
         break;
     case Mn::INX:
     case Mn::DEX:
@@ -297,9 +306,9 @@ LocEffects EffectsOf(Mn mn, Mode mode) {
         break;
     }
     if (memory) {
-        bool store = mn == Mn::STA || mn == Mn::STX || mn == Mn::STY;
+        bool store = mn == Mn::STA || mn == Mn::STX || mn == Mn::STY || mn == Mn::STZ;
         bool rmw = mn == Mn::INC || mn == Mn::DEC || mn == Mn::ASL || mn == Mn::LSR ||
-                   mn == Mn::ROL || mn == Mn::ROR;
+                   mn == Mn::ROL || mn == Mn::ROR || mn == Mn::TSB || mn == Mn::TRB;
         bool jump = mn == Mn::JMP || mn == Mn::JSR;
         e.mem_read = !store && !jump;
         e.mem_write = store || rmw;
@@ -330,6 +339,16 @@ void Exec(const SoIns& ins, const Cell* cells, SoState& s) {
     case Mn::STY:
         Write(ins, cells, s, s.y);
         break;
+    case Mn::STZ:
+        Write(ins, cells, s, 0);
+        break;
+    case Mn::TSB:
+    case Mn::TRB: {
+        std::uint8_t m = Read(ins, cells, s);
+        s.p = static_cast<std::uint8_t>((s.p & ~kZ) | ((s.a & m) == 0 ? kZ : 0));
+        Write(ins, cells, s, static_cast<std::uint8_t>(ins.mn == Mn::TSB ? m | s.a : m & ~s.a));
+        break;
+    }
     case Mn::ADC:
         Adc(s, Read(ins, cells, s));
         break;
@@ -359,6 +378,10 @@ void Exec(const SoIns& ins, const Cell* cells, SoState& s) {
         break;
     case Mn::BIT: {
         std::uint8_t m = Read(ins, cells, s);
+        if (ins.mode == Mode::Imm) {
+            s.p = static_cast<std::uint8_t>((s.p & ~kZ) | ((s.a & m) == 0 ? kZ : 0));
+            break;
+        }
         s.p = static_cast<std::uint8_t>((s.p & ~(kN | kV | kZ)) | (m & (kN | kV)) |
                                         ((s.a & m) == 0 ? kZ : 0));
         break;
@@ -434,9 +457,9 @@ void ExecAll(const std::vector<SoIns>& code, const Cell* cells, SoState& s) {
     }
 }
 
-int InsCycles(const SoIns& ins) {
-    int opcode = OpcodeFor(ins.mn, ins.mode);
-    return opcode < 0 ? 0 : OpcodeInfoFor(static_cast<std::uint8_t>(opcode)).cycles;
+int InsCycles(const SoIns& ins, Cpu cpu) {
+    int opcode = OpcodeFor(ins.mn, ins.mode, cpu);
+    return opcode < 0 ? 0 : OpcodeInfoFor(static_cast<std::uint8_t>(opcode), cpu).cycles;
 }
 
 int InsBytes(const SoIns& ins) {

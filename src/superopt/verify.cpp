@@ -192,7 +192,7 @@ bool PlanLayout(const Window& w, const SoState& s, SimLayout& out) {
 bool Assemble(const std::vector<SoIns>& code, const Window& w, std::vector<std::uint8_t>& out) {
     out.clear();
     for (const SoIns& ins : code) {
-        int opcode = OpcodeFor(ins.mn, ins.mode);
+        int opcode = OpcodeFor(ins.mn, ins.mode, w.cpu);
         if (opcode < 0) {
             return false;
         }
@@ -218,7 +218,7 @@ bool RunOnSim(Machine& m, const Window& w, const std::vector<SoIns>& code, const
     if (!Assemble(code, w, bytes)) {
         return false;
     }
-    InitMachine(m);
+    InitMachine(m, w.cpu);
     for (std::size_t i = 0; i < w.cells.size(); i++) {
         const Cell& c = w.cells[i];
         m.mem[layout.ea[i]] = s.cells[i];

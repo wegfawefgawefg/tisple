@@ -2,7 +2,9 @@
 
 // The superoptimizer's 6502: the documented ALU, load/store, shift, increment, transfer and
 // flag instructions over a window's state, binary mode only (D clear), fast enough to run
-// millions of candidate sequences. Memory is a handful of cells:
+// millions of candidate sequences; for the 65C02 also STZ, TSB, TRB, INC A, DEC A and BIT #
+// (Window::cpu: windows of a 65C02 build may use them, and are timed by its cycles). Memory is a
+// handful of cells:
 // - direct cells, $nn or $nnnn, at their address;
 // - pseudo-cells, an indexed or indirect operand like ($10),Y or $7600,X taken as one fixed
 //   unknown byte. That is only right while its index register still holds its entry value
@@ -81,7 +83,7 @@ LocEffects EffectsOf(Mn mn, Mode mode);
 void Exec(const SoIns& ins, const Cell* cells, SoState& s);
 void ExecAll(const std::vector<SoIns>& code, const Cell* cells, SoState& s);
 
-int InsCycles(const SoIns& ins);
+int InsCycles(const SoIns& ins, Cpu cpu = Cpu::k6502);
 int InsBytes(const SoIns& ins);
 // "ADC ($10),Y", "LDA #$00", "STA $39"
 std::string InsText(const SoIns& ins, const Cell* cells);

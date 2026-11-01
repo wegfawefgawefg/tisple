@@ -38,7 +38,8 @@ void PrintGapsUsage() {
         "         --only NAME (functions whose name contains NAME),\n"
         "         --verbose (each search on stderr), --print (--fuzz: print the program of\n"
         "         --seed, to build and read it as t.tsp),\n"
-        "         --origin A, --patch FILE@ADDR (--sim: memory written before main, the\n"
+        "         --origin A, --cpu 6502|65c02 (the 65C02's code, on its core and its\n"
+        "         superoptimizer), --patch FILE@ADDR (--sim: memory written before main, the\n"
         "         inputs a race kernel runs on)\n");
 }
 
@@ -122,6 +123,9 @@ bool ParseArgs(int argc, char** argv, GapsArgs& args) {
         } else if (NumberFlag(argc, argv, i, "--origin", n, ok)) {
             ok = ok && n >= 0x0200 && n <= 0xBFFF;
             args.build.origin = static_cast<std::uint16_t>(n);
+        } else if (std::strcmp(arg, "--cpu") == 0 && i + 1 < argc) {
+            ok = ok && ParseCpu(argv[++i], args.build.cpu);
+            args.options.cpu = args.build.cpu;
         } else if (arg[0] != '-' && args.path == nullptr) {
             args.path = arg;
         } else {

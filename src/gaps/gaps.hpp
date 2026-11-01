@@ -17,7 +17,8 @@ struct GapsOptions {
     FindOptions find;
     bool superopt = false;
     HotWindowOptions windows;
-    std::string only; // report only functions whose name contains this
+    std::string only;     // report only functions whose name contains this
+    Cpu cpu = Cpu::k6502; // --fuzz: the chip its programs are built for
 };
 
 bool FindProgramGaps(const Program& program, const Compiled& compiled, const GapsOptions& options,

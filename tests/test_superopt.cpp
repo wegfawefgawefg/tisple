@@ -24,9 +24,10 @@ RawIns R(Mn mn, Mode mode = Mode::Imp, std::uint16_t operand = 0) {
 
 const std::vector<RawIns> kAllLive = {R(Mn::RTS)};
 
-bool Window(const std::vector<RawIns>& code, const std::vector<RawIns>& after, tisple::Window& w) {
+bool Window(const std::vector<RawIns>& code, const std::vector<RawIns>& after, tisple::Window& w,
+            tisple::Cpu cpu = tisple::Cpu::k6502) {
     std::string why;
-    bool ok = tisple::MakeWindow(code, after, w, why);
+    bool ok = tisple::MakeWindow(code, after, w, why, cpu);
     if (!ok) {
         std::fprintf(stderr, "window not made: %s\n", why.c_str());
     }
@@ -46,8 +47,8 @@ tisple::SearchOptions Quick() {
 }
 
 // every opcode the evaluator models, in every mode, on the simulator: the evaluator must
-// agree on registers, flags and memory
-void TestEvaluatorMatchesSimulator(TestResults& results) {
+// agree on registers, flags and memory (each chip's opcodes on its own core)
+void TestEvaluatorMatchesSimulator(TestResults& results, tisple::Cpu cpu) {
     const Mode modes[] = {Mode::Imp, Mode::Acc,  Mode::Imm,  Mode::Zp,   Mode::ZpX, Mode::ZpY,
                           Mode::Abs, Mode::AbsX, Mode::AbsY, Mode::IndX, Mode::IndY};
     int checked = 0;
@@ -57,7 +58,7 @@ void TestEvaluatorMatchesSimulator(TestResults& results) {
             continue;
         }
         for (Mode mode : modes) {
-            if (tisple::OpcodeFor(mn, mode) < 0) {
+            if (tisple::OpcodeFor(mn, mode, cpu) < 0) {
                 continue;
             }
             std::uint16_t operand = mode == Mode::Imm                            ? 0x5A
@@ -65,7 +66,7 @@ void TestEvaluatorMatchesSimulator(TestResults& results) {
                                     : (mode == Mode::AbsX || mode == Mode::AbsY) ? 0x1300
                                                                                  : 0x40;
             tisple::Window w;
-            if (!Window({R(mn, mode, operand)}, kAllLive, w)) {
+            if (!Window({R(mn, mode, operand)}, kAllLive, w, cpu)) {
                 CHECK(results, false);
                 continue;
             }
@@ -80,7 +81,29 @@ void TestEvaluatorMatchesSimulator(TestResults& results) {
             checked++;
         }
     }
-    CHECK(results, checked > 120);
+    CHECK(results, checked > (cpu == tisple::Cpu::k65c02 ? 130 : 120));
+}
+
+// a 65C02 window: LDA #0 / STA $10 with A, N and Z dead after is STZ $10; CLC / ADC #1 with
+// C and V dead is INC A; the 6502 finds neither
+void TestCmos(TestResults& results) {
+    tisple::Window w;
+    std::vector<RawIns> after = {R(Mn::LDA, Mode::Zp, 0x11), R(Mn::CLC), R(Mn::CLV), R(Mn::RTS)};
+    for (tisple::Cpu cpu : {tisple::Cpu::k6502, tisple::Cpu::k65c02}) {
+        bool cmos = cpu == tisple::Cpu::k65c02;
+        CHECK(results,
+              Window({R(Mn::LDA, Mode::Imm, 0), R(Mn::STA, Mode::Zp, 0x10)}, after, w, cpu));
+        tisple::SearchResult r = tisple::Superoptimize(w, tisple::Facts(), Quick());
+        CHECK(results, r.found == cmos);
+        CHECK(results, !cmos || tisple::CodeText(r.code, w.cells.data()) == "STZ $10");
+        CHECK(results, !cmos || (r.cycles == 3 && r.proof == tisple::Proof::kProved));
+        CHECK(results,
+              Window({R(Mn::CLC), R(Mn::ADC, Mode::Imm, 1)},
+                     {R(Mn::STA, Mode::Zp, 0x10), R(Mn::CLC), R(Mn::CLV), R(Mn::RTS)}, w, cpu));
+        r = tisple::Superoptimize(w, tisple::Facts(), Quick());
+        CHECK(results, r.found == cmos);
+        CHECK(results, !cmos || tisple::CodeText(r.code, w.cells.data()) == "INC A");
+    }
 }
 
 void TestKnownDifferent(TestResults& results) {
@@ -205,7 +228,9 @@ void TestTransferForReload(TestResults& results) {
 } // namespace
 
 void RunSuperoptTests(TestResults& results) {
-    TestEvaluatorMatchesSimulator(results);
+    TestEvaluatorMatchesSimulator(results, tisple::Cpu::k6502);
+    TestEvaluatorMatchesSimulator(results, tisple::Cpu::k65c02);
+    TestCmos(results);
     TestKnownDifferent(results);
     TestKnownEqual(results);
     TestLoadStoreLoad(results);
