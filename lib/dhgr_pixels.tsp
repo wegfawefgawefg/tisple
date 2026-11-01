@@ -5,9 +5,12 @@
 ;                                   in both memories, what was there gone
 ;   (dhgr_pixels.read page col top groups pixels)  the other way: the row's bytes back to
 ;                                   pixels at pixels
-;   (dhgr_pixels.cells page col top blocks cells)  a row of 4-pixel cells in white on black,
+;   (dhgr_pixels.cells page col top blocks cells masks)  a row of 4-pixel cells on black,
 ;                                   each a byte at cells (bit 0 the leftmost pixel; 4 bits),
-;                                   7 cells a block (4 groups): a 35-column font's row
+;                                   7 cells a block (4 groups): a 35-column font's row; masks
+;                                   16 bytes a block, ANDed with its bytes: all 255 for white,
+;                                   or (colour_mask pixels at) for each group's 7 pixels'
+;                                   colours, so each cell may have its own
 ; For a hud drawn in whole pixels (text in colour pixels, badges, cards): the program builds a
 ; row of pixels, then this writes it. Per group the 4 bytes (aux, main, aux, main) are worked
 ; out with shifts and three small tables (a colour's low bits moved up into the next byte),
@@ -111,7 +114,7 @@
 (tables.table MONO2 u8 128 mono2)
 (tables.table MONO3 u8 128 mono3)
 
-(fn cells ((page u8) (col u8) (top u8) (blocks u8) (nibbles (ptr u8))) void
+(fn cells ((page u8) (col u8) (top u8) (blocks u8) (nibbles (ptr u8)) (masks (ptr u8))) void
     (let dst (ptr u8) (row_start page col top))
     (for b u8 0 blocks
         ; the block's 7 cells' bits, 4 a cell, as 4 groups of 7 pixels
@@ -122,23 +125,35 @@
         (let c5 u8 (load (+ nibbles 5)))
         (let g2 u8 (| (| (>> c3 2) (<< (load (+ nibbles 4)) 2)) (<< (& c5 1) 6)))
         (let g3 u8 (| (>> c5 1) (<< (load (+ nibbles 6)) 3)))
-        ; main memory's bytes of the 4 groups, then aux memory's
-        (store dst (at MONO1 g0))
-        (store (+ dst 1) (at MONO3 g0))
-        (store (+ dst 2) (at MONO1 g1))
-        (store (+ dst 3) (at MONO3 g1))
-        (store (+ dst 4) (at MONO1 g2))
-        (store (+ dst 5) (at MONO3 g2))
-        (store (+ dst 6) (at MONO1 g3))
-        (store (+ dst 7) (at MONO3 g3))
+        ; main memory's bytes of the 4 groups, then aux memory's, each in its mask's colours
+        (store dst (& (at MONO1 g0) (load (+ masks 1))))
+        (store (+ dst 1) (& (at MONO3 g0) (load (+ masks 3))))
+        (store (+ dst 2) (& (at MONO1 g1) (load (+ masks 5))))
+        (store (+ dst 3) (& (at MONO3 g1) (load (+ masks 7))))
+        (store (+ dst 4) (& (at MONO1 g2) (load (+ masks 9))))
+        (store (+ dst 5) (& (at MONO3 g2) (load (+ masks 11))))
+        (store (+ dst 6) (& (at MONO1 g3) (load (+ masks 13))))
+        (store (+ dst 7) (& (at MONO3 g3) (load (+ masks 15))))
         (with_aux false true
-            (store dst (at MONO0 g0))
-            (store (+ dst 1) (at MONO2 g0))
-            (store (+ dst 2) (at MONO0 g1))
-            (store (+ dst 3) (at MONO2 g1))
-            (store (+ dst 4) (at MONO0 g2))
-            (store (+ dst 5) (at MONO2 g2))
-            (store (+ dst 6) (at MONO0 g3))
-            (store (+ dst 7) (at MONO2 g3)))
+            (store dst (& (at MONO0 g0) (load masks)))
+            (store (+ dst 1) (& (at MONO2 g0) (load (+ masks 2))))
+            (store (+ dst 2) (& (at MONO0 g1) (load (+ masks 4))))
+            (store (+ dst 3) (& (at MONO2 g1) (load (+ masks 6))))
+            (store (+ dst 4) (& (at MONO0 g2) (load (+ masks 8))))
+            (store (+ dst 5) (& (at MONO2 g2) (load (+ masks 10))))
+            (store (+ dst 6) (& (at MONO0 g3) (load (+ masks 12))))
+            (store (+ dst 7) (& (at MONO2 g3) (load (+ masks 14)))))
         (set nibbles (+ nibbles 7))
+        (set masks (+ masks 16))
         (set dst (+ dst 8))))
+
+; the mask of a group of 7 pixels of colours (bytes 0-15 at pixels) for cells: its 4 bytes
+; (aux, main, aux, main) into masks, as row writes them
+(fn colour_mask ((pixels (ptr u8)) (masks (ptr u8))) void
+    (let p1 u8 (load (+ pixels 1)))
+    (store masks (| (load pixels) (at LO4 p1)))
+    (let p3 u8 (load (+ pixels 3)))
+    (store (+ masks 1) (| (| (>> p1 3) (<< (load (+ pixels 2)) 1)) (at LO5 p3)))
+    (let p5 u8 (load (+ pixels 5)))
+    (store (+ masks 2) (| (| (>> p3 2) (<< (load (+ pixels 4)) 2)) (at LO6 p5)))
+    (store (+ masks 3) (| (>> p5 1) (<< (load (+ pixels 6)) 3))))
