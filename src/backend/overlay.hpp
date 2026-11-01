@@ -55,10 +55,14 @@ struct OverlayGroups {
 constexpr const char* kOverlayStubsSpan = "overlay stubs";
 constexpr const char* kOverlayCopySpan = "overlay copy";
 
-// the plan's groups in the kept code; those that cannot be overlaid as planned left out
+// a group smaller than this frees less than its stubs and load take
+constexpr std::uint32_t kMinGroupBytes = 256;
+
+// the plan's groups in the kept code; those that cannot be overlaid as planned, or have fewer
+// than min_bytes of code, left out
 OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept,
                                 const OverlayPlan& plan, const std::vector<AsmItem>& startup,
-                                const std::vector<AsmItem>& runtime);
+                                const std::vector<AsmItem>& runtime, std::uint32_t min_bytes);
 
 // what the link makes for the groups: the stubs and enter routines (resident), the copy
 // (mirrored), and the symbols it fills in once the region and the images have addresses

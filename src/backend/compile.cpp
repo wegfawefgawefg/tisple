@@ -260,8 +260,9 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
     // the overlay groups found in the code: at least two, so one frees room for the other
     OverlayGroups groups;
     if (overlays != nullptr) {
-        groups = FindOverlayGroups(be, kept, *overlays, {}, runtime);
-        std::size_t least = options.overlay_test > 0 ? 1 : 2;
+        bool test = options.overlay_test > 0;
+        groups = FindOverlayGroups(be, kept, *overlays, {}, runtime, test ? 0 : kMinGroupBytes);
+        std::size_t least = test ? 1 : 2;
         if (groups.roots.size() < least) {
             squeezed.overlay_none = true;
             return LinkResult::kNoRoom;

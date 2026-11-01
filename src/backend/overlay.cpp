@@ -237,7 +237,7 @@ std::uint32_t CodeBytes(const Backend& be, std::int32_t f) {
 
 OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept,
                                 const OverlayPlan& plan, const std::vector<AsmItem>& startup,
-                                const std::vector<AsmItem>& runtime) {
+                                const std::vector<AsmItem>& runtime, std::uint32_t min_bytes) {
     std::size_t count = be.program->functions.size();
     Code c = ReadCode(be, kept, startup, runtime);
     std::vector<std::vector<std::int32_t>> planned;
@@ -282,6 +282,9 @@ OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept
             out.bytes.push_back(bytes);
         }
         std::int32_t broken = FindBroken(c, out, startup, runtime);
+        for (std::size_t g = 0; g < out.bytes.size() && broken < 0; g++) {
+            broken = out.bytes[g] < min_bytes ? static_cast<std::int32_t>(g) : -1;
+        }
         if (broken < 0) {
             return out;
         }

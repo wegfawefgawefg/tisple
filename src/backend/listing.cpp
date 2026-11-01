@@ -12,12 +12,28 @@ std::string Hex4(std::uint32_t value) {
     return text;
 }
 
-std::string BytesText(const Compiled& c, const AsmItem& item, bool bank1) {
+// a byte of an overlay group's code: in its image in aux memory, at its offset in the region
+std::uint8_t GroupByte(const Compiled& c, std::int32_t group, std::uint16_t address) {
+    const OverlayImage& image = c.overlays.groups[static_cast<std::size_t>(group)];
+    std::uint32_t at = image.aux + (address - static_cast<std::uint32_t>(c.overlays.region));
+    for (const MemorySegment& segment : c.segments) {
+        std::uint32_t offset = at - static_cast<std::uint32_t>(segment.address);
+        if (segment.bank == MemoryBank::kAux && at >= segment.address &&
+            offset < segment.bytes.size()) {
+            return segment.bytes[offset];
+        }
+    }
+    return 0;
+}
+
+std::string BytesText(const Compiled& c, const AsmItem& item, const FunctionSpan& span) {
     std::string text;
     for (std::uint32_t i = 0; i < item.size && i < 3; i++) {
         char byte[4];
-        std::snprintf(byte, sizeof(byte), "%02X ",
-                      CompiledByte(c, static_cast<std::uint16_t>(item.address + i), bank1));
+        std::uint16_t at = static_cast<std::uint16_t>(item.address + i);
+        std::uint8_t value = span.overlay_group >= 0 ? GroupByte(c, span.overlay_group, at)
+                                                     : CompiledByte(c, at, span.card_bank1);
+        std::snprintf(byte, sizeof(byte), "%02X ", value);
         text += byte;
     }
     if (item.size > 3) {
@@ -61,8 +77,15 @@ std::string ListProgram(const Program& program, const Compiled& c) {
         if (bytes == 0) {
             continue;
         }
+        std::string where = span.card_bank1 ? " in the language card's bank 1" : "";
+        if (span.overlay_group >= 0) {
+            const OverlayImage& image =
+                c.overlays.groups[static_cast<std::size_t>(span.overlay_group)];
+            where = " in overlay group " + std::to_string(span.overlay_group) + " (kept at aux $" +
+                    Hex4(image.aux) + ")";
+        }
         text += "\n" + span.name + "  $" + Hex4(start) + ", " + std::to_string(bytes) + " bytes" +
-                (span.card_bank1 ? " in the language card's bank 1\n" : "\n");
+                where + "\n";
         for (std::size_t i = span.first; i < span.end; i++) {
             const AsmItem& item = as.items[i];
             if (item.kind == ItemKind::Note) {
@@ -80,8 +103,8 @@ std::string ListProgram(const Program& program, const Compiled& c) {
                 }
                 continue;
             }
-            text += "  " + Hex4(item.address) + "  " + BytesText(c, item, span.card_bank1) +
-                    ItemText(as, item);
+            text +=
+                "  " + Hex4(item.address) + "  " + BytesText(c, item, span) + ItemText(as, item);
             int cycles = ItemCycles(as, item);
             if (cycles > 0) {
                 text += "    (" + std::to_string(cycles) + ")";
