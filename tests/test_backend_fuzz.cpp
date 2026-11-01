@@ -26,9 +26,10 @@
 // too, where bank 1 code must not look (one that does not fit then is not counted); and the
 // fourth seed in four's own, (fnptr), (irq), (stretch) programs with overlay groups ("(overlay N)",
 // all that may be for 1, else a seeded share; for even N bank 1 too: "(overlay N bank1)"); and
-// the third seed in four's own built for the other chip ("(65c02)", or "(6502)" when
-// TISPLE_TEST_CPU makes the 65C02 the default), and one seed in four a program of dense
-// matches and calls through pointers on both chips ("(tables)", "(tables) (65c02)").
+// the third seed in four's own and (irq) programs built for the other chip ("(65c02)",
+// "(irq) (65c02)", or "(6502)" when TISPLE_TEST_CPU makes the 65C02 the default), and one
+// seed in four a program of dense matches and calls through pointers on both chips
+// ("(tables)", "(tables) (65c02)").
 // TISPLE_FUZZ_FILE runs one program (test_backend_fuzz_file.cpp).
 
 #include "backend/size_budget.hpp"
@@ -292,14 +293,18 @@ void RunBackendFuzzTests(TestResults& results) {
                         {}, 0, overlay_bank1, false, overlay);
             }
         }
-        // the other chip: one seed in four, its program built for it (TISPLE_TEST_CPU sets
-        // which runs everywhere else); every tables program on both
+        // the other chip: one seed in four, its program (and its interrupt program) built for
+        // it (TISPLE_TEST_CPU sets which runs everywhere else); every tables program on both
         tisple::Cpu other =
             tisple::DefaultCpu() == tisple::Cpu::k6502 ? tisple::Cpu::k65c02 : tisple::Cpu::k6502;
         std::string other_variant = std::string(" (") + tisple::CpuName(other) + ")";
         if (seed % 4 == 2) {
             FuzzOne(seed, other_variant.c_str(), program, stats, IrqPlan(), {}, 0, 0, false, 0,
                     other);
+            if (!irq.empty()) {
+                FuzzOne(seed, (" (irq)" + other_variant).c_str(), irq, stats, MakeIrqPlan(seed), {},
+                        0, 0, false, 0, other);
+            }
         }
         std::string tables = GenerateTablesProgram(seed);
         if (!tables.empty()) {
