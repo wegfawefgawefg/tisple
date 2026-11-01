@@ -316,4 +316,27 @@ bool UseCmos(const Assembly& as, std::vector<AsmItem>& items,
     return changed;
 }
 
+void UseCmosEverywhere(Backend& be, const std::vector<bool>& kept, std::vector<AsmItem>& runtime,
+                       const std::vector<const std::vector<AsmItem>*>& others) {
+    // the runtime's labels other code names: entered there with any carry
+    std::set<std::int32_t> named;
+    auto note = [&named](const std::vector<AsmItem>& items) {
+        for (const AsmItem& item : items) {
+            if (item.kind != ItemKind::Label && item.value.sym >= 0) {
+                named.insert(item.value.sym);
+            }
+        }
+    };
+    for (std::size_t f = 0; f < be.code.size(); f++) {
+        if (kept[f]) {
+            UseCmos(be.as, be.code[f]);
+            note(be.code[f]);
+        }
+    }
+    for (const std::vector<AsmItem>* items : others) {
+        note(*items);
+    }
+    UseCmos(be.as, runtime, &named);
+}
+
 } // namespace tisple

@@ -34,4 +34,9 @@ namespace tisple {
 bool UseCmos(const Assembly& as, std::vector<AsmItem>& items,
              const std::set<std::int32_t>* entries = nullptr);
 
+// every kept function's code, then the runtime with the labels the functions and the
+// interrupt entries (`others`, which it leaves as they are) name as its entries
+void UseCmosEverywhere(Backend& be, const std::vector<bool>& kept, std::vector<AsmItem>& runtime,
+                       const std::vector<const std::vector<AsmItem>*>& others);
+
 } // namespace tisple

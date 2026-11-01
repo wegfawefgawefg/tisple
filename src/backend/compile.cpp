@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <set>
 
 namespace tisple {
 
@@ -33,75 +32,6 @@ void DropFunction(Backend& be, std::int32_t function, const WeightsAdded& added)
     for (const auto& [sym, weight] : added) {
         be.info[static_cast<std::size_t>(sym)].weight -= weight;
     }
-}
-
-// the quarter-square routines (1 KB of tables, about half the cycles) for every multiply when
-// the multiplies of the kept code together may run more than once in a run of the program
-// (every copy counted: inlined, unrolled; the tables serve them all), the shift-and-add ones
-// otherwise. Squeezed, the tables are bytes the first multiply pulls in: only when the
-// multiplies save the budget's hot cycles for each of them (80 cycles a multiply at least)
-void UpgradeMultiplies(Backend& be) {
-    const Runtime pairs[3][2] = {{Runtime::Mul8, Runtime::Mul8Q},
-                                 {Runtime::Mul16, Runtime::Mul16Q},
-                                 {Runtime::Mul8x8, Runtime::Mul8x8Q}};
-    std::uint64_t total = 0;
-    for (const auto& sites : be.multiplies) {
-        for (const auto& [id, n] : sites) {
-            total = std::min<std::uint64_t>(total + n, std::uint64_t(1) << 32);
-        }
-    }
-    if (total < 2) {
-        return;
-    }
-    const SizeBudget& budget = be.budget;
-    std::uint64_t bytes = kQuarterSquareBytes;
-    if (budget.squeeze > 0 && (budget.hot_cycles == 0 || total * 80 < budget.hot_cycles * bytes)) {
-        return;
-    }
-    for (std::vector<AsmItem>& code : be.code) {
-        for (AsmItem& item : code) {
-            for (const auto& pair : pairs) {
-                if (item.kind == ItemKind::Ins &&
-                    item.value.sym == be.rt_sym[static_cast<int>(pair[0])]) {
-                    item.value.sym = be.rt_sym[static_cast<int>(pair[1])];
-                }
-            }
-        }
-    }
-}
-
-// the runtime and division routines the kept code calls
-void FindUsedRoutines(Backend& be) {
-    UpgradeMultiplies(be);
-    std::vector<bool> named(be.info.size(), false);
-    for (const std::vector<AsmItem>& code : be.code) {
-        for (const AsmItem& item : code) {
-            if (item.value.sym >= 0) {
-                named[static_cast<std::size_t>(item.value.sym)] = true;
-            }
-        }
-    }
-    for (int r = 0; r < kRuntimeCount; r++) {
-        be.rt_used[r] = named[static_cast<std::size_t>(be.rt_sym[r])];
-    }
-    if (named[static_cast<std::size_t>(be.divu8_ge)]) {
-        be.rt_used[static_cast<int>(Runtime::DivU8)] = true;
-    }
-    if (named[static_cast<std::size_t>(be.divu16_ge)]) {
-        be.rt_used[static_cast<int>(Runtime::DivU16)] = true;
-    }
-    for (const DivRoutine& r : be.div_routines) {
-        if (r.needs >= 0 && named[static_cast<std::size_t>(r.sym)]) {
-            named[static_cast<std::size_t>(r.needs)] = true;
-        }
-    }
-    std::vector<DivRoutine> used;
-    for (const DivRoutine& r : be.div_routines) {
-        if (named[static_cast<std::size_t>(r.sym)]) {
-            used.push_back(r);
-        }
-    }
-    be.div_routines = used;
 }
 
 // the mid-level passes in two runs: up to where they inline (unrolling and unswitching come
@@ -250,27 +180,7 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
         return LinkResult::kError;
     }
     if (options.cpu == Cpu::k65c02) {
-        // the runtime's labels other code names: entered there with any carry
-        std::set<std::int32_t> named;
-        for (std::size_t f = 0; f < be.code.size(); f++) {
-            if (!kept[f]) {
-                continue;
-            }
-            UseCmos(be.as, be.code[f]);
-            for (const AsmItem& item : be.code[f]) {
-                if (item.kind != ItemKind::Label && item.value.sym >= 0) {
-                    named.insert(item.value.sym);
-                }
-            }
-        }
-        for (const std::vector<AsmItem>* entry : {&irq, &irq_banked}) {
-            for (const AsmItem& item : *entry) {
-                if (item.kind != ItemKind::Label && item.value.sym >= 0) {
-                    named.insert(item.value.sym);
-                }
-            }
-        }
-        UseCmos(be.as, runtime, &named);
+        UseCmosEverywhere(be, kept, runtime, {&irq, &irq_banked});
     }
     squeezed = NoteSqueezed(be, kept, choices, runtime);
     LinkInput in;

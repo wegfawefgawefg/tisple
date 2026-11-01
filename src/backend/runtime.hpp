@@ -13,6 +13,9 @@
 
 namespace tisple {
 
+// the runtime and division routines the kept code calls (used_routines.cpp): be.rt_used and
+// be.div_routines; the multiplies call the quarter-square routines instead when they pay
+void FindUsedRoutines(Backend& be);
 // the routines the program uses (DivS needs DivU), each a run of items with its label
 void EmitRuntime(Backend& be, std::vector<AsmItem>& out);
 // the tables the routines read (the quarter squares), as data bytes; none if none is used
