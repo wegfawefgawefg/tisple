@@ -16,7 +16,7 @@ const char* BadInstruction(const Machine& m, std::uint16_t pc) {
     if (opcode == 0x00) {
         return "BRK";
     }
-    if (!IsDocumentedOpcode(opcode)) {
+    if (!IsDocumentedOpcode(opcode, m.cpu_kind)) {
         return "undocumented opcode";
     }
     return nullptr;

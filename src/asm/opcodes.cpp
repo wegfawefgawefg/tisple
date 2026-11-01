@@ -117,6 +117,39 @@ const Entry kEntries[] = {
     {Mn::TYA, Mode::Imp, 0x98, 2, false},
 };
 
+// the 65C02's additions; (zp) for the ALU group is 5 cycles like (zp),Y without a crossing
+const Entry kCmosEntries[] = {
+    {Mn::ORA, Mode::ZpInd, 0x12, 5, false}, {Mn::AND, Mode::ZpInd, 0x32, 5, false},
+    {Mn::EOR, Mode::ZpInd, 0x52, 5, false}, {Mn::ADC, Mode::ZpInd, 0x72, 5, false},
+    {Mn::STA, Mode::ZpInd, 0x92, 5, false}, {Mn::LDA, Mode::ZpInd, 0xB2, 5, false},
+    {Mn::CMP, Mode::ZpInd, 0xD2, 5, false}, {Mn::SBC, Mode::ZpInd, 0xF2, 5, false},
+    {Mn::BIT, Mode::Imm, 0x89, 2, false},   {Mn::BIT, Mode::ZpX, 0x34, 4, false},
+    {Mn::BIT, Mode::AbsX, 0x3C, 4, true},   {Mn::INC, Mode::Acc, 0x1A, 2, false},
+    {Mn::DEC, Mode::Acc, 0x3A, 2, false},   {Mn::JMP, Mode::AbsIndX, 0x7C, 6, false},
+    {Mn::BRA, Mode::Rel, 0x80, 3, false},   {Mn::PHX, Mode::Imp, 0xDA, 3, false},
+    {Mn::PHY, Mode::Imp, 0x5A, 3, false},   {Mn::PLX, Mode::Imp, 0xFA, 4, false},
+    {Mn::PLY, Mode::Imp, 0x7A, 4, false},   {Mn::STZ, Mode::Zp, 0x64, 3, false},
+    {Mn::STZ, Mode::ZpX, 0x74, 4, false},   {Mn::STZ, Mode::Abs, 0x9C, 4, false},
+    {Mn::STZ, Mode::AbsX, 0x9E, 5, false},  {Mn::TRB, Mode::Zp, 0x14, 5, false},
+    {Mn::TRB, Mode::Abs, 0x1C, 6, false},   {Mn::TSB, Mode::Zp, 0x04, 5, false},
+    {Mn::TSB, Mode::Abs, 0x0C, 6, false},
+};
+
+// NMOS opcodes the 65C02 times differently
+struct CycleChange {
+    std::uint8_t opcode;
+    std::uint8_t cycles;
+    bool page_penalty;
+};
+
+const CycleChange kCmosCycles[] = {
+    {0x6C, 6, false}, // JMP (abs): the page bug fixed
+    {0x1E, 6, true},  // ASL abs,X: 6, 7 across a page
+    {0x3E, 6, true},  // ROL abs,X
+    {0x5E, 6, true},  // LSR abs,X
+    {0x7E, 6, true},  // ROR abs,X
+};
+
 #undef TISPLE_ALU
 #undef TISPLE_RMW
 
@@ -128,34 +161,50 @@ struct Tables {
     std::array<OpcodeInfo, 256> info;
 };
 
-Tables BuildTables() {
+void AddEntry(Tables& t, const Entry& e, bool cmos_only) {
+    t.by_mode[static_cast<int>(e.mn)][static_cast<int>(e.mode)] = e.opcode;
+    OpcodeInfo& info = t.info[e.opcode];
+    info.mn = e.mn;
+    info.mode = e.mode;
+    info.cycles = e.cycles;
+    info.page_penalty = e.page_penalty;
+    info.valid = true;
+    info.cmos_only = cmos_only;
+}
+
+Tables BuildTables(Cpu cpu) {
     Tables t;
     for (auto& row : t.by_mode) {
         row.fill(-1);
     }
     for (const Entry& e : kEntries) {
-        t.by_mode[static_cast<int>(e.mn)][static_cast<int>(e.mode)] = e.opcode;
-        OpcodeInfo& info = t.info[e.opcode];
-        info.mn = e.mn;
-        info.mode = e.mode;
-        info.cycles = e.cycles;
-        info.page_penalty = e.page_penalty;
-        info.valid = true;
+        AddEntry(t, e, false);
+    }
+    if (cpu == Cpu::k6502) {
+        return t;
+    }
+    for (const Entry& e : kCmosEntries) {
+        AddEntry(t, e, true);
+    }
+    for (const CycleChange& change : kCmosCycles) {
+        t.info[change.opcode].cycles = change.cycles;
+        t.info[change.opcode].page_penalty = change.page_penalty;
     }
     return t;
 }
 
-const Tables& GetTables() {
-    static const Tables tables = BuildTables();
-    return tables;
+const Tables& GetTables(Cpu cpu) {
+    static const Tables nmos = BuildTables(Cpu::k6502);
+    static const Tables cmos = BuildTables(Cpu::k65c02);
+    return cpu == Cpu::k65c02 ? cmos : nmos;
 }
 
 const char* const kNames[] = {
-    "ADC", "AND", "ASL", "BCC", "BCS", "BEQ", "BIT", "BMI", "BNE", "BPL", "BRK", "BVC",
-    "BVS", "CLC", "CLD", "CLI", "CLV", "CMP", "CPX", "CPY", "DEC", "DEX", "DEY", "EOR",
-    "INC", "INX", "INY", "JMP", "JSR", "LDA", "LDX", "LDY", "LSR", "NOP", "ORA", "PHA",
-    "PHP", "PLA", "PLP", "ROL", "ROR", "RTI", "RTS", "SBC", "SEC", "SED", "SEI", "STA",
-    "STX", "STY", "TAX", "TAY", "TSX", "TXA", "TXS", "TYA",
+    "ADC", "AND", "ASL", "BCC", "BCS", "BEQ", "BIT", "BMI", "BNE", "BPL", "BRK", "BVC", "BVS",
+    "CLC", "CLD", "CLI", "CLV", "CMP", "CPX", "CPY", "DEC", "DEX", "DEY", "EOR", "INC", "INX",
+    "INY", "JMP", "JSR", "LDA", "LDX", "LDY", "LSR", "NOP", "ORA", "PHA", "PHP", "PLA", "PLP",
+    "ROL", "ROR", "RTI", "RTS", "SBC", "SEC", "SED", "SEI", "STA", "STX", "STY", "TAX", "TAY",
+    "TSX", "TXA", "TXS", "TYA", "BRA", "PHX", "PHY", "PLX", "PLY", "STZ", "TRB", "TSB",
 };
 
 static_assert(sizeof(kNames) / sizeof(kNames[0]) == kMnCount);
@@ -163,11 +212,19 @@ static_assert(sizeof(kNames) / sizeof(kNames[0]) == kMnCount);
 } // namespace
 
 int OpcodeFor(Mn mn, Mode mode) {
-    return GetTables().by_mode[static_cast<int>(mn)][static_cast<int>(mode)];
+    return OpcodeFor(mn, mode, Cpu::k6502);
+}
+
+int OpcodeFor(Mn mn, Mode mode, Cpu cpu) {
+    return GetTables(cpu).by_mode[static_cast<int>(mn)][static_cast<int>(mode)];
 }
 
 const OpcodeInfo& OpcodeInfoFor(std::uint8_t opcode) {
-    return GetTables().info[opcode];
+    return OpcodeInfoFor(opcode, Cpu::k6502);
+}
+
+const OpcodeInfo& OpcodeInfoFor(std::uint8_t opcode, Cpu cpu) {
+    return GetTables(cpu).info[opcode];
 }
 
 const char* MnName(Mn mn) {
@@ -183,6 +240,7 @@ int ModeSize(Mode mode) {
     case Mode::AbsX:
     case Mode::AbsY:
     case Mode::Ind:
+    case Mode::AbsIndX:
         return 3;
     default:
         return 2;

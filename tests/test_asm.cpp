@@ -55,6 +55,12 @@ std::string Expected(Mn mn, Mode mode, std::uint32_t v) {
     case Mode::IndY:
         std::snprintf(text, sizeof(text), "%s ($%02X),Y", name, v);
         break;
+    case Mode::ZpInd:
+        std::snprintf(text, sizeof(text), "%s ($%02X)", name, v);
+        break;
+    case Mode::AbsIndX:
+        std::snprintf(text, sizeof(text), "%s ($%04X,X)", name, v);
+        break;
     default:
         text[0] = 0;
         break;
@@ -78,13 +84,14 @@ std::uint8_t NotTaken(Mn mn) {
     }
 }
 
-void TestEveryOpcode(TestResults& results) {
+// each chip's table: the opcodes the simulator's core runs, their encodings and cycles
+void TestEveryOpcode(TestResults& results, tisple::Cpu cpu) {
     int documented = 0;
     int mismatches = 0;
     auto m = std::make_unique<tisple::Machine>();
     for (int op = 0; op < 256; op++) {
-        const tisple::OpcodeInfo& info = tisple::OpcodeInfoFor(static_cast<std::uint8_t>(op));
-        bool doc = tisple::IsDocumentedOpcode(static_cast<std::uint8_t>(op));
+        const tisple::OpcodeInfo& info = tisple::OpcodeInfoFor(static_cast<std::uint8_t>(op), cpu);
+        bool doc = tisple::IsDocumentedOpcode(static_cast<std::uint8_t>(op), cpu);
         if (doc != info.valid) {
             std::fprintf(stderr, "opcode $%02X: documented %d, in the table %d\n", op, doc,
                          info.valid);
@@ -97,6 +104,7 @@ void TestEveryOpcode(TestResults& results) {
         documented++;
         // assemble it at $0800 and read it back
         tisple::Assembly as;
+        as.cpu = cpu;
         std::uint32_t operand = tisple::ModeSize(info.mode) == 3 ? 0x1234 : 0x42;
         if (info.mode == Mode::Rel) {
             operand = 0x0812;
@@ -111,7 +119,7 @@ void TestEveryOpcode(TestResults& results) {
         std::string error;
         bool encoded = tisple::EncodeCode(as, bytes, error);
         int length = 0;
-        tisple::InitMachine(*m);
+        tisple::InitMachine(*m, cpu);
         tisple::LoadBytes(*m, 0x0800, bytes.data(), bytes.size());
         std::string text = tisple::Disassemble(*m, 0x0800, length);
         std::string want = Expected(info.mn, info.mode, operand);
@@ -139,8 +147,39 @@ void TestEveryOpcode(TestResults& results) {
             mismatches++;
         }
     }
-    CHECK(results, documented == 151);
+    CHECK(results, documented == (cpu == tisple::Cpu::k65c02 ? 151 + 27 : 151));
     CHECK(results, mismatches == 0);
+}
+
+// a 65C02 JMP to a near label in its page is BRA; one across a page or out of reach stays JMP;
+// the NMOS chip refuses 65C02 instructions
+void TestShortJumps(TestResults& results) {
+    tisple::Assembly as;
+    as.cpu = tisple::Cpu::k65c02;
+    std::int32_t near = tisple::NewSymbol(as, "near");
+    std::int32_t next_page = tisple::NewSymbol(as, "next_page");
+    as.items.push_back(tisple::MakeLabel(near));
+    as.items.push_back(tisple::MakeIns(Mn::JMP, Mode::Abs, tisple::SymValue(near)));
+    as.items.push_back(tisple::MakeIns(Mn::JMP, Mode::Abs, tisple::SymValue(next_page)));
+    for (int i = 0; i < 0x80; i++) {
+        as.items.push_back(tisple::MakeIns(Mn::NOP, Mode::Imp));
+    }
+    as.items.push_back(tisple::MakeLabel(next_page));
+    as.items.push_back(tisple::MakeIns(Mn::STZ, Mode::Abs, tisple::Num(0x10)));
+    tisple::LayoutCode(as, 0x60F0);
+    std::vector<std::uint8_t> bytes;
+    std::string error;
+    CHECK(results, tisple::EncodeCode(as, bytes, error));
+    // BRA near, JMP next_page (it is in reach but across the page), the NOPs, STZ $10
+    CHECK(results, bytes.size() == 2 + 3 + 0x80 + 2);
+    CHECK(results, bytes[0] == 0x80 && bytes[1] == 0xFE && bytes[2] == 0x4C);
+    CHECK(results, bytes[bytes.size() - 2] == 0x64 && bytes.back() == 0x10);
+    CHECK(results, tisple::ItemText(as, as.items[1]) == "BRA $60F0");
+
+    as.cpu = tisple::Cpu::k6502;
+    tisple::LayoutCode(as, 0x60F0);
+    CHECK(results, !tisple::EncodeCode(as, bytes, error));
+    CHECK(results, error == "no STZ in this addressing mode on the 6502");
 }
 
 void TestZeroPageShrink(TestResults& results) {
@@ -217,7 +256,9 @@ void TestUndefinedSymbol(TestResults& results) {
 } // namespace
 
 void RunAsmTests(TestResults& results) {
-    TestEveryOpcode(results);
+    TestEveryOpcode(results, tisple::Cpu::k6502);
+    TestEveryOpcode(results, tisple::Cpu::k65c02);
+    TestShortJumps(results);
     TestZeroPageShrink(results);
     TestBranchRelaxation(results);
     TestUndefinedSymbol(results);

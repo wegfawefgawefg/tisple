@@ -10,6 +10,9 @@
 //   number below $100. Indexed modes are never shrunk, since zp,X wraps inside page zero
 //   while abs,X does not.
 // - A branch whose target is out of range becomes the inverted branch over a JMP.
+// - For the 65C02 (Assembly::cpu), a JMP to a label of the same layout becomes BRA when the
+//   label is in reach and in the page after the BRA, so it costs the JMP's 3 cycles and a
+//   byte less. 65C02 instructions are refused for the NMOS chip.
 // - A wait (asm/wait.hpp) is one item whose bytes depend on its address and whose size does
 //   not: an exact delay that keeps the registers and memory and may change the flags.
 
@@ -66,6 +69,8 @@ struct AsmItem {
     // a branch whose target may be in another stretch of memory: always the long form
     // (backend/link_code.hpp)
     bool far = false;
+    // set by LayoutCode: a JMP encoded as the 65C02's BRA
+    bool short_jump = false;
 };
 
 struct AsmSymbol {
@@ -79,6 +84,7 @@ struct AsmSymbol {
 };
 
 struct Assembly {
+    Cpu cpu = Cpu::k6502; // the chip the code is for: its instructions and cycle counts
     std::vector<AsmSymbol> symbols;
     std::vector<AsmItem> items;
     std::vector<std::string> notes;
