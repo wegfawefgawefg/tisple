@@ -62,6 +62,13 @@ void LoadTests(TestResults& results, const fs::path& root) {
     CHECK(results, tisple::LoadProjectFile(here, project, error));
     CHECK(results, project.program == folder + "main.tsp");
     CHECK(results, project.rom == "/roms/Apple2e.rom");
+    CHECK(results, project.cpu.empty());
+
+    // the cpu as a string ("65c02" does not read as a number) or the 6502 as a number
+    WriteText(here, "(program main.tsp)\n(cpu \"65c02\")\n");
+    CHECK(results, tisple::LoadProjectFile(here, project, error) && project.cpu == "65c02");
+    WriteText(here, "(program main.tsp)\n(cpu 6502)\n");
+    CHECK(results, tisple::LoadProjectFile(here, project, error) && project.cpu == "6502");
 
     // every problem is an error at its place in the file
     struct Bad {
@@ -78,6 +85,8 @@ void LoadTests(TestResults& results, const fs::path& root) {
         {"program\n", "bad.project:1:1: error: a tisple.project holds (name value) forms"},
         {"(origin 0x8000)\n", "bad.project: error: no (program file.tsp)"},
         {"(program main.tsp\n", "bad.project:1:1: error:"},
+        {"(program main.tsp)\n(cpu \"z80\")\n",
+         "bad.project:2:6: error: cpu takes \"6502\" or \"65c02\""},
     };
     std::string bad_path = (root / "bad.project").string();
     for (const Bad& entry : bad) {
@@ -102,6 +111,7 @@ void WordsTests(TestResults& results) {
     project.disk = "../build/a.dsk";
     project.scale = "2";
     project.taps = "../taps.json";
+    project.cpu = "65c02";
     char tisple_word[] = "tisple";
     char build_word[] = "build";
     char run_word[] = "run";
@@ -112,16 +122,17 @@ void WordsTests(TestResults& results) {
     // build takes the program, origin and disk; the command line comes after
     char* build[] = {tisple_word, build_word, asm_word};
     std::vector<std::string> words = tisple::ProjectCommandWords(project, 3, build);
-    std::vector<std::string> expect = {"tisple", "build",  "../game/main.tsp", "--origin",
-                                       "32768",  "--disk", "../build/a.dsk",   "--asm"};
+    std::vector<std::string> expect = {
+        "tisple", "build", "../game/main.tsp", "--origin",       "32768",
+        "--cpu",  "65c02", "--disk",           "../build/a.dsk", "--asm"};
     CHECK(results, words == expect);
 
     // run takes the machine flags too; the command line's --scale comes later and wins
     char* run[] = {tisple_word, run_word, scale_word, three_word};
     words = tisple::ProjectCommandWords(project, 4, run);
-    expect = {
-        "tisple",  "run", "../game/main.tsp", "--origin",     "32768",   "--disk", "../build/a.dsk",
-        "--scale", "2",   "--taps",           "../taps.json", "--scale", "3"};
+    expect = {"tisple", "run",    "../game/main.tsp", "--origin",       "32768",
+              "--cpu",  "65c02",  "--disk",           "../build/a.dsk", "--scale",
+              "2",      "--taps", "../taps.json",     "--scale",        "3"};
     CHECK(results, words == expect);
 
     // with a .tsp file, or for another command, there is no project command line

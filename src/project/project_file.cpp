@@ -27,12 +27,12 @@ struct ProjectForm {
 const ProjectForm kForms[] = {
     {"program", ValueKind::kPath, 0, 0, &ProjectFile::program, nullptr, false},
     {"origin", ValueKind::kNumber, 0x0200, 0xBFFF, &ProjectFile::origin, "--origin", false},
+    {"cpu", ValueKind::kCpu, 0, 0, &ProjectFile::cpu, "--cpu", false},
     {"disk", ValueKind::kPath, 0, 0, &ProjectFile::disk, "--disk", false},
     {"mockingboard", ValueKind::kNumber, 1, 7, &ProjectFile::mockingboard, "--mockingboard", true},
     {"scale", ValueKind::kNumber, 1, 8, &ProjectFile::scale, "--scale", true},
     {"taps", ValueKind::kPath, 0, 0, &ProjectFile::taps, "--taps", true},
     {"rom", ValueKind::kPath, 0, 0, &ProjectFile::rom, "--rom", true},
-    {"cpu", ValueKind::kCpu, 0, 0, &ProjectFile::cpu, "--cpu", false},
 };
 
 const ProjectForm* FindForm(const std::string& name) {
