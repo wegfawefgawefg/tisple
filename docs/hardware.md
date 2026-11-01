@@ -120,11 +120,16 @@ from there it is reached through a stub).
 
 The built-in machine has no ROM of Apple's, so it answers the identification bytes itself:
 `--model iie-enhanced` (the default, since its alternate character set has MouseText),
-`iie`, `iic`, `iiplus` or `iigs` (whose `$FE1F` clears the carry). Only those bytes change;
-the hardware stays an NMOS IIe, so `machine.cmos` is false on all of them. `--64k` takes the
-extended 80-column card out: aux memory reads as the floating bus and writes go nowhere.
-With `--rom`, Apple's ROM answers (tests/test_machine_lib.cpp runs Apple2e.rom,
-Apple2e_Enhanced.rom and Apple2_Plus.rom when the owner's copies are there).
+`iie`, `iic`, `iiplus` or `iigs` (whose `$FE1F` clears the carry). Those bytes change, and
+the cpu with them (2026-11-01): the 65C02 on the enhanced IIe, the IIc and the IIgs (standing
+in for its 65816, whose own instructions and timings are not modelled), the NMOS 6502 on the
+IIe and II+; so `machine.cmos` is true on the default machine. `--cpu 6502` or `--cpu 65c02`
+says which outright. The rest of the hardware stays the same IIe. `--64k` takes the extended
+80-column card out: aux memory reads as the floating bus and writes go nowhere. With `--rom`,
+Apple's ROM answers, and the cpu is its model's (Apple2e_Enhanced.rom's identification bytes
+make it the 65C02; tests/test_machine_lib.cpp runs Apple2e.rom, Apple2e_Enhanced.rom and
+Apple2_Plus.rom when the owner's copies are there, each on its own cpu, and a2audit passes
+on both IIe roms). The phone player runs the enhanced IIe's 65C02 too.
 
 Not covered: the IIc's and IIgs's vertical blank, which `lib/timing` reads the IIe's way;
 a II or II+'s 16K language card; the IIe card for the Macintosh LC (it answers as an

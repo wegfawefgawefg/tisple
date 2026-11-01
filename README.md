@@ -146,15 +146,16 @@ run time, no integers wider than 16 bits, no implicit widening (`(+ (as u16 a) b
 type inference beyond literals, no inline assembler (`jsr` calls existing code with A, X
 and Y set), no separate compilation. Macro code runs in the compiler and has floats, lists,
 recursion and closures, so tables, sprites from ASCII art and unrolled loops are built
-there. Only the NMOS 6502 is targeted so far. Details in
-[`docs/language.md`](docs/language.md).
+there. It targets the NMOS 6502 of every Apple II, and with `--cpu 65c02` the 65C02 of the
+enhanced IIe and the IIc. Details in [`docs/language.md`](docs/language.md).
 
 ## What's in the box
 
 - **The language.** `u8`/`i8`/`u16`/`i16`, `bool`, structs, enums with `match`, modules,
   pointers, function pointers, interrupt handlers, placement (`:boundary 256`, `:in aux`),
   and compile-time macros. [`docs/language.md`](docs/language.md).
-- **A built-in Apple IIe.** Cycle-exact 6502 (floooh's chips), text in 40 and 80 columns,
+- **A built-in Apple IIe.** Cycle-exact 6502 (floooh's chips) or 65C02 (our own, the
+  enhanced IIe's by default), text in 40 and 80 columns,
   lo-res and hi-res with NTSC colour, speaker, keyboard, 128K with the language card,
   AppleMouse, Disk II, Mockingboard, snapshots. It runs on its own boot ROM, mouse firmware
   and font, so nothing of Apple's is needed or shipped; it boots Apple's ROMs if you have

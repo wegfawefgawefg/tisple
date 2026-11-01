@@ -50,6 +50,14 @@ layout Tisple uses for every such array.
 The CPU is the NMOS 6502 for everyone (our simulator's; LLVM's `-mcpu=mos6502`, cc65's
 default `--cpu 6502`, Oscar64's default). No 65C02 instructions.
 
+`TISPLE_RACE_CPU=65c02 races/run.sh` (and `races/random.sh`) races on the 65C02 instead: our
+simulator's 65C02 core times everyone, and each compiler builds for it where it can: Tisple
+`--cpu 65c02`, cc65 `-t sim65c02` (its `--cpu 65c02` code and runtime; the library is built
+once with `make -C libsrc sim65c02` in the cc65 folder, else `-t sim6502 --cpu 65c02`),
+LLVM-MOS `-mcpu=mos65c02`. Oscar64 has no 65C02 target and races with its 6502 code, which the
+65C02 runs. Results go to `races/out/65c02/` (`races/out/random65c02/`); `--update-doc` is
+refused there, so the 6502 tables stay what they are. docs/races.md, "The 65C02".
+
 ## How a kernel is timed
 
 1. The kernel is `main` in every language, so no compiler needs to be talked out of

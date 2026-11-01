@@ -238,7 +238,7 @@ Want: how much the programs above lean on it. Rough cost in a Tisple library.
 | 7 | Colour hi-res drawing: HCOLOR plots and lines, fills, shape tables, pre-shifted sprites | most hi-res games | medium | not yet |
 | 8 | Speaker music in two voices (Electric Duet style) and a speaker effects kit | most games without a Mockingboard | medium | not yet |
 | 9 | Mixed graphics and text, double lo-res, MouseText menus and boxes | menus, status lines, 128K games | small | 1 |
-| 10 | The 65C02 target (enhanced IIe, IIc) | speed and size on the owner's machines | large (backend) | approved, later |
+| 10 | The 65C02 target (enhanced IIe, IIc) | speed and size on the owner's machines | large (backend) | built 2026-11-01 |
 | 11 | Frame timing on the IIc and IIgs (their vertical blank reads differ) | anything synced to the screen | small, needs 3 | not yet |
 | 12 | A clock (ProDOS's, the No-Slot Clock, ThunderClock) | tools, saves with dates | small | not yet |
 | 13 | Serial and printer (Super Serial Card, the IIc ports) | tools, ADTPro-style transfers | medium | approved, later |
@@ -283,3 +283,45 @@ Built: 1, 2, 3 and 9.
 Next by the ranking: numbers as text (4) and text on the graphics screens (5), both small;
 then ProDOS files (6) and the 65C02 target (10), already approved. Frame timing on the IIc and
 IIgs (11) now has lib/machine to choose by.
+
+### The 65C02 (2026-11-01)
+
+Built: 10, with the emulator first, since the owner's 65C02 machines are out of reach.
+
+- The cpu: our own 65C02 core beside floooh's NMOS one (`src/emu/cpu65c02*.cpp`), bus-cycle
+  exact, proved by SingleStepTests' synertek65c02 set, Klaus Dormann's functional, 65C02 and
+  decimal tests and interrupt timing equal to the NMOS core's (docs/design.md, Testing).
+- The machine: `--cpu 6502|65c02`, and the model's cpu by default: the enhanced IIe (the
+  default model), IIc and IIgs on the 65C02, so `machine.cmos` reads true; Apple2e_Enhanced.rom
+  boots, passes a2audit and boots our disks on it (docs/hardware.md).
+- The target: `--cpu 65c02` / `(cpu "65c02")`: STZ, BRA, `(zp)`, INC A/DEC A, PHX/PLX, TSB/TRB,
+  `JMP (table,X)` jump tables and `JMP (pointer)` dispatchers; the superoptimizer and
+  `tisple gaps --cpu 65c02` know the new instructions. The 6502 target's bytes did not change.
+- Tests: TISPLE_TEST_CPU=65c02 runs the whole suite for the 65C02 (clean); the fuzzer builds
+  a seed in four for the other chip and has a jump-table generator built for both
+  (tests/fuzz_gen_tables.cpp); about 108,000 programs fuzzed on the 65C02 over the round
+  (48,773 on its last code), no mismatch.
+- Measured (docs/races.md, "The 65C02"): Tisple 1.0% fewer cycles and 2.4% fewer bytes on
+  random programs, kernels up to 1.3%, the bytecode VM 8.8%; Catwiz 2.75% smaller, its waiting
+  pass 1.5% faster. dogfood.md 30-34 has what is left.
+
+Choices for the owner, not made: how Catwiz should ship (below), and whether the generator
+should plan with the 65C02's instructions (dogfood 30).
+
+How Catwiz could ship, laid out. It needs 128K and double hi-res, so its machines are a IIe
+with the extended 80-column card (enhanced or not), a IIc, a IIc Plus or a IIgs; all but the
+unenhanced IIe have a 65C02 (the IIgs's 65816 runs 65C02 code). The 65C02 build is 954 bytes
+smaller, its waiting pass 1.5% faster, a turn 0.75%; it still needs squeeze 10.
+
+1. 65C02 only: one disk, `(cpu "65c02")` in tisple.project. An unenhanced IIe would crash on
+   the first 65C02 instruction, so a check must run before any: the boot loader is 6502 code
+   and could test the cpu (the decimal `99 + 1` test lib/machine uses) and print a line
+   instead of starting the game. That check does not exist yet.
+2. Two disks, catwiz.dsk and catwiz65.dsk, from the same source by two builds (`--cpu 65c02
+   --disk build/catwiz65.dsk`): each the best its chip gets; two files to test and ship, and
+   the same boot check for the 65C02 one put on an unenhanced IIe.
+3. One disk that chooses at boot: the loader tests the cpu and loads the matching code. Both
+   images do not fit one 5.25" disk with the art (the 6502 build boots 70,813 bytes from
+   tracks 1-23 and the tables fill tracks 28-34, leaving 64 sectors, 16 KB; the second image's code
+   alone is 34 KB). It would need the two builds linked to the same data addresses so only
+   code differs, and room: a 3.5" (800K) or ProDOS image, which the roadmap has as 6.

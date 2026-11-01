@@ -370,7 +370,7 @@ Const data (2026-10-30, with consts of any type; docs/language.md "Static data")
 - `-O0` no optimisation (debugging); `-O1` default, every fast pass; `-O2`
   release, adds slow search (solver superoptimisation, exact allocation) with a
   persistent cache keyed by code window; `-Os` size instead of cycles;
-  `--cpu nmos|65c02`.
+  `--cpu 6502|65c02` (built 2026-11-01, docs/design.md, Target).
 - Developer: `--opt-bisect N` (apply only the first N transformations, for
   bisecting miscompiles; build this first), `--no-pass NAME`, `--remarks` (what
   was not optimised and why, with the source line).

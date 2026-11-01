@@ -477,9 +477,28 @@ tables. How it is made:
 NMOS 6502 (runs on every Apple II), Apple IIe memory map, the extended
 80-column card's aux memory and the language card when a program uses them.
 Output is a raw binary (default origin `$6000`, for `BRUN` under DOS) or a
-self-booting disk with no DOS (docs/disks.md). 65C02 (enhanced IIe, IIc) as a
-later flag; its instructions and timings differ and must not be mixed up.
-ProDOS SYS files later.
+self-booting disk with no DOS (docs/disks.md). ProDOS SYS files later.
+
+The 65C02 of the enhanced IIe and the IIc is a second target (2026-11-01): `--cpu 65c02` on
+`tisple build`, `run` and `check`, or `(cpu "65c02")` in tisple.project. Apple's 65C02s lack
+Rockwell's bit instructions (RMB, SMB, BBR, BBS) and WDC's WAI and STP, and Apple documents
+only the 27 instructions the 65C02 added; the IIgs's 65816 gives `$x7` and `$xF` other
+meanings. So the target is that common set, timed by the 65C02's cycles (JMP (abs) 6,
+shifts abs,X 6 without a page crossing). What it uses:
+
+- the assembler (`src/asm`): a JMP to a near label in its page is BRA (a byte less, the same
+  3 cycles); `Assembly::cpu` refuses 65C02 instructions for the 6502;
+- `src/backend/cmos.cpp`, once per function and on the runtime after the peephole and the
+  frame allocation (so every analysis before it reads NMOS code): STZ for stores of a register
+  known to hold 0, `(zp)` for `(zp),Y` with Y known 0, INC A and DEC A for adds and subtracts of
+  1 whose carry nothing reads (or whose carry in is known), PHX/PLX for TXA/PHA and PLA/TAX,
+  TSB and TRB for bits set or cleared in RAM;
+- a dense `match`: `ASL`, `TAX`, `JMP (table,X)` (10 cycles where the 6502 pushes an address
+  and returns into it in 22); a function pointer's dispatcher: `JMP (pointer)` (6 for 19);
+  the interrupt entry: PHX/PHY.
+
+The 6502 target's bytes are unchanged by all of it (every example, program, race kernel and
+300 random programs compared byte for byte). What it gains, measured: docs/races.md, "The 65C02".
 
 ## Implementation
 
@@ -499,7 +518,7 @@ src/asm/            6502 opcodes and the assembler the backend emits through
 src/gaps/, src/superopt/  profiler and short-sequence search (`tisple gaps`)
 src/ide/            names, types and errors for editors (`tisple index`)
 src/race/           random race programs written in Tisple and C
-src/emu/            cycle-exact 6502 core and test harness
+src/emu/            cycle-exact 6502 and 65C02 cores and test harness
 src/machine/        built-in Apple IIe: soft switches, video, sound, mouse, Mockingboard, window
 src/disk/           disk images, DOS 3.3 files, the self-booting disk's loader
 tests/              unit, round-trip, fuzz
@@ -515,6 +534,16 @@ web/                the machine as WebAssembly, for phones and the web demo
   all 1.51M SingleStepTests cases for the 151 documented opcodes, bus cycles
   included (`scripts/fetch_singlestep.sh` gets the data). About 166M simulated
   cycles/s in release.
+- 65C02 core: our own (`src/emu/cpu65c02*.cpp`), an instruction at a time through the
+  same pins and bus cycles, so the machine cannot tell the cores apart but by what the chips
+  do: the 65C02's dummy reads, decimal mode with N, V and Z valid and its extra cycle, the
+  fixed JMP (abs), the undefined opcodes as the documented NOPs. Passes SingleStepTests'
+  synertek65c02 set (221 opcode files, 2.21M cases, bus cycles included; the 35 where that
+  set's chip has NOPs of its own are left out, `tests/test_singlestep.cpp` says why), Klaus
+  Dormann's functional, 65C02 and decimal tests (`scripts/fetch_dormann.sh`; the 6502 core
+  passes the functional and decimal ones too), and interrupt timing equal to the NMOS core's
+  at 120 request offsets. About 190M cycles/s. `Machine::cpu_kind` picks the core;
+  `tisple sim --cpu 65c02`.
 - Reference interpreter runs the checked tree. Compiled output must match it on
   every test and on randomly generated programs.
 - Exhaustive tests for small operations (every `u8` pair for add/sub/compare).
