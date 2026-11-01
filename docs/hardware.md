@@ -59,3 +59,72 @@ enhanced IIe and IIc are the targets; the IIgs is only recognised.
 - The window: a game controller's left stick is paddles 0 and 1, its south face button (A)
   button 0, east (B) button 1, west and north button 2 (src/machine/sdl_gamepad.cpp). The
   left and right Alt keys are buttons 0 and 1, as before.
+
+## What machine this is
+
+```scheme
+(import machine)
+
+(fn main () void
+    (machine.detect)
+    (if (not machine.aux)
+        (say_needs_128k))
+    (if (!= (machine.find machine.MOCKINGBOARD) 0)
+        (music_on)))
+```
+
+`(machine.detect)` once, then:
+
+| Name | Holds |
+| --- | --- |
+| `machine.model` | `machine.II`, `II_PLUS`, `IIE`, `IIE_ENHANCED`, `IIC`, `IIC_PLUS`, `IIGS` (a IIgs runs us as an enhanced IIe), `UNKNOWN` |
+| `machine.kb` | 48, 64 or 128: main and aux memory together (a II or II+'s language card is not looked for) |
+| `machine.aux` | 128K: aux memory, double res and 80 columns |
+| `machine.col80` | 80-column hardware, with or without aux memory (a IIe's 1K card has it without) |
+| `machine.cmos` | a 65C02 (enhanced IIe, IIc) or the IIgs's 65816; false for the NMOS 6502 |
+| `machine.mousetext` | the alternate character set has MouseText: enhanced IIe, IIc, IIgs |
+| `(machine.card n)` | slot n's card: `NONE`, `DISK2`, `STORAGE` (a ProDOS block device: hard disk, CFFA3000, MicroDrive, a SmartPort), `MOUSE`, `MOCKINGBOARD`, `SERIAL`, `COL80` (slot 3 on a IIe or IIc), `OTHER` (Pascal 1.1 firmware of another kind) |
+| `(machine.find kind)` | the first slot with that card, 0 for none |
+
+How it finds out, from Apple's Miscellaneous Technical Notes #7 and #2:
+
+- The model: the ROM's identification bytes at `$FBB3`, `$FBC0` and `$FBBF`, and `SEC` /
+  `JSR $FE1F`, which leaves the carry set on everything but a IIgs.
+- The CPU: `99 + 1` in decimal mode. The NMOS 6502 sets N from the binary `$9A`, the 65C02
+  from the decimal `$00`.
+- Memory, on a IIe: the 80-column card's text page through 80STORE and PAGE2 (two patterns
+  written and read back), then aux memory's `$0800` and `$0C00` through RAMRD and RAMWRT,
+  which the 1K card answers as one byte. Every byte it writes is put back. The IIc and IIgs
+  always have 128K.
+- The slots, by their ROMs: `$20 $00 $03` at `$Cn01`/`$Cn03`/`$Cn05` is something that boots
+  (a Disk II with `$3C` at `$Cn07`, otherwise a ProDOS block device); `$38 $18` at
+  `$Cn05`/`$Cn07` and `$01` at `$Cn0B` is Pascal 1.1 firmware, whose kind is at `$Cn0C`
+  (`$20` mouse, `$3x` serial, `$88` 80 columns). The Mockingboard has no ROM: its 6522's
+  timer is watched counting (as lib/mockingboard finds it). `$CFFF` is read after each slot,
+  so no card's `$C800` ROM stays on.
+
+The ROM bytes need the ROM switched in, and RAMRD switches the memory code runs from, so
+those two tests are our own 6502 code (in `lib/machine.tsp`) copied to `$0100` and run there:
+the bottom of the stack page, which neither the language card nor RAMRD switches. It takes up
+to `$0189`; the stack stays above it unless calls nest some 50 deep. Interrupts are off
+while it runs. Afterwards the language card is as it was: on a IIe or IIc by its status reads
+(its RAM and bank, with writes on, as Tisple's startup leaves it), on a II or II+ (no status
+reads) its bank 2 RAM if `$D000`-`$D007` read other than the ROM there. So `detect` may run
+from the language card (tested in both banks; a function with a `jsr` never goes to bank 1, so
+from there it is reached through a stub).
+
+`examples/machine_info.tsp` shows the answers on the text screen.
+
+### In the emulator
+
+The built-in machine has no ROM of Apple's, so it answers the identification bytes itself:
+`--model iie-enhanced` (the default, since its alternate character set has MouseText),
+`iie`, `iic`, `iiplus` or `iigs` (whose `$FE1F` clears the carry). Only those bytes change;
+the hardware stays an NMOS IIe, so `machine.cmos` is false on all of them. `--64k` takes the
+extended 80-column card out: aux memory reads as the floating bus and writes go nowhere.
+With `--rom`, Apple's ROM answers (tests/test_machine_lib.cpp runs Apple2e.rom,
+Apple2e_Enhanced.rom and Apple2_Plus.rom when the owner's copies are there).
+
+Not covered: the IIc's and IIgs's vertical blank, which `lib/timing` reads the IIe's way;
+a II or II+'s 16K language card; the IIe card for the Macintosh LC (it answers as an
+enhanced IIe).

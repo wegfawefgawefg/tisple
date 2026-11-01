@@ -122,6 +122,7 @@ int main() {
     tisple_tests::RunDhgrLibTests(results);
     tisple_tests::RunDhgrRunsTests(results);
     tisple_tests::RunJoystickLibTests(results);
+    tisple_tests::RunMachineLibTests(results);
     tisple_tests::RunBackendFuzzTests(results);
     tisple_tests::RunGapsTests(results);
     tisple_tests::RunSuperoptTests(results);
