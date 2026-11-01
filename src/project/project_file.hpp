@@ -5,6 +5,7 @@
 // read with the Tisple reader; paths are from the file's folder:
 //   (program game/main.tsp)  required
 //   (origin 0x8000)          build, run, check
+//   (cpu "65c02")            build, run, check: the chip to compile for ("6502" by default)
 //   (disk build/catwiz.dsk)  build writes it, run boots it, check lays out for it
 //   (mockingboard 4) (scale 2) (taps tools/phone/catwiz.json) (rom Apple2e.rom)   run only
 
@@ -22,6 +23,7 @@ struct ProjectFile {
     std::string path;
     std::string program;
     std::string origin;
+    std::string cpu;
     std::string disk;
     std::string mockingboard;
     std::string scale;

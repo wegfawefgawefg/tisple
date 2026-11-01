@@ -65,10 +65,13 @@ struct Setup {
     bool mouse = true;
     int mockingboard = 0;
     bool disk2 = false;
-    tisple::Cpu cpu = tisple::Cpu::k6502;
+    tisple::Cpu cpu = tisple::DefaultCpu();
 };
 
 bool Detect(TestResults& results, const LibBuild& b, const Setup& s, Found& f) {
+    if (b.code.cpu == tisple::Cpu::k65c02 && s.cpu == tisple::Cpu::k6502) {
+        return false; // a 65C02 build cannot run on the nmos chip
+    }
     std::unique_ptr<tisple::Apple2> a = LoadLibProgram(b);
     a->cpu.cpu_kind = s.cpu;
     a->model = s.model;
@@ -109,7 +112,8 @@ void TestModels(TestResults& results, const LibBuild& b) {
     Setup s;
     if (Detect(results, b, s, f)) {
         CHECK(results, f.model == kIIeEnhanced && f.kb == 128 && f.aux && f.col80);
-        CHECK(results, !f.cmos && f.mousetext); // the nmos 6502 the test machine starts with
+        // the nmos 6502 the test machine starts with (TISPLE_TEST_CPU: the 65C02)
+        CHECK(results, f.cmos == (tisple::DefaultCpu() == tisple::Cpu::k65c02) && f.mousetext);
         CHECK(results, f.card[3] == kCol80 && f.card[4] == kMouse && f.mouse_slot == 4);
         CHECK(results, f.card[1] == kNone && f.card[6] == kNone && f.card[7] == kNone);
     }

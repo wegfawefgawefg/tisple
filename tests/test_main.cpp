@@ -1,3 +1,4 @@
+#include "asm/cpu.hpp"
 #include "check.hpp"
 #include "source_file.hpp"
 #include "test_apple2_libs.hpp"
@@ -33,6 +34,14 @@ void RunSourceFileTests(TestResults& results) {
 int main() {
     tisple_tests::TestResults results;
 
+    // TISPLE_TEST_CPU=65c02: every build and every IIe the tests make is the 65C02's (tests that
+    // pin exact 6502 cycles or bytes then fail by design; see docs/dogfood.md)
+    const char* test_cpu = std::getenv("TISPLE_TEST_CPU");
+    tisple::Cpu cpu = tisple::Cpu::k6502;
+    if (test_cpu && *test_cpu && tisple::ParseCpu(test_cpu, cpu)) {
+        tisple::SetDefaultCpu(cpu);
+    }
+
     // TISPLE_FUZZ_FILE diffs one program and runs nothing else, so a reducer can call it often
     const char* fuzz_file = std::getenv("TISPLE_FUZZ_FILE");
     if (fuzz_file && *fuzz_file) {
@@ -40,10 +49,15 @@ int main() {
         return results.failed == 0 ? 0 : 1;
     }
 
-    // TISPLE_TEST_GROUP=emu runs only the cpu cores' tests (SingleStepTests, Dormann's)
+    // TISPLE_TEST_GROUP=emu runs only the cpu cores' tests (SingleStepTests, Dormann's);
+    // =fuzz only the fuzzer (TISPLE_FUZZ, TISPLE_FUZZ_SEED: a burst)
     const char* group = std::getenv("TISPLE_TEST_GROUP");
-    if (group && std::strcmp(group, "emu") == 0) {
-        tisple_tests::RunEmuTests(results);
+    if (group && (std::strcmp(group, "emu") == 0 || std::strcmp(group, "fuzz") == 0)) {
+        if (std::strcmp(group, "emu") == 0) {
+            tisple_tests::RunEmuTests(results);
+        } else {
+            tisple_tests::RunBackendFuzzTests(results);
+        }
         std::printf("%d passed, %d failed\n", results.passed, results.failed);
         return results.failed == 0 ? 0 : 1;
     }

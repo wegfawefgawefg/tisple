@@ -109,7 +109,7 @@ void PowerOn(Apple2& a) {
     // built in place: the struct is too big for a temporary on the stack
     std::memset(static_cast<void*>(&a), 0, sizeof(Apple2));
     new (&a) Apple2();
-    InitMachine(a.cpu);
+    InitMachine(a.cpu, DefaultCpu());
     InstallBus(a);
     ResetSoftSwitches(a);
     // a cleared text screen, as HOME leaves it

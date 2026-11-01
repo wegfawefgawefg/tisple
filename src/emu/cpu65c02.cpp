@@ -112,7 +112,11 @@ void Interrupt(Machine& m, uint16_t pc) {
 
 void Step65c02(Machine& m) {
     m6502_t& c = m.cpu;
-    uint16_t pc = M6502_GET_ADDR(m.pins);
+    // the program counter is the core's own, so while an instruction runs it is past the
+    // operand bytes read so far, as the NMOS core's is (the simulator finds the instruction
+    // behind an I/O access by it: backend/sim_run.cpp)
+    uint16_t& pc = c.PC;
+    pc = M6502_GET_ADDR(m.pins);
     if ((c.brk_flags & M6502_BRK_IRQ) != 0) {
         Interrupt(m, pc);
         return;
@@ -126,7 +130,6 @@ void Step65c02(Machine& m) {
     } else {
         poll = StepOther(m, pc, opcode);
     }
-    c.PC = pc;
     m.pins = (m.pins & ~0xFFFFULL) | M6502_SYNC | M6502_RW | pc;
     if (poll >= 0 && ((c.irq_pip >> poll) & 1) != 0) {
         c.brk_flags |= M6502_BRK_IRQ;

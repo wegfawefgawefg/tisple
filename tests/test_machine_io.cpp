@@ -12,13 +12,16 @@ namespace {
 
 using tisple::Apple2;
 
-uint64_t TogglesFor(const std::vector<uint8_t>& bytes) {
+uint64_t TogglesFor(const std::vector<uint8_t>& bytes, tisple::Cpu cpu = tisple::Cpu::k6502) {
     auto a = MachineWithBytes(bytes);
+    a->cpu.cpu_kind = cpu;
     RunToStop(*a);
     return a->speaker.toggle_count;
 }
 
-// any read or write is an access; dummy reads and read-modify-write cycles count too
+// any read or write is an access; dummy reads and read-modify-write cycles count too. The
+// 65C02's are its own: STA abs,X reads the last operand byte again, not the unfixed address;
+// INC reads twice and writes once (the NMOS chip reads once and writes twice)
 void TestSpeakerAccesses(TestResults& results) {
     CHECK(results, TogglesFor({0xAD, 0x30, 0xC0, 0x00}) == 1);             // LDA $C030
     CHECK(results, TogglesFor({0x8D, 0x30, 0xC0, 0x00}) == 1);             // STA $C030
@@ -26,6 +29,10 @@ void TestSpeakerAccesses(TestResults& results) {
     CHECK(results, TogglesFor({0xA2, 0x00, 0x9D, 0x30, 0xC0, 0x00}) == 2); // STA $C030,X
     CHECK(results, TogglesFor({0xEE, 0x30, 0xC0, 0x00}) == 3);             // INC $C030
     CHECK(results, TogglesFor({0xAD, 0x3F, 0xC0, 0x00}) == 1);             // $C03F mirrors
+    tisple::Cpu c02 = tisple::Cpu::k65c02;
+    CHECK(results, TogglesFor({0xA2, 0x00, 0x9D, 0x30, 0xC0, 0x00}, c02) == 1); // STA $C030,X
+    CHECK(results, TogglesFor({0xEE, 0x30, 0xC0, 0x00}, c02) == 3);             // INC $C030
+    CHECK(results, TogglesFor({0x9C, 0x30, 0xC0, 0x00}, c02) == 1);             // STZ $C030
 
     // the toggle is logged at its bus cycle: LDA abs reads on its fourth cycle
     auto a = MachineWithBytes({0xEA, 0xAD, 0x30, 0xC0, 0x8D, 0x30, 0xC0, 0x00});

@@ -100,7 +100,7 @@ void Load(SimRunner& run, const Compiled& compiled) {
     for (std::uint16_t at : compiled.aux_switches) {
         run.aux_switch_at[at] = true;
     }
-    InitMachine(*run.machine);
+    InitMachine(*run.machine, compiled.cpu);
     LoadBytes(*run.machine, compiled.origin, compiled.image.data(), compiled.image.size());
     // the flat memory holds main ram and the language card with bank 2 at $D000 (the runner
     // keeps bank 1 and aux memory); the program's own aux switches do not switch it

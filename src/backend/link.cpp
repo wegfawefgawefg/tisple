@@ -60,6 +60,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     const FramePlan& plan = *in.plan;
     be.errors = &errors;
     out = Compiled();
+    out.cpu = options.cpu;
     out.origin = options.origin;
     out.main = program.main;
     out.card_ram = card;

@@ -21,6 +21,7 @@ struct RaceArgs {
     std::string executed;             // ranges of the code that ran
     std::string profile;              // runs and cycles of each instruction on the clock
     std::vector<std::uint16_t> words; // u16s to print from memory after the kernel
+    Cpu cpu = Cpu::k6502;
 };
 
 void PrintRaceUsage() {
@@ -28,7 +29,7 @@ void PrintRaceUsage() {
                  "usage: tisple race --load FILE@ADDR... --start ADDR --entry ADDR\n"
                  "                   [--patch FILE@ADDR]... [--dump mem.bin] [--executed out.txt]\n"
                  "                   [--max-cycles N] [--after ADDR] [--stop ADDR]\n"
-                 "                   [--word ADDR]... [--profile out.txt]\n"
+                 "                   [--word ADDR]... [--profile out.txt] [--cpu 6502|65c02]\n"
                  "runs a binary from --start; when the pc first reaches --entry, writes the\n"
                  "patches (the kernel's inputs) and counts cycles until it returns. prints the\n"
                  "kernel's cycles and registers; --dump writes memory after it, --executed the\n"
@@ -80,6 +81,9 @@ bool ParseOne(int argc, char** argv, int& i, RaceArgs& args) {
     std::uint64_t number = 0;
     if (std::strcmp(arg, "--load") == 0) {
         return ReadFileArg(value, args.loads);
+    }
+    if (std::strcmp(arg, "--cpu") == 0) {
+        return ParseCpu(value, args.cpu);
     }
     if (std::strcmp(arg, "--patch") == 0) {
         return ReadFileArg(value, args.options.patches);
@@ -176,7 +180,7 @@ int RunRaceCommand(int argc, char** argv) {
         return 1;
     }
     auto machine = std::make_unique<Machine>();
-    InitMachine(*machine);
+    InitMachine(*machine, args.cpu);
     for (const RacePatch& load : args.loads) {
         LoadBytes(*machine, load.address, load.bytes.data(), load.bytes.size());
     }

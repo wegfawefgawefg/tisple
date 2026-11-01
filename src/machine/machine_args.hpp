@@ -34,8 +34,9 @@ struct MachineArgs {
     // the cpu, when --cpu gives it; else the rom's model's, or --model's (ModelCpu)
     Cpu cpu = Cpu::k65c02;
     bool cpu_given = false;
-    bool aux_ram = true;  // false: --64k
-    int mockingboard = 0; // its slot; 0 for none
+    bool needs_65c02 = false; // tisple run of a 65C02 build: refuse a 6502 machine
+    bool aux_ram = true;      // false: --64k
+    int mockingboard = 0;     // its slot; 0 for none
     uint32_t origin = kDefaultOrigin;
     uint64_t cycles = kDefaultCycles;
     bool cycles_given = false;

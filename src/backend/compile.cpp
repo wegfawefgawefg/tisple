@@ -216,6 +216,7 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
     opt.keep_bodies = options.keep_all_functions;
     Optimize(program, options, opt, report);
     out = Compiled();
+    out.cpu = options.cpu;
     out.origin = options.origin;
     out.main = program.main;
     Backend be;

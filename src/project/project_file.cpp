@@ -1,5 +1,6 @@
 #include "project/project_file.hpp"
 
+#include "asm/cpu.hpp"
 #include "reader/reader.hpp"
 #include "source_file.hpp"
 
@@ -9,7 +10,7 @@ namespace tisple {
 
 namespace {
 
-enum class ValueKind { kPath, kNumber };
+enum class ValueKind { kPath, kNumber, kCpu };
 
 // one form a tisple.project may hold: its name, what it takes, the flag it stands for and
 // whether only tisple run takes that flag
@@ -31,6 +32,7 @@ const ProjectForm kForms[] = {
     {"scale", ValueKind::kNumber, 1, 8, &ProjectFile::scale, "--scale", true},
     {"taps", ValueKind::kPath, 0, 0, &ProjectFile::taps, "--taps", true},
     {"rom", ValueKind::kPath, 0, 0, &ProjectFile::rom, "--rom", true},
+    {"cpu", ValueKind::kCpu, 0, 0, &ProjectFile::cpu, "--cpu", false},
 };
 
 const ProjectForm* FindForm(const std::string& name) {
@@ -71,7 +73,7 @@ bool ReadForm(const SourceFile& file, const Node& node, const std::string& folde
         error = FormError(file, name,
                           "unknown form '" + name.text +
                               "'; a tisple.project takes program, origin, disk, "
-                              "mockingboard, scale, taps and rom");
+                              "cpu, mockingboard, scale, taps and rom");
         return false;
     }
     if (!(out.*form->field).empty()) {
@@ -92,6 +94,19 @@ bool ReadForm(const SourceFile& file, const Node& node, const std::string& folde
             return false;
         }
         out.*form->field = std::to_string(value.value);
+        return true;
+    }
+    if (form->kind == ValueKind::kCpu) {
+        std::string word = value.kind == NodeKind::String ? value.bytes : value.text;
+        if (value.kind == NodeKind::Integer) {
+            word = std::to_string(value.value);
+        }
+        Cpu cpu = Cpu::k6502;
+        if (!ParseCpu(word.c_str(), cpu)) {
+            error = FormError(file, value, "cpu takes \"6502\" or \"65c02\"");
+            return false;
+        }
+        out.*form->field = CpuName(cpu);
         return true;
     }
     std::string path;

@@ -132,6 +132,13 @@ bool ParseCodeFlag(int argc, char** argv, int& i, BuildOptions& options, std::st
     if (ParseOptFlag(argc, argv, i, options.opt, error)) {
         return true;
     }
+    if (std::strcmp(argv[i], "--cpu") == 0) {
+        if (i + 1 >= argc || !ParseCpu(argv[i + 1], options.cpu)) {
+            error = "--cpu takes 6502 or 65c02";
+        }
+        i++;
+        return true;
+    }
     if (std::strcmp(argv[i], "--no-inline") != 0) {
         return false;
     }
@@ -146,13 +153,14 @@ bool ParseCodeFlag(int argc, char** argv, int& i, BuildOptions& options, std::st
 int RunBuildCommand(int argc, char** argv) {
     BuildArgs args;
     if (!ParseArgs(argc, argv, false, args)) {
-        std::fprintf(stderr,
-                     "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm]\n"
-                     "  [-O0|-O1] [--opt-bisect N]\n"
-                     "  [--no-pass dead|loops|consts|licm|cse|eval]\n"
-                     "  [--no-inline module.fn] (a function its calls jump to)\n"
-                     "addresses take $hex, 0xhex or decimal\n"
-                     "a tisple.project at the project root lets tisple build run with no file\n");
+        std::fprintf(
+            stderr,
+            "usage: tisple build main.tsp [-o out.bin] [--origin A] [--asm] [--cpu 6502|65c02]\n"
+            "  [-O0|-O1] [--opt-bisect N]\n"
+            "  [--no-pass dead|loops|consts|licm|cse|eval]\n"
+            "  [--no-inline module.fn] (a function its calls jump to)\n"
+            "addresses take $hex, 0xhex or decimal\n"
+            "a tisple.project at the project root lets tisple build run with no file\n");
         return 1;
     }
     Program program;
@@ -217,7 +225,7 @@ int RunRunCommand(int argc, char** argv, MachineWindowFn window) {
         }
         return RunMachineOnBinary(compiled.image, compiled.origin, compiled.segments,
                                   static_cast<int>(args.machine_args.size()),
-                                  args.machine_args.data(), window);
+                                  args.machine_args.data(), window, compiled.cpu);
     }
     SimRunner run;
     SimMain result = RunCompiledMain(run, compiled, args.max_cycles);

@@ -12,7 +12,8 @@
 // - A branch whose target is out of range becomes the inverted branch over a JMP.
 // - For the 65C02 (Assembly::cpu), a JMP to a label of the same layout becomes BRA when the
 //   label is in reach and in the page after the BRA, so it costs the JMP's 3 cycles and a
-//   byte less. 65C02 instructions are refused for the NMOS chip.
+//   byte less; not a JMP marked far, nor one the code rewrites (a label just before it is
+//   stored to at +1 or +2). 65C02 instructions are refused for the NMOS chip.
 // - A wait (asm/wait.hpp) is one item whose bytes depend on its address and whose size does
 //   not: an exact delay that keeps the registers and memory and may change the flags.
 
@@ -67,7 +68,7 @@ struct AsmItem {
     std::uint8_t size = 0;
     bool long_branch = false;
     // a branch whose target may be in another stretch of memory: always the long form
-    // (backend/link_code.hpp)
+    // (backend/link_code.hpp); a 65C02 JMP so marked never becomes BRA
     bool far = false;
     // set by LayoutCode: a JMP encoded as the 65C02's BRA
     bool short_jump = false;
@@ -108,8 +109,10 @@ Mode EncodedMode(const Assembly& as, const AsmItem& item);
 int ItemBytes(const Assembly& as, const AsmItem& item);
 
 // sizes and addresses from origin; defines labels; relaxes branches. Returns the end address
-// (one past the last byte), which may be past $FFFF if the code does not fit.
-std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin);
+// (one past the last byte), which may be past $FFFF if the code does not fit. keep_short: the
+// items were laid out before and placed by those sizes (backend/link_code.cpp's runs): a JMP
+// that was a BRA stays one while it reaches, across a page or not, so the code never grows.
+std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_short = false);
 
 // bytes from origin to the end; every symbol must be defined. False with a message on a
 // missing symbol or an operand that does not fit its mode.

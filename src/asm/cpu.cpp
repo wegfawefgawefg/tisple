@@ -4,6 +4,20 @@
 
 namespace tisple {
 
+namespace {
+
+Cpu g_default_cpu = Cpu::k6502;
+
+} // namespace
+
+Cpu DefaultCpu() {
+    return g_default_cpu;
+}
+
+void SetDefaultCpu(Cpu cpu) {
+    g_default_cpu = cpu;
+}
+
 const char* CpuName(Cpu cpu) {
     return cpu == Cpu::k65c02 ? "65c02" : "6502";
 }

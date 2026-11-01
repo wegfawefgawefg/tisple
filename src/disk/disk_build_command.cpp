@@ -260,7 +260,7 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     }
     std::vector<uint8_t> image = ImageFromSectors(*disk, SectorOrder::kDos);
     return RunMachineOnDisk(image, DiskFormat::kDos, static_cast<int>(args.machine_args.size()),
-                            args.machine_args.data(), window);
+                            args.machine_args.data(), window, compiled.cpu);
 }
 
 } // namespace tisple

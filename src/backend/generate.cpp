@@ -265,6 +265,7 @@ bool GenerateProgram(Program& program, const BuildOptions& options, int rounds, 
     Backend prepared;
     prepared.program = &program;
     prepared.errors = &errors;
+    prepared.as.cpu = options.cpu;
     if (!ShapeProgram(program, prepared.shapes, errors)) {
         return false;
     }

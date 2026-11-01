@@ -233,27 +233,53 @@ Mode EncodedMode(const Assembly& as, const AsmItem& item) {
 
 namespace {
 
-// a JMP the 65C02 may encode as BRA: to a label of these items, with nothing added
-bool MayShorten(const AsmItem& item, const std::vector<bool>& local) {
-    return item.kind == ItemKind::Ins && item.mn == Mn::JMP && item.mode == Mode::Abs &&
-           item.value.sym >= 0 && item.value.offset == 0 && item.value.part == Part::Whole &&
-           local[static_cast<std::size_t>(item.value.sym)];
+// a JMP whose operand the code rewrites: a label just before it is stored to at +1 or +2
+// (backend/overlay.cpp's stubs, backend/dispatch.cpp's jump)
+std::vector<bool> PatchedLabels(const Assembly& as) {
+    std::vector<bool> patched(as.symbols.size(), false);
+    for (const AsmItem& item : as.items) {
+        bool store = item.kind == ItemKind::Ins &&
+                     (item.mn == Mn::STA || item.mn == Mn::STX || item.mn == Mn::STY ||
+                      item.mn == Mn::STZ || item.mn == Mn::INC || item.mn == Mn::DEC);
+        if (store && item.value.sym >= 0 && (item.value.offset == 1 || item.value.offset == 2)) {
+            patched[static_cast<std::size_t>(item.value.sym)] = true;
+        }
+    }
+    return patched;
 }
 
-// the labels these items define
-std::vector<bool> LocalLabels(const Assembly& as) {
+// by item: a JMP the 65C02 may encode as BRA, to a label of these items with nothing added,
+// not marked far and not rewritten by the code
+std::vector<bool> ShortenableJumps(const Assembly& as) {
     std::vector<bool> local(as.symbols.size(), false);
     for (const AsmItem& item : as.items) {
         if (item.kind == ItemKind::Label) {
             local[static_cast<std::size_t>(item.value.sym)] = true;
         }
     }
-    return local;
+    std::vector<bool> patched = PatchedLabels(as);
+    std::vector<bool> out(as.items.size(), false);
+    bool after_patched = false; // a patched label since the last instruction or byte
+    for (std::size_t i = 0; i < as.items.size(); i++) {
+        const AsmItem& item = as.items[i];
+        if (item.kind == ItemKind::Label) {
+            after_patched = after_patched || patched[static_cast<std::size_t>(item.value.sym)];
+            continue;
+        }
+        if (item.kind == ItemKind::Note) {
+            continue;
+        }
+        out[i] = item.kind == ItemKind::Ins && item.mn == Mn::JMP && item.mode == Mode::Abs &&
+                 !item.far && !after_patched && item.value.sym >= 0 && item.value.offset == 0 &&
+                 item.value.part == Part::Whole && local[static_cast<std::size_t>(item.value.sym)];
+        after_patched = false;
+    }
+    return out;
 }
 
-// a short jump that does not reach its label in reach and in the BRA's next page; true when
-// it had to grow
-bool GrowShortJump(const Assembly& as, AsmItem& item) {
+// a short jump that does not reach its label in reach and in the BRA's next page (in reach
+// only, when keep); true when it had to grow
+bool GrowShortJump(const Assembly& as, AsmItem& item, bool keep) {
     std::uint32_t target = 0;
     if (!Resolve(as, item.value, target)) {
         item.short_jump = false;
@@ -261,7 +287,7 @@ bool GrowShortJump(const Assembly& as, AsmItem& item) {
     }
     std::uint32_t after = item.address + 2u;
     std::int32_t delta = static_cast<std::int32_t>(target) - static_cast<std::int32_t>(after);
-    if (delta >= -128 && delta <= 127 && ((after ^ target) & 0xFF00) == 0) {
+    if (delta >= -128 && delta <= 127 && (keep || ((after ^ target) & 0xFF00) == 0)) {
         return false;
     }
     item.short_jump = false;
@@ -270,14 +296,17 @@ bool GrowShortJump(const Assembly& as, AsmItem& item) {
 
 } // namespace
 
-std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin) {
-    std::vector<bool> local;
+std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_short) {
+    std::vector<bool> shortenable;
+    std::vector<bool> keep(as.items.size(), false);
     if (as.cpu == Cpu::k65c02) {
-        local = LocalLabels(as);
+        shortenable = ShortenableJumps(as);
     }
-    for (AsmItem& item : as.items) {
+    for (std::size_t i = 0; i < as.items.size(); i++) {
+        AsmItem& item = as.items[i];
         item.long_branch = item.far;
-        item.short_jump = as.cpu == Cpu::k65c02 && MayShorten(item, local);
+        keep[i] = keep_short && item.short_jump;
+        item.short_jump = as.cpu == Cpu::k65c02 && shortenable[i];
     }
     std::uint32_t end = origin;
     // grow branches until every one reaches; sizes only grow, so this ends
@@ -293,8 +322,9 @@ std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin) {
         }
         end = pc;
         bool changed = false;
-        for (AsmItem& item : as.items) {
-            if (item.short_jump && GrowShortJump(as, item)) {
+        for (std::size_t i = 0; i < as.items.size(); i++) {
+            AsmItem& item = as.items[i];
+            if (item.short_jump && GrowShortJump(as, item, keep[i])) {
                 changed = true;
                 continue;
             }

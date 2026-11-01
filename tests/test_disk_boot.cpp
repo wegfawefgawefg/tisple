@@ -192,6 +192,9 @@ void TestBootAppleRoms(TestResults& results, const char* rom, tisple::Cpu cpu) {
     if (!MakeCase(results, kBootProgram, c)) {
         return;
     }
+    if (c.program.code.cpu == tisple::Cpu::k65c02 && cpu == tisple::Cpu::k6502) {
+        return; // a 65C02 build (TISPLE_TEST_CPU) cannot run on the nmos chip
+    }
     std::unique_ptr<tisple::Apple2> direct = DirectRun(c);
     for (int ours = 0; ours < 2; ours++) {
         std::unique_ptr<tisple::Apple2> a = MachineWithDisk(*c.disk);
