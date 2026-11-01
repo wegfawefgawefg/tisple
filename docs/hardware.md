@@ -2,7 +2,8 @@
 
 The libraries for the Apple II's own hardware that came out of the survey in
 docs/roadmap.md (section 5): the joystick and paddles, what machine a program runs on,
-saving to the boot disk, and the video modes the other libraries left out. The IIe,
+saving to the boot disk (`lib/save`, documented with the other disk code in
+[`disks.md`](disks.md), Saves), and the video modes the other libraries left out. The IIe,
 enhanced IIe and IIc are the targets; the IIgs is only recognised.
 
 ## Joystick and paddles

@@ -19,6 +19,7 @@ namespace tisple_tests {
 
 void RunJoystickLibTests(TestResults& results);
 void RunMachineLibTests(TestResults& results);
+void RunSaveLibTests(TestResults& results);
 
 // t.tsp's text built with the real lib/
 struct LibBuild {

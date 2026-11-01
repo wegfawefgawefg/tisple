@@ -131,8 +131,9 @@ bool CompileFor(const DiskBuildArgs& args, Program& program, Compiled& compiled)
 
 } // namespace
 
-// what the program adds to its disk: its tables :on disk, and lib/disk's reader where the
-// library keeps room for it (disk.reader, and disk.work for its tables)
+// what the program adds to its disk: its tables :on disk, lib/disk's reader where the library
+// keeps room for it (disk.reader, and disk.work for its tables), and lib/save's writer
+// (save.writer)
 BootExtras BootExtrasFor(const Program& program) {
     BootExtras extras;
     extras.tables = &program.disk_tables;
@@ -141,6 +142,12 @@ BootExtras BootExtrasFor(const Program& program) {
         const Var& var = program.vars[static_cast<std::size_t>(reader)];
         extras.reader = var.placement.address;
         extras.reader_room = TypeOf(program, var.type).size;
+    }
+    std::int32_t writer = FindVar(program, "save.writer");
+    if (writer >= 0) {
+        const Var& var = program.vars[static_cast<std::size_t>(writer)];
+        extras.writer = var.placement.address;
+        extras.writer_room = TypeOf(program, var.type).size;
     }
     std::int32_t work = FindVar(program, "disk.work");
     if (work >= 0) {
@@ -244,6 +251,12 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     static char window_flag[] = "--window";
     if (!args.headless && window != nullptr) {
         args.machine_args.push_back(window_flag);
+    }
+    // the disk from its file, so --write-back saves what the program wrote (lib/save) there
+    static char disk_flag[] = "--disk";
+    if (!args.disk.empty()) {
+        args.machine_args.push_back(disk_flag);
+        args.machine_args.push_back(const_cast<char*>(args.disk.c_str()));
     }
     std::vector<uint8_t> image = ImageFromSectors(*disk, SectorOrder::kDos);
     return RunMachineOnDisk(image, DiskFormat::kDos, static_cast<int>(args.machine_args.size()),

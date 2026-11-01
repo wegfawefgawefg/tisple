@@ -22,7 +22,7 @@ const PAD_ENTITIES = { "&larr;": "←", "&rarr;": "→", "&uarr;": "↑",
                        "&darr;": "↓" };
 
 const pad = {
-    press: null,   // player.js: press(code), release()
+    press: null,   // player.js: press(code), release(code)
     release: null,
     game: null,
     labels: [],    // every label element, redrawn when the device pixel ratio changes
@@ -36,6 +36,20 @@ function padKeyCode(spec) {
         return PAD_KEY_NAMES[spec];
     }
     return spec.toUpperCase().charCodeAt(0);
+}
+
+// a key's code, or the joystick: "stick": "left" (and right, up, down) holds paddle 0 or 1 at
+// its end while pressed, 0x100 + 0-3; "button": 0-2 holds that button, 0x200 + n
+const STICK_WAYS = ["left", "right", "up", "down"];
+
+function padCode(spec) {
+    if (STICK_WAYS.indexOf(spec.stick) >= 0) {
+        return 0x100 + STICK_WAYS.indexOf(spec.stick);
+    }
+    if (spec.button === 0 || spec.button === 1 || spec.button === 2) {
+        return 0x200 + spec.button;
+    }
+    return padKeyCode(spec.key);
 }
 
 // ---- letters: text in the machine's 5x7 dots, as a mask the element's colour shows through
@@ -98,7 +112,7 @@ function makeButton(parent, spec, size) {
     if (spec.span) {
         el.style.gridColumn = "span " + spec.span;
     }
-    const code = padKeyCode(spec.key);
+    const code = padCode(spec);
     const words = String(spec.label).split("\n");
     const box = document.createElement("span");
     box.className = "words";
@@ -132,7 +146,7 @@ function makeButton(parent, spec, size) {
     const up = () => {
         if (el.classList.contains("down")) {
             el.classList.remove("down");
-            pad.release();
+            pad.release(code);
         }
     };
     el.addEventListener("pointerup", up);
