@@ -129,7 +129,9 @@ says which outright. The rest of the hardware stays the same IIe. `--64k` takes 
 Apple's ROM answers, and the cpu is its model's (Apple2e_Enhanced.rom's identification bytes
 make it the 65C02; tests/test_machine_lib.cpp runs Apple2e.rom, Apple2e_Enhanced.rom and
 Apple2_Plus.rom when the owner's copies are there, each on its own cpu, and a2audit passes
-on both IIe roms). The phone player runs the enhanced IIe's 65C02 too.
+on both IIe roms). The phone player runs the enhanced IIe's 65C02 too. In `tisple run` the
+`--cpu` flag is the build's target; the machine then follows its model (`--model iie` for the
+NMOS chip), and refuses a 65C02 build when that is the 6502.
 
 Not covered: the IIc's and IIgs's vertical blank, which `lib/timing` reads the IIe's way;
 a II or II+'s 16K language card; the IIe card for the Macintosh LC (it answers as an
