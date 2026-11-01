@@ -5,7 +5,9 @@
 // names its disk, its Mockingboard slot and its buttons. On a static site (web/pages.py,
 // games/index.json has "static": true) there is no server to take logs: no log, and a
 // games button goes back to the picker. The buttons, the bar's letters and the layout are
-// pad.js's.
+// pad.js's. The disk button turns the drives' sound on and off (remembered in this browser),
+// off until it is pressed (the owner, 2026-10-31: opt in): on, a disk loads at the Apple's
+// speed and sounds like a Disk II; off, it loads flat out and silent.
 
 "use strict";
 
@@ -21,6 +23,7 @@ const ui = {
     side: document.getElementById("side"),
     name: document.getElementById("name"),
     look: document.getElementById("look"),
+    disk: document.getElementById("disk"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -42,13 +45,23 @@ const state = {
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
     logs: true,       // false on a static site: nowhere to post them
+    diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
 };
+
+// the disk button's setting, kept in this browser when it can be
+const DISK_SOUND_KEY = "tisple.diskSound";
+try {
+    state.diskSound = localStorage.getItem(DISK_SOUND_KEY) !== "off";
+} catch (err) {
+    // no storage (private window, blocked): on, as by default
+}
 
 // the bar's and the start's words, in the machine's letters (pad.js)
 const words = {
     name: makeLabel("Tisple ][", 2),
     rec: makeLabel("", 2),
     look: makeLabel(LOOKS[0], 2),
+    disk: makeLabel("disk", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -72,11 +85,25 @@ function wakeAudio() {
     }
 }
 
+// the game port from the pad (pad.js padCode): a stick way to its paddle's end, a button
+function gamePort(code, down) {
+    if (code >= 0x200) {
+        state.m._tp_button(code - 0x200, down ? 1 : 0);
+        return;
+    }
+    const way = code - 0x100;
+    state.m._tp_paddle(way < 2 ? 0 : 1, down ? (way % 2 === 1 ? 255 : 0) : 127);
+}
+
 function press(code) {
     if (!state.running) {
         return;
     }
     wakeAudio();
+    if (code >= 0x100) {
+        gamePort(code, true); // not in the log, which replays keys
+        return;
+    }
     state.m._tp_key_down(code);
     state.log.push([state.m._tp_cycles(), code]);
     if (state.logs) {
@@ -84,8 +111,12 @@ function press(code) {
     }
 }
 
-function release() {
+function release(code) {
     if (!state.running) {
+        return;
+    }
+    if (code >= 0x100) {
+        gamePort(code, false);
         return;
     }
     state.m._tp_key_up();
@@ -267,6 +298,95 @@ function sendSamples(count) {
     state.worklet.port.postMessage(pcm, [pcm.buffer]);
 }
 
+// saves: what a program writes to its disk (lib/save) is kept in this browser, as the 256-byte
+// blocks of the .dsk that differ from the published disk, under the game's name. At boot each
+// kept block goes back onto the disk where the published one is all zeros there (an empty
+// save area): so saves outlive a new build of the game while its save areas stay where they
+// were, and never overwrite its program or its other tables.
+
+const SAVES_KEY = "tisple.saves.";
+
+function toBase64(bytes) {
+    let text = "";
+    for (let i = 0; i < bytes.length; i++) {
+        text += String.fromCharCode(bytes[i]);
+    }
+    return btoa(text);
+}
+
+function fromBase64(text) {
+    const raw = atob(text);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+    }
+    return bytes;
+}
+
+function allZero(bytes, at) {
+    for (let i = 0; i < 256; i++) {
+        if (bytes[at + i] !== 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// the kept blocks onto the published disk (a copy)
+function withSaves(disk) {
+    let kept = null;
+    try {
+        kept = JSON.parse(localStorage.getItem(SAVES_KEY + state.game.name) || "null");
+    } catch (err) {
+        kept = null;
+    }
+    if (!kept) {
+        return disk;
+    }
+    const out = new Uint8Array(disk);
+    for (const at of Object.keys(kept)) {
+        const offset = Number(at);
+        const block = fromBase64(kept[at]);
+        if (block.length === 256 && offset + 256 <= out.length && allZero(disk, offset)) {
+            out.set(block, offset);
+        }
+    }
+    return out;
+}
+
+// the disk's blocks that differ from the published one, kept
+function keepSaves() {
+    if (!state.m._tp_disk_written()) {
+        return;
+    }
+    const ptr = state.m._tp_disk_image();
+    if (!ptr) {
+        return;
+    }
+    const image = state.m.HEAPU8.subarray(ptr, ptr + state.m._tp_disk_image_size());
+    const kept = {};
+    for (let at = 0; at + 256 <= image.length && at + 256 <= state.disk.length; at += 256) {
+        let same = true;
+        for (let i = 0; i < 256 && same; i++) {
+            same = image[at + i] === state.disk[at + i];
+        }
+        if (!same) {
+            kept[at] = toBase64(image.subarray(at, at + 256));
+        }
+    }
+    try {
+        localStorage.setItem(SAVES_KEY + state.game.name, JSON.stringify(kept));
+    } catch (err) {
+        setStatus("save not kept: " + err.message);
+    }
+}
+
+setInterval(() => {
+    if (state.m && state.running) {
+        keepSaves();
+    }
+}, 1000);
+
 // the loop: run the machine for the time that passed, then draw
 
 function draw() {
@@ -280,7 +400,9 @@ function tick(now) {
     if (!state.running) {
         return;
     }
-    if (state.m._tp_disk_busy()) {
+    const busy = state.m._tp_disk_busy();
+    const hearing = state.diskSound && state.audio && state.audio.state === "running";
+    if (busy && !hearing) {
         // loading: flat out for most of a frame, silent
         const until = performance.now() + 12;
         while (state.m._tp_disk_busy() && performance.now() < until) {
@@ -306,6 +428,8 @@ function tick(now) {
         setStatus("sound is " + state.audio.state + ": tap a button");
     } else if (state.m._tp_stopped()) {
         setStatus("the program stopped");
+    } else if (busy) {
+        setStatus("loading...");
     } else if (words.status.dataset.text === "LOADING...") {
         setStatus("");
     }
@@ -362,17 +486,28 @@ async function boot() {
     }
     document.title = state.game.title || name;
     padSetup(state.game, press, release);
-    const disk = new Uint8Array(await (await fetch("games/" + name + "/" + state.game.disk,
-                                                   { cache: "no-store" })).arrayBuffer());
+    const fetchDisk = async (file) =>
+        new Uint8Array(await (await fetch("games/" + name + "/" + file,
+                                          { cache: "no-store" })).arrayBuffer());
+    const disk = await fetchDisk(state.game.disk);
+    // "disk2": a program with tables on a second disk (docs/disks.md) has it in drive 2
+    const disk2 = state.game.disk2 ? await fetchDisk(state.game.disk2) : new Uint8Array(0);
     state.m = await TispleMachine();
-    const ptr = state.m._malloc(disk.length);
-    state.m.HEAPU8.set(disk, ptr);
-    const ok = state.m._tp_boot(ptr, disk.length, state.game.mockingboard || 0);
+    state.disk = disk;
+    const booted = withSaves(disk);
+    const ptr = state.m._malloc(booted.length);
+    state.m.HEAPU8.set(booted, ptr);
+    const ptr2 = state.m._malloc(Math.max(disk2.length, 1));
+    state.m.HEAPU8.set(disk2, ptr2);
+    const ok = state.m._tp_boot(ptr, booted.length, ptr2, disk2.length,
+                                state.game.mockingboard || 0);
     state.m._free(ptr);
+    state.m._free(ptr2);
     if (!ok) {
         setStatus("the disk did not load");
         return;
     }
+    showDiskSound();
     setStatus(state.game.version ? "build " + state.game.version : "");
     requestAnimationFrame(tick);
     // ?autostart: run without the tap and without sound (headless checks)
@@ -412,6 +547,23 @@ ui.start.addEventListener("pointerdown", async () => {
 ui.look.addEventListener("click", () => {
     state.look = (state.look + 1) % LOOKS.length;
     setLabel(words.look, LOOKS[state.look]);
+});
+function showDiskSound() {
+    ui.disk.classList.toggle("off", !state.diskSound);
+    if (state.m) {
+        state.m._tp_drive_sound(state.diskSound ? 1 : 0);
+    }
+}
+ui.disk.addEventListener("click", () => {
+    state.diskSound = !state.diskSound;
+    try {
+        localStorage.setItem(DISK_SOUND_KEY, state.diskSound ? "on" : "off");
+    } catch (err) {
+        // not kept: this page only
+    }
+    showDiskSound();
+    setStatus(state.diskSound ? "disk sound on: loads at the apple's speed"
+                              : "disk sound off: loads flat out");
 });
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");
