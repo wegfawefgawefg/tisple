@@ -29,6 +29,8 @@ import toolchains
 from layout import decode, encode
 
 OUT = os.path.join(toolchains.HERE, "out")
+if toolchains.race_cpu() == "65c02":
+    OUT = os.path.join(OUT, "65c02")
 DOC = os.path.join(toolchains.REPO, "docs", "races.md")
 ALL_COMPILERS = ["cc65", "llvm-mos", "oscar64", "tisple"]
 MAX_CYCLES = 400000000
@@ -119,7 +121,7 @@ def measure(kernel, variant):
         return result
     result.listing = os.path.relpath(build.listing, toolchains.REPO)
     inputs = kernel_specs.make_inputs(kernel)
-    cmd = [toolchains.tisple_binary(), "race"]
+    cmd = [toolchains.tisple_binary(), "race", "--cpu", toolchains.race_cpu()]
     for i, (address, data) in enumerate(build.loads):
         path = os.path.join(outdir, "load%d.bin" % i)
         write_file(path, data)
@@ -300,6 +302,10 @@ def main():
         run_gaps(chosen, 12)
         return 0
 
+    if args.update_doc and toolchains.race_cpu() != "6502":
+        print("--update-doc writes the 6502 race's tables; the 65C02's go in by hand",
+              file=sys.stderr)
+        return 1
     jobs = [(k, v) for k in chosen for v in toolchains.variants_for(k, compilers)]
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         results = list(pool.map(lambda kv: measure(*kv), jobs))

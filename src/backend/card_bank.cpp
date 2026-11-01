@@ -30,7 +30,8 @@ bool IsTransfer(const AsmItem& item) {
 }
 
 bool IsPointerMode(Mode mode) {
-    return mode == Mode::IndX || mode == Mode::IndY || mode == Mode::Ind;
+    return mode == Mode::IndX || mode == Mode::IndY || mode == Mode::Ind || mode == Mode::ZpInd ||
+           mode == Mode::AbsIndX;
 }
 
 // which piece of code defines each label: a function, or the runtime

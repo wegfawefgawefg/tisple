@@ -19,12 +19,12 @@ constexpr std::size_t kNone = static_cast<std::size_t>(-1);
 // (kLiveA and the others in peephole.hpp are the same bits)
 enum : std::uint8_t {
     kA = kLiveA,
-    kX = 2,
-    kY = 4,
+    kX = kLiveX,
+    kY = kLiveY,
     kN = kLiveN,
     kZ = kLiveZ,
     kC = kLiveC,
-    kV = 64,
+    kV = kLiveV,
     kAll = 127,
 };
 
@@ -102,7 +102,10 @@ Effect EffectOf(const Assembly& as, const AsmItem& item) {
     case Mn::CPY:
         return Effect{static_cast<std::uint8_t>(index | kY), kN | kZ | kC, quiet};
     case Mn::BIT:
-        return Effect{kA, kN | kZ | kV, quiet};
+        if (item.mode == Mode::Imm) { // the 65C02's BIT #: only Z
+            return Effect{kA, kZ, true};
+        }
+        return Effect{static_cast<std::uint8_t>(index | kA), kN | kZ | kV, quiet};
     case Mn::CLC:
     case Mn::SEC:
         return Effect{0, kC, true};
@@ -122,6 +125,9 @@ Effect EffectOf(const Assembly& as, const AsmItem& item) {
         return Effect{static_cast<std::uint8_t>(index | kC), kN | kZ | kC, false};
     case Mn::INC:
     case Mn::DEC:
+        if (item.mode == Mode::Acc) { // the 65C02's INC A, DEC A
+            return Effect{kA, kA | kN | kZ, true};
+        }
         return Effect{index, kN | kZ, false};
     case Mn::STA:
         return Effect{static_cast<std::uint8_t>(index | kA), 0, false};
@@ -129,6 +135,20 @@ Effect EffectOf(const Assembly& as, const AsmItem& item) {
         return Effect{static_cast<std::uint8_t>(index | kX), 0, false};
     case Mn::STY:
         return Effect{static_cast<std::uint8_t>(index | kY), 0, false};
+    // the 65C02's
+    case Mn::STZ:
+        return Effect{index, 0, false};
+    case Mn::TSB:
+    case Mn::TRB:
+        return Effect{kA, kZ, false};
+    case Mn::PHX:
+        return Effect{kX, 0, false};
+    case Mn::PHY:
+        return Effect{kY, 0, false};
+    case Mn::PLX:
+        return Effect{0, kX | kN | kZ, false};
+    case Mn::PLY:
+        return Effect{0, kY | kN | kZ, false};
     case Mn::BEQ:
     case Mn::BNE:
         return Effect{kZ, 0, false};

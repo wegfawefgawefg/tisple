@@ -1,4 +1,5 @@
 #include "backend/aux_link.hpp"
+#include "backend/cmos.hpp"
 #include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
 #include "backend/generate.hpp"
@@ -246,6 +247,14 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
     FramePlan plan;
     if (!AllocateFrames(be, plan)) {
         return LinkResult::kError;
+    }
+    if (options.cpu == Cpu::k65c02) {
+        for (std::size_t f = 0; f < be.code.size(); f++) {
+            if (kept[f]) {
+                UseCmos(be.as, be.code[f]);
+            }
+        }
+        UseCmos(be.as, runtime);
     }
     squeezed = NoteSqueezed(be, kept, choices, runtime);
     LinkInput in;

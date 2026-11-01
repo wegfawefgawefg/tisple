@@ -57,9 +57,12 @@ bool DropDeadValues(const Assembly& as, std::vector<AsmItem>& items);
 // by item: the registers and flags read before they are written, from there on, as bits
 // (dead_regs.cpp)
 constexpr std::uint8_t kLiveA = 1;
+constexpr std::uint8_t kLiveX = 2;
+constexpr std::uint8_t kLiveY = 4;
 constexpr std::uint8_t kLiveN = 8;
 constexpr std::uint8_t kLiveZ = 16;
 constexpr std::uint8_t kLiveC = 32;
+constexpr std::uint8_t kLiveV = 64;
 std::vector<std::uint8_t> LiveRegsIn(const Assembly& as, const std::vector<AsmItem>& items);
 // true if a 16-bit test against zero at a loop's bottom was split (zero_tests.cpp)
 bool SplitZeroTests(const Assembly& as, std::vector<AsmItem>& items);
