@@ -5,6 +5,7 @@
 #include "backend/io_bases.hpp"
 #include "backend/irq.hpp"
 #include "backend/link.hpp"
+#include "backend/overlay_plan.hpp"
 #include "backend/peephole.hpp"
 #include "backend/runtime.hpp"
 #include "backend/squeeze.hpp"
@@ -178,8 +179,33 @@ LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& facts, Compile
 
 // one build at options.squeeze; what it gave up for room in squeezed. With bank1, code may go
 // in the language card's bank 1 when the program does not fit without
-LinkResult CompileAt(const Program& source, const BuildOptions& options, Compiled& out,
-                     std::vector<Diagnostic>& errors, Squeezed& squeezed, bool bank1) {
+// whether the program already uses aux memory (lets or consts :in aux, a with_aux), so the
+// machine it runs on has it: then the overlay groups' images may live there
+bool UsesAux(const Program& program) {
+    for (const Var& var : program.vars) {
+        if (var.placement.in_aux) {
+            return true;
+        }
+    }
+    for (const Expr& e : program.exprs) {
+        if (e.kind == ExprKind::AuxSwitch) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// one build at options.squeeze; what it gave up for room in squeezed. With bank1, code may go
+// in the language card's bank 1 when the program does not fit without. With overlays, the
+// plan's groups take turns in the overlay region (their roots never copied into callers)
+LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled& out,
+                     std::vector<Diagnostic>& errors, Squeezed& squeezed, bool bank1,
+                     const OverlayPlan* overlays) {
+    BuildOptions options = given;
+    if (overlays != nullptr) {
+        std::vector<std::string> roots = OverlayRootNames(source, *overlays);
+        options.no_inline.insert(options.no_inline.end(), roots.begin(), roots.end());
+    }
     // the same program with its constant arithmetic folded and the mid-level passes run on
     // it: what the code is made from. The interpreter keeps running the program as written
     Program program = source;
@@ -231,6 +257,18 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
     in.irq_plan = irq_plan;
     std::vector<bool> source_tables = FindAddressedConsts(source);
     in.source_tables = &source_tables;
+    // the overlay groups found in the code: at least two, so one frees room for the other
+    OverlayGroups groups;
+    if (overlays != nullptr) {
+        groups = FindOverlayGroups(be, kept, *overlays, {}, runtime);
+        std::size_t least = options.overlay_test > 0 ? 1 : 2;
+        if (groups.roots.size() < least) {
+            squeezed.overlay_none = true;
+            return LinkResult::kNoRoom;
+        }
+        be.overlay_group = groups.group;
+        in.overlays = &groups;
+    }
     // the language card only when the program needs the room: link without it first, then
     // with it, then with code in its bank 1
     bool card_allowed = options.use_card && CardAllowed(program, be.shapes);
@@ -254,7 +292,7 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
             link_errors.clear();
             result = LinkProgram(be, in, true, out, link_errors);
         }
-        if (result == LinkResult::kNoRoom && bank1_allowed) {
+        if (result == LinkResult::kNoRoom && bank1_allowed && !out.overlay_aux_short) {
             be = unlinked;
             std::vector<Diagnostic> bank1_errors;
             Bank1Facts facts = FindBank1Facts(be, kept, runtime);
@@ -266,6 +304,7 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
         }
     }
     errors.insert(errors.end(), link_errors.begin(), link_errors.end());
+    squeezed.overlay_aux_short = out.overlay_aux_short;
     if (result != LinkResult::kOk) {
         return result;
     }
@@ -293,14 +332,15 @@ LinkResult CompileAt(const Program& source, const BuildOptions& options, Compile
 // tighter budgets without it: the first that fits, unless the cycles a run, about, already
 // pass the bank 1 build's. The faster goes to out, and the note says what was traded
 void ChooseBank1OrSqueeze(const Program& source, const BuildOptions& options, const Squeezed& usual,
-                          const Squeezed& banked, Compiled& out, std::vector<Diagnostic>& errors) {
+                          const Squeezed& banked, Compiled& out, std::vector<Diagnostic>& errors,
+                          const OverlayPlan* overlays) {
     BuildOptions tighter = options;
     while (tighter.squeeze < kMaxSqueeze) {
         tighter.squeeze++;
         Compiled other;
         std::vector<Diagnostic> tried;
         Squeezed squeezed;
-        LinkResult result = CompileAt(source, tighter, other, tried, squeezed, false);
+        LinkResult result = CompileAt(source, tighter, other, tried, squeezed, false, overlays);
         bool slower = squeezed.cycles >= banked.cycles;
         if (result == LinkResult::kOk && !slower) {
             out = std::move(other);
@@ -326,6 +366,30 @@ void ChooseBank1OrSqueeze(const Program& source, const BuildOptions& options, co
     out.warnings.push_back(Bank1Note(source, banked, nullptr, true));
 }
 
+// a build at options.squeeze with the plan's groups; while their images do not fit aux memory,
+// the smallest group is left out of the plan (two at least). out holds a build that fits
+LinkResult CompileOverlaid(const Program& source, const BuildOptions& options, OverlayPlan& plan,
+                           Compiled& out, std::vector<Diagnostic>& errors, Squeezed& squeezed) {
+    for (;;) {
+        Compiled built;
+        std::vector<Diagnostic> tried;
+        LinkResult result = CompileAt(source, options, built, tried, squeezed, true, &plan);
+        if (result == LinkResult::kOk) {
+            out = std::move(built);
+        }
+        bool fewer = squeezed.overlay_aux_short && !squeezed.overlay_none;
+        if (result != LinkResult::kNoRoom || !fewer || plan.groups.size() <= 2) {
+            errors.insert(errors.end(), tried.begin(), tried.end());
+            return result;
+        }
+        std::size_t smallest = 0;
+        for (std::size_t g = 1; g < plan.groups.size(); g++) {
+            smallest = plan.groups[g].weight < plan.groups[smallest].weight ? g : smallest;
+        }
+        plan.groups.erase(plan.groups.begin() + static_cast<std::ptrdiff_t>(smallest));
+    }
+}
+
 } // namespace
 
 bool CompileProgram(const Program& source, const BuildOptions& options, Compiled& out,
@@ -333,21 +397,68 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
     if (!CheckNoInline(source, options.no_inline, errors)) {
         return false;
     }
-    // with no room, the size budget tightens a level at a time until the program fits
+    // the screens that may take turns in an overlay region, when the machine has aux memory
+    OverlayPlan plan;
+    bool overlay_test = options.overlay_test > 0;
+    if (options.use_overlays && (overlay_test || UsesAux(source))) {
+        Program folded = source;
+        FoldConstants(folded);
+        plan = overlay_test ? PlanOverlaysTest(folded, options.overlay_test)
+                            : PlanOverlays(folded, UINT32_MAX);
+        if (std::getenv("TISPLE_OVERLAY_NOTES")) {
+            PrintOverlayPlan(folded, plan);
+        }
+    }
+    std::vector<Diagnostic> marks = ResidentMarkNotes(source, plan);
+    if (overlay_test && !plan.groups.empty()) {
+        Squeezed squeezed;
+        std::vector<Diagnostic> tried;
+        LinkResult result = CompileAt(source, options, out, tried, squeezed, true, &plan);
+        if (!squeezed.overlay_none) {
+            errors.insert(errors.end(), tried.begin(), tried.end());
+            return result == LinkResult::kOk;
+        }
+    }
+    bool overlaid = !overlay_test && plan.groups.size() >= 2;
+    // with no room, the size budget tightens a level at a time until the program fits; when
+    // the plan has groups, at each level the build with them comes after the one without
     Squeezed usual;
     BuildOptions tighter = options;
     for (;;) {
         std::vector<Diagnostic> tried;
         Squeezed squeezed;
-        LinkResult result = CompileAt(source, tighter, out, tried, squeezed, true);
+        LinkResult result = CompileAt(source, tighter, out, tried, squeezed, !overlaid, nullptr);
         if (tighter.squeeze == options.squeeze) {
             usual = squeezed;
         }
         if (result == LinkResult::kOk && !squeezed.bank1.empty() && options.bank1_test == 0) {
             // bank 1, or a tighter budget without it: the one that runs faster
-            ChooseBank1OrSqueeze(source, tighter, usual, squeezed, out, tried);
+            ChooseBank1OrSqueeze(source, tighter, usual, squeezed, out, tried, nullptr);
             errors.insert(errors.end(), tried.begin(), tried.end());
             return true;
+        }
+        if (result == LinkResult::kNoRoom && overlaid) {
+            Compiled built;
+            std::vector<Diagnostic> overlaid_tried;
+            Squeezed with;
+            LinkResult r = CompileOverlaid(source, tighter, plan, built, overlaid_tried, with);
+            if (r == LinkResult::kOk) {
+                out = std::move(built);
+                if (!with.bank1.empty() && options.bank1_test == 0) {
+                    ChooseBank1OrSqueeze(source, tighter, usual, with, out, overlaid_tried, &plan);
+                } else if (tighter.squeeze != options.squeeze) {
+                    out.warnings.push_back(SqueezeNote(source, usual, with));
+                }
+                out.warnings.push_back(OverlayNote(source, out));
+                out.warnings.insert(out.warnings.end(), marks.begin(), marks.end());
+                errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
+                return true;
+            }
+            if (r == LinkResult::kError) {
+                errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
+                return false;
+            }
+            overlaid = plan.groups.size() >= 2 && !with.overlay_none;
         }
         bool again = result == LinkResult::kNoRoom && tighter.squeeze < kMaxSqueeze;
         if (!again) {
@@ -361,6 +472,9 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
             }
             if (result == LinkResult::kOk && tighter.squeeze != options.squeeze) {
                 out.warnings.push_back(SqueezeNote(source, usual, squeezed));
+            }
+            if (result == LinkResult::kOk) {
+                out.warnings.insert(out.warnings.end(), marks.begin(), marks.end());
             }
             return result == LinkResult::kOk;
         }

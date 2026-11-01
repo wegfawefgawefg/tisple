@@ -185,7 +185,10 @@ Bank1Facts FindBank1Facts(const Backend& be, const std::vector<bool>& kept,
                                static_cast<std::int32_t>(f)) != be.entries.end();
         // code that runs with the aux switches on stays where both memories have it
         bool aux = IsAuxFunction(be.aux, static_cast<std::int32_t>(f));
-        if (!kept[f] || handler[f] || fn.dispatcher || fn.io_patch >= 0 || entry || aux) {
+        // code in an overlay group runs in the overlay region
+        bool grouped = f < be.overlay_group.size() && be.overlay_group[f] >= 0;
+        if (!kept[f] || handler[f] || fn.dispatcher || fn.io_patch >= 0 || entry || aux ||
+            grouped) {
             s.barred[f] = true;
         }
         if (!kept[f]) {
@@ -347,9 +350,14 @@ void RouteBankCalls(Backend& be, const std::vector<std::vector<AsmItem>*>& piece
 void RouteBank1(Backend& be, const Bank1Plan& plan, const std::vector<bool>& kept,
                 std::vector<AsmItem>& startup, std::vector<AsmItem>& runtime,
                 std::vector<AsmItem>& irq, std::vector<AsmItem>& stubs,
-                std::vector<std::int32_t>& forward) {
+                std::vector<std::int32_t>& forward,
+                const std::vector<std::vector<AsmItem>*>& more) {
     std::vector<std::vector<AsmItem>*> pieces = {&startup, &runtime, &irq};
     std::vector<bool> bank1 = {false, false, false};
+    for (std::vector<AsmItem>* piece : more) {
+        pieces.push_back(piece);
+        bank1.push_back(false);
+    }
     for (std::size_t f = 0; f < be.code.size(); f++) {
         if (kept[f]) {
             pieces.push_back(&be.code[f]);

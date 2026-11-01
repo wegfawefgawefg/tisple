@@ -80,10 +80,12 @@ void RouteBankCalls(Backend& be, const std::vector<std::vector<AsmItem>*>& piece
                     std::vector<AsmItem>& stubs, std::vector<std::int32_t>& forward);
 
 // RouteBankCalls over the whole program: the startup, every kept function's code, the runtime
-// and the interrupt entry
+// and the interrupt entry,
+// and the other pieces in main memory (the overlay stubs and copy)
 void RouteBank1(Backend& be, const Bank1Plan& plan, const std::vector<bool>& kept,
                 std::vector<AsmItem>& startup, std::vector<AsmItem>& runtime,
                 std::vector<AsmItem>& irq, std::vector<AsmItem>& stubs,
-                std::vector<std::int32_t>& forward);
+                std::vector<std::int32_t>& forward,
+                const std::vector<std::vector<AsmItem>*>& more = {});
 
 } // namespace tisple

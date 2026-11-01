@@ -32,6 +32,9 @@ bool BySwitch(const SimRunner& run) {
 
 std::uint8_t IoRead(void* ctx, std::uint16_t address) {
     SimRunner& run = *static_cast<SimRunner*>(ctx);
+    if (address < 0xC000) {
+        return run.aux[address]; // RAMRD on
+    }
     // slot rom space, not the program's I/O: with data at $D000 in the card, an index from
     // below it ((at a (- i 1)) is a-1,Y) crosses a page, and the NMOS cpu's dummy read of the
     // unfixed address lands in $CF00-$CFFF
@@ -50,8 +53,25 @@ std::uint8_t IoRead(void* ctx, std::uint16_t address) {
     return value;
 }
 
+void SetHook(SimRunner& run);
+
+// RAMRD on or off: while on, the hook takes in $0200-$BFFF too, and reads there read aux memory
+void SwitchRamrd(SimRunner& run, bool on) {
+    run.ramrd = on;
+    SetHook(run);
+}
+
 void IoWrite(void* ctx, std::uint16_t address, std::uint8_t value) {
     SimRunner& run = *static_cast<SimRunner*>(ctx);
+    if (address < 0xC000) {
+        run.machine->mem[address] = value; // RAMRD on, RAMWRT off
+        return;
+    }
+    std::uint16_t at = static_cast<std::uint16_t>(run.machine->cpu.PC - 3);
+    if ((address == 0xC002 || address == 0xC003) && run.aux_switch_at[at]) {
+        SwitchRamrd(run, address == 0xC003);
+        return;
+    }
     run.io.push_back(IoAccess{address, value, true});
 }
 
@@ -74,21 +94,35 @@ void Load(SimRunner& run, const Compiled& compiled) {
     for (std::uint16_t at : compiled.card_switches) {
         run.switch_at[at] = true;
     }
+    run.aux.assign(0x10000, 0);
+    run.ramrd = false;
+    run.aux_switch_at.assign(0x10000, false);
+    for (std::uint16_t at : compiled.aux_switches) {
+        run.aux_switch_at[at] = true;
+    }
     InitMachine(*run.machine);
     LoadBytes(*run.machine, compiled.origin, compiled.image.data(), compiled.image.size());
     // the flat memory holds main ram and the language card with bank 2 at $D000 (the runner
-    // keeps bank 1); aux data is out of reach here, as it is for code without lib/auxmem
+    // keeps bank 1 and aux memory); the program's own aux switches do not switch it
     for (const MemorySegment& segment : compiled.segments) {
         if (segment.bank == MemoryBank::kCardBank1) {
             std::copy(segment.bytes.begin(), segment.bytes.end(),
                       run.other_bank.begin() + (segment.address - 0xD000));
         } else if (segment.bank != MemoryBank::kAux) {
             LoadBytes(*run.machine, segment.address, segment.bytes.data(), segment.bytes.size());
+        } else {
+            std::copy(segment.bytes.begin(), segment.bytes.end(),
+                      run.aux.begin() + segment.address);
         }
     }
+    SetHook(run);
+}
+
+// the I/O page, and with RAMRD on $0200-$BFFF too
+void SetHook(SimRunner& run) {
     IoHook hook;
-    hook.base = 0xC000;
-    hook.size = 0x1000;
+    hook.base = run.ramrd ? 0x0200 : 0xC000;
+    hook.size = 0xD000 - hook.base;
     hook.read = IoRead;
     hook.write = IoWrite;
     hook.ctx = &run;

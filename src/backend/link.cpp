@@ -9,6 +9,7 @@
 #include "backend/aux_link.hpp"
 #include "backend/link_code.hpp"
 #include "backend/link_data.hpp"
+#include "backend/link_overlay.hpp"
 #include "backend/runtime.hpp"
 #include "link/image.hpp"
 
@@ -23,54 +24,10 @@ std::string Hex(std::uint32_t value) {
     return HexAddress(value);
 }
 
-// the origin itself must be ordinary memory
-bool CheckOrigin(std::uint32_t origin, std::vector<Diagnostic>& errors) {
-    for (const AddressRange& range : kReservedRanges) {
-        if (range.end <= 0x200) {
-            continue;
-        }
-        if (origin >= range.start && origin < range.end) {
-            AddError(errors, Loc(),
-                     "the origin " + Hex(origin) + " is in " + Hex(range.start) + "-" +
-                         Hex(range.end - 1) +
-                         ", which the screen or I/O uses; pick another --origin");
-            return false;
-        }
-    }
-    return true;
-}
-
-void Append(std::vector<AsmItem>& to, const std::vector<AsmItem>& from, Compiled& out,
-            std::int32_t function, const std::string& name) {
-    FunctionSpan span;
-    span.function = function;
-    span.name = name;
-    span.first = to.size();
-    to.insert(to.end(), from.begin(), from.end());
-    span.end = to.size();
-    out.spans.push_back(span);
-}
-
 // a segment's extent grows to cover [start, end)
 void Cover(std::uint32_t& low, std::uint32_t& high, std::uint32_t start, std::uint32_t end) {
     low = std::min(low, start);
     high = std::max(high, end);
-}
-
-// with code in the card's bank 1, the stubs, the interrupt entry (the spans after the
-// startup, before `resident`) and the frames in memory stay out of $D000-$DFFF
-bool Bank1Resident(const std::vector<CodePlace>& places, std::size_t resident,
-                   std::uint32_t frames_at, std::uint32_t frames_end,
-                   std::vector<Diagnostic>& errors) {
-    bool clear = frames_end <= kBank1Start || frames_at >= kBank1End || frames_at == frames_end;
-    for (std::size_t s = 1; s < resident && s < places.size(); s++) {
-        clear = clear && (places[s].address < kBank1Start || places[s].address >= kBank1End);
-    }
-    if (!clear) {
-        AddError(errors, Loc(),
-                 "no room for the language card's bank stubs and the frames outside $D000-$DFFF");
-    }
-    return clear;
 }
 
 } // namespace
@@ -151,20 +108,32 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     if (sp.irq_entry >= 0) {
         irq = bank1 != nullptr ? *in.irq_banked : *in.irq;
     }
+    // overlay groups: every call of a root from outside its group through its stub
+    const OverlayGroups* groups =
+        in.overlays != nullptr && in.overlays->Any() ? in.overlays : nullptr;
+    auto group_of = [&](std::size_t f) { return groups != nullptr ? groups->group[f] : -1; };
+    OverlayCode ov;
+    if (groups != nullptr) {
+        RouteOverlayCode(be, in, *groups, startup, runtime, irq, ov);
+    }
     std::vector<AsmItem> stubs;
     std::vector<std::int32_t> forward;
     if (bank1 != nullptr) {
-        RouteBank1(be, *bank1, *in.kept, startup, runtime, irq, stubs, forward);
+        RouteBank1(be, *bank1, *in.kept, startup, runtime, irq, stubs, forward,
+                   {&ov.stubs, &ov.copy});
     }
     std::vector<AsmItem>& items = be.as.items;
-    Append(items, startup, out, -1, "startup");
+    AppendSpan(items, startup, out, -1, "startup");
     if (bank1 != nullptr) {
-        Append(items, stubs, out, -1, "bank stubs");
+        AppendSpan(items, stubs, out, -1, "bank stubs");
         if (!irq.empty()) {
-            Append(items, irq, out, -1, "interrupt entry");
+            AppendSpan(items, irq, out, -1, "interrupt entry");
         }
     }
     std::size_t resident_spans = out.spans.size();
+    if (groups != nullptr) {
+        AppendSpan(items, ov.stubs, out, -1, kOverlayStubsSpan);
+    }
     // code with_aux may run with RAMRD on last, with the runtime when it calls it: what the
     // link copies to aux memory (aux_link.hpp), at the code's end, where the language card
     // (which needs no copy) or the end of a stretch splits aux memory the least
@@ -173,38 +142,50 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     std::vector<bool> mirrored = MirroredFunctions(be, *in.kept, bank1);
     bool runtime_mirrored = MirrorsRuntime(be, mirrored);
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if ((*in.kept)[f] && !in_bank1(f) && !mirrored[f]) {
-            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+        if ((*in.kept)[f] && !in_bank1(f) && !mirrored[f] && group_of(f) < 0) {
+            AppendSpan(items, be.code[f], out, static_cast<std::int32_t>(f),
+                       program.functions[f].name);
         }
     }
     if (!runtime_mirrored) {
-        Append(items, runtime, out, -1, "runtime");
+        AppendSpan(items, runtime, out, -1, "runtime");
     }
     if (!irq.empty() && bank1 == nullptr) {
-        Append(items, irq, out, -1, "interrupt entry");
+        AppendSpan(items, irq, out, -1, "interrupt entry");
     }
     if (!tables.empty() && !runtime_mirrored) {
-        Append(items, tables, out, -1, "runtime tables");
+        AppendSpan(items, tables, out, -1, "runtime tables");
     }
     std::size_t mirror_first = out.spans.size();
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         if (mirrored[f]) {
-            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+            AppendSpan(items, be.code[f], out, static_cast<std::int32_t>(f),
+                       program.functions[f].name);
         }
     }
+    // the overlay copy runs with RAMRD on
+    if (groups != nullptr) {
+        AppendSpan(items, ov.copy, out, -1, kOverlayCopySpan);
+    }
     if (runtime_mirrored) {
-        Append(items, runtime, out, -1, "runtime");
+        AppendSpan(items, runtime, out, -1, "runtime");
         if (!tables.empty()) {
-            Append(items, tables, out, -1, "runtime tables");
+            AppendSpan(items, tables, out, -1, "runtime tables");
         }
     }
     std::size_t mirror_end = out.spans.size();
-    Append(items, zp_image, out, -1, "zero-page image");
+    AppendSpan(items, zp_image, out, -1, "zero-page image");
     std::size_t image_span = out.spans.size() - 1;
+    // each overlay group's code, laid out at the region
+    RegionSpans region;
+    if (groups != nullptr) {
+        region = AppendGroupSpans(be, *groups, out);
+    }
     std::size_t first_bank1 = bank1 != nullptr ? out.spans.size() : SIZE_MAX;
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         if ((*in.kept)[f] && in_bank1(f)) {
-            Append(items, be.code[f], out, static_cast<std::int32_t>(f), program.functions[f].name);
+            AppendSpan(items, be.code[f], out, static_cast<std::int32_t>(f),
+                       program.functions[f].name);
             out.spans.back().card_bank1 = true;
         }
     }
@@ -212,7 +193,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     // short loops kept inside a page, a few bytes before a function at most; not when the
     // program had to be squeezed to fit
     if (options.squeeze == 0) {
-        PadLoops(be.as, out.spans, options.origin, first_bank1);
+        PadLoops(be.as, out.spans, options.origin, std::min(first_bank1, region.first));
     }
 
     // the code where it fits: one run from the origin when it can be. A branch to another
@@ -247,7 +228,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             return LinkResult::kError;
         }
         if (!PlaceSpans(items, out.spans, stretches, plan.mem_frames, places, frames_at,
-                        first_bank1, early)) {
+                        first_bank1, early, groups != nullptr ? &region : nullptr)) {
             std::string where;
             for (const AddressRange& stretch : stretches) {
                 where +=
@@ -285,6 +266,11 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         if (!Bank1Resident(places, resident_spans, frames_at, frames_end, errors)) {
             return LinkResult::kNoRoom;
         }
+    }
+    // each group's code is a run of its own at the region: the region is reserved instead
+    if (groups != nullptr) {
+        runs.resize(runs.size() - groups->members.size());
+        runs.push_back(AddressRange{region.at, region.at + region.size});
     }
 
     LayoutOptions lo;
@@ -374,7 +360,11 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     };
     for (const AddressRange& run : runs) {
-        cover(run.start, run.end);
+        bool region_run =
+            groups != nullptr && run.start == region.at && run.end == region.at + region.size;
+        if (!region_run) {
+            cover(run.start, run.end);
+        }
     }
     if (plan.mem_frames > 0) {
         cover(frames_at, frames_end);
@@ -404,6 +394,13 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     }
     DefineSymbol(be.as, sp.save_sym, data_end);
 
+    // the groups' images, one after another in aux memory next to what is there
+    std::vector<AddressRange> images;
+    if (groups != nullptr && !PlaceGroupImages(be, program, out.layout, lo.aux_reserved, region,
+                                               *groups, ov, out, images, errors)) {
+        return LinkResult::kNoRoom;
+    }
+
     std::vector<std::uint8_t> code;
     std::string error;
     if (!EncodeCode(be.as, code, error)) {
@@ -412,11 +409,19 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     }
     std::vector<std::uint8_t> bank1_memory(bank1 != nullptr ? 0x10000 : 0, 0);
     std::size_t bank1_items = bank1 != nullptr ? out.spans[first_bank1].first : items.size();
+    // a group's code goes to its image in aux memory, at its offset in the region
+    std::vector<std::int32_t> item_group = ItemGroups(items.size(), out.spans, region);
     std::size_t at = 0;
     for (std::size_t n = 0; n < items.size(); n++) {
         const AsmItem& item = items[n];
         std::vector<std::uint8_t>& to = n < bank1_items ? memory : bank1_memory;
+        std::int32_t g = item_group[n];
         for (std::uint32_t i = 0; i < item.size; i++) {
+            if (g >= 0) {
+                std::uint32_t offset = item.address + i - region.at;
+                aux[(images[static_cast<std::size_t>(g)].start + offset) & 0xFFFF] = code[at++];
+                continue;
+            }
             to[(item.address + i) & 0xFFFF] = code[at++];
         }
     }
@@ -435,12 +440,16 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         out.segments.push_back(
             SegmentOf(bank1_memory, MemoryBank::kCardBank1, bank1_run.start, bank1_run.end));
     }
-    AuxSegments(program, out.layout, aux, mirror, out.segments);
+    std::vector<AddressRange> aux_pieces = mirror;
+    aux_pieces.insert(aux_pieces.end(), images.begin(), images.end());
+    AuxSegments(program, out.layout, aux, aux_pieces, out.segments);
 
-    // a bank 1 function is called through its forward stub (none: only bank 1 calls it)
+    // a bank 1 function is called through its forward stub (none: only bank 1 calls it), an
+    // overlay group's root through its stub (its other functions have none)
     out.function_address.resize(program.functions.size());
     for (std::size_t f = 0; f < program.functions.size(); f++) {
         std::int32_t sym = in_bank1(f) ? forward[f] : be.fn_sym[f];
+        sym = group_of(f) >= 0 ? ov.stub[f] : sym;
         if ((*in.kept)[f] && sym >= 0) {
             out.function_address[f] =
                 static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sym)].value);
@@ -458,6 +467,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             }
         }
     }
+    out.aux_switches = OverlayAuxSwitches(items, out.spans);
     out.entry_ready =
         static_cast<std::uint16_t>(be.as.symbols[static_cast<std::size_t>(sp.ready_sym)].value);
     out.after_main =

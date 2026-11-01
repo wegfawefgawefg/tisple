@@ -5,6 +5,7 @@
 // build traded against the usual one, and the check of --no-inline's names.
 
 #include "backend/gen.hpp"
+#include "backend/overlay_plan.hpp"
 
 #include <string>
 #include <vector>
@@ -25,6 +26,10 @@ struct Squeezed {
     std::vector<std::int32_t> bank1;
     std::uint32_t bank1_bytes = 0;
     std::uint64_t crossings = 0;
+    // the overlay groups' images did not fit aux memory (the link said so)
+    bool overlay_aux_short = false;
+    // the plan's groups were not in the code (fewer than two, or none for tests)
+    bool overlay_none = false;
 };
 
 Squeezed NoteSqueezed(const Backend& be, const std::vector<bool>& kept, const SizeChoices& choices,
@@ -38,6 +43,13 @@ Diagnostic SqueezeNote(const Program& program, const Squeezed& usual, const Sque
 // was taken
 Diagnostic Bank1Note(const Program& program, const Squeezed& banked, const Squeezed* other,
                      bool chose_bank1);
+
+// what the overlay groups traded (overlay.hpp): the region, each group's functions, bytes and
+// load, the bytes of main memory freed; a warning
+Diagnostic OverlayNote(const Program& program, const Compiled& compiled);
+
+// the functions marked :overlay that stay resident, a warning each
+std::vector<Diagnostic> ResidentMarkNotes(const Program& program, const OverlayPlan& plan);
 
 // every --no-inline name is a function's; else an error with the names' form, a real one as
 // the example (or the one meant: draw/text.start for text.start)

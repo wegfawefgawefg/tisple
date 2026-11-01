@@ -32,6 +32,12 @@ struct SimRunner {
     bool bank2 = true;
     std::vector<std::uint8_t> other_bank;
     std::vector<bool> switch_at; // by address: an instruction of card_switches
+    // aux memory (its segments), and RAMRD as the build's own overlay copy sets it
+    // (Compiled::aux_switches): while on, reads of $0200-$BFFF read aux memory. The program's
+    // own switches stay I/O to compare
+    std::vector<std::uint8_t> aux;
+    bool ramrd = false;
+    std::vector<bool> aux_switch_at;
 };
 
 // a fresh machine with the image loaded and the startup run up to JSR main

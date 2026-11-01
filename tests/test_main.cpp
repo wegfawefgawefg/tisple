@@ -110,6 +110,7 @@ int main() {
     tisple_tests::RunOptTests(results);
     tisple_tests::RunLinkRegionTests(results);
     tisple_tests::RunBackendBank1Tests(results);
+    tisple_tests::RunBackendOverlayTests(results);
     tisple_tests::RunTextLibTests(results);
     tisple_tests::RunBackendAuxTests(results);
     tisple_tests::RunMockingboardLibTests(results);

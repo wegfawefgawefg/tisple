@@ -39,6 +39,19 @@ struct CodePlace {
 
 std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& span);
 
+// the origin itself must be ordinary memory
+bool CheckOrigin(std::uint32_t origin, std::vector<Diagnostic>& errors);
+
+// from's items at the end of to, as a span of out's named name (function -1: the link's own)
+void AppendSpan(std::vector<AsmItem>& to, const std::vector<AsmItem>& from, Compiled& out,
+                std::int32_t function, const std::string& name);
+
+// with code in the card's bank 1, the stubs, the interrupt entry (the spans after the
+// startup, before `resident`) and the frames in memory stay out of $D000-$DFFF
+bool Bank1Resident(const std::vector<CodePlace>& places, std::size_t resident,
+                   std::uint32_t frames_at, std::uint32_t frames_end,
+                   std::vector<Diagnostic>& errors);
+
 // a run of spans placed first, at the start of the first of some stretches that holds them
 // all (aux_link.hpp: the code with_aux runs, at the start of the memory below the origin)
 struct EarlySpans {
@@ -48,15 +61,28 @@ struct EarlySpans {
     std::size_t stretch_end = SIZE_MAX;
 };
 
+// the overlay groups' spans (overlay.hpp): [first, end), each with its group
+// (FunctionSpan::overlay_group); PlaceSpans fills in where the region is and its size, the
+// biggest group's bytes
+struct RegionSpans {
+    std::size_t first = SIZE_MAX;
+    std::size_t end = SIZE_MAX;
+    std::uint32_t at = 0;
+    std::uint32_t size = 0;
+};
+
 // spans in order, each whole in the first stretch from the current one on that holds it; the
 // last span is followed by the memory frames. False when they do not fit. The spans from
 // first_bank1 on are the language card's bank 1 code (card_bank.hpp): they go one after
 // another in the last stretch, which no other span uses, and the frames follow the span before.
-// early's spans go first, at the start of their stretch, when they fit there
+// early's spans go first, at the start of their stretch, when they fit there. With region, the
+// overlay region follows the resident spans (the frames after it), and each group's spans are
+// laid out from its start, a run of their own (stretch index past the stretches given)
 bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
                 const std::vector<AddressRange>& stretches, std::uint32_t mem_frames,
                 std::vector<CodePlace>& places, std::uint32_t& frames_at,
-                std::size_t first_bank1 = SIZE_MAX, EarlySpans early = EarlySpans());
+                std::size_t first_bank1 = SIZE_MAX, EarlySpans early = EarlySpans(),
+                RegionSpans* region = nullptr);
 
 // every branch whose target is not a label of its own run (the spans in one stretch) becomes
 // far; true when one did, and then the sizes have changed and the spans must be placed again
