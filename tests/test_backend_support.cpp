@@ -56,6 +56,12 @@ Compiled CompileMainWith(const std::string& text, const tisple::BuildOptions& op
     return FinishWith(BuildText(text, {}), options);
 }
 
+Compiled CompileTextWith(const std::string& text, const tisple::BuildOptions& options) {
+    tisple::BuildOptions kept = options;
+    kept.keep_all_functions = true;
+    return FinishWith(BuildText(text, {}), kept);
+}
+
 Compiled CompileFile(const std::string& path) {
     return Finish(BuildFile(path), true);
 }
@@ -187,7 +193,13 @@ int CountMn(const Compiled& c, const std::string& function, tisple::Mn mn) {
         }
         for (std::size_t i = span.first; i < span.end; i++) {
             const tisple::AsmItem& item = c.code.as.items[i];
-            count += item.kind == tisple::ItemKind::Ins && item.mn == mn ? 1 : 0;
+            // the 65C02's INC A and DEC A are adds, not steps of memory or a counter; its STZ
+            // is a store
+            bool step = item.mn == tisple::Mn::INC || item.mn == tisple::Mn::DEC;
+            bool add = step && item.mode == tisple::Mode::Acc;
+            bool zero_store = mn == tisple::Mn::STA && item.mn == tisple::Mn::STZ;
+            bool same = (item.mn == mn && !add) || zero_store;
+            count += item.kind == tisple::ItemKind::Ins && same ? 1 : 0;
         }
     }
     return count;

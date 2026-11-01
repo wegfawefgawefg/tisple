@@ -50,11 +50,15 @@ int main() {
     }
 
     // TISPLE_TEST_GROUP=emu runs only the cpu cores' tests (SingleStepTests, Dormann's);
-    // =fuzz only the fuzzer (TISPLE_FUZZ, TISPLE_FUZZ_SEED: a burst)
+    // =fuzz only the fuzzer (TISPLE_FUZZ, TISPLE_FUZZ_SEED: a burst); =cmos the 65C02 target's
     const char* group = std::getenv("TISPLE_TEST_GROUP");
-    if (group && (std::strcmp(group, "emu") == 0 || std::strcmp(group, "fuzz") == 0)) {
+    bool one = group && (std::strcmp(group, "emu") == 0 || std::strcmp(group, "fuzz") == 0 ||
+                         std::strcmp(group, "cmos") == 0);
+    if (one) {
         if (std::strcmp(group, "emu") == 0) {
             tisple_tests::RunEmuTests(results);
+        } else if (std::strcmp(group, "cmos") == 0) {
+            tisple_tests::RunBackendCmosTests(results);
         } else {
             tisple_tests::RunBackendFuzzTests(results);
         }
@@ -101,6 +105,7 @@ int main() {
     tisple_tests::RunBackendBuildTests(results);
     tisple_tests::RunBackendInlineTests(results);
     tisple_tests::RunBackendMatchTests(results);
+    tisple_tests::RunBackendCmosTests(results);
     tisple_tests::RunBackendShiftTests(results);
     tisple_tests::RunBackendSub8Tests(results);
     tisple_tests::RunBackendSignedCmpTests(results);

@@ -6,7 +6,8 @@
 //
 // - Each (fn ...) type t gets a dispatcher, a function whose parameters are the pointer and
 //   then t's parameters, and whose code stores the pointer into its own JMP and jumps there
-//   (programs run from RAM). (p a b) becomes (dispatcher p a b).
+//   (programs run from RAM); on the 65C02 it is JMP (pointer), whose page bug the chip fixed.
+//   (p a b) becomes (dispatcher p a b).
 // - Each function f whose address is taken gets an entry, f.indirect, with no parameters: it
 //   calls f with the dispatcher's parameters and gives what f gives. A function pointer's
 //   value is the address of that entry.

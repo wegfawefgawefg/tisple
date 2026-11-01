@@ -403,7 +403,10 @@ KnownLabels FindKnownLabels(const Pass& p) {
             }
             entry = false;
         }
-        if (item.kind == ItemKind::Ins && item.mn == Mn::JMP && item.mode != Mode::Abs) {
+        // a jump through a pointer may land anywhere; the 65C02's JMP (table,X) only where
+        // its table's bytes name, which are left out below
+        if (item.kind == ItemKind::Ins && item.mn == Mn::JMP && item.mode != Mode::Abs &&
+            item.mode != Mode::AbsIndX) {
             return {};
         }
     }

@@ -254,7 +254,7 @@ void PassTests(TestResults& results) {
             std::uint32_t at = c.code.as.symbols[static_cast<std::size_t>(item.value.sym)].value +
                                static_cast<std::uint32_t>(item.value.offset);
             bool store = item.mn == tisple::Mn::STA || item.mn == tisple::Mn::STX ||
-                         item.mn == tisple::Mn::STY;
+                         item.mn == tisple::Mn::STY || item.mn == tisple::Mn::STZ;
             mode_stores += store && at == mode ? 1 : 0;
             other_stores += store && at == other ? 1 : 0;
             ticks_reads += !store && at == ticks ? 1 : 0;
