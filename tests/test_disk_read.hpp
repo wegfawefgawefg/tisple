@@ -51,6 +51,8 @@ uint64_t RunDiskProgram(tisple::Apple2& a, uint64_t budget);
 
 void RunDiskReadTests(TestResults& results);
 void RunDiskReadFailTests(TestResults& results);
+void RunDiskReadTwoTests(TestResults& results);
+void RunDiskHomesTests(TestResults& results);
 void RunDiskReadTimingTests(TestResults& results);
 void RunDiskStreamTests(TestResults& results);
 

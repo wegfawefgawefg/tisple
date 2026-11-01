@@ -352,9 +352,36 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
         w.Op(Mn::DEX);
         w.Br(Mn::BNE, init);
     }
-    for (const auto& store : plan.stores) {
-        w.Imm(Mn::LDA, store.second);
-        w.Op(Mn::STA, Mode::Abs, Num(store.first));
+    // the stores: a byte each, or a run of 16 or more copied from an image of it (skipped
+    // over), 255 at a time
+    const auto& stores = plan.stores;
+    for (std::size_t i = 0; i < stores.size();) {
+        std::size_t n = 1;
+        while (i + n < stores.size() && n < 255 && stores[i + n].first == stores[i].first + n) {
+            n++;
+        }
+        if (n < 16) {
+            w.Imm(Mn::LDA, stores[i].second);
+            w.Op(Mn::STA, Mode::Abs, Num(stores[i].first));
+            i++;
+            continue;
+        }
+        std::int32_t image = w.Label("start.image");
+        std::int32_t over = w.Label("start.copy");
+        std::int32_t copy = w.Label("start.copy_loop");
+        w.Op(Mn::JMP, Mode::Abs, SymValue(over));
+        w.Place(image);
+        for (std::size_t k = 0; k < n; k++) {
+            w.out->push_back(MakeByte(Num(stores[i + k].second)));
+        }
+        w.Place(over);
+        w.Imm(Mn::LDX, static_cast<std::int32_t>(n));
+        w.Place(copy);
+        w.Op(Mn::LDA, Mode::AbsX, SymValue(image, -1));
+        w.Op(Mn::STA, Mode::AbsX, Num(static_cast<std::int32_t>(stores[i].first) - 1));
+        w.Op(Mn::DEX);
+        w.Br(Mn::BNE, copy);
+        i += n;
     }
     for (std::int32_t patch : plan.io_patches) {
         w.Mem(Mn::JSR, patch);

@@ -29,17 +29,28 @@ void EmitReaderAddress(Reader& r, std::int32_t address) {
     std::int32_t odd = c.Label("raddr.odd");
     std::int32_t even = c.Label("raddr.even");
     std::int32_t timeout = c.Label("raddr.timeout");
+    std::int32_t first = c.Label("raddr.first");
+    std::int32_t poll = c.Label("raddr.poll");
     c.Place(address);
-    c.Imm(Mn::LDA, kAddressBudget & 0xFF);
-    c.Mem(Mn::STA, r.Var(kRvCountLo));
+    c.Imm(Mn::LDY, 0); // the count's low byte: Y is free until the field's bytes
     c.Imm(Mn::LDA, kAddressBudget >> 8);
     c.Mem(Mn::STA, r.Var(kRvCountHi));
-    c.Br(Mn::BNE, look);
+    // before the first byte each look at the latch counts: a drive that gives none at all
+    // (nothing on drive 2's connector) runs the count out instead of waiting for ever. The
+    // loop is slower than a byte's hold and may miss some, but not all of them
+    c.Place(first);
+    c.Op(Mn::DEY);
+    c.Br(Mn::BNE, poll);
+    c.Mem(Mn::DEC, r.Var(kRvCountHi));
+    c.Br(Mn::BEQ, timeout);
+    c.Place(poll);
+    r.l.ReadLatch(first);
+    c.Br(Mn::BMI, check);
     c.Place(retry);
     r.RestoreI();
     c.Place(look);
     r.l.ReadLatch(look);
-    c.Mem(Mn::DEC, r.Var(kRvCountLo));
+    c.Op(Mn::DEY);
     c.Br(Mn::BNE, check);
     c.Mem(Mn::DEC, r.Var(kRvCountHi));
     c.Br(Mn::BEQ, timeout);

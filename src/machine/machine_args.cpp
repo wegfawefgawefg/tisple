@@ -24,6 +24,9 @@ void PrintMachineUsage() {
         "  --rom F             a 12 or 16 KB rom image; with no program, reset through it\n"
         "  --disk F | --disk2 F  a disk ii in slot 6 with F (.dsk .do .po .nib) in drive 1 / 2;\n"
         "                      with no program and no --rom, boot it with our boot rom\n"
+        "  --drives 1          one drive: nothing answers on drive 2 (no disk, no noise)\n"
+        "  --swap C:F          at cycle C put F in drive 1, as a person swapping disks\n"
+        "                      would (headless; any number of them, in order)\n"
         "  --disk-rom F        the card's boot rom (Apple's DISK2.rom) instead of ours\n"
         "  --mouse \"C:X,Y,B;...\"  the mouse card (slot 4) is at X,Y with the button B (0 or\n"
         "                      1) from cycle C\n"
@@ -167,6 +170,21 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.disks.paths[0] = argv[++i];
         } else if (std::strcmp(arg, "--disk2") == 0 && has_value) {
             args.disks.paths[1] = argv[++i];
+        } else if (std::strcmp(arg, "--drives") == 0 && has_value) {
+            std::string n = argv[++i];
+            if (n != "1" && n != "2") {
+                return false;
+            }
+            args.disks.drives = n == "1" ? 1 : 2;
+        } else if (std::strcmp(arg, "--swap") == 0 && has_value) {
+            std::string text = argv[++i];
+            size_t colon = text.find(':');
+            MachineDisks::Swap swap;
+            if (colon == std::string::npos || !ParseCycle(text.substr(0, colon), swap.cycle)) {
+                return false;
+            }
+            swap.path = text.substr(colon + 1);
+            args.disks.swaps.push_back(swap);
         } else if (std::strcmp(arg, "--disk-rom") == 0 && has_value) {
             args.disks.rom_path = argv[++i];
         } else if (std::strcmp(arg, "--write-back") == 0) {

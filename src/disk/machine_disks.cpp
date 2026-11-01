@@ -18,7 +18,12 @@ bool SetUpDisks(Apple2& a, const MachineDisks& disks, std::string& error) {
             return false;
         }
     }
+    if (disks.drives == 1 && (!disks.paths[1].empty() || !disks.images[1].empty())) {
+        error = "--drives 1 leaves no drive 2 for a disk; drop --disk2 or --drives 1";
+        return false;
+    }
     InsertDisk2Card(a, kDiskSlot, rom.empty() ? nullptr : rom.data());
+    a.slots.disk2.drives[1].missing = disks.drives == 1;
     for (int d = 0; d < 2; d++) {
         std::vector<uint8_t> file = disks.images[d];
         DiskFormat format = disks.formats[d];
@@ -44,6 +49,25 @@ bool SetUpDisks(Apple2& a, const MachineDisks& disks, std::string& error) {
     uint16_t return_pc = 0;
     if (HasDisk(a, 0) && FindBootLoader(a.slots.disk2.drives[0].tracks[0], return_pc)) {
         a.return_pc = return_pc;
+    }
+    return true;
+}
+
+bool SwapDisks(Apple2& a, const MachineDisks& disks, size_t& done, std::string& error) {
+    uint64_t now = Cycles(a);
+    while (done < disks.swaps.size() && disks.swaps[done].cycle <= now) {
+        const std::string& path = disks.swaps[done].path;
+        done++;
+        std::vector<uint8_t> file;
+        DiskFormat format = DiskFormatForPath(path);
+        if (format == DiskFormat::kNone || !ReadWholeFile(path, file)) {
+            error = "cannot read '" + path + "' as a disk image";
+            return false;
+        }
+        if (!InsertDiskImage(a, 0, file, format, false, error)) {
+            error = path + ": " + error;
+            return false;
+        }
     }
     return true;
 }

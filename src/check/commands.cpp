@@ -55,6 +55,8 @@ bool ParseCheckArgs(int argc, char** argv, const char*& path, BuildOptions& opti
             if (i + 1 < argc && DiskFormatForPath(argv[i + 1]) != DiskFormat::kNone) {
                 i++;
             }
+        } else if (std::strcmp(arg, "--disk2") == 0 && i + 1 < argc) {
+            i++; // the second disk's image a build would write
         } else if (path == nullptr && arg[0] != '-') {
             path = arg;
         } else {

@@ -27,10 +27,15 @@ TableUse FindTableUse(const Backend& be, const LinkInput& in);
 bool PlaceInterpOnly(const Backend& be, const std::vector<bool>& interp_only,
                      const std::vector<AddressRange>& runs, std::vector<VarPlace>& places);
 
-// explicit-address globals with initial values outside [start, end): the startup writes them.
-// Aux ones are in the aux segment instead
-bool StartupStores(const Backend& be, std::uint32_t start, std::uint32_t end,
-                   std::vector<std::pair<std::uint16_t, std::uint8_t>>& stores,
-                   std::vector<Diagnostic>& errors);
+// explicit-address globals with initial values outside [start, end): the startup writes them
+// (stores), or with homes (BuildOptions::homes_in_segments) those in main memory below $C000
+// from low on go in homes, ranges whose bytes the link puts in memory as segments of their own
+// (below low, where a boot disk's loader cannot write, the startup still does). Aux ones
+// are in the aux segment instead
+bool StartupStores(
+    const Backend& be, std::uint32_t start, std::uint32_t end,
+    std::vector<std::pair<std::uint16_t, std::uint8_t>>& stores, std::vector<Diagnostic>& errors,
+    std::vector<std::pair<std::uint16_t, std::vector<std::uint8_t>>>* homes = nullptr,
+    std::uint32_t low = 0);
 
 } // namespace tisple

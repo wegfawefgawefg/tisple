@@ -39,12 +39,18 @@ bool MoveToDisk(Checker& ck, ConstDecl& cd, const Node& option) {
                 most + " at most, more than memory takes at once; split it");
         return false;
     }
+    if (place.disk == 2 && place.interleave != 0) {
+        Err(ck, option,
+            cd.name + " is :on disk2, whose tables go every other sector; drop :interleave");
+        return false;
+    }
     DiskTable table;
     table.var = cd.var;
+    table.disk = place.disk == 2 ? 2 : 1;
     table.bytes = var.init;
     table.bytes.resize(type.size, 0);
     table.interleave = place.interleave != 0 ? place.interleave : kDefaultInterleave;
-    std::uint32_t record = DiskTableRecordSize(type.size);
+    std::uint32_t record = DiskTableRecordSize(type.size, table.disk);
     TypeId record_type = ArrayOf(ck, kU8Type, record, option);
     Var& moved = ck.out->vars[static_cast<std::size_t>(cd.var)];
     moved.type = record_type;

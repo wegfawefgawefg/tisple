@@ -29,6 +29,7 @@ const ProjectForm kForms[] = {
     {"origin", ValueKind::kNumber, 0x0200, 0xBFFF, &ProjectFile::origin, "--origin", false},
     {"cpu", ValueKind::kCpu, 0, 0, &ProjectFile::cpu, "--cpu", false},
     {"disk", ValueKind::kPath, 0, 0, &ProjectFile::disk, "--disk", false},
+    {"disk2", ValueKind::kPath, 0, 0, &ProjectFile::disk2, "--disk2", false},
     {"mockingboard", ValueKind::kNumber, 1, 7, &ProjectFile::mockingboard, "--mockingboard", true},
     {"scale", ValueKind::kNumber, 1, 8, &ProjectFile::scale, "--scale", true},
     {"taps", ValueKind::kPath, 0, 0, &ProjectFile::taps, "--taps", true},
@@ -73,7 +74,7 @@ bool ReadForm(const SourceFile& file, const Node& node, const std::string& folde
         error = FormError(file, name,
                           "unknown form '" + name.text +
                               "'; a tisple.project takes program, origin, disk, "
-                              "cpu, mockingboard, scale, taps and rom");
+                              "disk2, cpu, mockingboard, scale, taps and rom");
         return false;
     }
     if (!(out.*form->field).empty()) {

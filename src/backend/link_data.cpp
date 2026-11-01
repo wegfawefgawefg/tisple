@@ -8,7 +8,7 @@ namespace tisple {
 namespace {
 
 // explicit-address initial values that are not in the file are stored by the startup
-constexpr std::uint32_t kMaxStartupStores = 256;
+constexpr std::uint32_t kMaxStartupStores = 4096;
 
 // by var: a symbol of it is in the code of a kept function
 std::vector<bool> NamedByKeptCode(const Backend& be, const LinkInput& in) {
@@ -88,7 +88,9 @@ bool PlaceInterpOnly(const Backend& be, const std::vector<bool>& interp_only,
 
 bool StartupStores(const Backend& be, std::uint32_t start, std::uint32_t end,
                    std::vector<std::pair<std::uint16_t, std::uint8_t>>& stores,
-                   std::vector<Diagnostic>& errors) {
+                   std::vector<Diagnostic>& errors,
+                   std::vector<std::pair<std::uint16_t, std::vector<std::uint8_t>>>* homes,
+                   std::uint32_t low) {
     const Program& program = *be.program;
     std::vector<std::uint8_t> memory(0x10000, 0);
     for (std::size_t v = 0; v < program.vars.size(); v++) {
@@ -111,14 +113,22 @@ bool StartupStores(const Backend& be, std::uint32_t start, std::uint32_t end,
         Layout placed = be.shapes;
         placed.vars[v].address = static_cast<std::uint16_t>(a);
         WriteVarInit(program, placed, static_cast<std::int32_t>(v), memory);
+        if (homes != nullptr && a >= low && a + size <= 0xC000) {
+            homes->push_back(
+                {static_cast<std::uint16_t>(a),
+                 std::vector<std::uint8_t>(memory.begin() + a, memory.begin() + a + size)});
+            continue;
+        }
         for (std::uint32_t i = 0; i < size; i++) {
             std::uint16_t at = static_cast<std::uint16_t>((a + i) & 0xFFFF);
             stores.push_back({at, memory[at]});
         }
     }
+    // long runs of them are copied from an image in the startup (EmitStartup), so the limit is
+    // the binary's bytes they take
     if (stores.size() > kMaxStartupStores) {
         AddError(errors, Loc(),
-                 "more than 256 bytes of initial values live outside the binary (explicit "
+                 "more than 4096 bytes of initial values live outside the binary (explicit "
                  ":address); give those globals no value and fill them in main");
         return false;
     }

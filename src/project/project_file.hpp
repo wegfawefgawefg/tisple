@@ -7,6 +7,8 @@
 //   (origin 0x8000)          build, run, check
 //   (cpu "65c02")            build, run, check: the chip to compile for ("6502" by default)
 //   (disk build/catwiz.dsk)  build writes it, run boots it, check lays out for it
+//   (disk2 build/catwiz2.dsk) the second disk (tables :on disk2): build writes it, run puts it
+//                            in drive 2
 //   (mockingboard 4) (scale 2) (taps tools/phone/catwiz.json) (rom Apple2e.rom)   run only
 
 #include <filesystem>
@@ -25,6 +27,7 @@ struct ProjectFile {
     std::string origin;
     std::string cpu;
     std::string disk;
+    std::string disk2;
     std::string mockingboard;
     std::string scale;
     std::string taps;

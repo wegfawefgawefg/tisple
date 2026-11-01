@@ -29,9 +29,12 @@
 (const BANK2 u8 0x83)     ; banks by their switch: $C083 bank 2, $C08B bank 1, both ram read
 (const BANK1 u8 0x8B)     ; and written
 (const CODE_SIZE u8 83)
-(let home (array u8 CODE_SIZE) :address 0x1D8A :reserve)
+(const SWITCH_AT u8 11) ; SWITCH and CALL in the code, from HOME
+(const CALL_AT u8 50)
 
-(const CODE (array u8 83)
+; the code at its home, loaded there with the program (a boot disk's loader puts it there;
+; other builds' startup copies it in), so it costs no other bytes
+(let code (array u8 83)
     (make (array u8 83)
         0x08 0x78 0xAD 0x11 0xC0 0x48 ; card: PHP / SEI / LDA $C011 / PHA
         0xAD 0x12 0xC0 0x48           ; LDA $C012 / PHA
@@ -51,20 +54,14 @@
         0x2C 0x8B 0xC0 0x2C 0x8B 0xC0 ; BIT $C08B / BIT $C08B
         0x28 0x60                     ; PLP / RTS
         0x2C 0x83 0xC0 0x2C 0x83 0xC0 ; was_2: BIT $C083 / BIT $C083
-        0x28 0x60))                   ; PLP / RTS
-
-(let ready bool false)
+        0x28 0x60)                    ; PLP / RTS
+    :address 0x1D8A)
 
 ; the code at addr run with ALTZP on (above), X = x_reg, bank BANK2 or BANK1 in
+; (its bytes patched through code, which keeps it in the program)
 (fn call ((addr u16) (x_reg u8) (bank u8)) void
-    (if (not ready)
-        (do
-            (let p (ptr u8) (as (ptr u8) HOME))
-            (for i u8 0 CODE_SIZE
-                (store (+ p i) (at CODE i)))
-            (set ready true)))
-    (store (as (ptr u8) SWITCH) bank)
-    (store (as (ptr u8) (+ SWITCH 3)) bank)
-    (store (as (ptr u8) CALL) (as u8 addr))
-    (store (as (ptr u8) (+ CALL 1)) (as u8 (>> addr 8)))
+    (set (at code SWITCH_AT) bank)
+    (set (at code (+ SWITCH_AT 3)) bank)
+    (set (at code CALL_AT) (as u8 addr))
+    (set (at code (+ CALL_AT 1)) (as u8 (>> addr 8)))
     (jsr HOME (x x_reg)))

@@ -7,11 +7,13 @@ Roadmap section 1, "Accurate and instant".
 ## Commands
 
 ```sh
-tisple build main.tsp --disk game.dsk [--origin A] [-o game.bin] [--asm]   # every segment
-tisple run main.tsp --disk [game.dsk] [machine flags]   # build, then boot the disk
+tisple build main.tsp --disk game.dsk [--disk2 game2.dsk] [--origin A] [-o game.bin] [--asm]
+tisple build main.tsp --disk game.dsk --tables          # and where each table went
+tisple run main.tsp --disk [game.dsk] [machine flags]   # build, then boot the disk(s)
 tisple check main.tsp --disk [--origin A]               # laid out as the disk build
 tisple disk boot game.dsk game.bin [--origin A]         # any raw binary
 tisple machine --disk a.dsk [--disk2 b.dsk] [--write-back]
+tisple machine --disk a.dsk --drives 1 --swap 900f:b.dsk  # one drive; a swap at frame 900
 tisple machine --disk a.dsk --rom Apple2e.rom [--disk-rom DISK2.rom]
 tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
 ```
@@ -165,14 +167,15 @@ an empty drive gives noise, which ends in `NO_DISK` (2.1 s from the start of the
   which tracks they take, marks them used in the DOS volume, and fails if the program's
   tracks reach them. Other builds hold no tables and warn that `disk.read` gives `NO_CARD`.
 - **The reader.** Our own 6502 code (src/disk/disk_reader.cpp, reader_read.cpp; MIT as well,
-  like the loader), 1,219 bytes at `$1700`, with its bounce page and tables in
+  like the loader), 1,277 bytes at `$1700` (1,219 before the second disk), with its bounce page and tables in
   `$1400`-`$16FF`. lib/disk keeps `$1400`-`$1BFF` with two `:reserve` lets (`disk.work`,
   `disk.reader`), and the disk build puts the reader on the disk as one more segment, so it
   costs the program no bytes of its own; the loader writes the slot it booted from into it
   (`$1706`; 0 would mean slot 6). It reads its arguments from lib/auxmem's `from` and `to`
   when a read starts and uses no other zero page.
-- **How it reads.** Motor on, drive 1; the head found from the first address field it reads
-  (or by stepping out to track 0), then each track's sectors: seek (the loader's step
+- **How it reads.** Motor on, drive 1 (or 2: The second disk); the head found from the first
+  address field each read reads (or by stepping out to track 0: each drive has its own head),
+  then each track's sectors: seek (the loader's step
   timing), then whichever wanted sector comes under the head next. The read loops are the
   loader's, at most 22 cycles a disk byte, with nibble tables that give each value already
   shifted into place (the high six bits times 4, the low pairs swapped; xor keeps both
@@ -239,6 +242,56 @@ reader needs no `(auxmem.guard)`: it never has RAMWRT on with interrupts on.
   picture before it on the page shown, but for the ball.
 - On a real machine: not yet. The budgets allow for a drive still coming up to speed after
   the motor goes on (three turns for an address field); the step timing is the loader's.
+
+## The second disk
+
+A program whose art does not fit one disk puts tables on a second (2026-11-01, for Catwiz's
+enemies): `:on disk2` in place of `:on disk`. The build writes it beside the first
+(`build/game.dsk`, `build/game2.dsk`; `--disk2` or the project's `(disk2 ...)` names another),
+`tisple run` and the phone player put it in drive 2, and lib/disk reads those tables from
+there with the same calls. A machine with one drive swaps: the program asks for the second
+disk in drive 1 (its own prompt) and says so with `(disk.disk2_in 1)`; from then on the second
+disk's tables read from drive 1 (and the boot disk's would need it back: keep everything the
+program reads after the swap on the second disk).
+
+```scheme
+(const LEVELS (array u8 9000) (make ...) :on disk2)
+(disk.read dst (addr_of (at LEVELS 0)) disk.AUX)        ; from drive 2
+(disk.disk2_in 1)                                         ; the person put disk 2 in drive 1
+```
+
+- **Where they go.** The second disk holds nothing else: no program, no catalog. Its tables go
+  in declaration order from track 1, one long row of slots, every other physical sector round a
+  track (0, 2, ... 14, 1, 3, ... 15, as the boot disk's 2:1), so a table is its first slot and
+  its length: 544 sectors (tracks 1-34), no `:interleave`. Track 0 has a boot sector that clears
+  the text screen and says `THIS IS DISK 2: BOOT DISK 1`, for whoever boots it by mistake.
+- **The record** is 4 bytes, whatever the table's size: the length, the first track plus $80,
+  and the first slot on it (disk_tables.hpp). The reader works each piece's track and sector
+  out from the slot (`entry` in disk_reader.cpp: the slot's low four bits rotated left one is
+  the physical sector) where it reads a boot disk record's byte. A 9 KB table's record on the
+  boot disk is 39 bytes.
+- **Which drive.** lib/disk's `start` passes bit 1 of X to the reader for a record with $80 in
+  its third byte while `disk.disk2_bit` is 2 (`disk2_in 2`, the start); after `(disk.disk2_in
+  1)` it is 0, and the reader takes drive 1. The reader selects the drive with the motor
+  (`$C08A` or `$C08B`) and finds its head from an address field at every read, since each drive
+  has its own (a sector's time at most).
+- **No drive 2.** Nothing on drive 2's connector gives no bytes at all, which a read loop
+  waiting for one would wait on for ever. The address search counts every look at the latch
+  until its first byte, so such a read ends in `NO_DISK` (about a second, with the step out to
+  track 0 it tries); once a byte comes the loop is the tight one again (a byte's 7 cycles in
+  the latch are shorter than the counted loop). `tisple machine --drives 1` has no drive 2:
+  selected, it reads nothing, not even noise.
+- **Telling the disks apart** is the program's: a short table it knows the bytes of, read from
+  a drive, says whether the second disk is there (Catwiz's `title/disk2.tsp`). Reading a
+  second-disk table from a drive holding the boot disk reads the boot disk's sectors there.
+- **To make room** for the drive and the computed entries in its 1,280 bytes, the reader checks
+  two of the Disk II rom's three signature bytes ($Cn01 and $Cn05), keeps the address search's
+  low count in Y, and three of its variables in page b's spare bytes ($90-$92).
+- Tests: tests/test_disk_read_two.cpp: the places and records, five tables read from drive 2
+  between two from drive 1, a machine with one drive (NO_DISK from drive 2, then the swap and
+  every table read from drive 1), the boot sector's words.
+- `tisple machine --swap C:F` puts F in drive 1 at cycle C (headless), as a person with one
+  drive would; any number, in order.
 
 ## Saves
 

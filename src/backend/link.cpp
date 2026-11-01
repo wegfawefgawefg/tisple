@@ -88,7 +88,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             sp.io_patches.push_back(be.fn_sym[static_cast<std::size_t>(f)]);
         }
     }
-    if (!StartupStores(be, options.origin, data_end, sp.stores, errors)) {
+    std::vector<std::pair<std::uint16_t, std::vector<std::uint8_t>>> homes;
+    if (!StartupStores(be, options.origin, data_end, sp.stores, errors,
+                       options.homes_in_segments ? &homes : nullptr, options.low_start)) {
         return LinkResult::kError;
     }
     std::vector<AsmItem> startup;
@@ -439,6 +441,14 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
                 stretches[k].start >= kCardStart ? MemoryBank::kCard : MemoryBank::kMain;
             out.segments.push_back(SegmentOf(memory, bank, low[k], high[k]));
         }
+    }
+    // the explicit-address values that load in place: a segment each (the boot disk merges
+    // those that share a page with another)
+    for (const auto& home : homes) {
+        std::copy(home.second.begin(), home.second.end(), memory.begin() + home.first);
+        out.segments.push_back(
+            SegmentOf(memory, MemoryBank::kMain, home.first,
+                      home.first + static_cast<std::uint32_t>(home.second.size())));
     }
     if (bank1 != nullptr && bank1_run.start < bank1_run.end) {
         out.segments.push_back(

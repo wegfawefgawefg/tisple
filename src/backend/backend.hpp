@@ -52,6 +52,10 @@ struct BuildOptions {
     int overlay_test = 0;
     // keep the code of functions main never calls (tests call them by address)
     bool keep_all_functions = false;
+    // explicit-address globals with values outside the program's memory load where they are,
+    // as segments of their own (a boot disk's loader places them), not written by the startup
+    // (UseBootDiskLayout; a library's machine code at its fixed home costs no other bytes)
+    bool homes_in_segments = false;
     // functions never inlined, by qualified name (the race times from t.init's return to
     // t.checksum's entry)
     std::vector<std::string> no_inline;

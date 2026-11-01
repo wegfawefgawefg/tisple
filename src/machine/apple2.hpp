@@ -253,6 +253,7 @@ struct DiskDrive {
     uint32_t bit_pos = 0;    // the cell under the head
     uint64_t spun_to = 0;    // cycle the disk has turned to (whole cells counted from here)
     uint8_t head_window = 0; // the last four cells read, for the read amplifier's noise
+    bool missing = false;    // no drive on this connector (--drives 1): selected, it reads nothing
     DiskTrack tracks[kDiskTracks];
 };
 

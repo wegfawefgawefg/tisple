@@ -155,7 +155,7 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
   flipping, boxes, sprites, pixels and the mixed window's 80-column text.
   `lib/unpack`: tables packed while compiling (`tables.packed`) back to bytes,
   in main or aux memory. Both in [`dhgr.md`](dhgr.md).
-- `lib/disk`: tables placed `:on disk` read into main or aux memory while the
+- `lib/disk`: tables placed `:on disk` (or `:on disk2`, the second disk) read into main or aux memory while the
   program runs, with a step function called between sectors
   ([`disks.md`](disks.md), Disk tables). Its reader keeps `$1400`-`$1BFF`.
 - `lib/save`: saves written back to the boot disk, two copies so a power cut never loses
@@ -932,6 +932,7 @@ The linker checks them and fails the build if one can't hold.
 | `:strings aux` | on a `const` table: the string literals written in its value live in aux memory; the table stays in main memory (2026-10-31, Aux memory code) |
 | `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
 | `:on disk` | a const `(array u8 n)` that lives on the boot disk, not in memory; its name holds where, for `lib/disk` (2026-10-30, [`disks.md`](disks.md), Disk tables) |
+| `:on disk2` | the same on the second disk, which the build writes beside the first and reads from drive 2 (or drive 1 after a swap); its record is 4 bytes whatever its size (2026-11-01, [`disks.md`](disks.md), The second disk) |
 | `:interleave 2` | with `:on disk`: how many physical sectors apart its sectors go round a track, 1 to 15, 2 when not given |
 
 Placement goes on top-level `let`s and `const` tables, after the value; `:reserve`
@@ -946,6 +947,16 @@ in the backend and the interpreter alike (owner reading, 2026-10-26). It holds
 whatever memory held (zero in a fresh interpreter or simulator), unless it lies
 inside the binary's own bytes, which loading the binary writes. Every other
 top-level `let` without a value starts at zero.
+
+A global with `:address` and a value outside the program's memory (2026-11-01): on a boot disk
+(`--disk`) it is a segment of its own, which the loader puts in place, so its bytes are
+nowhere else (a boot disk merges segments that share a page, and holds 10); below `$0B00`,
+where the loader cannot write, and in every other build, the startup writes it, a run of 16
+bytes or more copied from an image in the startup. lib/unpack, lib/auxcard and lib/dhgr keep
+their machine code so at its homes (`$1C00`, `$1D8A`, `$1E00`), which freed 820 bytes of a boot
+disk program's memory (Catwiz). `TISPLE_DATA_NOTES=1 tisple build --disk ...` lists every
+global's bytes, address and memory; `TISPLE_FIT_NOTES=1` each try of the link at each squeeze
+and why it found no room.
 
 ### Memory map
 

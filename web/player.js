@@ -486,15 +486,23 @@ async function boot() {
     }
     document.title = state.game.title || name;
     padSetup(state.game, press, release);
-    const disk = new Uint8Array(await (await fetch("games/" + name + "/" + state.game.disk,
-                                                   { cache: "no-store" })).arrayBuffer());
+    const fetchDisk = async (file) =>
+        new Uint8Array(await (await fetch("games/" + name + "/" + file,
+                                          { cache: "no-store" })).arrayBuffer());
+    const disk = await fetchDisk(state.game.disk);
+    // "disk2": a program with tables on a second disk (docs/disks.md) has it in drive 2
+    const disk2 = state.game.disk2 ? await fetchDisk(state.game.disk2) : new Uint8Array(0);
     state.m = await TispleMachine();
     state.disk = disk;
     const booted = withSaves(disk);
     const ptr = state.m._malloc(booted.length);
     state.m.HEAPU8.set(booted, ptr);
-    const ok = state.m._tp_boot(ptr, booted.length, state.game.mockingboard || 0);
+    const ptr2 = state.m._malloc(Math.max(disk2.length, 1));
+    state.m.HEAPU8.set(disk2, ptr2);
+    const ok = state.m._tp_boot(ptr, booted.length, ptr2, disk2.length,
+                                state.game.mockingboard || 0);
     state.m._free(ptr);
+    state.m._free(ptr2);
     if (!ok) {
         setStatus("the disk did not load");
         return;

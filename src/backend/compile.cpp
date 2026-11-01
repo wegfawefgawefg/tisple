@@ -244,6 +244,14 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
         }
     }
     errors.insert(errors.end(), link_errors.begin(), link_errors.end());
+    if (std::getenv("TISPLE_FIT_NOTES") != nullptr) {
+        std::fprintf(stderr, "fit: squeeze %d overlays %d: result %d, aux short %d, bank1 %d\n",
+                     options.squeeze, overlays != nullptr ? 1 : 0, static_cast<int>(result),
+                     out.overlay_aux_short ? 1 : 0, bank1_allowed ? 1 : 0);
+        for (const Diagnostic& d : link_errors) {
+            std::fprintf(stderr, "  %s\n", d.message.c_str());
+        }
+    }
     squeezed.overlay_aux_short = out.overlay_aux_short;
     if (result != LinkResult::kOk) {
         return result;
@@ -427,6 +435,9 @@ bool CompileProgram(const Program& source, const BuildOptions& options, Compiled
         bool again = result == LinkResult::kNoRoom && tighter.squeeze < kMaxSqueeze;
         if (!again) {
             errors.insert(errors.end(), tried.begin(), tried.end());
+            if (std::getenv("TISPLE_SIZE_NOTES") != nullptr) {
+                errors.insert(errors.end(), overlaid_tried.begin(), overlaid_tried.end());
+            }
             if (result == LinkResult::kNoRoom && !first) {
                 AddError(errors, Loc(),
                          "the program does not fit even with the tightest size budget (squeeze " +

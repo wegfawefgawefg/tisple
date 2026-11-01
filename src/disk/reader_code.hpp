@@ -32,9 +32,8 @@ enum ReaderVar : int {
     kRvFields,  // address fields seen in this call
     kRvSeeks,   // seeks to this track
     kRvFlags,   // the caller's P: its I flag goes back between sectors
-    kRvCountLo, // nibbles left before an address search gives up
-    kRvCountHi,
-    kRvField, // 4: the address field, last first: checksum, sector, track, volume
+    kRvCountHi, // nibbles left before an address search gives up, high byte (Y the low)
+    kRvField,   // 4: the address field, last first: checksum, sector, track, volume
     kRvTemp = kRvField + 4,
     kRvReady,  // the tables are built
     kRvPiece,  // the piece being placed
@@ -52,6 +51,18 @@ struct Reader {
 
     int Var(int offset) const {
         return origin + offset;
+    }
+    // three more in page b's spare bytes ($90-$95, between want and the nibble table): the
+    // drive asked for (0 drive 1, 2 drive 2); bit 7 when the table is on the second disk, its
+    // pieces in one row of slots; and its first piece's slot on its first track
+    int Drive() const {
+        return page_b + 0x90;
+    }
+    int Compact() const {
+        return page_b + 0x91;
+    }
+    int Start() const {
+        return page_b + 0x92;
     }
     int T2() const {
         return page_a;
@@ -96,10 +107,11 @@ struct ReaderLabels {
     std::int32_t place = -1;
     std::int32_t tables = -1;
     std::int32_t track_setup = -1;
-    // instructions begin patches: the record entries' LDA abs,Y (three of them), the slot
-    // rom's signature reads (three)
-    std::int32_t entry_reads[3] = {-1, -1, -1};
-    std::int32_t signature[3] = {-1, -1, -1};
+    std::int32_t entry = -1; // a piece's record entry, read or worked out (Y the piece)
+    // instructions begin patches: the record entries' LDA abs,Y, the slot rom's signature
+    // reads (two)
+    std::int32_t entry_read = -1;
+    std::int32_t signature[2] = {-1, -1};
 };
 
 // reader_read.cpp: the address and data fields, the fix of a sector into place, the tables

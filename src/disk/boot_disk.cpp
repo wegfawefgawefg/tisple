@@ -6,7 +6,6 @@
 #include "disk/disk_reader.hpp"
 #include "disk/disk_tables.hpp"
 #include "disk/disk_writer.hpp"
-#include "disk/disk_tables.hpp"
 #include "disk/dos33.hpp"
 
 #include <algorithm>
@@ -132,14 +131,20 @@ bool PutDiskTables(const BootExtras& extras, DiskSectors& disk, BootDiskInfo& in
         return true;
     }
     int first = DiskTablesFirstTrack(*extras.tables);
+    if (first == 0) {
+        return true; // every table is on the second disk
+    }
     if (first <= info.last_track) {
         error = "the program takes " + BootTracksText(info) + " and its tables :on disk tracks " +
                 std::to_string(first) + "-" + std::to_string(kBootLastTrack) +
                 "; together they do not fit the disk";
         return false;
     }
-    WriteDiskTables(*extras.tables, disk);
+    WriteDiskTables(*extras.tables, disk, 1);
     for (const DiskTable& table : *extras.tables) {
+        if (table.disk == 2) {
+            continue; // on the second disk (MakeDisk2)
+        }
         for (uint8_t track : table.tracks) {
             DosReserveTrack(disk, track);
         }

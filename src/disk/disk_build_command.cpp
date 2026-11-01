@@ -6,6 +6,7 @@
 #include "check/check.hpp"
 #include "check/diag.hpp"
 #include "disk/disk_command.hpp"
+#include "disk/disk_tables.hpp"
 #include "disk/image.hpp"
 #include "machine/machine_command.hpp"
 
@@ -37,9 +38,11 @@ namespace {
 struct DiskBuildArgs {
     const char* path = nullptr;
     std::string disk;   // the image to write ("" for run: kept in memory)
+    std::string disk2;  // --disk2: the second disk's image ("" for disk's name with a 2)
     std::string binary; // -o: also write the .bin
     BuildOptions options;
     bool listing = false; // build: --asm
+    bool tables = false;  // build: --tables, each table :on disk or disk2 and where it went
     bool headless = false;
     std::vector<char*> machine_args;
 };
@@ -89,6 +92,8 @@ bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
             } else if (!run) {
                 return false;
             }
+        } else if (std::strcmp(arg, "--disk2") == 0 && has_value && IsImageName(argv[i + 1])) {
+            args.disk2 = argv[++i];
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number) || number < kBootLoadLow || number > 0xBFFF) {
                 return false;
@@ -98,6 +103,8 @@ bool ParseArgs(int argc, char** argv, bool run, DiskBuildArgs& args) {
             args.binary = argv[++i];
         } else if (!run && std::strcmp(arg, "--asm") == 0) {
             args.listing = true;
+        } else if (!run && std::strcmp(arg, "--tables") == 0) {
+            args.tables = true;
         } else if (run && std::strcmp(arg, "--headless") == 0) {
             args.headless = true;
         } else if (args.path == nullptr && arg[0] != '-') {
@@ -126,6 +133,64 @@ bool CompileFor(const DiskBuildArgs& args, Program& program, Compiled& compiled)
     if (args.listing) {
         std::fputs(ListProgram(program, compiled).c_str(), stdout);
     }
+    return true;
+}
+
+// the second disk's image: --disk2's, else the first disk's name with a 2 before its extension
+// (build/game.dsk, build/game2.dsk); "" when run keeps the disk in memory
+std::string Disk2Path(const DiskBuildArgs& args) {
+    if (!args.disk2.empty() || args.disk.empty()) {
+        return args.disk2;
+    }
+    std::filesystem::path path(args.disk);
+    std::filesystem::path name = path.stem();
+    name += "2";
+    name += path.extension();
+    return (path.parent_path() / name).string();
+}
+
+// every table :on disk and :on disk2: its name, disk, bytes, sectors and tracks
+std::string DescribeDiskTables(const Program& program) {
+    std::string out;
+    for (const DiskTable& t : program.disk_tables) {
+        char line[256];
+        int first = t.tracks.empty() ? 0 : t.tracks.front();
+        int last = t.tracks.empty() ? 0 : t.tracks.back();
+        std::snprintf(line, sizeof(line), "  disk %d tracks %2d-%2d: %s, %zu bytes, %u sectors\n",
+                      t.disk, first, last,
+                      program.vars[static_cast<std::size_t>(t.var)].name.c_str(), t.bytes.size(),
+                      DiskTableSectors(static_cast<std::uint32_t>(t.bytes.size())));
+        out += line;
+    }
+    return out;
+}
+
+// the second disk, when the program has tables :on disk2: written to path (unless ""), and
+// its image kept in image (unless null)
+bool WriteDisk2(const Program& program, const std::string& path, std::vector<uint8_t>* image,
+                std::string& error) {
+    if (!HasDisk2Tables(program.disk_tables)) {
+        return true;
+    }
+    std::unique_ptr<DiskSectors> disk = std::make_unique<DiskSectors>();
+    MakeDisk2(program.disk_tables, *disk);
+    if (image != nullptr) {
+        *image = ImageFromSectors(*disk, SectorOrder::kDos);
+    }
+    if (path.empty()) {
+        return true;
+    }
+    MakeDiskFolder(path);
+    if (!WriteDiskSectorsFile(path, *disk, error)) {
+        return false;
+    }
+    std::size_t count = 0;
+    for (const DiskTable& t : program.disk_tables) {
+        count += t.disk == 2 ? 1 : 0;
+    }
+    int last = Disk2LastTrack(program.disk_tables);
+    std::printf("%s: the second disk, %zu tables :on disk2 in tracks %d-%d (%d free)\n",
+                path.c_str(), count, kDisk2FirstTrack, last, kBootLastTrack - last);
     return true;
 }
 
@@ -163,6 +228,7 @@ void UseBootDiskLayout(BuildOptions& options) {
     // the origin
     options.limit = 0xC000;
     options.low_start = kBootLoadLow;
+    options.homes_in_segments = true;
 }
 
 bool HasDiskFlag(int argc, char** argv) {
@@ -177,13 +243,14 @@ bool HasDiskFlag(int argc, char** argv) {
 int RunBuildDiskCommand(int argc, char** argv) {
     DiskBuildArgs args;
     if (!ParseArgs(argc, argv, false, args)) {
-        std::fprintf(stderr,
-                     "usage: tisple build main.tsp --disk out.dsk [--origin A] [-o out.bin]\n"
-                     "  [--asm] [-O0|-O1] [--opt-bisect N] [--no-pass NAME]\n"
-                     "  [--no-inline module.fn]\n"
-                     "a disk that boots the program on its own (no DOS); the program\n"
-                     "loads in $0B00-$BFFF, the language card and aux memory\n"
-                     "a tisple.project at the project root lets tisple build run with no file\n");
+        std::fprintf(
+            stderr,
+            "usage: tisple build main.tsp --disk out.dsk [--disk2 out2.dsk] [--origin A]\n"
+            "  [-o out.bin] [--asm] [--tables] [-O0|-O1] [--opt-bisect N] [--no-pass NAME]\n"
+            "  [--no-inline module.fn]\n"
+            "a disk that boots the program on its own (no DOS); the program\n"
+            "loads in $0B00-$BFFF, the language card and aux memory\n"
+            "a tisple.project at the project root lets tisple build run with no file\n");
         return 1;
     }
     Program program;
@@ -201,11 +268,26 @@ int RunBuildDiskCommand(int argc, char** argv) {
         return 1;
     }
     std::fputs(DescribeSegments(compiled).c_str(), stdout);
+    if (std::getenv("TISPLE_DATA_NOTES") != nullptr) {
+        for (std::size_t v = 0; v < program.vars.size(); v++) {
+            const VarPlace& place = compiled.layout.vars[v];
+            const Var& var = program.vars[v];
+            if (var.function >= 0 || place.size == 0 || place.dropped || place.interp_only) {
+                continue;
+            }
+            std::printf("data %5u $%04X %s %s\n", place.size, place.address,
+                        var.placement.in_aux ? "aux " : "main", var.name.c_str());
+        }
+    }
+    if (args.tables) {
+        std::fputs(DescribeDiskTables(program).c_str(), stdout);
+    }
     BootDiskInfo info;
     std::string error;
     MakeDiskFolder(args.disk);
     if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error,
-                       BootExtrasFor(program))) {
+                       BootExtrasFor(program)) ||
+        !WriteDisk2(program, Disk2Path(args), nullptr, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -246,6 +328,12 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
+    std::vector<uint8_t> image2;
+    std::string path2 = Disk2Path(args);
+    if (!WriteDisk2(program, path2, &image2, error)) {
+        std::fprintf(stderr, "tisple: %s\n", error.c_str());
+        return 1;
+    }
     std::fputs(DescribeSegments(compiled).c_str(), stdout);
     std::printf("on a boot disk (%s)\n", BootTracksText(info).c_str());
     static char window_flag[] = "--window";
@@ -258,9 +346,14 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
         args.machine_args.push_back(disk_flag);
         args.machine_args.push_back(const_cast<char*>(args.disk.c_str()));
     }
+    static char disk2_flag[] = "--disk2";
+    if (!path2.empty() && !image2.empty()) {
+        args.machine_args.push_back(disk2_flag);
+        args.machine_args.push_back(const_cast<char*>(path2.c_str()));
+    }
     std::vector<uint8_t> image = ImageFromSectors(*disk, SectorOrder::kDos);
     return RunMachineOnDisk(image, DiskFormat::kDos, static_cast<int>(args.machine_args.size()),
-                            args.machine_args.data(), window, compiled.cpu);
+                            args.machine_args.data(), window, compiled.cpu, image2);
 }
 
 } // namespace tisple
