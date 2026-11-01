@@ -167,6 +167,11 @@ void VisitSet(Walker& w, const Expr& e) {
     Visit(w, e.b, -1, 0);
     const Expr& place = At(p, e.a);
     if (place.kind == ExprKind::VarRef) {
+        // a whole struct or array set stores every byte of it
+        TypeKind kind = KindOf(*p.program, VarOf(p, place.ref).type);
+        if (kind == TypeKind::Struct || kind == TypeKind::Array) {
+            NoteStore(p, w.counters, e.a, w.stores);
+        }
         SetOf(w, place.ref, e.b);
         return;
     }
