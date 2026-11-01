@@ -20,11 +20,12 @@ struct SimArgs {
     int32_t stop = -1;
     uint64_t max_cycles = 100000000;
     bool trace = false;
+    Cpu cpu = Cpu::k6502;
 };
 
 void PrintSimUsage() {
     std::fprintf(stderr, "usage: tisple sim <file.bin> [--load ADDR] [--start ADDR] [--stop ADDR]\n"
-                         "                  [--max-cycles N] [--trace]\n"
+                         "                  [--max-cycles N] [--trace] [--cpu 6502|65c02]\n"
                          "addresses take $hex, 0xhex or decimal\n");
 }
 
@@ -45,7 +46,11 @@ bool ParseArgs(int argc, char** argv, SimArgs& args) {
         const char* arg = argv[i];
         bool has_value = i + 1 < argc;
         uint64_t number = 0;
-        if (std::strcmp(arg, "--trace") == 0) {
+        if (std::strcmp(arg, "--cpu") == 0 && has_value) {
+            if (!ParseCpu(argv[++i], args.cpu)) {
+                return false;
+            }
+        } else if (std::strcmp(arg, "--trace") == 0) {
             args.trace = true;
         } else if (std::strcmp(arg, "--load") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number) || number > 0xFFFF) {
@@ -135,7 +140,7 @@ int RunSimCommand(int argc, char** argv) {
     }
 
     auto machine = std::make_unique<Machine>();
-    InitMachine(*machine);
+    InitMachine(*machine, args.cpu);
     LoadBytes(*machine, static_cast<uint16_t>(args.load), bytes.data(), bytes.size());
     Regs regs;
     regs.pc = static_cast<uint16_t>(args.start);

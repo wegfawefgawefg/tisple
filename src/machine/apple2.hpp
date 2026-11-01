@@ -1,7 +1,9 @@
 #pragma once
 
-// an apple iie with an extended 80-column card (nmos 6502, 64 KB main ram and 64 KB auxiliary
-// ram, a language card in each) around our cycle-exact cpu wrapper. two starts:
+// an apple iie with an extended 80-column card (64 KB main ram and 64 KB auxiliary ram, a
+// language card in each) around our cycle-exact cpu wrapper, with either cpu: the nmos 6502 of
+// the iie and ii+, or the 65C02 of the enhanced iie and the iic (cpu.cpu_kind; ModelCpu). two
+// starts:
 // - direct load: no rom, a raw binary copied into ram and started at its origin. BRK, the
 //   entry's final RTS, or a jump into rom space stops the machine.
 // - real boot: a rom image the user supplies (never committed), reset through $FFFC.
@@ -49,7 +51,7 @@
 //   shows aux nibbles rotated right one bit, as the hardware does; the flat look colours a
 //   double hi-res line by 4-dot groups from the line's start, the lo-res colours
 // - the alternate character set is the enhanced iie's (MouseText at $40-$5F, our own
-//   drawings), although the cpu is the unenhanced iie's nmos 6502
+//   drawings), whichever cpu runs
 // - speaker: an ideal two-position cone, box-filtered, with a 35 Hz high-pass
 // - disk ii (disk2.hpp): 4 cycles a bit cell exactly (a real drive's 4 microseconds are
 //   about 4.08 cycles) and a constant 300 rpm; the sequencer by its behaviour, not Apple's
@@ -354,7 +356,8 @@ struct SlotCards {
 
 // which Apple II the machine says it is when it runs without a rom: the identification bytes
 // at $FBB3, $FBC0, $FBBF and the routine at $FE1F that programs read (Apple's Miscellaneous
-// Technical Note #7). The hardware stays the same iie with an nmos 6502 whatever it says.
+// Technical Note #7). The hardware stays the same iie whatever it says; the cpu is the model's
+// unless asked for (ModelCpu, tisple machine --cpu).
 enum class MachineModel : uint8_t {
     kIIeEnhanced = 0, // the default: our alternate character set is the enhanced one
     kIIe,
@@ -410,6 +413,13 @@ constexpr int kScreenHeight = 192;
 struct Framebuffer {
     std::vector<uint32_t> pixels = std::vector<uint32_t>(kScreenWidth * kScreenHeight); // 0xRRGGBB
 };
+
+// the cpu a model has: the 65C02 on the enhanced iie and the iic, and on the iigs, standing in
+// for its 65816 (in emulation mode it runs 65C02 code; its own timings and instructions are
+// not modelled); the nmos 6502 on the iie and the ii+
+Cpu ModelCpu(MachineModel model);
+// the model a loaded rom's identification bytes give ($FBB3, $FBC0); false without a rom
+bool RomModel(const Apple2& a, MachineModel& model);
 
 // setup
 std::unique_ptr<Apple2> NewApple2(); // powered on, no rom, text page 1 cleared to spaces

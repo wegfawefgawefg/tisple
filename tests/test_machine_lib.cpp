@@ -65,10 +65,12 @@ struct Setup {
     bool mouse = true;
     int mockingboard = 0;
     bool disk2 = false;
+    tisple::Cpu cpu = tisple::Cpu::k6502;
 };
 
 bool Detect(TestResults& results, const LibBuild& b, const Setup& s, Found& f) {
     std::unique_ptr<tisple::Apple2> a = LoadLibProgram(b);
+    a->cpu.cpu_kind = s.cpu;
     a->model = s.model;
     a->aux_ram = s.aux_ram;
     if (s.rom != nullptr) {
@@ -107,7 +109,7 @@ void TestModels(TestResults& results, const LibBuild& b) {
     Setup s;
     if (Detect(results, b, s, f)) {
         CHECK(results, f.model == kIIeEnhanced && f.kb == 128 && f.aux && f.col80);
-        CHECK(results, !f.cmos && f.mousetext); // the emulator's cpu is the nmos 6502
+        CHECK(results, !f.cmos && f.mousetext); // the nmos 6502 the test machine starts with
         CHECK(results, f.card[3] == kCol80 && f.card[4] == kMouse && f.mouse_slot == 4);
         CHECK(results, f.card[1] == kNone && f.card[6] == kNone && f.card[7] == kNone);
     }
@@ -127,6 +129,21 @@ void TestModels(TestResults& results, const LibBuild& b) {
     if (Detect(results, b, s, f)) {
         CHECK(results, f.model == kIIPlus && f.kb == 48 && !f.aux && !f.col80 && !f.mousetext);
         CHECK(results, f.card[3] == kNone && f.card[4] == kMouse);
+    }
+    // on the 65C02 an enhanced iie and a iic find it; a iie on the nmos chip does not
+    s.cpu = tisple::Cpu::k65c02;
+    s.model = tisple::MachineModel::kIIeEnhanced;
+    if (Detect(results, b, s, f)) {
+        CHECK(results, f.model == kIIeEnhanced && f.cmos && f.mousetext);
+    }
+    s.model = tisple::MachineModel::kIIc;
+    if (Detect(results, b, s, f)) {
+        CHECK(results, f.model == kIIc && f.cmos);
+    }
+    s.cpu = tisple::ModelCpu(tisple::MachineModel::kIIe);
+    s.model = tisple::MachineModel::kIIe;
+    if (Detect(results, b, s, f)) {
+        CHECK(results, f.model == kIIe && !f.cmos);
     }
     // a 64 KB iie: no card answers in aux memory
     s.model = tisple::MachineModel::kIIeEnhanced;
@@ -159,11 +176,13 @@ void TestAppleRoms(TestResults& results, const LibBuild& b) {
         const char* file;
         int model;
         int kb;
+        bool cmos;
     };
+    // each on the cpu its model has (RomModel, ModelCpu), as tisple machine --rom runs it
     const Rom roms[] = {
-        {"Apple2e.rom", kIIe, 128},
-        {"Apple2e_Enhanced.rom", kIIeEnhanced, 128},
-        {"Apple2_Plus.rom", kIIPlus, 48},
+        {"Apple2e.rom", kIIe, 128, false},
+        {"Apple2e_Enhanced.rom", kIIeEnhanced, 128, true},
+        {"Apple2_Plus.rom", kIIPlus, 48, false},
     };
     int tried = 0;
     for (const Rom& r : roms) {
@@ -173,9 +192,16 @@ void TestAppleRoms(TestResults& results, const LibBuild& b) {
         if (!ReadRomFile(r.file, bytes)) {
             continue;
         }
+        std::unique_ptr<tisple::Apple2> loaded = tisple::NewApple2();
+        std::string error;
+        tisple::MachineModel model = tisple::MachineModel::kIIgs;
+        CHECK(results, tisple::LoadRom(*loaded, bytes.data(), bytes.size(), error) &&
+                           tisple::RomModel(*loaded, model));
+        s.cpu = tisple::ModelCpu(model);
+        CHECK(results, (s.cpu == tisple::Cpu::k65c02) == r.cmos);
         Found f;
         if (Detect(results, b, s, f)) {
-            CHECK(results, f.model == r.model && f.kb == r.kb);
+            CHECK(results, f.model == r.model && f.kb == r.kb && f.cmos == r.cmos);
             tried++;
         }
     }

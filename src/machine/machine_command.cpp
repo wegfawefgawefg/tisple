@@ -149,8 +149,8 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         uint64_t chunk = next - now;
         chunk = chunk > kCyclesPerFrame ? kCyclesPerFrame : chunk;
         bool was_stopped = a.stopped;
-        RunOutcome outcome = profiling ? RunApple2Traced(a, chunk, ProfileStep, &profile)
-                                       : RunApple2(a, chunk);
+        RunOutcome outcome =
+            profiling ? RunApple2Traced(a, chunk, ProfileStep, &profile) : RunApple2(a, chunk);
         if (!was_stopped) {
             run_cycles += outcome.cycles;
         }
@@ -251,6 +251,7 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
             return 1;
         }
     }
+    a->cpu.cpu_kind = MachineCpu(*a, args);
     // a snapshot carries its cards and disks; --disk then only names the write-back files
     if (args.disks.any() && args.load_snapshot == nullptr && !SetUpDisks(*a, args.disks, error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());

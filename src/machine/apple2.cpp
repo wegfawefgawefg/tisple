@@ -125,6 +125,34 @@ std::unique_ptr<Apple2> NewApple2() {
     return a;
 }
 
+Cpu ModelCpu(MachineModel model) {
+    switch (model) {
+    case MachineModel::kIIe:
+    case MachineModel::kIIPlus:
+        return Cpu::k6502;
+    default:
+        return Cpu::k65c02;
+    }
+}
+
+bool RomModel(const Apple2& a, MachineModel& model) {
+    if (!a.rom.present) {
+        return false;
+    }
+    uint8_t fbb3 = a.rom.bytes[0xFBB3 - 0xC000];
+    uint8_t fbc0 = a.rom.bytes[0xFBC0 - 0xC000];
+    if (fbb3 != 0x06) {
+        model = MachineModel::kIIPlus;
+    } else if (fbc0 == 0xEA) {
+        model = MachineModel::kIIe;
+    } else if (fbc0 == 0x00) {
+        model = MachineModel::kIIc;
+    } else {
+        model = MachineModel::kIIeEnhanced;
+    }
+    return true;
+}
+
 bool LoadRom(Apple2& a, const uint8_t* bytes, size_t size, std::string& error) {
     if (size != 0x3000 && size != 0x4000) {
         error = "a rom image is 12 KB ($D000-$FFFF) or 16 KB ($C000-$FFFF), not " +
