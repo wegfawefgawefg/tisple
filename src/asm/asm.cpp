@@ -296,7 +296,7 @@ bool GrowShortJump(const Assembly& as, AsmItem& item, bool keep) {
 
 } // namespace
 
-std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_short) {
+std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_jumps) {
     std::vector<bool> shortenable;
     std::vector<bool> keep(as.items.size(), false);
     if (as.cpu == Cpu::k65c02) {
@@ -305,8 +305,9 @@ std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_short) {
     for (std::size_t i = 0; i < as.items.size(); i++) {
         AsmItem& item = as.items[i];
         item.long_branch = item.far;
-        keep[i] = keep_short && item.short_jump;
-        item.short_jump = as.cpu == Cpu::k65c02 && shortenable[i];
+        bool was_short = item.short_jump;
+        keep[i] = keep_jumps && was_short;
+        item.short_jump = as.cpu == Cpu::k65c02 && shortenable[i] && (!keep_jumps || was_short);
     }
     std::uint32_t end = origin;
     // grow branches until every one reaches; sizes only grow, so this ends

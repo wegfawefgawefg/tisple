@@ -231,14 +231,39 @@ void Replace(const std::vector<AsmItem>& items, std::size_t i, std::size_t end,
     out.insert(out.end(), with.begin(), with.end());
 }
 
+// ADC #1 (#$FF) with the carry known clear, SBC #1 (#$FF) with it known set: INC A or DEC A,
+// or none (Count)
+Mn StepWithCarry(const AsmItem& op, std::int8_t carry) {
+    int n = -1;
+    if (!LiteralImm(op, n) || (n != 1 && n != 0xFF)) {
+        return Mn::Count;
+    }
+    if (IsIns(op, Mn::ADC) && carry == 0) {
+        return n == 1 ? Mn::INC : Mn::DEC;
+    }
+    if (IsIns(op, Mn::SBC) && carry == 1) {
+        return n == 1 ? Mn::DEC : Mn::INC;
+    }
+    return Mn::Count;
+}
+
 // the rewrites of two and three instructions in a row, by the liveness of the code before
-bool UsePairs(const Assembly& as, std::vector<AsmItem>& items) {
+// (and the carry it leaves, when every way into its labels is in it)
+bool UsePairs(const Assembly& as, std::vector<AsmItem>& items, bool whole) {
     std::vector<std::uint8_t> live = LiveRegsIn(as, items);
+    std::vector<std::int8_t> carry =
+        whole ? CarryKnownIn(items) : std::vector<std::int8_t>(items.size(), -1);
     std::vector<AsmItem> out;
     out.reserve(items.size());
     bool changed = false;
     for (std::size_t i = 0; i < items.size(); i++) {
         std::size_t j = NextIns(items, i);
+        Mn alone = StepWithCarry(items[i], carry[i]);
+        if (alone != Mn::Count && (LiveAfter(items, live, i) & (kLiveC | kLiveV)) == 0) {
+            out.push_back(MakeIns(alone, Mode::Acc));
+            changed = true;
+            continue;
+        }
         if (items[i].kind != ItemKind::Ins || j >= items.size()) {
             out.push_back(items[i]);
             continue;
@@ -276,10 +301,14 @@ bool UsePairs(const Assembly& as, std::vector<AsmItem>& items) {
 
 } // namespace
 
-bool UseCmos(const Assembly& as, std::vector<AsmItem>& items) {
-    bool changed = UsePairs(as, items);
+bool UseCmos(const Assembly& as, std::vector<AsmItem>& items, bool whole) {
+    bool changed = UsePairs(as, items, whole);
     changed = UseKnownZeros(items) || changed;
-    // the loads of 0 and the LDY #0 nothing reads any more
+    // a CLC or SEC an INC A made redundant, then the loads of 0 and the LDY #0 nothing reads
+    // any more
+    while (whole && CarryPass(items)) {
+        changed = true;
+    }
     while (DropDeadValues(as, items)) {
         changed = true;
     }

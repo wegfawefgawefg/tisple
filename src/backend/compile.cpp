@@ -251,10 +251,10 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
     if (options.cpu == Cpu::k65c02) {
         for (std::size_t f = 0; f < be.code.size(); f++) {
             if (kept[f]) {
-                UseCmos(be.as, be.code[f]);
+                UseCmos(be.as, be.code[f], true);
             }
         }
-        UseCmos(be.as, runtime);
+        UseCmos(be.as, runtime, false);
     }
     squeezed = NoteSqueezed(be, kept, choices, runtime);
     LinkInput in;

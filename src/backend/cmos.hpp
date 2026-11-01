@@ -9,7 +9,8 @@
 // - (zp),Y with Y known to hold 0 becomes (zp): a cycle less for STA, no page-crossing cycle
 //   for the others; the LDY #0 then goes the same way
 // - CLC/ADC #1 and SEC/SBC #1 (and their #$FF) become INC A or DEC A when nothing reads C or V
-//   after: 2 bytes and 2 cycles less
+//   after: 2 bytes and 2 cycles less; so does ADC #1 alone where the carry is known clear
+//   (carry.cpp), and SBC #1 where it is known set
 // - TXA/PHA and TYA/PHA become PHX and PHY when nothing reads A, N or Z after; PLA/TAX and
 //   PLA/TAY become PLX and PLY when nothing reads A after
 // - LDA m / ORA #k / STA m becomes LDA #k / TSB m, and with AND #k, LDA #~k / TRB m, for RAM
@@ -25,7 +26,9 @@
 
 namespace tisple {
 
-// true when anything changed
-bool UseCmos(const Assembly& as, std::vector<AsmItem>& items);
+// true when anything changed. whole: items are all the code that reaches their labels (a
+// function's); the runtime routines are entered from outside at inner labels (rt.divu8.ge),
+// so the carry is not followed there
+bool UseCmos(const Assembly& as, std::vector<AsmItem>& items, bool whole);
 
 } // namespace tisple

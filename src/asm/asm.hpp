@@ -109,10 +109,11 @@ Mode EncodedMode(const Assembly& as, const AsmItem& item);
 int ItemBytes(const Assembly& as, const AsmItem& item);
 
 // sizes and addresses from origin; defines labels; relaxes branches. Returns the end address
-// (one past the last byte), which may be past $FFFF if the code does not fit. keep_short: the
-// items were laid out before and placed by those sizes (backend/link_code.cpp's runs): a JMP
-// that was a BRA stays one while it reaches, across a page or not, so the code never grows.
-std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_short = false);
+// (one past the last byte), which may be past $FFFF if the code does not fit. keep_jumps: the
+// items were laid out before and placed or padded by those sizes (backend/link.cpp,
+// link_code.cpp): each JMP keeps its form, a BRA while it reaches (across a page or not), so
+// no size changes but a far JMP's.
+std::uint32_t LayoutCode(Assembly& as, std::uint16_t origin, bool keep_jumps = false);
 
 // bytes from origin to the end; every symbol must be defined. False with a message on a
 // missing symbol or an operand that does not fit its mode.

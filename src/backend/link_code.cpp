@@ -239,7 +239,9 @@ std::vector<SpanBranch> SpanBranches(const Assembly& as, const FunctionSpan& spa
     std::uint32_t end = base + SpanSize(as.items, span);
     for (std::size_t i = span.first; i < span.end; i++) {
         const AsmItem& item = as.items[i];
-        bool branch = item.kind == ItemKind::Ins && item.mode == Mode::Rel && !item.long_branch &&
+        // (a 65C02 JMP that is a BRA costs a cycle across a page too)
+        bool branch = item.kind == ItemKind::Ins &&
+                      ((item.mode == Mode::Rel && !item.long_branch) || item.short_jump) &&
                       item.value.sym >= 0;
         if (!branch) {
             continue;
