@@ -9,5 +9,7 @@ void RunEmuTests(TestResults& results);
 
 void RunEmuBasicTests(TestResults& results);
 void RunSingleStepTests(TestResults& results);
+void RunDormannTests(TestResults& results);
+void RunEmu65c02Tests(TestResults& results);
 
 } // namespace tisple_tests

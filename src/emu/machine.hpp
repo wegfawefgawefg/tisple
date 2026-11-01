@@ -1,9 +1,14 @@
 #pragma once
 
-// 64 KB flat memory around the vendored chips m6502 core (third_party/chips).
-// the core is pin-level and cycle-stepped; we perform every bus cycle it asks for,
-// so dummy reads and the read-modify-write double write happen like on the chip.
+// 64 KB flat memory around one of two cpu cores:
+// - the NMOS 6502: the vendored chips m6502 core (third_party/chips), pin-level and
+//   cycle-stepped; we perform every bus cycle it asks for, so dummy reads and the
+//   read-modify-write double write happen like on the chip.
+// - the 65C02 (cpu65c02.hpp): our own, an instruction at a time, doing the same bus cycles
+//   in the same order through the same pins (its dummy reads are the 65C02's), so the rest
+//   of the machine cannot tell the two apart but by what the chip does.
 
+#include "asm/cpu.hpp"
 #include "m6502.h"
 
 #include <cstdint>
@@ -48,7 +53,8 @@ struct BusCycle {
 };
 
 struct Machine {
-    m6502_t cpu;
+    m6502_t cpu; // the registers of either core (the 65C02's keep the same conventions)
+    Cpu cpu_kind = Cpu::k6502;
     // the bus request for the next cycle; between instructions it is the opcode fetch
     uint64_t pins = 0;
     uint64_t cycles = 0;
@@ -73,7 +79,9 @@ struct Machine {
     uint64_t irq_due = UINT64_MAX;
 };
 
-void InitMachine(Machine& m);
+void InitMachine(Machine& m, Cpu cpu = Cpu::k6502);
+// the chip's reset sequence: 7 cycles, then the vector at $FFFC (the 65C02's clears D too)
+void ResetCpu(Machine& m);
 void SetIoHook(Machine& m, const IoHook& hook);
 void SetBusLog(Machine& m, std::vector<BusCycle>* log);
 
@@ -86,9 +94,13 @@ Regs GetRegs(const Machine& m);
 constexpr int kMaxInstructionTicks = 32;
 void StepInstruction(Machine& m);
 
-// the NMOS opcodes that jam the chip ($02, $12, ... $F2 but $82, $A2, $C2, $E2)
+// the NMOS opcodes that jam the chip ($02, $12, ... $F2 but $82, $A2, $C2, $E2); the 65C02
+// has none
 inline bool IsJamOpcode(uint8_t opcode) {
     return (opcode & 0x0F) == 0x02 && (opcode & 0x90) != 0x80;
+}
+inline bool IsJamOpcode(uint8_t opcode, Cpu cpu) {
+    return cpu == Cpu::k6502 && IsJamOpcode(opcode);
 }
 
 // an interrupt request at cycle count `cycle` (after any already asked for); false when
@@ -98,5 +110,8 @@ bool RequestIrq(Machine& m, uint64_t cycle);
 
 // a device's IRQ output: low from cycle count `at` on (0: now; UINT64_MAX: high)
 void SetIrqLevel(Machine& m, uint64_t at);
+
+// the cpu begins an interrupt sequence: count it, and a listed request is answered (cores)
+void NoteIrqTaken(Machine& m);
 
 } // namespace tisple

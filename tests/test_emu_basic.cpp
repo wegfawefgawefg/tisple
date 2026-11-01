@@ -171,7 +171,9 @@ void RunEmuBasicTests(TestResults& results) {
 
 void RunEmuTests(TestResults& results) {
     RunEmuBasicTests(results);
+    RunEmu65c02Tests(results);
     RunSingleStepTests(results);
+    RunDormannTests(results);
 }
 
 } // namespace tisple_tests

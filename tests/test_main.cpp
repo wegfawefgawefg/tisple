@@ -1,6 +1,6 @@
 #include "check.hpp"
-#include "test_apple2_libs.hpp"
 #include "source_file.hpp"
+#include "test_apple2_libs.hpp"
 #include "test_backend.hpp"
 #include "test_check.hpp"
 #include "test_disk.hpp"
@@ -17,6 +17,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace tisple_tests {
 
@@ -36,6 +37,14 @@ int main() {
     const char* fuzz_file = std::getenv("TISPLE_FUZZ_FILE");
     if (fuzz_file && *fuzz_file) {
         tisple_tests::RunBackendFuzzTests(results);
+        return results.failed == 0 ? 0 : 1;
+    }
+
+    // TISPLE_TEST_GROUP=emu runs only the cpu cores' tests (SingleStepTests, Dormann's)
+    const char* group = std::getenv("TISPLE_TEST_GROUP");
+    if (group && std::strcmp(group, "emu") == 0) {
+        tisple_tests::RunEmuTests(results);
+        std::printf("%d passed, %d failed\n", results.passed, results.failed);
         return results.failed == 0 ? 0 : 1;
     }
 

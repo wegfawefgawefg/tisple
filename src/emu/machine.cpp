@@ -1,5 +1,8 @@
 #include "emu/machine.hpp"
 
+#include "emu/bus.hpp"
+#include "emu/cpu65c02.hpp"
+
 namespace tisple {
 
 namespace {
@@ -9,40 +12,24 @@ void UpdateIrqDue(Machine& m) {
     m.irq_due = listed < m.irq_level_at ? listed : m.irq_level_at;
 }
 
-bool InHook(const Machine& m, uint16_t addr) {
-    return static_cast<uint32_t>(addr) - m.io.base < m.io.size;
-}
-
-// perform the access the cpu asked for on its pins
-void DoBusCycle(Machine& m) {
-    uint16_t addr = M6502_GET_ADDR(m.pins);
-    bool is_read = (m.pins & M6502_RW) != 0;
-    m.cycles++;
-    bool hooked = m.io.size != 0 && InHook(m, addr);
-    uint8_t value = 0;
-    if (is_read) {
-        value = hooked && m.io.read != nullptr ? m.io.read(m.io.ctx, addr) : m.mem[addr];
-        M6502_SET_DATA(m.pins, value);
-    } else {
-        value = M6502_GET_DATA(m.pins);
-        if (hooked && m.io.write != nullptr) {
-            m.io.write(m.io.ctx, addr, value);
-        } else {
-            m.mem[addr] = value;
-        }
-    }
-    if (m.bus_log != nullptr) {
-        m.bus_log->push_back({addr, value, !is_read});
-    }
-}
-
 } // namespace
 
-void InitMachine(Machine& m) {
+void InitMachine(Machine& m, Cpu cpu) {
     m6502_desc_t desc = {};
     m.pins = m6502_init(&m.cpu, &desc);
+    m.cpu_kind = cpu;
     m.cycles = 0;
     SetRegs(m, Regs{});
+}
+
+void ResetCpu(Machine& m) {
+    m6502_desc_t desc = {};
+    m.pins = m6502_init(&m.cpu, &desc);
+    if (m.cpu_kind == Cpu::k65c02) {
+        Reset65c02(m);
+        return;
+    }
+    StepInstruction(m);
 }
 
 void SetIoHook(Machine& m, const IoHook& hook) {
@@ -84,6 +71,10 @@ Regs GetRegs(const Machine& m) {
 }
 
 void StepInstruction(Machine& m) {
+    if (m.cpu_kind == Cpu::k65c02) {
+        Step65c02(m);
+        return;
+    }
     // the fetch of the next instruction is the last tick, so stop when SYNC comes back. A
     // JAM opcode never fetches again (the NMOS chip hangs until a reset): after more ticks
     // than any instruction and an interrupt's sequence take, give the caller its turn
@@ -102,11 +93,7 @@ void StepInstruction(Machine& m) {
         // high again
         if (irq && !taken && (m.cpu.brk_flags & M6502_BRK_IRQ) != 0) {
             taken = true;
-            m.irqs_taken++;
-            if (m.irq_next < m.irq_count && m.cycles >= m.irq_cycles[m.irq_next]) {
-                m.irq_next++;
-                UpdateIrqDue(m);
-            }
+            NoteIrqTaken(m);
         }
         ticks++;
     } while ((m.pins & M6502_SYNC) == 0 && ticks < kMaxInstructionTicks);
@@ -123,6 +110,14 @@ bool RequestIrq(Machine& m, uint64_t cycle) {
     m.irq_cycles[m.irq_count++] = cycle;
     UpdateIrqDue(m);
     return true;
+}
+
+void NoteIrqTaken(Machine& m) {
+    m.irqs_taken++;
+    if (m.irq_next < m.irq_count && m.cycles >= m.irq_cycles[m.irq_next]) {
+        m.irq_next++;
+        UpdateIrqDue(m);
+    }
 }
 
 void SetIrqLevel(Machine& m, uint64_t at) {
