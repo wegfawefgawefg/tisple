@@ -9,7 +9,8 @@
 ; each makes a let, an array of u8: give (addr_of (at music 0)) to mockingboard.play and
 ; (addr_of (at zap 0)) to mockingboard.effect. Placement options go last and on to the let:
 ; (tune.song music ... :in aux), (tune.effect zap "..." :align 256). The player reads main
-; memory (and the language card), so a song :in aux is copied in with lib/auxmem to be played.
+; memory (and the language card), so a song :in aux is copied in with lib/auxmem to be played;
+; a song :on disk is a const table, read in with lib/disk (Catwiz's, 2026-11-01).
 ;
 ; the text, tokens between spaces. a tick is one timer interrupt (60 a second by default)
 ;   c4 c#4 ... b8  a note, C1 to B8 (sharps only); sounds for the length
@@ -272,7 +273,14 @@
                 (set bytes (append bytes (low_high (+ (nth order_at v) (* 2 (nth loops v)))))))))
     (for k 0 (len patterns)
         (set bytes (append bytes (nth patterns k))))
-    `(let ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes) ,@options))
+    ; :on disk takes a const (a program reads the song into memory with lib/disk, then plays it)
+    (let on_disk false)
+    (for k 0 (len options)
+        (if (= (nth options k) :on)
+            (set on_disk true)))
+    (if on_disk
+        `(const ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes) ,@options)
+        `(let ,name (array u8 ,(len bytes)) (make (array u8 ,(len bytes)) ,@bytes) ,@options)))
 
 (macro effect (name text & options)
     (let bytes (pattern_bytes name text))
