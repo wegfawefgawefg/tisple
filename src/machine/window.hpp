@@ -18,6 +18,8 @@ struct WindowOptions {
     uint64_t max_cycles = 0;            // 0: run until the window closes
     std::string title = "Tisple ][";
     std::vector<Tap> taps; // --taps: clicks press these keys instead of moving the mouse card
+    // --taps with "mouse": true: a click puts the mouse card's mouse there and presses it
+    bool point_mouse = false;
 };
 
 // returns the process exit code; closing the window returns at once

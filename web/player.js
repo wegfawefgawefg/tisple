@@ -41,7 +41,7 @@ const state = {
     last: 0,          // performance.now() of the last tick
     audio: null,      // AudioContext
     worklet: null,    // AudioWorkletNode
-    log: [],          // [cycle, code] presses, [cycle, -1] releases
+    log: [],          // [cycle, code] presses, [cycle, -1] releases, [cycle, -2, x, y, down] taps
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
     logs: true,       // false on a static site: nowhere to post them
@@ -151,8 +151,40 @@ function flashTap(t) {
     setTimeout(() => box.remove(), 150);
 }
 
+// a game whose config says "mouse": true has a mouse card instead of taps: a tap puts the
+// mouse where it is with its button down until the finger lifts (player.cpp tp_point), and the
+// game knows what it drew there. In the log as [cycle, -2, x, y, down]
+let pointed = null;
+
+function pointAt(e) {
+    const r = ui.canvas.getBoundingClientRect();
+    return {
+        x: Math.max(0, Math.min(279, Math.floor((e.clientX - r.left) / r.width * 280))),
+        y: Math.max(0, Math.min(191, Math.floor((e.clientY - r.top) / r.height * 192))),
+    };
+}
+
+function point(p, down) {
+    if (!state.running) {
+        return;
+    }
+    wakeAudio();
+    state.m._tp_point(p.x, p.y, down ? 1 : 0);
+    state.log.push([state.m._tp_cycles(), -2, p.x, p.y, down ? 1 : 0]);
+}
+
 ui.canvas.addEventListener("pointerdown", (e) => {
     e.preventDefault();
+    if (state.game && state.game.mouse) {
+        ui.canvas.setPointerCapture(e.pointerId);
+        pointed = pointAt(e);
+        flashTap({ x: pointed.x - 6, y: pointed.y - 6, w: 12, h: 12 });
+        if (navigator.vibrate) {
+            navigator.vibrate(8);
+        }
+        point(pointed, true);
+        return;
+    }
     const t = tapAt(e);
     if (!t) {
         return;
@@ -166,6 +198,10 @@ ui.canvas.addEventListener("pointerdown", (e) => {
     press(padKeyCode(t.key));
 });
 const tapUp = () => {
+    if (pointed) {
+        point(pointed, false);
+        pointed = null;
+    }
     if (held_tap) {
         held_tap = null;
         release();
@@ -506,6 +542,9 @@ async function boot() {
     if (!ok) {
         setStatus("the disk did not load");
         return;
+    }
+    if (state.game.mouse && !state.m._tp_mouse_card()) {
+        setStatus("no mouse: the mockingboard is in its slot 4");
     }
     showDiskSound();
     setStatus(state.game.version ? "build " + state.game.version : "");

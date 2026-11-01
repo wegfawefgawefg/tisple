@@ -2,8 +2,8 @@
 // machine's font): the bar, the game's buttons (game.json "pad", or the older "buttons"),
 // the abc keyboard, and where the screen goes. Portrait: the screen on top, the buttons under
 // it, the most used ones biggest and lowest, in thumb reach. Landscape and desktop: the screen
-// as large as fits; a game whose screen takes taps (game.json "taps") gets no buttons there,
-// any other has them in a column beside it. player.js owns the machine and calls press and
+// as large as fits; a game whose screen takes taps (game.json "taps", or "mouse") gets no
+// buttons there, any other has them in a column beside it. player.js owns the machine and calls press and
 // release, which it gives to padSetup.
 //
 // "pad" is a list of rows, top to bottom:
@@ -244,7 +244,7 @@ function layout() {
     const wide = window.innerWidth > window.innerHeight * 1.1 ||
                  (window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
                   window.innerWidth >= 700);
-    const taps = Boolean(pad.game && pad.game.taps && pad.game.taps.length > 0);
+    const taps = Boolean(pad.game && ((pad.game.taps && pad.game.taps.length > 0) || pad.game.mouse));
     const hasPad = Boolean(pad.game) && document.getElementById("pad").childElementCount > 0;
     body.classList.toggle("wide", wide);
     body.classList.toggle("tall", !wide);

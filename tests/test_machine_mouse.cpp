@@ -169,6 +169,21 @@ void TestFirmware(TestResults& results, tisple::Apple2& a, const char* rom) {
     CHECK(results, HoleX(a) == 0 && HoleY(a) == 0 && Hole(a, 0x0778) == 0x11);
     CHECK(results, Same(Read(a), 0, 0, 0x00, "CLEARMOUSE", rom));
 
+    // taps on the screen (PointMouse): each shown to a READMOUSE in turn, a press held down
+    // kMinPressCycles at least, so a program that reads once a pass misses none
+    tisple::PointMouse(a, 50, 60, true);
+    tisple::PointMouse(a, 50, 60, false);
+    tisple::PointMouse(a, 70, 80, true);
+    tisple::PointMouse(a, 70, 80, false);
+    CHECK(results, Same(Read(a), 50, 60, 0xA0, "tapped", rom));
+    CHECK(results, Same(Read(a), 50, 60, 0xC0, "a tap held", rom));
+    tisple::RunApple2(a, tisple::kMinPressCycles);
+    CHECK(results, Same(Read(a), 50, 60, 0x40, "the tap lifted", rom));
+    CHECK(results, Same(Read(a), 70, 80, 0xA0, "the next tap", rom));
+    tisple::RunApple2(a, tisple::kMinPressCycles);
+    CHECK(results, Same(Read(a), 70, 80, 0x40, "the next lifted", rom));
+    CHECK(results, Same(Read(a), 70, 80, 0x00, "no more", rom));
+
     // no interrupts: SERVEMOUSE always says it was not the mouse
     call = CallMouse(a, kServe, 0);
     CHECK(results, call.returned && call.carry);
@@ -182,7 +197,7 @@ void TestOurFirmware(TestResults& results) {
     tisple::InsertMouseCard(*a, kSlot, nullptr);
     CHECK(results, tisple::HasMouseCard(*a));
     TestFirmware(results, *a, "our firmware");
-    CHECK(results, tisple::DescribeMouse(*a).find("mouse: slot 4, x 0 y 0") == 0);
+    CHECK(results, tisple::DescribeMouse(*a).find("mouse: slot 4, x 70 y 80") == 0);
     // with no program touching it, nothing to say
     std::unique_ptr<tisple::Apple2> idle = tisple::NewApple2();
     tisple::InsertMouseCard(*idle, kSlot, nullptr);

@@ -85,9 +85,23 @@ bool ReadTap(const std::string& object, Tap& tap) {
     return KeyCode(key, tap.code);
 }
 
+// "mouse": true anywhere in the config
+bool SaysMouse(const std::string& json) {
+    size_t at = json.find("\"mouse\"");
+    if (at == std::string::npos) {
+        return false;
+    }
+    at = json.find(':', at);
+    if (at == std::string::npos) {
+        return false;
+    }
+    at = json.find_first_not_of(" \t\r\n", at + 1);
+    return at != std::string::npos && json.compare(at, 4, "true") == 0;
+}
+
 } // namespace
 
-bool LoadTaps(const std::string& path, std::vector<Tap>& taps, std::string& error) {
+bool LoadTaps(const std::string& path, std::vector<Tap>& taps, bool& mouse, std::string& error) {
     std::ifstream in(path);
     if (!in) {
         error = "cannot read '" + path + "'";
@@ -96,9 +110,13 @@ bool LoadTaps(const std::string& path, std::vector<Tap>& taps, std::string& erro
     std::stringstream text;
     text << in.rdbuf();
     std::string json = text.str();
+    mouse = SaysMouse(json);
     size_t at = json.find("\"taps\"");
     if (at == std::string::npos) {
-        error = "'" + path + "' has no \"taps\"";
+        if (mouse) {
+            return true;
+        }
+        error = "'" + path + "' has no \"taps\" and no \"mouse\": true";
         return false;
     }
     size_t open = json.find('[', at);

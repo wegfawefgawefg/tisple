@@ -75,6 +75,7 @@ void MoveBy(MouseCardState& m, int32_t dx, int32_t dy) {
 void CatchUp(Apple2& a) {
     MouseCardState& m = Card(a);
     uint64_t now = AccessCycle(a);
+    m.now = now;
     while (m.queue_count > 0 && m.queue[m.queue_head].cycle <= now) {
         const ScheduledMouse& e = m.queue[m.queue_head];
         MoveBy(m, e.x - m.x, e.y - m.y);
@@ -89,6 +90,24 @@ void SetPosition(MouseCardState& m, int32_t x, int32_t y) {
     m.y = y;
 }
 
+// the next tap or lift in PointMouse's line, at a READMOUSE: once a READMOUSE has seen the one
+// before, and a press has been down kMinPressCycles
+void NextPointed(MouseCardState& m) {
+    if (m.pointed_count == 0 || m.pointed_reads == 0) {
+        return;
+    }
+    if (m.button && m.now < m.pointed_since + kMinPressCycles) {
+        return;
+    }
+    const PointedMouse& p = m.pointed[m.pointed_head];
+    MoveBy(m, p.x - m.x, p.y - m.y);
+    m.button = p.button;
+    m.pointed_head = (m.pointed_head + 1) % kMaxPointedMouse;
+    m.pointed_count--;
+    m.pointed_since = m.now;
+    m.pointed_reads = 0;
+}
+
 // ---- the 6805: a command's immediate part, then its part after the data bytes
 
 // READ, SERVE, SET, CLEAR and HOME act at once; READ and SERVE fill reply
@@ -98,6 +117,8 @@ void StartCommand(MouseCardState& m, uint8_t command, uint8_t reply[5]) {
         m.mode = command & 0x0F;
         return;
     case kCommandRead: {
+        NextPointed(m);
+        m.pointed_reads++;
         uint8_t status = 0;
         status |= m.button ? kStatusDown : 0;
         status |= m.read_button ? kStatusWasDown : 0;
@@ -411,6 +432,15 @@ bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button)
     m.queue[(m.queue_head + i) % kMaxScheduledMouse] = {cycle, x, y, button};
     m.queue_count++;
     return true;
+}
+
+void PointMouse(Apple2& a, int32_t x, int32_t y, bool down) {
+    MouseCardState& m = Card(a);
+    if (m.pointed_count == kMaxPointedMouse) {
+        return; // a program that never reads the mouse: the line stays full
+    }
+    m.pointed[(m.pointed_head + m.pointed_count) % kMaxPointedMouse] = {x, y, down};
+    m.pointed_count++;
 }
 
 std::string DescribeMouse(const Apple2& a) {

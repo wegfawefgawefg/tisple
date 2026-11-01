@@ -11,6 +11,7 @@
 #include "machine/drive_audio.hpp"
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
+#include "machine/mouse.hpp"
 #include "machine/speaker_audio.hpp"
 
 #include <cstdint>
@@ -147,6 +148,25 @@ EMSCRIPTEN_KEEPALIVE void tp_key_up() {
 EMSCRIPTEN_KEEPALIVE void tp_paddle(int index, int value) {
     if (g_player.a) {
         SetPaddle(*g_player.a, index, static_cast<uint8_t>(value));
+    }
+}
+
+// a mouse card (our firmware) in slot 4, right after tp_boot: for a game whose config says
+// "mouse": true. 0 when the Mockingboard is in that slot
+EMSCRIPTEN_KEEPALIVE int tp_mouse_card() {
+    Player& p = g_player;
+    if (!p.a || p.a->slots.kind[kMouseSlot] != CardKind::kEmpty) {
+        return 0;
+    }
+    InsertMouseCard(*p.a, kMouseSlot, nullptr);
+    return 1;
+}
+
+// a tap at hi-res pixel x, y: the mouse there with its button down (1), or up (0); each shown
+// to the program in turn (PointMouse)
+EMSCRIPTEN_KEEPALIVE void tp_point(int x, int y, int down) {
+    if (g_player.a && HasMouseCard(*g_player.a)) {
+        PointMouse(*g_player.a, x, y, down != 0);
     }
 }
 

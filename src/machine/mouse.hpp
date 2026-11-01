@@ -65,6 +65,17 @@ void SetMouseButton(Apple2& a, bool down);
 // when the program next touches the card, which is the first moment it can tell
 bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button);
 
+// a tap or click on the screen at hi-res pixel x, y (the phone player, and the window with a
+// config that says "mouse": true): the mouse goes there with its button down (down), or the
+// button comes up (not down). Each goes in a line and is shown to the program in turn: the next
+// comes at a READMOUSE once one READMOUSE has seen the last, and a press stays down
+// kMinPressCycles at least. So a program that reads the mouse once a pass of its loop sees
+// every tap and every lift, however long a pass takes, and a quick tap is no shorter than a
+// real click. Beyond the real card (whose button is the host's, read when it is read), as the
+// taps need: a finger is no mouse
+constexpr uint64_t kMinPressCycles = 4 * 17030; // 4 frames
+void PointMouse(Apple2& a, int32_t x, int32_t y, bool down);
+
 // a status line, "mouse: slot 4, x 10 y 20, button up, mode $01", if the card was used
 std::string DescribeMouse(const Apple2& a);
 

@@ -35,8 +35,15 @@ key presses.
   thumb reach. Small rows sit at the right. The older form, `buttons` in rows of `columns`
   with `sub` and `wide`, still works (the demos in `programs/` use it).
 - A config may list `taps`: boxes in hi-res pixels (280 x 192) with the key each presses,
-  first match wins, so the screen itself takes taps and clicks (Catwiz: everything, with a
-  last box over the whole screen for ESC).
+  first match wins, so the screen itself takes taps and clicks.
+- Or `"mouse": true` (Catwiz, 2026-11-01): the player puts a mouse card (our firmware) in slot
+  4, and a tap moves its mouse there with the button down until the finger lifts; the game
+  reads it with lib/mouse and knows what it drew where, so every box is exact in any layout,
+  and a real Apple with a mouse plays the same. The Mockingboard then goes elsewhere (Catwiz:
+  slot 5). Each press and lift is shown to the program's READMOUSE in turn, a press for 4
+  frames at least (`PointMouse`, src/machine/mouse.hpp), so a game that reads the mouse once
+  a pass of its loop misses no tap however long a pass takes. A tap shows a small flash where
+  it landed. The log has taps as `[cycle, -2, x, y, down]`.
 - Layout (`web/pad.js`): in portrait the screen goes across the top and the pad under it. In
   landscape, and on a desktop with a mouse, the screen is as big as fits; a game with `taps`
   gets no pad there, any other has it in a column beside the screen. The buttons and the bar
@@ -53,7 +60,8 @@ key presses.
   that keeps its save areas where they were and never land on its program or other tables.
   Clearing the site's data clears them.
 - `tisple machine --window --taps <config>` reads the same `taps` for the desktop window:
-  a left click on a box presses its key until the button comes up.
+  a left click on a box presses its key until the button comes up; with `"mouse": true` a
+  left click is the mouse card's mouse there, pressed, as a tap is on the phone.
 - `?autostart` runs without the tap and without sound (so loading is flat out), for
   headless checks.
 

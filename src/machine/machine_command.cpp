@@ -333,7 +333,8 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         options.scale = args.scale;
         options.look = args.look;
         options.drive_sound = args.drive_sound;
-        if (args.taps != nullptr && !LoadTaps(args.taps, options.taps, error)) {
+        if (args.taps != nullptr &&
+            !LoadTaps(args.taps, options.taps, options.point_mouse, error)) {
             std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
             return 1;
         }

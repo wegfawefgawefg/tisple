@@ -306,6 +306,14 @@ struct ScheduledMouse {
     bool button = false;
 };
 
+// a tap or click (PointMouse): the mouse to x, y with the button so
+constexpr uint32_t kMaxPointedMouse = 16;
+struct PointedMouse {
+    int32_t x = 0;
+    int32_t y = 0;
+    bool button = false;
+};
+
 // the card's 6821 between the 6502 and the 6805: port A data, port B handshake and rom page
 struct MousePia {
     uint8_t pra = 0;
@@ -344,6 +352,13 @@ struct MouseCardState {
     ScheduledMouse queue[kMaxScheduledMouse] = {};
     uint32_t queue_head = 0;
     uint32_t queue_count = 0;
+    // taps and clicks on the screen (PointMouse), each shown to READMOUSE in turn
+    PointedMouse pointed[kMaxPointedMouse] = {};
+    uint32_t pointed_head = 0;
+    uint32_t pointed_count = 0;
+    uint64_t pointed_since = 0; // the cycle the one shown now came in
+    uint32_t pointed_reads = 1; // READMOUSEs that have seen it
+    uint64_t now = 0;           // the cycle of the program's last access to the card
 };
 
 struct SlotCards {

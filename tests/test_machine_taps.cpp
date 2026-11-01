@@ -25,7 +25,9 @@ void RunMachineTapsTests(TestResults& results) {
     }
     std::vector<tisple::Tap> taps;
     std::string error;
-    CHECK(results, tisple::LoadTaps(path, taps, error));
+    bool mouse = true;
+    CHECK(results, tisple::LoadTaps(path, taps, mouse, error));
+    CHECK(results, !mouse);
     CHECK(results, taps.size() == 4);
     if (taps.size() == 4) {
         CHECK(results, taps[0].x == 20 && taps[0].y == 148 && taps[0].w == 36 && taps[0].h == 44);
@@ -39,8 +41,18 @@ void RunMachineTapsTests(TestResults& results) {
     CHECK(results, tisple::TapAt(taps, 60, 160) == nullptr); // just past the box
     std::remove(path.c_str());
 
+    // "mouse": true: no taps needed, clicks go to the mouse card
+    {
+        std::ofstream out(path);
+        out << "{\n \"title\": \"T\",\n \"mouse\": true,\n \"pad\": []\n}\n";
+    }
+    std::vector<tisple::Tap> pointed;
+    mouse = false;
+    CHECK(results, tisple::LoadTaps(path, pointed, mouse, error) && mouse && pointed.empty());
+    std::remove(path.c_str());
+
     std::vector<tisple::Tap> none;
-    CHECK(results, !tisple::LoadTaps("/tmp/tisple_test_no_such_taps.json", none, error));
+    CHECK(results, !tisple::LoadTaps("/tmp/tisple_test_no_such_taps.json", none, mouse, error));
 }
 
 } // namespace tisple_tests

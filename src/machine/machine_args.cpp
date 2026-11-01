@@ -51,6 +51,8 @@ void PrintMachineUsage() {
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled, F2: the\n"
         "                      look, F3: the drives' sound on and off)\n"
         "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
+        "                      (with \"mouse\": true in F, a click is the mouse card's mouse\n"
+        "                      there, pressed)\n"
         "                      (a game's phone player config, docs/phone.md)\n"
         "numbers take $hex, 0xhex or decimal; a cycle may be given in frames as 30f\n"
         "exit code 3 when the program hits an illegal opcode, jams the cpu or jumps into\n"

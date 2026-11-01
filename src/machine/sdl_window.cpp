@@ -7,7 +7,9 @@
 // hi-res pixel per two screen pixels at scale 1). it is never grabbed until a click into the
 // window, which only captures it (relative mode: hidden, held in the window); then motion
 // and the left button go to the card until Esc (which the Apple does not see) or losing
-// focus lets it go.
+// focus lets it go. with a --taps config that says "mouse": true, nothing is grabbed: a left
+// click puts the card's mouse where it is and presses the button (PointMouse), as a tap does
+// on the phone player.
 
 #include "machine/drive_audio.hpp"
 #include "machine/mockingboard.hpp"
@@ -177,8 +179,26 @@ bool HandleTapEvent(WindowState& w, Apple2& a, const WindowOptions& options, SDL
     return true;
 }
 
+// with "mouse": true, a left click is the card's mouse there, pressed, until the button comes up.
+// returns true when the event was a click or release
+bool HandlePointEvent(WindowState& w, Apple2& a, SDL_Event e) {
+    if (e.type != SDL_EVENT_MOUSE_BUTTON_DOWN && e.type != SDL_EVENT_MOUSE_BUTTON_UP) {
+        return false;
+    }
+    if (e.button.button != SDL_BUTTON_LEFT) {
+        return true;
+    }
+    SDL_ConvertEventToRenderCoordinates(w.renderer, &e); // to the 560 x 384 picture
+    PointMouse(a, static_cast<int32_t>(e.button.x) / 2, static_cast<int32_t>(e.button.y) / 2,
+               e.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+    return true;
+}
+
 // returns true when the event was the mouse's
 bool HandleMouseEvent(WindowState& w, Apple2& a, const WindowOptions& options, const SDL_Event& e) {
+    if (options.point_mouse && HasMouseCard(a)) {
+        return HandlePointEvent(w, a, e);
+    }
     if (!options.taps.empty()) {
         return HandleTapEvent(w, a, options, e);
     }
