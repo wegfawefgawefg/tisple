@@ -6,6 +6,7 @@
 #include "backend/card_bank.hpp"
 #include "backend/frames.hpp"
 #include "backend/irq.hpp"
+#include "backend/overlay.hpp"
 
 namespace tisple {
 
@@ -22,6 +23,8 @@ struct LinkInput {
     IrqPlan irq_plan;
     // the functions in the language card's bank 1 (card_bank.hpp), or none; with the card
     const Bank1Plan* bank1 = nullptr;
+    // the overlay groups (overlay.hpp), or none
+    const OverlayGroups* overlays = nullptr;
 };
 
 enum class LinkResult : std::uint8_t {

@@ -43,6 +43,11 @@ struct BuildOptions {
     // tests: put functions in bank 1 whether or not the program needs it, every one that may
     // go for 1, a half picked by the number otherwise (the fuzzer's "(bank1 n)")
     int bank1_test = 0;
+    // overlay groups (overlay.hpp), when the program does not fit without and uses aux memory
+    bool use_overlays = true;
+    // tests: overlay groups whether or not the program needs them, of any functions that may
+    // be in one: all that can for 1, a seeded share otherwise (the fuzzer's "(overlay n)")
+    int overlay_test = 0;
     // keep the code of functions main never calls (tests call them by address)
     bool keep_all_functions = false;
     // functions never inlined, by qualified name (the race times from t.init's return to
@@ -61,6 +66,25 @@ struct FunctionSpan {
     std::size_t first = 0;
     std::size_t end = 0;
     bool card_bank1 = false; // in the language card's bank 1 (card_bank.hpp)
+    // in this overlay group's code, which runs in the overlay region (overlay.hpp), or -1
+    std::int32_t overlay_group = -1;
+};
+
+// a group of code that takes turns in the overlay region (overlay.hpp): its functions, its
+// roots (called through stubs), its bytes and where they are kept in aux memory
+struct OverlayImage {
+    std::vector<std::int32_t> functions;
+    std::vector<std::int32_t> roots;
+    std::uint32_t bytes = 0;
+    std::uint16_t aux = 0;
+    std::uint64_t load_cycles = 0; // a load's, about
+};
+
+struct OverlayBuilt {
+    std::uint16_t region = 0;
+    std::uint32_t region_size = 0;
+    std::uint32_t code_bytes = 0; // the stubs, enter routines and copy, resident
+    std::vector<OverlayImage> groups;
 };
 
 struct Compiled {
@@ -72,8 +96,14 @@ struct Compiled {
     // where the startup, the bank stubs and the interrupt entry read $C080-$C08F or $C011:
     // their switches of the card's banks, which the simulator follows (sim_run.hpp)
     std::vector<std::uint16_t> card_switches;
-    Layout layout;         // every var's address; run the interpreter on it too
-    Assembly as;           // items with addresses, for listings
+    // where the overlay copy (overlay.hpp) writes $C003 and $C002, RAMRD on and off: the
+    // simulator follows them, so the copy reads aux memory there
+    std::vector<std::uint16_t> aux_switches;
+    OverlayBuilt overlays;
+    // the link ran out of aux memory for the overlay groups' images (main memory had room)
+    bool overlay_aux_short = false;
+    Layout layout; // every var's address; run the interpreter on it too
+    Assembly as;   // items with addresses, for listings
     std::vector<FunctionSpan> spans;
     std::vector<std::uint16_t> function_address; // by function id; 0: dropped (never called)
     std::uint16_t entry_ready = 0; // zero page saved and initialised; next is JSR main

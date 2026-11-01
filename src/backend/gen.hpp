@@ -121,6 +121,8 @@ struct Backend {
     ValueRanges ranges;
     IoBases io_bases;
     AuxCode aux; // the code with_aux runs (aux_code.hpp)
+    // by function: its overlay group (overlay.hpp), or -1; empty without overlays
+    std::vector<std::int32_t> overlay_group;
     std::vector<std::int32_t> io_sym;       // by var: an I/O base's operand symbol, or -1
     std::vector<std::vector<AsmItem>> code; // by function
     // the copies the generation made, for the size budget (size_budget.hpp), and by for

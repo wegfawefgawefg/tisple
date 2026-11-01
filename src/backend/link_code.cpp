@@ -2,6 +2,8 @@
 
 #include "backend/link_code.hpp"
 
+#include "backend/card_bank.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <set>
@@ -73,6 +75,50 @@ std::vector<AddressRange> FreeStretches(const Backend& be, const BuildOptions& o
     return out;
 }
 
+// the origin itself must be ordinary memory
+bool CheckOrigin(std::uint32_t origin, std::vector<Diagnostic>& errors) {
+    for (const AddressRange& range : kReservedRanges) {
+        if (range.end <= 0x200) {
+            continue;
+        }
+        if (origin >= range.start && origin < range.end) {
+            AddError(errors, Loc(),
+                     "the origin " + HexAddress(origin) + " is in " + HexAddress(range.start) +
+                         "-" + HexAddress(range.end - 1) +
+                         ", which the screen or I/O uses; pick another --origin");
+            return false;
+        }
+    }
+    return true;
+}
+
+void AppendSpan(std::vector<AsmItem>& to, const std::vector<AsmItem>& from, Compiled& out,
+                std::int32_t function, const std::string& name) {
+    FunctionSpan span;
+    span.function = function;
+    span.name = name;
+    span.first = to.size();
+    to.insert(to.end(), from.begin(), from.end());
+    span.end = to.size();
+    out.spans.push_back(span);
+}
+
+// with code in the card's bank 1, the stubs, the interrupt entry (the spans after the
+// startup, before `resident`) and the frames in memory stay out of $D000-$DFFF
+bool Bank1Resident(const std::vector<CodePlace>& places, std::size_t resident,
+                   std::uint32_t frames_at, std::uint32_t frames_end,
+                   std::vector<Diagnostic>& errors) {
+    bool clear = frames_end <= kBank1Start || frames_at >= kBank1End || frames_at == frames_end;
+    for (std::size_t s = 1; s < resident && s < places.size(); s++) {
+        clear = clear && (places[s].address < kBank1Start || places[s].address >= kBank1End);
+    }
+    if (!clear) {
+        AddError(errors, Loc(),
+                 "no room for the language card's bank stubs and the frames outside $D000-$DFFF");
+    }
+    return clear;
+}
+
 std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& span) {
     std::uint32_t size = 0;
     for (std::size_t i = span.first; i < span.end; i++) {
@@ -84,7 +130,7 @@ std::uint32_t SpanSize(const std::vector<AsmItem>& items, const FunctionSpan& sp
 bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
                 const std::vector<AddressRange>& given, std::uint32_t mem_frames,
                 std::vector<CodePlace>& places, std::uint32_t& frames_at, std::size_t first_bank1,
-                EarlySpans early) {
+                EarlySpans early, RegionSpans* region) {
     places.assign(spans.size(), CodePlace());
     std::vector<AddressRange> stretches = given;
     // the early spans at the start of the first stretch that holds them, which the rest then
@@ -113,13 +159,30 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
     }
     std::size_t last = first_bank1 < spans.size() ? first_bank1 : spans.size();
     std::size_t count = first_bank1 < spans.size() ? stretches.size() - 1 : stretches.size();
+    // the region: the biggest group's spans
+    std::size_t groups_end = last;
+    std::vector<std::uint32_t> group_size;
+    if (region != nullptr && region->first < region->end) {
+        last = region->first;
+        groups_end = region->end;
+        for (std::size_t s = region->first; s < region->end; s++) {
+            std::size_t g = static_cast<std::size_t>(spans[s].overlay_group);
+            group_size.resize(std::max(group_size.size(), g + 1), 0);
+            group_size[g] += SpanSize(items, spans[s]);
+        }
+        region->size = 0;
+        for (std::uint32_t size : group_size) {
+            region->size = std::max(region->size, size);
+        }
+    }
+    std::uint32_t after = region != nullptr ? region->size : 0;
     std::size_t k = 0;
     std::uint32_t pc = stretches.empty() ? 0 : stretches[0].start;
     for (std::size_t s = 0; s < last; s++) {
         if (early_on && s >= early.first && s < early.end) {
             continue;
         }
-        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == last ? mem_frames : 0);
+        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == last ? after + mem_frames : 0);
         while (k < count && pc + need > stretches[k].end) {
             k++;
             pc = k < count ? stretches[k].start : 0;
@@ -129,6 +192,17 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
         }
         places[s] = CodePlace{k, pc};
         pc += SpanSize(items, spans[s]);
+    }
+    if (region != nullptr) {
+        region->at = pc;
+        pc += region->size;
+        std::vector<std::uint32_t> at(group_size.size(), region->at);
+        for (std::size_t s = last; s < groups_end; s++) {
+            std::size_t g = static_cast<std::size_t>(spans[s].overlay_group);
+            places[s] = CodePlace{stretches.size() + g, at[g]};
+            at[g] += SpanSize(items, spans[s]);
+        }
+        last = groups_end;
     }
     frames_at = pc;
     // the language card's bank 1: the last stretch, its own

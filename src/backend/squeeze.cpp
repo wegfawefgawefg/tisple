@@ -5,6 +5,7 @@
 #include "backend/card_bank.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace tisple {
 
@@ -135,6 +136,56 @@ Diagnostic SqueezeNote(const Program& program, const Squeezed& usual, const Sque
     Diagnostic note;
     note.message = text;
     return note;
+}
+
+Diagnostic OverlayNote(const Program& program, const Compiled& compiled) {
+    const OverlayBuilt& built = compiled.overlays;
+    std::uint32_t total = 0;
+    std::string groups;
+    for (std::size_t g = 0; g < built.groups.size(); g++) {
+        const OverlayImage& image = built.groups[g];
+        total += image.bytes;
+        std::string roots;
+        for (std::size_t i = 0; i < image.roots.size(); i++) {
+            roots += (i == 0 ? "" : ", ") +
+                     program.functions[static_cast<std::size_t>(image.roots[i])].name;
+        }
+        std::uint64_t frames10 = (image.load_cycles * 10 + 8515) / 17030;
+        groups += (g == 0 ? "" : "; ") + roots + " (" +
+                  Count(image.functions.size(), "function", "functions") + ", " +
+                  std::to_string(image.bytes) + " bytes, a load about " +
+                  std::to_string(image.load_cycles) + " cycles, " + std::to_string(frames10 / 10) +
+                  "." + std::to_string(frames10 % 10) + " frames)";
+    }
+    std::uint32_t used = built.region_size + built.code_bytes;
+    std::uint32_t freed = total > used ? total - used : 0;
+    char where[16];
+    std::snprintf(where, sizeof(where), "$%04X", built.region);
+    std::string text = "the program does not fit main memory and the language card as it is, so " +
+                       Count(built.groups.size(), "group", "groups") + " of code take turns in a " +
+                       std::to_string(built.region_size) + "-byte overlay region at " + where +
+                       ", each copied in from aux memory when one of its roots is called and "
+                       "another is in: " +
+                       groups + ". The stubs and the copy take " +
+                       std::to_string(built.code_bytes) + " bytes; " + std::to_string(freed) +
+                       " bytes of main memory and the card freed.";
+    Diagnostic note;
+    note.message = text;
+    return note;
+}
+
+std::vector<Diagnostic> ResidentMarkNotes(const Program& program, const OverlayPlan& plan) {
+    std::vector<Diagnostic> notes;
+    for (std::int32_t f : plan.resident_marks) {
+        const Function& fn = program.functions[static_cast<std::size_t>(f)];
+        Diagnostic note;
+        note.loc = fn.loc;
+        note.message = fn.name +
+                       " is marked :overlay but stays resident: main, the interrupt handler, a "
+                       "function pointer or code with an aux switch on runs it, or nothing does";
+        notes.push_back(note);
+    }
+    return notes;
 }
 
 bool CheckNoInline(const Program& program, const std::vector<std::string>& names,

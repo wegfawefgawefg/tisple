@@ -454,7 +454,7 @@ void CheckerTests(TestResults& results) {
                 "t.tsp:2:15: a program has one interrupt handler, and t.a is it; poll every "
                 "device there");
     ExpectError(results, "(fn a () void :fast)\n(fn main () void)",
-                "t.tsp:1:15: :fast is no fn option; the one there is is :interrupt");
+                "t.tsp:1:15: :fast is no fn option; the ones there are :interrupt and :overlay");
     ExpectError(results, "(fn a () void :interrupt)\n(fn main () void (a))",
                 "t.tsp:2:18: a is the interrupt handler: an IRQ runs it, a call never does");
     ExpectError(results, "(fn a () void :interrupt)\n(fn main () void (let f (fn () void) a))",

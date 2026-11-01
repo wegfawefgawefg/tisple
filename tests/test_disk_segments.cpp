@@ -105,8 +105,8 @@ void TestSegmentsBoot(TestResults& results) {
     std::vector<MemorySegment> twice = segments;
     twice.push_back(Noise(MemoryBank::kAux, 0x2000, 0x0100, 6));
     CHECK(results, !tisple::MakeBootDisk(twice, 0x6000, *disk, info, error));
-    CHECK(results, error.find("$0800-$BFFF and $2000-$20FF in aux memory overlap") !=
-                       std::string::npos);
+    CHECK(results,
+          error.find("$0800-$BFFF and $2000-$20FF in aux memory overlap") != std::string::npos);
 }
 
 // both of the card's $D000 banks: bank 2's segment and bank 1's, each where it belongs
@@ -144,16 +144,18 @@ const char* const kRegions = R"(
 (let doc (array u8 4000) (counting 4000) :in aux)
 (let sum u16 0 :address 0x0300)
 
+(fn left () u16 (+ (as u16 (at a 19999)) (as u16 (at b 19999))))
+(fn right () u16 (+ (as u16 (at c 8999)) (as u16 (at d 2999))))
 (fn main () void
     (set (at a 19999) 1)
     (set (at b 19999) 2)
-    (set sum (+ (+ (as u16 (at a 19999)) (as u16 (at b 19999)))
-        (+ (as u16 (at c 8999)) (as u16 (at d 2999))))))
+    (set sum (+ (left) (right))))
 )";
 
 // a compiled program in four regions boots and runs as it does loaded straight in; with bank1,
-// its function in the card's bank 1 too (BuildOptions::bank1_test)
-void TestCompiledRegionsBoot(TestResults& results, int bank1) {
+// its function in the card's bank 1 too (BuildOptions::bank1_test), with overlay, its functions
+// in overlay groups whose images the loader puts in aux memory (BuildOptions::overlay_test)
+void TestCompiledRegionsBoot(TestResults& results, int bank1, int overlay = 0) {
     // checked only: the test layout's one region could not hold it
     Built built;
     tisple::LoadOptions load;
@@ -168,6 +170,7 @@ void TestCompiledRegionsBoot(TestResults& results, int bank1) {
     options.limit = 0xC000;
     options.low_start = tisple::kBootLoadLow;
     options.bank1_test = bank1;
+    options.overlay_test = overlay;
     tisple::Compiled code;
     std::vector<tisple::Diagnostic> errors;
     bool ok = tisple::CompileProgram(built.program, options, code, errors);
@@ -190,6 +193,7 @@ void TestCompiledRegionsBoot(TestResults& results, int bank1) {
     }
     CHECK(results, card && aux && low && code.card_ram);
     CHECK(results, banked == (bank1 > 0));
+    CHECK(results, code.overlays.groups.empty() == (overlay == 0));
 
     auto disk = std::make_unique<tisple::DiskSectors>();
     tisple::BootDiskInfo info;
@@ -300,6 +304,7 @@ void RunDiskSegmentTests(TestResults& results) {
     TestBank1Boot(results);
     TestCompiledRegionsBoot(results, 0);
     TestCompiledRegionsBoot(results, 1);
+    TestCompiledRegionsBoot(results, 0, 1);
     TestSharedPagesBoot(results);
 }
 

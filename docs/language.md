@@ -168,7 +168,8 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 1. Placement options on a top-level `let` or a `const` table, after the value:
    `:address`, `:align`, `:boundary` and `:in aux`, on a `let` `:reserve`, and on a
    `const` table `:on disk`, `:interleave` and `:strings aux` (see Placement). `:reserve` is the one option without a value. On a `fn`,
-   after the return type, `:interrupt` (see Interrupts), also without one.
+   after the return type, `:interrupt` (see Interrupts) or `:overlay` (see Overlays), also
+   without one.
 2. Field names in struct values: `(make Sprite :x 10 :y 20 :active true)`.
    Every field, in declared order, none left out. The names exist so a swapped
    `x`/`y` is an error instead of a silent bug; there is no reordering and no
@@ -718,6 +719,31 @@ Added 2026-10-30, for the Mockingboard's timers and the mouse card.
 
 What it compiles to, and how each Apple II routes the IRQ: design.md,
 "Interrupt handlers".
+
+## Overlays
+
+Added 2026-11-01 ([`overlays.md`](overlays.md), Built: overlay groups). A program that does
+not fit main memory and the language card, and already uses aux memory, may get its screens'
+code in groups that take turns in one region: each group's bytes are kept in aux memory and
+copied in (16 cycles a byte, a few frames) when one of its roots is called while another
+group is in. The compiler finds the screens a loop's own `match` (or `if`) on a global picks:
+
+```scheme
+(while true
+    (match state.screen
+        (Screen.title (title.step key))
+        (Screen.battle (battle.step key))))
+```
+
+- `(fn name (params) type :overlay body ...)` marks a screen's entry for when the dispatch is
+  deeper, where the compiler cannot tell a screen from steps that change every few frames.
+  Once any function is marked, only marked functions are roots. Marked roots that may run in
+  one pass (their dispatch does not keep them apart), that call one another, or that share
+  code go in one group.
+- Nothing the interrupt handler runs, main, a function whose address is taken or code with an
+  aux switch on is ever in a group; a mark on one is a warning.
+- The build says which groups it made, their bytes and what a load costs;
+  `TISPLE_OVERLAY_NOTES=1` lists their functions.
 
 ## Aux memory code
 

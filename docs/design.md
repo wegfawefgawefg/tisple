@@ -391,6 +391,11 @@ Now the link decides (src/backend/squeeze.cpp):
   fits that way is also built with the tighter budgets without it, and the one with fewer
   cycles a run, about, is kept; the warning says what was traded. Catwiz: squeeze 3 became
   squeeze 0 with 3.3 KB in bank 1, its loops 3-4% faster.
+- Before bank 1, when the program already uses aux memory: overlay groups, screens' code that
+  takes turns in one region, each copied in from aux memory when called (docs/overlays.md,
+  Built: overlay groups). Past the first level the build with groups comes first, and the one
+  without only when that fits, a compile a level. Catwiz, its screens marked `:overlay`:
+  squeeze 8 instead of 10, 1.9 KB freed.
 
 ### Aux memory code (2026-10-31)
 

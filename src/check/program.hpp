@@ -263,6 +263,9 @@ struct Function {
     bool address_taken = false; // its name is used as a value: callers the tree does not show
     TypeId type = -1;           // its (fn ...) type, once its address is taken
     bool interrupt = false;     // (fn name () void :interrupt): the IRQ handler
+    // (fn name (...) t :overlay): a screen's entry, whose code may take turns with other
+    // screens' in the overlay region (backend/overlay_plan.hpp)
+    bool overlay = false;
     // backend only (backend/dispatch.cpp): jumps to the address in its first parameter
     bool dispatcher = false;
     // backend only (backend/io_bases.cpp): stores this var's value into the I/O accesses

@@ -145,6 +145,7 @@ void RunBackendFnPtrTests(TestResults& results);
 void RunBackendIrqTests(TestResults& results);
 // code in the language card's bank 1 (test_backend_bank1.cpp)
 void RunBackendBank1Tests(TestResults& results);
+void RunBackendOverlayTests(TestResults& results);
 void RunBackendWaitTests(TestResults& results);
 void RunBackendStringTests(TestResults& results);
 void RunBackendWhileTests(TestResults& results);
