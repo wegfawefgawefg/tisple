@@ -43,6 +43,89 @@ From lib/dhgr and the packed-data examples (2026-10-30):
 12. examples/ has a keys.tsp of its own, and imports look in the program's folder first, so an
     example cannot `(import keys)` for lib/keys; examples/dhgr_demo reads the keyboard itself.
 
+Stale by 2026-11-01 (a review): 5 (lib/keys has `keys.read`), 6 (lib/random exists), 8 (dot
+uses `tables.table ROW u16`), and probably 9 (a reduced copy compiles to the same bytes). Half
+done: 7 (inc and dec are in lib/macros; `when` and `else if` are not, a call for the minimal
+rule).
+
+From a review of Catwiz's build (2026-11-01):
+
+13. A constant pointer into aux memory is rejected when main memory has a variable at that
+    address. `(with_aux true false (load (as (ptr u8) 0x0400)))` beside `(let scratch (array u8
+    36) :address 0x0400)` fails: "the constant address $0400 is inside scratch ($0400-$0423); a
+    pointer into a variable comes from addr_of" (link/provenance.cpp: VarAt skips :in aux lets,
+    not main ones at the same address; it cannot know which memory the pointer is for).
+    Declaring the bytes does not help: `(let buf (array u8 512) :address 0x0400 :in aux
+    :reserve)` and `(addr_of (at buf 0))` give "buf is :reserve memory, not a variable; reach
+    it with a pointer, as in (as (ptr u8) 0x0400)", the form just refused. Catwiz
+    (battle/rules.tsp) keeps the address in a u16 let; that builds only because the program
+    has a jsr, which stops the let being folded: with no jsr, `(let buffer u16 0x0400)` and
+    `(as (ptr u8) buffer)` give the same error. Should: addr_of of an :in aux :reserve let
+    gives its aux address (it is declared, so provenance holds), and constant addresses inside
+    one are left out of the check.
+14. A struct value cannot come out of a with_aux. `(let m Move (with_aux true false (at MOVES
+    k)))` with MOVES :in aux: "a struct value comes from (make ...), a variable, (at ...), a
+    field or a load; set each case on its own instead, as in (if c (set s a) (set s b))"
+    (with_aux is a do, and a do, if or match never gives a struct). A function cannot return
+    one either. What works is setting a declared record inside: `(with_aux true false (set m
+    (at MOVES k)))`. Catwiz has one accessor and one region per field (content/moves.tsp).
+    Should: with_aux's value may be a struct (copied before the off switch), and the error says
+    to set it inside.
+15. Bank 1's choice (backend/card_bank.cpp, compile.cpp LinkBank1) is sound as far as found
+    (handler, dispatchers, entries, I/O patches, aux code, jumps to addresses and shared labels
+    barred; named and, with pointers, address-taken vars kept out of bank 2's $D000-$DFFF;
+    $C011 saved on interrupts) but chooses poorly: crossings come from static run counts (a
+    while is 8 trips, every arm runs), so per-pass code looks cold (Catwiz's bank 1 holds
+    main.next_key and battle.wants_key, both run every pass; battle.step before); crossings are
+    counted per function alone, so calls between two bank 1 functions count though they are
+    plain JSRs, and calls to division routines (back stubs, 20 cycles) count not at all; the
+    candidates stop at the first function too big for what is left instead of skipping it;
+    the count is a binary search though fit is not monotone in it, and a failing full count
+    gives up on bank 1 at that level; nothing keeps cycle-counted code (wait_cycles, speaker
+    loops) out, and each crossing adds 20 cycles.
+16. Fitting is not monotone in the squeeze level. From level 6 the item budget is 2 bytes,
+    and copies whose growth is estimated before folding are refused though they make the
+    program smaller (size_budget.cpp CopiesOverBudget, "not copied by the mid-level").
+    programs/paint: 1199 bytes of functions and runtime at levels 2-5, 1213 at 6-10
+    (mouse.slot_rom: "grows 3 bytes" over the item budget at 6, "grows -4" copied at 5);
+    with only $6000-$68F1 free it fits at squeeze 2-5 and not at 6-10. races/programs/parser:
+    1606 at 4-5, 1665 at 10 (same_text, called once, kept as a call: +2 estimated, about +41
+    real). The build tries every level in order, so it finds one that fits, but the tightest
+    is not the smallest, and "does not fit even with the tightest size budget" can come while
+    a looser level built smaller. Should: never refuse a copy that measured smaller (a
+    called-once function's copy above all), and measure items after folding.
+17. Code that spills below the origin can land on hi-res page 1 with no check: a program whose
+    code reaches $0B00-$4051 and clears $2000-$3FFF through `(as (ptr u8) 0x2000)` dies
+    ("jumped into ROM at $FFFF"). CheckConstantPointers (link/provenance.cpp) checks constant
+    pointers against declared variables only, never placed code.
+18. Pointers don't know which memory they point into: `:strings aux` on a table makes
+    `(text40.put_str (at ITEMS 0 name))` print nothing, with no warning.
+19. A load through an `as` pointer to a soft switch is hoisted out of its loop:
+    `(while (< (load kbd) 0x80))` with kbd `(as (ptr u8) 0xC000)` becomes CMP/BCC with no
+    reload, an endless loop. docs/language.md (583-586) calls soft switches fair targets for
+    `as` pointers: the optimiser or the docs is wrong.
+20. `build -o` (a DOS BRUN file) never squeezes; the size budget always copies a called-once
+    function and never undoes it, so one function can outgrow every region, and the "use a
+    lower --origin" advice is then wrong (a big program built only with `--no-inline`).
+21. Compile time: each squeeze level is a full compile and nothing remembers the level that
+    fit: Catwiz builds in 7.8 s against 0.9 s at its known level. `macros.unroll` is quadratic
+    (`append` in a loop): about 3,900 copies hit the 10M-step limit; `map` over `range` would
+    be linear.
+22. The fuzzer never generates `with_aux`, `:in aux` or `:strings aux`, so those checks and
+    their code generation rest on hand-written tests; its struct globals all have their
+    address taken, which is why it missed the whole-struct miscompile (fixed 2026-11-01).
+23. Libraries at fixed addresses (lib/disk $1400-$1BFF, unpack $1C00, auxcard $1D8A, dhgr
+    $1E00, all `:address :reserve`) put holes in every program that imports them, and a boot
+    disk holds at most 10 segments.
+24. Diagnostics that steer wrong: `(set x (+ x 70000))` with x already u16 suggests `(as u16
+    x)`; an unknown `text40.print` gives no import hint; the reserve and constant-pointer
+    messages contradict each other (13); errors cascade ("the value of const X is not
+    constant" after an overflow).
+25. Docs that claim more than is built: design.md's placement table lists `in tables` and `in
+    zero_page` (the checker takes only `:in aux`); language.md describes 65C02 jump tables (only
+    NMOS is built). Disks, bank switching and aux memory are checked only in Tisple's own
+    emulator, never on real hardware.
+
 ## Fixed
 
 1. `(store p 0)`: the literal gets no type, yet `(as u8 0)` is rejected as

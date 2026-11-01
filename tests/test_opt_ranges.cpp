@@ -92,11 +92,30 @@ void Undecided(TestResults& results) {
     }
 }
 
+// a whole struct set is a store to every element: a later field read is not its first value
+// (2026-11-01 review: the elements no store reaches read m.a as 1)
+void WholeSets(TestResults& results) {
+    const char* sets[] = {
+        ("(struct P ((a u8) (b u8)))\n(let m P (make P :a 1 :b 2))\n(let res u8 0)\n"
+         "(fn main () void (set m (make P :a 5 :b 6)) (set res m.a))"),
+        ("(struct P ((a u8) (b u8)))\n(let m P)\n(let res u8 0)\n"
+         "(fn put ((x u8)) void (set m (make P :a x :b 6)))\n(fn main () void (put 9) (set res m.a))"),
+        ("(struct P ((a u8) (b u8)))\n(let m P)\n(let src P (make P :a 5 :b 6))\n(let res u8 0)\n"
+         "(fn main () void (set m src) (set res m.a))"),
+        ("(struct In ((x u8) (y u8)))\n(struct Out ((i In) (z u8)))\n(let o Out)\n(let res u8 0)\n"
+         "(fn main () void (set o (make Out :i (make In :x 1 :y 2) :z 3)) (set res o.i.y))"),
+    };
+    for (const char* text : sets) {
+        CheckProgram(results, text, "t.main", {});
+    }
+}
+
 } // namespace
 
 void RunOptRangesTests(TestResults& results) {
     Decided(results);
     Undecided(results);
+    WholeSets(results);
 }
 
 } // namespace tisple_tests
