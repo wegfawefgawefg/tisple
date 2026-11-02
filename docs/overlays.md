@@ -208,7 +208,9 @@ link's part); BuildOptions::use_overlays.
 - **The fallback, `:overlay`.** `(fn step ((key u8)) bool :overlay ...)` says the function is a
   screen's entry. When any function is marked, only marked ones are roots: each with what
   only it reaches, and marked roots that cannot take turns (their facts do not contradict,
-  one reaches the other, they share code) made one group, until every two can; then the same
+  one reaches the other) made one group, until every two can (since 2026-11-02 two marked
+  roots that only share code stay two groups, the code they share resident: Catwiz's title and
+  fight start share the art's loading); then the same
   choice of the set that frees the most. Every fact counts for marked roots, not only a
   loop's. A mark on a function that cannot be in a group (the handler's, main, a pointer's
   target, aux code) is a warning that says it stays resident.

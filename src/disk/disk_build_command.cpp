@@ -273,6 +273,9 @@ void UseBootDiskLayout(BuildOptions& options) {
     options.homes_in_segments = true;
     // lib/disk's reader is on a boot disk: groups marked :overlay_disk2 are read from disk 2
     options.disk2_images = true;
+    // the loader goes to the monitor if main returns: no zero page to keep for a caller, so
+    // $BF00-$BFFF is the program's too
+    options.save_zero_page = false;
 }
 
 bool HasDiskFlag(int argc, char** argv) {

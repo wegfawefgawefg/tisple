@@ -24,6 +24,7 @@ void EmitRuntimeTables(Backend& be, std::vector<AsmItem>& out);
 struct StartupPlan {
     std::int32_t main_sym = -1;  // -1: no main, just set up and return
     std::int32_t save_sym = -1;  // 256-byte buffer for zero page
+    bool save_zp = true;         // save zero page before main and put it back after
     std::int32_t image_sym = -1; // the zero-page image in the binary
     std::uint32_t zp_base = 0;   // where the image goes
     std::uint32_t zp_count = 0;
@@ -46,7 +47,7 @@ struct StartupPlan {
 };
 
 // save zero page, write the zero-page image and other initial values, JSR main, restore
-// zero page, RTS. With card_ram, the language card's ram (bank 2) is switched in first, for
+// zero page, RTS (without save_zp no saving or restoring: zero page stays the program's). With card_ram, the language card's ram (bank 2) is switched in first, for
 // reads and writes, and the rom back in before the RTS. With an interrupt handler, all of it
 // but main runs with interrupts off
 void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out);

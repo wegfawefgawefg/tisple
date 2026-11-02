@@ -325,8 +325,6 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
     Writer w;
     w.be = &be;
     w.out = &out;
-    std::int32_t save = w.Label("start.save");
-    std::int32_t restore = w.Label("start.restore");
     bool irq = plan.irq_entry >= 0;
     w.Op(Mn::CLD);
     if (irq) {
@@ -337,12 +335,15 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
         w.Op(Mn::BIT, Mode::Abs, Num(0xC083)); // two reads: bank 2 ram, reads and writes
         w.Op(Mn::BIT, Mode::Abs, Num(0xC083));
     }
-    w.Imm(Mn::LDX, 0);
-    w.Place(save);
-    w.Op(Mn::LDA, Mode::ZpX, Num(0));
-    w.Op(Mn::STA, Mode::AbsX, SymValue(plan.save_sym));
-    w.Op(Mn::INX);
-    w.Br(Mn::BNE, save);
+    if (plan.save_zp) {
+        std::int32_t save = w.Label("start.save");
+        w.Imm(Mn::LDX, 0);
+        w.Place(save);
+        w.Op(Mn::LDA, Mode::ZpX, Num(0));
+        w.Op(Mn::STA, Mode::AbsX, SymValue(plan.save_sym));
+        w.Op(Mn::INX);
+        w.Br(Mn::BNE, save);
+    }
     if (plan.zp_count > 0) {
         std::int32_t init = w.Label("start.zp");
         w.Imm(Mn::LDX, static_cast<std::int32_t>(plan.zp_count));
@@ -411,12 +412,15 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
             w.Op(Mn::STA, Mode::Abs, Num(kIrqVector + k));
         }
     }
-    w.Imm(Mn::LDX, 0);
-    w.Place(restore);
-    w.Op(Mn::LDA, Mode::AbsX, SymValue(plan.save_sym));
-    w.Op(Mn::STA, Mode::ZpX, Num(0));
-    w.Op(Mn::INX);
-    w.Br(Mn::BNE, restore);
+    if (plan.save_zp) {
+        std::int32_t restore = w.Label("start.restore");
+        w.Imm(Mn::LDX, 0);
+        w.Place(restore);
+        w.Op(Mn::LDA, Mode::AbsX, SymValue(plan.save_sym));
+        w.Op(Mn::STA, Mode::ZpX, Num(0));
+        w.Op(Mn::INX);
+        w.Br(Mn::BNE, restore);
+    }
     if (plan.card_ram) {
         w.Op(Mn::BIT, Mode::Abs, Num(0xC082)); // the rom again, for whoever called us
     }

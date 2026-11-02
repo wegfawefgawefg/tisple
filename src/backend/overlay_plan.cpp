@@ -30,6 +30,7 @@ struct Planner {
     std::vector<std::vector<bool>> alone; // by function: GroupOf it alone (candidates only)
     std::vector<Cluster> clusters;
     std::vector<std::vector<bool>> runs; // by cluster: RunsFrom its group
+    bool marked = false; // the roots are the program's :overlay marks
 };
 
 // every function a group's code may run: its members' callees, theirs, ...
@@ -119,6 +120,7 @@ bool TakeTurns(const Planner& p, std::int32_t a, std::int32_t b) {
     if (!Apart(p, a, b)) {
         return false;
     }
+    bool marked = p.marked;
     const Cluster& x = p.clusters[static_cast<std::size_t>(a)];
     const Cluster& y = p.clusters[static_cast<std::size_t>(b)];
     for (std::int32_t r : x.roots) {
@@ -129,7 +131,10 @@ bool TakeTurns(const Planner& p, std::int32_t a, std::int32_t b) {
             }
         }
     }
-    return !ShareCode(p, x, y);
+    // marked roots are screens' entries the program names: two that share code but never run
+    // in one pass stay two groups, the code they share resident (each group is what only its
+    // roots reach), rather than one group of both
+    return marked || !ShareCode(p, x, y);
 }
 
 // the clusters inside one: its group's candidates no other of them reaches alone, each opened
@@ -307,6 +312,7 @@ OverlayPlan PlanOverlays(const Program& program, std::uint32_t capacity) {
     OverlayPlan plan;
     if (!marked.empty() || !barred_marks.empty()) {
         p.facts = &g.guards.functions;
+        p.marked = true;
         std::vector<std::int32_t> clusters = MarkedClusters(p, marked);
         plan = PlanOf(p, Choose(p, clusters, capacity));
         plan.marked = true;

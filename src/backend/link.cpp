@@ -64,7 +64,8 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     out.origin = options.origin;
     out.main = program.main;
     out.card_ram = card;
-    std::uint32_t data_end = options.limit - 256;
+    // the zero-page save buffer, the last 256 bytes, when the startup saves zero page
+    std::uint32_t data_end = options.limit - (options.save_zero_page ? 256 : 0);
     if (!CheckOrigin(options.origin, errors)) {
         return LinkResult::kError;
     }
@@ -72,6 +73,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     StartupPlan sp;
     sp.main_sym = program.main >= 0 ? be.fn_sym[static_cast<std::size_t>(program.main)] : -1;
     sp.save_sym = NewSym(be, "zp_save", SymRole::Data, -1);
+    sp.save_zp = options.save_zero_page;
     sp.image_sym = NewSym(be, "zp_image", SymRole::Data, -1);
     sp.ready_sym = NewSym(be, "start.ready", SymRole::Label, -1);
     sp.after_sym = NewSym(be, "start.after_main", SymRole::Label, -1);

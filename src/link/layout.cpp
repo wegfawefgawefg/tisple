@@ -376,8 +376,12 @@ bool ShapeProgram(const Program& program, Layout& out, std::vector<Diagnostic>& 
     return errors.size() == before;
 }
 
-bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout& out,
-                   std::vector<Diagnostic>& errors) {
+namespace {
+
+// one try at the layout: automatic placement in the program's order, or with packed the vars
+// that avoid a range first and the biggest first
+bool LayoutOnce(const Program& program, const LayoutOptions& options, Layout& out,
+                std::vector<Diagnostic>& errors, bool packed) {
     out = Layout();
     out.vars.resize(program.vars.size());
     Placer pl;
@@ -409,14 +413,31 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
             PlaceFixed(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);
         }
     }
-    for (int pass = 0; pass < 2; pass++) {
+    // globals, then frames; packed, in each the vars that avoid a range first (bank 1 code's
+    // data stays out of $D000-$DFFF), as they have fewer places, and the biggest first, so the
+    // small ones fill the gaps the big ones leave
+    auto avoids = [&](std::size_t i) {
+        return packed && i < options.avoiders.size() && options.avoiders[i];
+    };
+    for (int pass = 0; pass < 4; pass++) {
+        bool want_globals = pass < 2;
+        bool want_avoiders = pass % 2 == 0;
+        std::vector<std::size_t> order;
         for (std::size_t i = 0; i < program.vars.size(); i++) {
             const Var& var = program.vars[i];
             bool global = var.function < 0;
-            if (var.placement.has_address || IsPreset(options, i) || global != (pass == 0) ||
-                out.vars[i].size == 0) {
+            if (var.placement.has_address || IsPreset(options, i) || global != want_globals ||
+                avoids(i) != want_avoiders || out.vars[i].size == 0) {
                 continue;
             }
+            order.push_back(i);
+        }
+        if (packed) {
+            std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+                return out.vars[a].size > out.vars[b].size;
+            });
+        }
+        for (std::size_t i : order) {
             PlaceAuto(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);
         }
     }
@@ -424,6 +445,24 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
         return false;
     }
     return CheckConstantPointers(program, out, errors);
+}
+
+} // namespace
+
+// the program's order first, so a layout that fits stays as it was; when that runs out of room
+// with bank 1 code's data to keep out of $D000-$DFFF, packed (LayoutOnce): the order that
+// matters there
+bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout& out,
+                   std::vector<Diagnostic>& errors) {
+    std::vector<Diagnostic> first;
+    bool ok = LayoutOnce(program, options, out, first, false);
+    bool avoiders = std::find(options.avoiders.begin(), options.avoiders.end(), true) !=
+                    options.avoiders.end();
+    if (ok || !out.no_room || !avoiders) {
+        errors.insert(errors.end(), first.begin(), first.end());
+        return ok;
+    }
+    return LayoutOnce(program, options, out, errors, true);
 }
 
 Cursor VarCursor(const Layout& layout, std::int32_t var) {

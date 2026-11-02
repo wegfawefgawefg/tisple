@@ -59,6 +59,10 @@ struct BuildOptions {
     // overlay groups with a root marked :overlay_disk2 read from the second disk (a boot disk
     // build: lib/disk's reader is there); false: every group is kept in aux memory
     bool disk2_images = false;
+    // the startup saves zero page for main's return and puts it back after (256 bytes below
+    // limit); a boot disk has nothing to return to (its loader goes to the monitor), so it
+    // keeps those 256 bytes for the program (UseBootDiskLayout)
+    bool save_zero_page = true;
     // functions never inlined, by qualified name (the race times from t.init's return to
     // t.checksum's entry)
     std::vector<std::string> no_inline;
