@@ -6,6 +6,8 @@
 #include "backend/irq.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <set>
 
@@ -190,6 +192,15 @@ std::int32_t FindBroken(const Code& c, const OverlayGroups& groups,
                 continue;
             }
             if (!Allowed(c, groups, static_cast<std::size_t>(g), item, found->second, from_group)) {
+                if (std::getenv("TISPLE_OVERLAY_NOTES") != nullptr) {
+                    std::fprintf(
+                        stderr, "  %s names %s's label\n",
+                        from >= 0
+                            ? be.program->functions[static_cast<std::size_t>(from)].name.c_str()
+                            : "startup or runtime",
+                        be.program->functions[static_cast<std::size_t>(found->second)]
+                            .name.c_str());
+                }
                 return g;
             }
         }
@@ -217,6 +228,11 @@ std::int32_t FindBroken(const Code& c, const OverlayGroups& groups,
         for (std::size_t h = 0; h < groups.roots.size(); h++) {
             for (std::int32_t r : groups.roots[h]) {
                 if (h != g && runs[static_cast<std::size_t>(r)]) {
+                    if (std::getenv("TISPLE_OVERLAY_NOTES") != nullptr) {
+                        std::fprintf(
+                            stderr, "  group %zu's code runs %s\n", g,
+                            be.program->functions[static_cast<std::size_t>(r)].name.c_str());
+                    }
                     return static_cast<std::int32_t>(groups.bytes[g] < groups.bytes[h] ? g : h);
                 }
             }
@@ -287,6 +303,14 @@ OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept
         }
         if (broken < 0) {
             return out;
+        }
+        if (std::getenv("TISPLE_OVERLAY_NOTES") != nullptr) {
+            const std::vector<std::int32_t>& roots = out.roots[static_cast<std::size_t>(broken)];
+            std::fprintf(stderr, "overlay group of %s dropped: %s (%u bytes)\n",
+                         be.program->functions[static_cast<std::size_t>(roots[0])].name.c_str(),
+                         out.bytes[static_cast<std::size_t>(broken)] < min_bytes ? "too small"
+                                                                                 : "a rule broken",
+                         out.bytes[static_cast<std::size_t>(broken)]);
         }
         planned.erase(planned.begin() + broken);
     }
