@@ -21,6 +21,7 @@ struct Item {
     std::uint32_t size = 0;
     bool forced = false;
     bool zp = false;
+    bool zp2 = false; // in the second run (globals only)
     std::uint64_t weight = 0;
     std::uint32_t offset = 0; // inside its frame part
     std::int32_t slot = -1;   // FrameShares' slot: every var in it gets these bytes
@@ -273,6 +274,15 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
     std::uint32_t run = 0;
     std::uint32_t length = 0;
     LongestRun(free, run, length);
+    // the second longest, for globals (not $00: a null pointer's constant would point at one)
+    std::vector<bool> free2 = free;
+    free2[0] = false;
+    for (std::uint32_t a = run; a < run + length; a++) {
+        free2[a] = false;
+    }
+    std::uint32_t run2 = 0;
+    std::uint32_t length2 = 0;
+    LongestRun(free2, run2, length2);
     if (length < kScratchBytes) {
         AddError(*be.errors, Loc(),
                  "explicit :address placements leave no 10 free zero-page bytes in a row for "
@@ -386,9 +396,16 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
     std::stable_sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y) {
         return items[x].weight * items[y].size > items[y].weight * items[x].size;
     });
+    std::uint32_t globals2 = 0;
     for (std::size_t i : order) {
         Item& item = items[i];
         if (item.function < 0) {
+            if (globals2 + item.size <= length2) {
+                item.zp = true;
+                item.zp2 = true;
+                globals2 += item.size;
+                continue;
+            }
             if (StackSize(st, zp_sizes, nullptr) + globals + item.size <= length) {
                 item.zp = true;
                 globals += item.size;
@@ -414,6 +431,8 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
     plan.mem_frames = StackSize(st, mem_sizes, &mem_off);
     plan.zp_globals_base = run + plan.zp_frames;
     std::uint32_t next_global = plan.zp_globals_base;
+    plan.zp2_globals_base = run2;
+    std::uint32_t next_global2 = run2;
     for (Item& item : items) {
         AsmSymbol& sym = be.as.symbols[static_cast<std::size_t>(item.sym)];
         if (item.function < 0) {
@@ -421,6 +440,11 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
                 continue;
             }
             sym.zp = true;
+            if (item.zp2) {
+                DefineSymbol(be.as, item.sym, next_global2);
+                next_global2 += item.size;
+                continue;
+            }
             DefineSymbol(be.as, item.sym, next_global);
             plan.zp_globals.push_back(item.var);
             next_global += item.size;
@@ -451,7 +475,8 @@ bool AllocateFrames(Backend& be, FramePlan& plan) {
         }
     }
     plan.zp_globals_size = next_global - plan.zp_globals_base;
-    plan.zp_used = kScratchBytes + plan.zp_frames + plan.zp_globals_size;
+    plan.zp2_globals_size = next_global2 - plan.zp2_globals_base;
+    plan.zp_used = kScratchBytes + plan.zp_frames + plan.zp_globals_size + plan.zp2_globals_size;
     return true;
 }
 

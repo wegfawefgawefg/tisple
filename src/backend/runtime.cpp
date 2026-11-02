@@ -352,6 +352,15 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
         w.Op(Mn::DEX);
         w.Br(Mn::BNE, init);
     }
+    if (plan.zp2_count > 0) {
+        std::int32_t init = w.Label("start.zp2");
+        w.Imm(Mn::LDX, static_cast<std::int32_t>(plan.zp2_count));
+        w.Place(init);
+        w.Op(Mn::LDA, Mode::AbsX, SymValue(plan.image2_sym, -1));
+        w.Op(Mn::STA, Mode::AbsX, Num(static_cast<std::int32_t>(plan.zp2_base) - 1));
+        w.Op(Mn::DEX);
+        w.Br(Mn::BNE, init);
+    }
     // the stores: a byte each, or a run of 16 or more copied from an image of it (skipped
     // over), 255 at a time
     const auto& stores = plan.stores;

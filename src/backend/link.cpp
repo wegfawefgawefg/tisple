@@ -77,6 +77,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     sp.after_sym = NewSym(be, "start.after_main", SymRole::Label, -1);
     sp.zp_base = plan.zp_globals_base;
     sp.zp_count = plan.zp_globals_size;
+    sp.image2_sym = NewSym(be, "zp_image2", SymRole::Data, -1);
+    sp.zp2_base = plan.zp2_globals_base;
+    sp.zp2_count = plan.zp2_globals_size;
     sp.card_ram = card;
     if (in.irq != nullptr && !in.irq->empty()) {
         sp.irq_entry = in.irq_plan.entry_sym;
@@ -98,6 +101,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     std::vector<AsmItem> zp_image;
     zp_image.push_back(MakeLabel(sp.image_sym));
     for (std::uint32_t i = 0; i < sp.zp_count; i++) {
+        zp_image.push_back(MakeByte(Num(0)));
+    }
+    zp_image.push_back(MakeLabel(sp.image2_sym));
+    for (std::uint32_t i = 0; i < sp.zp2_count; i++) {
         zp_image.push_back(MakeByte(Num(0)));
     }
 
@@ -397,6 +404,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     std::size_t image_at = out.spans[image_span].first + 1;
     for (std::uint32_t i = 0; i < sp.zp_count; i++) {
         items[image_at + i].value = Num(memory[sp.zp_base + i]);
+    }
+    // past the first image's bytes, image2's label, then its bytes
+    for (std::uint32_t i = 0; i < sp.zp2_count; i++) {
+        items[image_at + sp.zp_count + 1 + i].value = Num(memory[sp.zp2_base + i]);
     }
     DefineSymbol(be.as, sp.save_sym, data_end);
 

@@ -27,6 +27,9 @@ struct StartupPlan {
     std::int32_t image_sym = -1; // the zero-page image in the binary
     std::uint32_t zp_base = 0;   // where the image goes
     std::uint32_t zp_count = 0;
+    std::int32_t image2_sym = -1; // the second run's globals (FramePlan::zp2_globals_base)
+    std::uint32_t zp2_base = 0;
+    std::uint32_t zp2_count = 0;
     // explicit-address globals outside the file: byte stores before main
     std::vector<std::pair<std::uint16_t, std::uint8_t>> stores;
     // the I/O bases' patch functions (io_bases.hpp), run once before main

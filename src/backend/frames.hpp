@@ -15,7 +15,8 @@
 //
 // Zero page gets, in order: the runtime scratch bytes, every dereferenced pointer and
 // pointer temporary (forced), then frame items and small globals by uses per byte (each
-// use counts 4x per enclosing loop) while they fit. Explicit :address placements in zero
+// use counts 4x per enclosing loop) while they fit; globals first in the second longest free
+// run, which frames cannot use (they need the one stack). Explicit :address placements in zero
 // page are left alone.
 
 #include "backend/gen.hpp"
@@ -29,6 +30,10 @@ struct FramePlan {
     std::uint32_t zp_globals_base = 0;
     std::uint32_t zp_globals_size = 0;
     std::vector<std::int32_t> zp_globals; // vars, in address order
+    // globals in the second longest free run of zero page (the first holds the frames too;
+    // with an interrupt handler $45 splits zero page in two): their own image at startup
+    std::uint32_t zp2_globals_base = 0;
+    std::uint32_t zp2_globals_size = 0;
     // frame items outside zero page: symbol and offset from the memory-frame base
     std::vector<std::pair<std::int32_t, std::uint32_t>> mem_items;
 };
