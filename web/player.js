@@ -431,11 +431,38 @@ function draw() {
     ctx2d.putImageData(image, 0, 0);
 }
 
+// the game's state for the pad (pad.js padFollow): its memory once it is running, which is
+// once its first bytes are in memory and the disk has stopped after the boot; until the
+// bytes change again (a reboot)
+let gameRunning = false;
+
+function readRam(address, aux) {
+    return state.m._tp_peek_ram(address, aux);
+}
+
+function followGame() {
+    const check = state.game.check;
+    if (!check || !pad.follows) {
+        return;
+    }
+    let loaded = true;
+    for (let i = 0; i < check.bytes.length && loaded; i++) {
+        loaded = readRam(check.at + i, 0) === check.bytes[i];
+    }
+    if (!loaded) {
+        gameRunning = false;
+    } else if (!state.m._tp_disk_busy()) {
+        gameRunning = true;
+    }
+    padFollow(gameRunning ? readRam : null);
+}
+
 function tick(now) {
     requestAnimationFrame(tick);
     if (!state.running) {
         return;
     }
+    followGame();
     const busy = state.m._tp_disk_busy();
     const hearing = state.diskSound && state.audio && state.audio.state === "running";
     if (busy && !hearing) {

@@ -209,9 +209,20 @@ EMSCRIPTEN_KEEPALIVE double tp_cycles() {
 }
 
 // a byte of memory as the program sees it, without side effects: for headless checks that
-// play a game by its state (the page itself never reads the program's memory)
+// play a game by its state (the pad reads with tp_peek_ram)
 EMSCRIPTEN_KEEPALIVE int tp_peek(int addr) {
     return g_player.a ? PeekMemory(*g_player.a, static_cast<uint16_t>(addr)) : 0;
+}
+
+// a byte of main (aux 0) or auxiliary (aux 1) ram whatever the switches say, $C000-$CFFF the
+// language card's bank 1 (PeekMain, PeekAux): the pad reads the game's state with it
+EMSCRIPTEN_KEEPALIVE int tp_peek_ram(int addr, int aux) {
+    Player& p = g_player;
+    if (!p.a) {
+        return 0;
+    }
+    uint16_t at = static_cast<uint16_t>(addr);
+    return aux != 0 ? PeekAux(*p.a, at) : PeekMain(*p.a, at);
 }
 
 EMSCRIPTEN_KEEPALIVE int tp_stopped() {

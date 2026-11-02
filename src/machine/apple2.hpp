@@ -472,6 +472,8 @@ uint8_t PeekMemory(const Apple2& a, uint16_t addr);
 // auxiliary ram, whatever the switches say: below $C000 as is, $C000-$CFFF its language
 // card's bank 1 $D000-$DFFF, then $D000-$FFFF with bank 2
 uint8_t PeekAux(const Apple2& a, uint16_t addr);
+// main ram the same way, whatever the switches say (the phone player reads a game's state)
+uint8_t PeekMain(const Apple2& a, uint16_t addr);
 
 // speaker: toggle n for n in [toggle_count - kSpeakerRingSize, toggle_count)
 uint64_t SpeakerToggleCycle(const Apple2& a, uint64_t n);

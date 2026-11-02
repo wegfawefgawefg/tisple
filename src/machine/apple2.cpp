@@ -243,6 +243,19 @@ uint8_t PeekAux(const Apple2& a, uint16_t addr) {
     return a.lc.aux_bank1_d000[addr - 0xC000];
 }
 
+uint8_t PeekMain(const Apple2& a, uint16_t addr) {
+    if (addr < 0xC000) {
+        return a.cpu.mem[addr];
+    }
+    if (addr >= 0xE000) {
+        return a.lc.e000[addr - 0xE000];
+    }
+    if (addr >= 0xD000) {
+        return a.lc.bank2_d000[addr - 0xD000];
+    }
+    return a.lc.bank1_d000[addr - 0xC000];
+}
+
 void ResetApple2(Apple2& a) {
     ResetSoftSwitches(a);
     ResetCards(a);

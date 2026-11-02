@@ -71,6 +71,8 @@ void RunLinkRegionTests(TestResults& results);
 void RunTextLibTests(TestResults& results);
 // with_aux on the machine against the interpreter, the mirrored bytes (test_backend_aux.cpp)
 void RunBackendAuxTests(TestResults& results);
+// game.vars.json: the globals where the export says they are, on the machine
+void RunVarsExportTests(TestResults& results);
 // lib/dhgr: switches, pixels and bytes on both pages (test_dhgr.cpp)
 void RunDhgrLibTests(TestResults& results);
 // lib/dhgr's runs from aux memory and the aux language card, under ticks (test_dhgr_runs.cpp)

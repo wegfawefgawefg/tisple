@@ -24,6 +24,8 @@ import sys
 import tempfile
 import zlib
 
+import publish  # web/publish.py: add_state
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 MARKER = ".tisple-pages"
@@ -70,6 +72,7 @@ def add_game(out, name, disk, config, tisple, frames):
     with open(disk, "rb") as f:
         data = f.read()
     digest = hashlib.sha1(data).hexdigest()[:8]
+    publish.add_state(game, disk, data) # the pad's conditions read the game's vars
     game["disk"] = "disk-" + digest + ".dsk"
     game["version"] = digest
     folder = os.path.join(out, "games", name)

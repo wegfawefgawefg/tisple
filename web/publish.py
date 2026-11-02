@@ -10,14 +10,75 @@ CONFIG is the game's player config, kept with the game (docs/phone.md), e.g.
 A key is a character, a number, or RETURN ESC SPACE LEFT RIGHT UP DOWN TAB DELETE.
 The game becomes the default one the player opens. --disk2: a program with tables on a
 second disk (tisple build writes it beside the first) plays with it in drive 2.
+A pad key's "when" (and "live") conditions name the game's vars: their addresses come from
+the build's DISK.vars.json (docs/phone.md, "The pad follows the game").
 """
 
 import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
+import sys
 import time
+
+# a name in a pad condition: a game's var (state.phase, battle/reward.choices), an enum's member
+# (state.Phase.player) or one of the config's "names"
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_/]*(?:\.[A-Za-z_][A-Za-z0-9_/]*)*")
+
+
+def fnv1a32(data):
+    h = 2166136261
+    for b in data:
+        h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+    return h
+
+
+def conditions(game):
+    """every condition in the config: the names' and each pad key's when and live"""
+    out = list(game.get("names", {}).values())
+    for row in game.get("pad", []):
+        for key in row.get("keys", []):
+            out += [key[f] for f in ("when", "live") if f in key]
+    return out
+
+
+def add_state(game, disk_path, disk):
+    """the game's vars and enums its pad conditions name, from the build's game.vars.json
+    beside the disk (tisple build writes it): the player reads them from the running game. A
+    missing or stale file, or a name it does not have, publishes without them: the pad then
+    shows every key (but those marked "state_only")"""
+    texts = conditions(game)
+    if not texts:
+        return
+    path = os.path.splitext(disk_path)[0] + ".vars.json"
+    if not os.path.exists(path):
+        print(f"warning: no {path} (tisple build writes it): the pad shows every key", file=sys.stderr)
+        return
+    with open(path) as f:
+        built = json.load(f)
+    if built.get("disk_fnv") != fnv1a32(disk):
+        print(f"warning: {path} is not from this disk's build: the pad shows every key",
+              file=sys.stderr)
+        return
+    names = game.get("names", {})
+    vars_, enums, unknown = {}, {}, []
+    for text in texts:
+        for name in NAME.findall(text):
+            if name in names or name in ("true", "false"):
+                continue
+            if name in built["vars"]:
+                vars_[name] = built["vars"][name]
+            elif name in built["enums"]:
+                enums[name] = built["enums"][name]
+            else:
+                unknown.append(name)
+    if unknown:
+        sys.exit("pad conditions name what the build does not have: " + ", ".join(sorted(set(unknown))))
+    game["vars"] = vars_
+    game["enums"] = enums
+    game["check"] = built["check"]
 
 
 def main():
@@ -34,6 +95,7 @@ def main():
     with open(args.disk, "rb") as f:
         disk = f.read()
     digest = hashlib.sha1(disk).hexdigest()[:8]
+    add_state(game, args.disk, disk)
     game["disk"] = "disk-" + digest + ".dsk"
     game["version"] = time.strftime("%m-%d %H:%M") + " " + digest
 

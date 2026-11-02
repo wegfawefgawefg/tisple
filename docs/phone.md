@@ -34,6 +34,30 @@ key presses.
   corner, or `hint`). Put the most pressed ones in the last rows, big: they are the ones in
   thumb reach. Small rows sit at the right. The older form, `buttons` in rows of `columns`
   with `sub` and `wide`, still works (the demos in `programs/` use it).
+- The pad follows the game (2026-11-02, Catwiz): a key may have `"when"` (it shows only
+  while that holds) and `"live"` (while it shows it can be pressed only while that holds,
+  else it is dim and sends nothing), conditions over the running game's state, e.g.
+  `"when": "state.phase == state.Phase.player && state.dice_n >= 5"`: numbers with `== != <
+  <= > >= && || ! + -`, parentheses, `name[i]` for an element; `true`, `false`. A name is one
+  of the config's `"names"` (named conditions, which may use each other), else a top-level let
+  of the program (`state.phase`, `battle/reward.choices`; an array of structs by field,
+  `state.actors.alive[1]`) or an enum's member (`state.Phase.player`). `"state_only": true`
+  keeps a key hidden unless the state is read. A row with no key showing goes; the others
+  share its width. Every `tisple build` (and `tisple run`) with a disk writes `game.vars.json`
+  beside `game.dsk` (`src/disk/vars_export.hpp`: each let's address, bytes, element step,
+  memory, the enums, the program's first bytes and an FNV-1a hash of the disk), and
+  `publish.py` (and `pages.py`) copies the vars and enums the conditions name into the
+  `game.json`, so the addresses are right for every build; a name the build lacks fails the
+  publish, a missing or stale file publishes without them. The page reads them every frame with
+  `tp_peek_ram` (main or aux ram whatever the switches say: `PeekMain`, `PeekAux`) once the
+  program's first bytes are in memory and the disk has stopped after the boot; a change shows
+  once two frames agree. Until then, or with no vars, every key shows but the `state_only` ones.
+  The game spends no memory on it. A let the optimizer keeps no stores for (one only ever set
+  to one constant) reads as its first value: name lets the game really changes.
+  (`web/conditions.js`; `node` can load it alone for tests.)
+- A game whose screen takes taps (`taps` or `mouse`) shows a line over the pad in portrait,
+  "Turn sideways to play by touch" (or the config's `"sideways"` text; `""` for none): sideways
+  the screen is as big as fits and the pad is gone.
 - A config may list `taps`: boxes in hi-res pixels (280 x 192) with the key each presses,
   first match wins, so the screen itself takes taps and clicks.
 - Or `"mouse": true` (Catwiz, 2026-11-01): the player puts a mouse card (our firmware) in slot

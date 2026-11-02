@@ -146,6 +146,7 @@ int main() {
     tisple_tests::RunBackendOverlayTests(results);
     tisple_tests::RunTextLibTests(results);
     tisple_tests::RunBackendAuxTests(results);
+    tisple_tests::RunVarsExportTests(results);
     tisple_tests::RunMockingboardLibTests(results);
     tisple_tests::RunMockingboardLineTests(results);
     tisple_tests::RunMockingboardAuxTests(results);

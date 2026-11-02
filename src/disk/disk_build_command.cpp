@@ -8,6 +8,7 @@
 #include "disk/disk_command.hpp"
 #include "disk/disk_tables.hpp"
 #include "disk/image.hpp"
+#include "disk/vars_export.hpp"
 #include "machine/machine_command.hpp"
 
 #include <cstdio>
@@ -217,6 +218,24 @@ bool WriteDisk2(const Program& program, const Compiled& compiled, const std::str
     return true;
 }
 
+// game.vars.json beside game.dsk (disk/vars_export.hpp): the globals' addresses for the phone
+// player, with the hash of the disk as written so a stale one is known
+bool WriteVarsJson(const Program& program, const Compiled& compiled, const std::string& disk,
+                   std::string& error) {
+    std::vector<uint8_t> bytes;
+    if (!ReadWholeFile(disk, bytes)) {
+        error = "cannot read " + disk + " back";
+        return false;
+    }
+    std::string text = DescribeVarsJson(program, compiled, Fnv1a32(bytes));
+    std::string path = VarsJsonPath(disk);
+    if (!WriteWholeFile(path, std::vector<uint8_t>(text.begin(), text.end()))) {
+        error = "cannot write " + path;
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 // what the program adds to its disk: its tables :on disk, lib/disk's reader where the library
@@ -312,7 +331,8 @@ int RunBuildDiskCommand(int argc, char** argv) {
     MakeDiskFolder(args.disk);
     if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error,
                        BootExtrasFor(program)) ||
-        !WriteDisk2(program, compiled, Disk2Path(args), nullptr, error)) {
+        !WriteDisk2(program, compiled, Disk2Path(args), nullptr, error) ||
+        !WriteVarsJson(program, compiled, args.disk, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -349,7 +369,8 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     if (!args.disk.empty()) {
         MakeDiskFolder(args.disk);
     }
-    if (!args.disk.empty() && !WriteDiskSectorsFile(args.disk, *disk, error)) {
+    if (!args.disk.empty() && (!WriteDiskSectorsFile(args.disk, *disk, error) ||
+                               !WriteVarsJson(program, compiled, args.disk, error))) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
