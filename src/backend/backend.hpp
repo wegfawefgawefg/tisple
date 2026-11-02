@@ -56,6 +56,9 @@ struct BuildOptions {
     // as segments of their own (a boot disk's loader places them), not written by the startup
     // (UseBootDiskLayout; a library's machine code at its fixed home costs no other bytes)
     bool homes_in_segments = false;
+    // overlay groups with a root marked :overlay_disk2 read from the second disk (a boot disk
+    // build: lib/disk's reader is there); false: every group is kept in aux memory
+    bool disk2_images = false;
     // functions never inlined, by qualified name (the race times from t.init's return to
     // t.checksum's entry)
     std::vector<std::string> no_inline;
@@ -84,6 +87,10 @@ struct OverlayImage {
     std::uint32_t bytes = 0;
     std::uint16_t aux = 0;
     std::uint64_t load_cycles = 0; // a load's, about
+    // :overlay_disk2: read from the second disk when it loads (its table in
+    // OverlayBuilt::disk_tables, disk_table its index there), not kept in aux memory
+    bool on_disk = false;
+    std::int32_t disk_table = -1;
 };
 
 struct OverlayBuilt {
@@ -91,6 +98,8 @@ struct OverlayBuilt {
     std::uint32_t region_size = 0;
     std::uint32_t code_bytes = 0; // the stubs, enter routines and copy, resident
     std::vector<OverlayImage> groups;
+    // the images read from the second disk, as tables after the program's own there
+    std::vector<DiskTable> disk_tables;
 };
 
 struct Compiled {

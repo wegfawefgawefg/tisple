@@ -209,18 +209,21 @@ std::string ShowItems(const Node& list, std::size_t first) {
 }
 
 // (fn name () void :interrupt ...): the program's interrupt handler; (fn name (...) t :overlay
-// ...): a screen's code, loaded into the overlay region when it is called (docs/overlays.md)
+// ...): a screen's code, loaded into the overlay region when it is called (docs/overlays.md);
+// :overlay_disk2 the same, read from the second disk
 void ReadFnOption(Checker& ck, std::int32_t index, const Node& form, const Node& option,
                   const std::string& params_text, const std::string& return_text) {
     Function& fn = ck.out->functions[static_cast<std::size_t>(index)];
     const std::string& name = form.items[1].text;
-    if (option.text == ":overlay") {
+    if (option.text == ":overlay" || option.text == ":overlay_disk2") {
         fn.overlay = true;
+        fn.overlay_disk2 = option.text == ":overlay_disk2";
         return;
     }
     if (option.text != ":interrupt") {
         Err(ck, option,
-            option.text + " is no fn option; the ones there are :interrupt and :overlay");
+            option.text +
+                " is no fn option; the ones there are :interrupt, :overlay and :overlay_disk2");
         return;
     }
     if (!fn.params.empty() || fn.ret != kVoidType) {

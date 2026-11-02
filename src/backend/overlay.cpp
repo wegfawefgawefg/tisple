@@ -292,9 +292,59 @@ OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept
     }
 }
 
+namespace {
+
+// lib/disk's reader (disk.tsp): its entry and the next sector's, its arguments in auxmem.from
+// (the table's record) and auxmem.to (where to), X the memory (0 main) and drive 2's bit
+constexpr std::uint16_t kReaderBegin = 0x1700;
+constexpr std::uint16_t kReaderNext = 0x1703;
+constexpr std::uint16_t kReaderFrom = 0x00FA;
+constexpr std::uint16_t kReaderTo = 0x00FC;
+constexpr std::uint8_t kReaderMore = 1;
+
+// group g's image read from the second disk into the region: its record's four bytes after a
+// jump over them, the reader started on them and run to the last sector, and on any error
+// (the disk out, a bad read) read again until it is all in: the code must be whole
+void ReadImage(Backend& be, const OverlayCode& code, std::size_t g, std::int32_t disk2_bit_sym,
+               std::vector<AsmItem>& out) {
+    std::string k = std::to_string(g);
+    std::int32_t record = NewSym(be, "ov." + k + ".record", SymRole::Label, -1);
+    std::int32_t retry = NewSym(be, "ov." + k + ".retry", SymRole::Label, -1);
+    std::int32_t more = NewSym(be, "ov." + k + ".more", SymRole::Label, -1);
+    std::int32_t got = NewSym(be, "ov." + k + ".got", SymRole::Label, -1);
+    out.push_back(MakeIns(Mn::JMP, Mode::Abs, SymValue(retry)));
+    out.push_back(MakeLabel(record));
+    for (int i = 0; i < 4; i++) {
+        out.push_back(MakeByte(SymValue(code.rec_sym[4 * g + static_cast<std::size_t>(i)])));
+    }
+    out.push_back(MakeLabel(retry));
+    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(record, 0, Part::Low)));
+    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderFrom)));
+    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(record, 0, Part::High)));
+    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderFrom + 1)));
+    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.region_sym, 0, Part::Low)));
+    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderTo)));
+    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.region_sym, 0, Part::High)));
+    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderTo + 1)));
+    // main memory (0) and the drive the second disk is in (the record's $80 asks for it)
+    out.push_back(MakeIns(Mn::LDX, Mode::Abs, SymValue(disk2_bit_sym)));
+    out.push_back(MakeIns(Mn::JSR, Mode::Abs, Num(kReaderBegin)));
+    out.push_back(MakeLabel(more));
+    out.push_back(MakeIns(Mn::CMP, Mode::Imm, Num(kReaderMore)));
+    out.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(got)));
+    out.push_back(MakeIns(Mn::JSR, Mode::Abs, Num(kReaderNext)));
+    out.push_back(MakeIns(Mn::JMP, Mode::Abs, SymValue(more)));
+    out.push_back(MakeLabel(got));
+    out.push_back(MakeIns(Mn::CMP, Mode::Imm, Num(0)));
+    out.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(retry)));
+}
+
+} // namespace
+
 void RouteOverlays(Backend& be, const OverlayGroups& groups,
                    const std::vector<std::vector<AsmItem>*>& pieces,
-                   const std::vector<std::int32_t>& piece_group, OverlayCode& code) {
+                   const std::vector<std::int32_t>& piece_group, const std::vector<bool>& on_disk,
+                   std::int32_t disk2_bit_sym, OverlayCode& code) {
     const Program& program = *be.program;
     std::size_t count = program.functions.size();
     std::size_t n = groups.roots.size();
@@ -310,6 +360,11 @@ void RouteOverlays(Backend& be, const OverlayGroups& groups,
         off[g] = NewSym(be, "ov." + k + ".off", SymRole::Label, -1);
         code.image_sym.push_back(NewSym(be, "ov." + k + ".image", SymRole::Data, -1));
         code.size_sym.push_back(NewSym(be, "ov." + k + ".size", SymRole::Data, -1));
+        code.on_disk.push_back(g < on_disk.size() && on_disk[g] && disk2_bit_sym >= 0);
+        for (int i = 0; i < 4; i++) {
+            code.rec_sym.push_back(
+                NewSym(be, "ov." + k + ".record" + std::to_string(i), SymRole::Data, -1));
+        }
         for (std::int32_t r : groups.roots[g]) {
             const std::string& name = program.functions[static_cast<std::size_t>(r)].name;
             code.stub[static_cast<std::size_t>(r)] = NewSym(be, "ov." + name, SymRole::Label, -1);
@@ -358,6 +413,14 @@ void RouteOverlays(Backend& be, const OverlayGroups& groups,
             if (h != g) {
                 out.push_back(MakeIns(Mn::JSR, Mode::Abs, SymValue(off[h])));
             }
+        }
+        if (code.on_disk[g]) {
+            ReadImage(be, code, g, disk2_bit_sym, out);
+            point(g, true);
+            for (Mn mn : {Mn::PLA, Mn::TAY, Mn::PLA, Mn::TAX, Mn::PLA, Mn::PLP, Mn::RTS}) {
+                out.push_back(MakeIns(mn, Mode::Imp));
+            }
+            continue;
         }
         std::int32_t image = code.image_sym[g];
         out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(image, 0, Part::Low)));
@@ -462,6 +525,10 @@ bool PlaceOverlayImages(const std::vector<AddressRange>& taken, std::uint32_t si
         }
     }
     return false;
+}
+
+std::uint64_t OverlayDiskCycles(std::uint32_t bytes) {
+    return 115ull * bytes + 100000;
 }
 
 std::uint64_t OverlayLoadCycles(std::uint32_t bytes, std::size_t stubs) {

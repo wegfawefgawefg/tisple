@@ -151,8 +151,8 @@ Diagnostic OverlayNote(const Program& program, const Compiled& compiled) {
                      program.functions[static_cast<std::size_t>(image.roots[i])].name;
         }
         std::uint64_t frames10 = (image.load_cycles * 10 + 8515) / 17030;
-        groups += (g == 0 ? "" : "; ") + roots + " (" +
-                  Count(image.functions.size(), "function", "functions") + ", " +
+        groups += (g == 0 ? "" : "; ") + roots + (image.on_disk ? " from the second disk" : "") +
+                  " (" + Count(image.functions.size(), "function", "functions") + ", " +
                   std::to_string(image.bytes) + " bytes, a load about " +
                   std::to_string(image.load_cycles) + " cycles, " + std::to_string(frames10 / 10) +
                   "." + std::to_string(frames10 % 10) + " frames)";
@@ -161,14 +161,17 @@ Diagnostic OverlayNote(const Program& program, const Compiled& compiled) {
     std::uint32_t freed = total > used ? total - used : 0;
     char where[16];
     std::snprintf(where, sizeof(where), "$%04X", built.region);
-    std::string text = "the program does not fit main memory and the language card as it is, so " +
-                       Count(built.groups.size(), "group", "groups") + " of code take turns in a " +
-                       std::to_string(built.region_size) + "-byte overlay region at " + where +
-                       ", each copied in from aux memory when one of its roots is called and "
-                       "another is in: " +
-                       groups + ". The stubs and the copy take " +
-                       std::to_string(built.code_bytes) + " bytes; " + std::to_string(freed) +
-                       " bytes of main memory and the card freed.";
+    std::string text =
+        "the program does not fit main memory and the language card as it is, so " +
+        Count(built.groups.size(), "group", "groups") + " of code take turns in a " +
+        std::to_string(built.region_size) + "-byte overlay region at " + where +
+        (built.disk_tables.empty()
+             ? ", each copied in from aux memory when one of its roots is called and "
+               "another is in: "
+             : ", each copied in from aux memory (or read from the second disk) "
+               "when one of its roots is called and another is in: ") +
+        groups + ". The stubs and the copy take " + std::to_string(built.code_bytes) + " bytes; " +
+        std::to_string(freed) + " bytes of main memory and the card freed.";
     Diagnostic note;
     note.message = text;
     return note;

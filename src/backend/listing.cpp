@@ -15,6 +15,12 @@ std::string Hex4(std::uint32_t value) {
 // a byte of an overlay group's code: in its image in aux memory, at its offset in the region
 std::uint8_t GroupByte(const Compiled& c, std::int32_t group, std::uint16_t address) {
     const OverlayImage& image = c.overlays.groups[static_cast<std::size_t>(group)];
+    if (image.on_disk) {
+        const std::vector<std::uint8_t>& bytes =
+            c.overlays.disk_tables[static_cast<std::size_t>(image.disk_table)].bytes;
+        std::uint32_t offset = address - static_cast<std::uint32_t>(c.overlays.region);
+        return offset < bytes.size() ? bytes[offset] : 0;
+    }
     std::uint32_t at = image.aux + (address - static_cast<std::uint32_t>(c.overlays.region));
     for (const MemorySegment& segment : c.segments) {
         std::uint32_t offset = at - static_cast<std::uint32_t>(segment.address);
@@ -81,8 +87,9 @@ std::string ListProgram(const Program& program, const Compiled& c) {
         if (span.overlay_group >= 0) {
             const OverlayImage& image =
                 c.overlays.groups[static_cast<std::size_t>(span.overlay_group)];
-            where = " in overlay group " + std::to_string(span.overlay_group) + " (kept at aux $" +
-                    Hex4(image.aux) + ")";
+            where = " in overlay group " + std::to_string(span.overlay_group) +
+                    (image.on_disk ? std::string(" (read from the second disk)")
+                                   : " (kept at aux $" + Hex4(image.aux) + ")");
         }
         text += "\n" + span.name + "  $" + Hex4(start) + ", " + std::to_string(bytes) + " bytes" +
                 where + "\n";

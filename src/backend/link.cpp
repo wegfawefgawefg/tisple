@@ -425,6 +425,13 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         for (std::uint32_t i = 0; i < item.size; i++) {
             if (g >= 0) {
                 std::uint32_t offset = item.address + i - region.at;
+                const OverlayImage& image = out.overlays.groups[static_cast<std::size_t>(g)];
+                if (image.on_disk) {
+                    std::vector<std::uint8_t>& bytes =
+                        out.overlays.disk_tables[static_cast<std::size_t>(image.disk_table)].bytes;
+                    bytes[offset] = code[at++];
+                    continue;
+                }
                 aux[(images[static_cast<std::size_t>(g)].start + offset) & 0xFFFF] = code[at++];
                 continue;
             }
@@ -455,7 +462,11 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             SegmentOf(bank1_memory, MemoryBank::kCardBank1, bank1_run.start, bank1_run.end));
     }
     std::vector<AddressRange> aux_pieces = mirror;
-    aux_pieces.insert(aux_pieces.end(), images.begin(), images.end());
+    for (const AddressRange& image : images) {
+        if (image.start < image.end) {
+            aux_pieces.push_back(image);
+        }
+    }
     AuxSegments(program, out.layout, aux, aux_pieces, out.segments);
 
     // a bank 1 function is called through its forward stub (none: only bank 1 calls it), an

@@ -73,14 +73,21 @@ struct OverlayCode {
     std::vector<std::int32_t> image_sym; // by group: its bytes in aux memory
     std::vector<std::int32_t> size_sym;  // by group: whole pages (low) and bytes after (high)
     std::int32_t region_sym = -1;
+    // by group: read from the second disk (lib/disk's reader) instead of copied from aux
+    // memory, and the four bytes of its disk table's record (rec_sym[4 g + i])
+    std::vector<bool> on_disk;
+    std::vector<std::int32_t> rec_sym;
 };
 
 // the stubs and routines; every call or jump to a root from outside its group in pieces (all
 // code but the groups' own, and each group's code, pieces[i] in group piece_group[i] or -1)
 // made to its stub
+// on_disk: by group, read from the second disk with lib/disk's reader, the drive in
+// disk2_bit_sym (disk.disk2_bit); empty or all false, every group from aux memory
 void RouteOverlays(Backend& be, const OverlayGroups& groups,
                    const std::vector<std::vector<AsmItem>*>& pieces,
-                   const std::vector<std::int32_t>& piece_group, OverlayCode& code);
+                   const std::vector<std::int32_t>& piece_group, const std::vector<bool>& on_disk,
+                   std::int32_t disk2_bit_sym, OverlayCode& code);
 
 // a free stretch of aux memory for the images, size bytes, next to what is there (so it joins
 // a segment): taken is every range in use. False when none holds them
@@ -88,6 +95,9 @@ bool PlaceOverlayImages(const std::vector<AddressRange>& taken, std::uint32_t si
                         std::uint32_t& at);
 
 // a load's cycles, about: the copy and the stubs' patching
+// a read from the second disk: lib/disk's 8.9 KB a second, and about half a turn to find the
+// first sector
+std::uint64_t OverlayDiskCycles(std::uint32_t bytes);
 std::uint64_t OverlayLoadCycles(std::uint32_t bytes, std::size_t stubs);
 
 } // namespace tisple

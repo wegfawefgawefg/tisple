@@ -150,7 +150,7 @@ std::string Disk2Path(const DiskBuildArgs& args) {
 }
 
 // every table :on disk and :on disk2: its name, disk, bytes, sectors and tracks
-std::string DescribeDiskTables(const Program& program) {
+std::string DescribeDiskTables(const Program& program, const Compiled& compiled) {
     std::string out;
     for (const DiskTable& t : program.disk_tables) {
         char line[256];
@@ -162,18 +162,36 @@ std::string DescribeDiskTables(const Program& program) {
                       DiskTableSectors(static_cast<std::uint32_t>(t.bytes.size())));
         out += line;
     }
+    for (std::size_t g = 0; g < compiled.overlays.groups.size(); g++) {
+        const OverlayImage& image = compiled.overlays.groups[g];
+        if (!image.on_disk) {
+            continue;
+        }
+        const DiskTable& t =
+            compiled.overlays.disk_tables[static_cast<std::size_t>(image.disk_table)];
+        char line[256];
+        std::snprintf(line, sizeof(line),
+                      "  disk 2 tracks %2d-%2d: overlay group %zu's code, %zu bytes, %u sectors\n",
+                      t.tracks.front(), t.tracks.back(), g, t.bytes.size(),
+                      DiskTableSectors(static_cast<std::uint32_t>(t.bytes.size())));
+        out += line;
+    }
     return out;
 }
 
 // the second disk, when the program has tables :on disk2: written to path (unless ""), and
 // its image kept in image (unless null)
-bool WriteDisk2(const Program& program, const std::string& path, std::vector<uint8_t>* image,
-                std::string& error) {
+bool WriteDisk2(const Program& program, const Compiled& compiled, const std::string& path,
+                std::vector<uint8_t>* image, std::string& error) {
     if (!HasDisk2Tables(program.disk_tables)) {
         return true;
     }
+    // the program's tables, then the overlay groups' images read from there
+    std::vector<DiskTable> tables = program.disk_tables;
+    tables.insert(tables.end(), compiled.overlays.disk_tables.begin(),
+                  compiled.overlays.disk_tables.end());
     std::unique_ptr<DiskSectors> disk = std::make_unique<DiskSectors>();
-    MakeDisk2(program.disk_tables, *disk);
+    MakeDisk2(tables, *disk);
     if (image != nullptr) {
         *image = ImageFromSectors(*disk, SectorOrder::kDos);
     }
@@ -188,9 +206,14 @@ bool WriteDisk2(const Program& program, const std::string& path, std::vector<uin
     for (const DiskTable& t : program.disk_tables) {
         count += t.disk == 2 ? 1 : 0;
     }
-    int last = Disk2LastTrack(program.disk_tables);
-    std::printf("%s: the second disk, %zu tables :on disk2 in tracks %d-%d (%d free)\n",
-                path.c_str(), count, kDisk2FirstTrack, last, kBootLastTrack - last);
+    int last = Disk2LastTrack(tables);
+    std::string images;
+    if (!compiled.overlays.disk_tables.empty()) {
+        images = " and " + std::to_string(compiled.overlays.disk_tables.size()) +
+                 " overlay groups' code";
+    }
+    std::printf("%s: the second disk, %zu tables :on disk2%s in tracks %d-%d (%d free)\n",
+                path.c_str(), count, images.c_str(), kDisk2FirstTrack, last, kBootLastTrack - last);
     return true;
 }
 
@@ -229,6 +252,8 @@ void UseBootDiskLayout(BuildOptions& options) {
     options.limit = 0xC000;
     options.low_start = kBootLoadLow;
     options.homes_in_segments = true;
+    // lib/disk's reader is on a boot disk: groups marked :overlay_disk2 are read from disk 2
+    options.disk2_images = true;
 }
 
 bool HasDiskFlag(int argc, char** argv) {
@@ -280,14 +305,14 @@ int RunBuildDiskCommand(int argc, char** argv) {
         }
     }
     if (args.tables) {
-        std::fputs(DescribeDiskTables(program).c_str(), stdout);
+        std::fputs(DescribeDiskTables(program, compiled).c_str(), stdout);
     }
     BootDiskInfo info;
     std::string error;
     MakeDiskFolder(args.disk);
     if (!WriteBootDisk(args.disk, ProgramSegments(compiled), compiled.origin, info, error,
                        BootExtrasFor(program)) ||
-        !WriteDisk2(program, Disk2Path(args), nullptr, error)) {
+        !WriteDisk2(program, compiled, Disk2Path(args), nullptr, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }
@@ -330,7 +355,7 @@ int RunRunDiskCommand(int argc, char** argv, MachineWindowFn window) {
     }
     std::vector<uint8_t> image2;
     std::string path2 = Disk2Path(args);
-    if (!WriteDisk2(program, path2, &image2, error)) {
+    if (!WriteDisk2(program, compiled, path2, &image2, error)) {
         std::fprintf(stderr, "tisple: %s\n", error.c_str());
         return 1;
     }

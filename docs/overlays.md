@@ -274,8 +274,29 @@ link's part); BuildOptions::use_overlays.
   closing a page 66 frames (was 68); the reward up at frame 1,211 (was 1,217, a fight won at
   once). Build 7.9 s (was 7.3 s).
 
-Not built: images on the disk (for when aux memory is full: lib/disk's reader is the
-program's, so it would be a disk table per group read by the stub, 0.1 s a KB), data only a
+## Built: images on the second disk (2026-11-02)
+
+For Catwiz, whose aux memory is full: a group with a root marked `:overlay_disk2` keeps its
+code on the second disk instead of in aux memory (BuildOptions::disk2_images, set for boot disk
+builds; the program has tables `:on disk2` and imports lib/disk, else the group stays in aux).
+
+- **Where.** Each such group's image is a disk table after the program's own on disk 2 (the
+  next slots of the row, link_overlay.cpp PlaceGroupImages), in Compiled::overlays.disk_tables;
+  `tisple build` writes them with the program's (WriteDisk2) and `--tables` lists them.
+- **The load.** `ov.g.enter` jumps over the table's four-byte record (its bytes defined once the
+  link has placed it), puts the record in auxmem.from and the region in auxmem.to, X the drive
+  bit (`disk.disk2_bit`; main memory), and runs lib/disk's reader ($1700, then $1703 a sector)
+  until it gives DONE; any error reads it again, since half a group's code cannot run. The
+  reader holds interrupts off a sector at a time, as for any table. About 115 cycles a byte
+  plus finding the first sector: Catwiz's 3 KB reward group about 0.4 s.
+- **Tests.** tests/test_disk_read_two.cpp TestDiskOverlays: two groups marked
+  `:overlay_disk2` and one `:overlay` (forced with overlay_test) taking turns every call on
+  the emulated IIe with two drives, the sums as the plain code's, the images' places on disk 2.
+- **Catwiz** (2026-11-02, the UI round's room pass): the reward group (3,057 bytes) and the
+  fight's start (`battle.enter_fight` with its art's loading, 1,252 bytes, a Phase.start step
+  of its own) from disk 2, the pages' group kept in aux memory so a page opens fast.
+
+Not built: images on the boot disk, data only a
 group reads in its image (Catwiz: 190 bytes), a region in bank 1, and a name on `:overlay`
 to put marked roots in one group (the fight's phases as one group would need 10 KB of aux
 memory Catwiz does not have).

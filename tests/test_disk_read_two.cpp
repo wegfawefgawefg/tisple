@@ -219,6 +219,76 @@ void TestDisk2Boot(TestResults& results) {
     CHECK(results, disk2.data[1][0][0] == 7);
 }
 
+// overlay groups whose roots are marked :overlay_disk2 (BuildOptions::overlay_test forces the
+// groups): their code is a table after the program's own on the second disk, read into the
+// region with lib/disk's reader each time a root is called while another group is in; the
+// groups take turns every call, and the sums come out as the plain code's
+const char* kDiskOverlayProgram = R"(
+(import disk)
+(const T0 (array u8 3) (make (array u8 3) 11 22 33) :on disk2)
+(const TAG (array u8 2) (make (array u8 2) 1 2) :in aux)
+(let out (array u8 16))
+(let total u16 0 :address 0x0300)
+(let got (array u8 4) :address 0x0310)
+(let seed u8 0)
+(fn add ((x u8) (y u8)) u8 (+ (* x 3) y))
+(fn red ((x u8)) u8 :overlay_disk2 (set (at out 0) (add x 1)) (+ (at out 0) 7))
+(fn green ((x u8)) u8 :overlay_disk2 (set (at out 1) (add x 2)) (^ (at out 1) 0x55))
+(fn blue ((x u8)) u16 :overlay (set (at out 2) (add x 3)) (+ (as u16 (at out 2)) 300))
+(fn main () void
+    (set (at got 3) (disk.read (addr_of (at got 0)) (addr_of (at T0 0)) disk.MAIN))
+    (for i u8 0 5
+        (set total (+ total (as u16 (red i))))
+        (set seed (+ seed 37))
+        (set total (+ total (as u16 (green seed))))
+        (set total (+ total (blue i)))))
+)";
+
+void TestDiskOverlays(TestResults& results) {
+    tisple::BuildOptions options = DiskReadLayout(0x6000);
+    options.overlay_test = 1;
+    options.no_inline = {"t.red", "t.green", "t.blue", "t.add"};
+    DiskProgram p;
+    BuildDiskProgram(results, kDiskOverlayProgram, options, p);
+    if (!p.ok) {
+        return;
+    }
+    const tisple::OverlayBuilt& built = p.code.overlays;
+    int on_disk = 0;
+    for (const tisple::OverlayImage& image : built.groups) {
+        on_disk += image.on_disk ? 1 : 0;
+    }
+    // red's and green's groups from the disk, blue's (and any other the test makes) from aux
+    CHECK(results, built.groups.size() >= 3 && on_disk == 2 && built.disk_tables.size() == 2);
+    // the images after T0's sector, each on its own sectors of the row
+    CHECK(results, !built.disk_tables.empty() && built.disk_tables[0].tracks[0] == 1 &&
+                       built.disk_tables[0].sectors[0] == 2);
+    std::vector<tisple::DiskTable> tables = p.program.disk_tables;
+    tables.insert(tables.end(), built.disk_tables.begin(), built.disk_tables.end());
+    tisple::DiskSectors disk2;
+    tisple::MakeDisk2(tables, disk2);
+    std::unique_ptr<tisple::Apple2> a = BootTwo(p, disk2, false);
+    uint64_t took = RunDiskProgram(*a, kDiskReadBudget);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    uint32_t want = 0;
+    uint32_t seed = 0;
+    for (uint32_t i = 0; i < 5; i++) {
+        want += ((i * 3 + 1) & 0xFF) + 7;
+        seed = (seed + 37) & 0xFF;
+        want += ((seed * 3 + 2) & 0xFF) ^ 0x55;
+        want += ((i * 3 + 3) & 0xFF) + 300;
+    }
+    uint32_t total = a->cpu.mem[0x0300] | (a->cpu.mem[0x0301] << 8);
+    CHECK(results, total == (want & 0xFFFF));
+    CHECK(results, a->cpu.mem[0x0310] == 11 && a->cpu.mem[0x0312] == 33 &&
+                       a->cpu.mem[0x0313] == tisple::kReaderDone);
+    std::string listing = tisple::ListProgram(p.program, p.code);
+    CHECK(results, listing.find("read from the second disk") != std::string::npos);
+    std::printf("overlays from disk 2: 15 calls taking turns, 10 reads, total %u, %.1f s from "
+                "power on\n",
+                total, static_cast<double>(took) / 1023000.0);
+}
+
 } // namespace
 
 void RunDiskReadTwoTests(TestResults& results) {
@@ -231,6 +301,7 @@ void RunDiskReadTwoTests(TestResults& results) {
     TestTwoDrives(results, tables);
     TestOneDrive(results, tables);
     TestDisk2Boot(results);
+    TestDiskOverlays(results);
 }
 
 } // namespace tisple_tests

@@ -171,8 +171,8 @@ and `a2.SPKR`; never type an I/O address or key code by hand.
 1. Placement options on a top-level `let` or a `const` table, after the value:
    `:address`, `:align`, `:boundary` and `:in aux`, on a `let` `:reserve`, and on a
    `const` table `:on disk`, `:interleave` and `:strings aux` (see Placement). `:reserve` is the one option without a value. On a `fn`,
-   after the return type, `:interrupt` (see Interrupts) or `:overlay` (see Overlays), also
-   without one.
+   after the return type, `:interrupt` (see Interrupts), `:overlay` or `:overlay_disk2` (see
+   Overlays), also without one.
 2. Field names in struct values: `(make Sprite :x 10 :y 20 :active true)`.
    Every field, in declared order, none left out. The names exist so a swapped
    `x`/`y` is an error instead of a silent bug; there is no reordering and no
@@ -743,6 +743,14 @@ group is in. The compiler finds the screens a loop's own `match` (or `if`) on a 
   Once any function is marked, only marked functions are roots. Marked roots that may run in
   one pass (their dispatch does not keep them apart), that call one another, or that share
   code go in one group.
+- `(fn name (params) type :overlay_disk2 body ...)` marks one the same way, and its group's
+  code is read from the second disk when it loads (2026-11-02), not kept in aux memory: a
+  table after the program's own `:on disk2` ones, read into the region by lib/disk's reader
+  from wherever `disk.disk2_in` says the second disk is (again until it is all in, when a read
+  fails). A load is a disk read (8.9 KB a second), so it is for screens that come between
+  others (Catwiz's reward and the start of a fight). Only in a boot disk build of a program
+  with tables `:on disk2` that imports lib/disk; otherwise it is kept in aux memory as with
+  `:overlay`. The program must not call such a root before the second disk is found.
 - Nothing the interrupt handler runs, main, a function whose address is taken or code with an
   aux switch on is ever in a group; a mark on one is a warning.
 - The build says which groups it made, their bytes and what a load costs;

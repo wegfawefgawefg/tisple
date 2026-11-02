@@ -267,6 +267,10 @@ struct Function {
     // (fn name (...) t :overlay): a screen's entry, whose code may take turns with other
     // screens' in the overlay region (backend/overlay_plan.hpp)
     bool overlay = false;
+    // (fn name (...) t :overlay_disk2): the same, its group's code read from the second disk
+    // when it loads instead of kept in aux memory (a boot disk build with lib/disk; else as
+    // :overlay)
+    bool overlay_disk2 = false;
     // backend only (backend/dispatch.cpp): jumps to the address in its first parameter
     bool dispatcher = false;
     // backend only (backend/io_bases.cpp): stores this var's value into the I/O accesses
