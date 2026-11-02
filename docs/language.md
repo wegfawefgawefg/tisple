@@ -940,7 +940,7 @@ The linker checks them and fails the build if one can't hold.
 | `:strings aux` | on a `const` table: the string literals written in its value live in aux memory; the table stays in main memory (2026-10-31, Aux memory code) |
 | `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
 | `:on disk` | a const `(array u8 n)` that lives on the boot disk, not in memory; its name holds where, for `lib/disk` (2026-10-30, [`disks.md`](disks.md), Disk tables) |
-| `:on disk2` | the same on the second disk, which the build writes beside the first and reads from drive 2 (or drive 1 after a swap); its record is 4 bytes whatever its size (2026-11-01, [`disks.md`](disks.md), The second disk) |
+| `:on disk2` | the same on the second disk, which the build writes beside the first and reads from drive 2 (or drive 1 after a swap); its record is 4 bytes whatever its size (2026-11-01, [`disks.md`](disks.md), The second disk); with `:in aux` too the record is in aux memory, which the program copies to main memory for lib/disk (2026-11-02) |
 | `:interleave 2` | with `:on disk`: how many physical sectors apart its sectors go round a track, 1 to 15, 2 when not given |
 
 Placement goes on top-level `let`s and `const` tables, after the value; `:reserve`

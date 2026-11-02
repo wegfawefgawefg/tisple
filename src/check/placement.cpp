@@ -212,10 +212,8 @@ bool CheckConstOptions(Checker& ck, const Node& form, const Node& option, const 
         Err(ck, option, ":reserve is for top-level lets; make " + name + " a let");
         return false;
     }
-    if (place.in_aux && place.on_disk) {
-        Err(ck, option, name + " is :in aux and :on disk, which are two places; keep one");
-        return false;
-    }
+    // :in aux with :on disk: the bytes on the disk, the record in aux memory (a program copies
+    // it to main memory for lib/disk, which reads records there)
     if (place.in_aux && place.strings_aux) {
         Err(ck, option,
             ":in aux puts " + name + "'s strings in aux memory already; drop :strings aux");

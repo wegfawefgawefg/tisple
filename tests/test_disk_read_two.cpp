@@ -289,6 +289,39 @@ void TestDiskOverlays(TestResults& results) {
                 total, static_cast<double>(took) / 1023000.0);
 }
 
+// a table :on disk2 :in aux: its record in aux memory, copied to main memory for lib/disk
+const char* kAuxRecordProgram = R"(
+(import disk)
+(import auxmem)
+(import tables)
+(macro fill (i) (if (< i 3) (+ i 7) 0))
+(tables.table T u8 300 fill :on disk2 :in aux)
+(const TAG (array u8 2) (make (array u8 2) 1 2) :in aux)
+(let record (array u8 4))
+(let got (array u8 301) :address 0x6000)
+(let status u8 0 :address 0x0300)
+(fn main () void
+    (auxmem.read (addr_of (at record 0)) (addr_of (at T 0)) 4)
+    (set status (disk.read (addr_of (at got 0)) (addr_of (at record 0)) disk.MAIN)))
+)";
+
+void TestAuxRecords(TestResults& results) {
+    DiskProgram p;
+    BuildDiskProgram(results, kAuxRecordProgram, DiskReadLayout(0x7000), p);
+    if (!p.ok) {
+        return;
+    }
+    tisple::DiskSectors disk2;
+    tisple::MakeDisk2(p.program.disk_tables, disk2);
+    std::unique_ptr<tisple::Apple2> a = BootTwo(p, disk2, false);
+    a->cpu.mem[0x6000 + 300] = kUntouched;
+    RunDiskProgram(*a, kDiskReadBudget);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    CHECK(results, a->cpu.mem[0x0300] == tisple::kReaderDone && a->cpu.mem[0x6000] == 7 &&
+                       a->cpu.mem[0x6002] == 9 && a->cpu.mem[0x6003] == 0 &&
+                       a->cpu.mem[0x6000 + 300] == kUntouched);
+}
+
 } // namespace
 
 void RunDiskReadTwoTests(TestResults& results) {
@@ -302,6 +335,7 @@ void RunDiskReadTwoTests(TestResults& results) {
     TestOneDrive(results, tables);
     TestDisk2Boot(results);
     TestDiskOverlays(results);
+    TestAuxRecords(results);
 }
 
 } // namespace tisple_tests
