@@ -63,7 +63,8 @@ void MoveMouse(Apple2& a, int32_t dx, int32_t dy);
 void SetMouseButton(Apple2& a, bool down);
 // scripted input: from `cycle` the mouse is at x, y (clamped) with the button so. applied
 // when the program next touches the card, which is the first moment it can tell
-bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button);
+// with tap, a tap or lift as PointMouse makes it (a phone playtest's log replayed)
+bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button, bool tap = false);
 
 // a tap or click on the screen at hi-res pixel x, y (the phone player, and the window with a
 // config that says "mouse": true): the mouse goes there with its button down (down), or the

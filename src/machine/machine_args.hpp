@@ -28,6 +28,7 @@ struct MachineArgs {
     const char* wav = nullptr;
     const char* keys = nullptr;
     const char* mouse = nullptr;     // scripted mouse input
+    const char* taps_at = nullptr;   // scripted taps, as a phone playtest log has them
     const char* mouse_rom = nullptr; // the owner's MouseInterface.rom; null for ours
     const char* joystick = nullptr;  // scripted paddles 0-1 and buttons
     MachineModel model = MachineModel::kIIeEnhanced; // what the rom-less machine says it is

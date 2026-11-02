@@ -90,7 +90,7 @@ bool ScheduleKeys(Apple2& a, const char* spec, std::string& error) {
     return true;
 }
 
-bool ScheduleMouseInput(Apple2& a, const char* spec, std::string& error) {
+bool ScheduleMouseInput(Apple2& a, const char* spec, std::string& error, bool taps) {
     std::string text = spec;
     size_t pos = 0;
     while (pos < text.size()) {
@@ -114,7 +114,7 @@ bool ScheduleMouseInput(Apple2& a, const char* spec, std::string& error) {
             return false;
         }
         if (!ScheduleMouse(a, cycle, static_cast<int32_t>(x), static_cast<int32_t>(y),
-                           button == 1)) {
+                           button == 1, taps)) {
             error = "too much scripted mouse input";
             return false;
         }

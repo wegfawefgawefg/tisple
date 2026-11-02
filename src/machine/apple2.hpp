@@ -296,7 +296,7 @@ struct Disk2State {
 
 // applemouse ii (mouse.hpp has the model). positions are the 6805's signed 16-bit numbers
 constexpr uint32_t kMouseRomBytes = 2048; // eight 256-byte pages, one at a time at $Cn00
-constexpr uint32_t kMaxScheduledMouse = 1024;
+constexpr uint32_t kMaxScheduledMouse = 4096;
 
 // scripted input: from this cycle the mouse is at x, y (then clamped) with the button so
 struct ScheduledMouse {
@@ -304,6 +304,7 @@ struct ScheduledMouse {
     int32_t x = 0;
     int32_t y = 0;
     bool button = false;
+    bool tap = false; // a tap (PointMouse) at its cycle, as the phone player's log has them
 };
 
 // a tap or click (PointMouse): the mouse to x, y with the button so

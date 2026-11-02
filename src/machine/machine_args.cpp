@@ -30,6 +30,8 @@ void PrintMachineUsage() {
         "  --disk-rom F        the card's boot rom (Apple's DISK2.rom) instead of ours\n"
         "  --mouse \"C:X,Y,B;...\"  the mouse card (slot 4) is at X,Y with the button B (0 or\n"
         "                      1) from cycle C\n"
+        "  --taps-at \"C:X,Y,B;...\"  a tap (B 1) or lift (B 0) at X,Y at cycle C, as the\n"
+        "                      phone player makes them: replays a playtest log's taps\n"
         "  --joystick \"C:X,Y,B;...\"  from cycle C paddles 0 and 1 read X and Y (0-255) and\n"
         "                      the buttons are down by B's bits (1 open-apple, 2 closed-apple,\n"
         "                      4 button 2)\n"
@@ -124,6 +126,8 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.keys = argv[++i];
         } else if (std::strcmp(arg, "--mouse") == 0 && has_value) {
             args.mouse = argv[++i];
+        } else if (std::strcmp(arg, "--taps-at") == 0 && has_value) {
+            args.taps_at = argv[++i];
         } else if (std::strcmp(arg, "--joystick") == 0 && has_value) {
             args.joystick = argv[++i];
         } else if (std::strcmp(arg, "--model") == 0 && has_value) {

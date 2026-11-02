@@ -316,6 +316,10 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         return 1;
     }
+    if (args.taps_at != nullptr && !ScheduleMouseInput(*a, args.taps_at, error, true)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        return 1;
+    }
     if (args.joystick != nullptr && !ScheduleJoystickInput(*a, args.joystick, error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         return 1;

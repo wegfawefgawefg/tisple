@@ -78,8 +78,16 @@ void CatchUp(Apple2& a) {
     m.now = now;
     while (m.queue_count > 0 && m.queue[m.queue_head].cycle <= now) {
         const ScheduledMouse& e = m.queue[m.queue_head];
-        MoveBy(m, e.x - m.x, e.y - m.y);
-        m.button = e.button;
+        if (e.tap) {
+            if (m.pointed_count < kMaxPointedMouse) {
+                m.pointed[(m.pointed_head + m.pointed_count) % kMaxPointedMouse] = {e.x, e.y,
+                                                                                  e.button};
+                m.pointed_count++;
+            }
+        } else {
+            MoveBy(m, e.x - m.x, e.y - m.y);
+            m.button = e.button;
+        }
         m.queue_head = (m.queue_head + 1) % kMaxScheduledMouse;
         m.queue_count--;
     }
@@ -414,7 +422,7 @@ void SetMouseButton(Apple2& a, bool down) {
     Card(a).button = down;
 }
 
-bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button) {
+bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button, bool tap) {
     MouseCardState& m = Card(a);
     if (m.queue_count == kMaxScheduledMouse) {
         return false;
@@ -429,7 +437,7 @@ bool ScheduleMouse(Apple2& a, uint64_t cycle, int32_t x, int32_t y, bool button)
         m.queue[(m.queue_head + i) % kMaxScheduledMouse] = prev;
         i--;
     }
-    m.queue[(m.queue_head + i) % kMaxScheduledMouse] = {cycle, x, y, button};
+    m.queue[(m.queue_head + i) % kMaxScheduledMouse] = {cycle, x, y, button, tap};
     m.queue_count++;
     return true;
 }
