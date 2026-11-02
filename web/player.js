@@ -24,6 +24,7 @@ const ui = {
     name: document.getElementById("name"),
     look: document.getElementById("look"),
     disk: document.getElementById("disk"),
+    buzz: document.getElementById("buzz"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -45,6 +46,7 @@ const state = {
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
     logs: true,       // false on a static site: nowhere to post them
+    buzz: true,       // a short buzz on each tap (the bar's BUZZ button turns it off)
     diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
 };
 
@@ -56,12 +58,26 @@ try {
     // no storage (private window, blocked): on, as by default
 }
 
+// the buzz button's setting, kept in this browser when it can be
+const BUZZ_KEY = "tisple.buzz";
+try {
+    state.buzz = localStorage.getItem(BUZZ_KEY) !== "off";
+} catch (err) {
+    // no storage: on, as by default
+}
+function buzz() {
+    if (state.buzz && navigator.vibrate) {
+        navigator.vibrate(8);
+    }
+}
+
 // the bar's and the start's words, in the machine's letters (pad.js)
 const words = {
     name: makeLabel("Tisple ][", 2),
     rec: makeLabel("", 2),
     look: makeLabel(LOOKS[0], 2),
     disk: makeLabel("disk", 2),
+    buzz: makeLabel("buzz", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -166,9 +182,7 @@ ui.canvas.addEventListener("pointerdown", (e) => {
     if (state.game && state.game.mouse) {
         ui.canvas.setPointerCapture(e.pointerId);
         pointed = pointAt(e);
-        if (navigator.vibrate) {
-            navigator.vibrate(8);
-        }
+        buzz();
         point(pointed, true);
         return;
     }
@@ -178,9 +192,7 @@ ui.canvas.addEventListener("pointerdown", (e) => {
     }
     ui.canvas.setPointerCapture(e.pointerId);
     held_tap = t;
-    if (navigator.vibrate) {
-        navigator.vibrate(8);
-    }
+    buzz();
     press(padKeyCode(t.key));
 });
 const tapUp = () => {
@@ -616,6 +628,20 @@ ui.disk.addEventListener("click", () => {
     showDiskSound();
     setStatus(state.diskSound ? "disk sound on: loads at the apple's speed"
                               : "disk sound off: loads flat out");
+});
+function showBuzz() {
+    ui.buzz.classList.toggle("off", !state.buzz);
+}
+showBuzz();
+ui.buzz.addEventListener("click", () => {
+    state.buzz = !state.buzz;
+    try {
+        localStorage.setItem(BUZZ_KEY, state.buzz ? "on" : "off");
+    } catch (err) {
+        // not kept: this page only
+    }
+    showBuzz();
+    setStatus(state.buzz ? "buzz on: taps buzz" : "buzz off: taps are silent");
 });
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");

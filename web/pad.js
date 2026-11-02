@@ -148,7 +148,9 @@ function makeButton(parent, spec, size) {
         }
         el.setPointerCapture(e.pointerId);
         el.classList.add("down");
-        if (navigator.vibrate) {
+        if (typeof buzz === "function") {
+            buzz(); // player.js: off when the bar's BUZZ is off
+        } else if (navigator.vibrate) {
             navigator.vibrate(8);
         }
         pad.press(code);
