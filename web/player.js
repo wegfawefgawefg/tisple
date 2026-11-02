@@ -139,18 +139,6 @@ function tapAt(e) {
     return null;
 }
 
-function flashTap(t) {
-    const r = ui.canvas.getBoundingClientRect();
-    const box = document.createElement("div");
-    box.className = "flash";
-    box.style.left = (t.x / 280 * r.width) + "px";
-    box.style.top = (t.y / 192 * r.height) + "px";
-    box.style.width = (t.w / 280 * r.width) + "px";
-    box.style.height = (t.h / 192 * r.height) + "px";
-    ui.canvas.parentElement.appendChild(box);
-    setTimeout(() => box.remove(), 150);
-}
-
 // a game whose config says "mouse": true has a mouse card instead of taps: a tap puts the
 // mouse where it is with its button down until the finger lifts (player.cpp tp_point), and the
 // game knows what it drew there. In the log as [cycle, -2, x, y, down]
@@ -178,7 +166,6 @@ ui.canvas.addEventListener("pointerdown", (e) => {
     if (state.game && state.game.mouse) {
         ui.canvas.setPointerCapture(e.pointerId);
         pointed = pointAt(e);
-        flashTap({ x: pointed.x - 6, y: pointed.y - 6, w: 12, h: 12 });
         if (navigator.vibrate) {
             navigator.vibrate(8);
         }
@@ -191,7 +178,6 @@ ui.canvas.addEventListener("pointerdown", (e) => {
     }
     ui.canvas.setPointerCapture(e.pointerId);
     held_tap = t;
-    flashTap(t);
     if (navigator.vibrate) {
         navigator.vibrate(8);
     }
