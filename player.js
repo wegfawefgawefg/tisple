@@ -24,6 +24,7 @@ const ui = {
     name: document.getElementById("name"),
     look: document.getElementById("look"),
     disk: document.getElementById("disk"),
+    buzz: document.getElementById("buzz"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -41,10 +42,11 @@ const state = {
     last: 0,          // performance.now() of the last tick
     audio: null,      // AudioContext
     worklet: null,    // AudioWorkletNode
-    log: [],          // [cycle, code] presses, [cycle, -1] releases
+    log: [],          // [cycle, code] presses, [cycle, -1] releases, [cycle, -2, x, y, down] taps
     logSent: 0,       // log entries already on the server
     session: Date.now().toString(36),
     logs: true,       // false on a static site: nowhere to post them
+    buzz: true,       // a short buzz on each tap (the bar's BUZZ button turns it off)
     diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
 };
 
@@ -56,12 +58,26 @@ try {
     // no storage (private window, blocked): on, as by default
 }
 
+// the buzz button's setting, kept in this browser when it can be
+const BUZZ_KEY = "tisple.buzz";
+try {
+    state.buzz = localStorage.getItem(BUZZ_KEY) !== "off";
+} catch (err) {
+    // no storage: on, as by default
+}
+function buzz() {
+    if (state.buzz && navigator.vibrate) {
+        navigator.vibrate(8);
+    }
+}
+
 // the bar's and the start's words, in the machine's letters (pad.js)
 const words = {
     name: makeLabel("Tisple ][", 2),
     rec: makeLabel("", 2),
     look: makeLabel(LOOKS[0], 2),
     disk: makeLabel("disk", 2),
+    buzz: makeLabel("buzz", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -139,33 +155,51 @@ function tapAt(e) {
     return null;
 }
 
-function flashTap(t) {
+// a game whose config says "mouse": true has a mouse card instead of taps: a tap puts the
+// mouse where it is with its button down until the finger lifts (player.cpp tp_point), and the
+// game knows what it drew there. In the log as [cycle, -2, x, y, down]
+let pointed = null;
+
+function pointAt(e) {
     const r = ui.canvas.getBoundingClientRect();
-    const box = document.createElement("div");
-    box.className = "flash";
-    box.style.left = (t.x / 280 * r.width) + "px";
-    box.style.top = (t.y / 192 * r.height) + "px";
-    box.style.width = (t.w / 280 * r.width) + "px";
-    box.style.height = (t.h / 192 * r.height) + "px";
-    ui.canvas.parentElement.appendChild(box);
-    setTimeout(() => box.remove(), 150);
+    return {
+        x: Math.max(0, Math.min(279, Math.floor((e.clientX - r.left) / r.width * 280))),
+        y: Math.max(0, Math.min(191, Math.floor((e.clientY - r.top) / r.height * 192))),
+    };
+}
+
+function point(p, down) {
+    if (!state.running) {
+        return;
+    }
+    wakeAudio();
+    state.m._tp_point(p.x, p.y, down ? 1 : 0);
+    state.log.push([state.m._tp_cycles(), -2, p.x, p.y, down ? 1 : 0]);
 }
 
 ui.canvas.addEventListener("pointerdown", (e) => {
     e.preventDefault();
+    if (state.game && state.game.mouse) {
+        ui.canvas.setPointerCapture(e.pointerId);
+        pointed = pointAt(e);
+        buzz();
+        point(pointed, true);
+        return;
+    }
     const t = tapAt(e);
     if (!t) {
         return;
     }
     ui.canvas.setPointerCapture(e.pointerId);
     held_tap = t;
-    flashTap(t);
-    if (navigator.vibrate) {
-        navigator.vibrate(8);
-    }
+    buzz();
     press(padKeyCode(t.key));
 });
 const tapUp = () => {
+    if (pointed) {
+        point(pointed, false);
+        pointed = null;
+    }
     if (held_tap) {
         held_tap = null;
         release();
@@ -395,11 +429,38 @@ function draw() {
     ctx2d.putImageData(image, 0, 0);
 }
 
+// the game's state for the pad (pad.js padFollow): its memory once it is running, which is
+// once its first bytes are in memory and the disk has stopped after the boot; until the
+// bytes change again (a reboot)
+let gameRunning = false;
+
+function readRam(address, aux) {
+    return state.m._tp_peek_ram(address, aux);
+}
+
+function followGame() {
+    const check = state.game.check;
+    if (!check || !pad.follows) {
+        return;
+    }
+    let loaded = true;
+    for (let i = 0; i < check.bytes.length && loaded; i++) {
+        loaded = readRam(check.at + i, 0) === check.bytes[i];
+    }
+    if (!loaded) {
+        gameRunning = false;
+    } else if (!state.m._tp_disk_busy()) {
+        gameRunning = true;
+    }
+    padFollow(gameRunning ? readRam : null);
+}
+
 function tick(now) {
     requestAnimationFrame(tick);
     if (!state.running) {
         return;
     }
+    followGame();
     const busy = state.m._tp_disk_busy();
     const hearing = state.diskSound && state.audio && state.audio.state === "running";
     if (busy && !hearing) {
@@ -507,6 +568,9 @@ async function boot() {
         setStatus("the disk did not load");
         return;
     }
+    if (state.game.mouse && !state.m._tp_mouse_card()) {
+        setStatus("no mouse: the mockingboard is in its slot 4");
+    }
     showDiskSound();
     setStatus(state.game.version ? "build " + state.game.version : "");
     requestAnimationFrame(tick);
@@ -564,6 +628,20 @@ ui.disk.addEventListener("click", () => {
     showDiskSound();
     setStatus(state.diskSound ? "disk sound on: loads at the apple's speed"
                               : "disk sound off: loads flat out");
+});
+function showBuzz() {
+    ui.buzz.classList.toggle("off", !state.buzz);
+}
+showBuzz();
+ui.buzz.addEventListener("click", () => {
+    state.buzz = !state.buzz;
+    try {
+        localStorage.setItem(BUZZ_KEY, state.buzz ? "on" : "off");
+    } catch (err) {
+        // not kept: this page only
+    }
+    showBuzz();
+    setStatus(state.buzz ? "buzz on: taps buzz" : "buzz off: taps are silent");
 });
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");

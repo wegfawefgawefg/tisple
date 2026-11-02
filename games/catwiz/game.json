@@ -1,7 +1,8 @@
 {
  "title": "Catwiz",
- "about": "A cat witch's dice roguelike for the Apple II: tap a die, then who it is for. Between fights, tap a card twice. BAG shows her kit, ? the rules.",
- "mockingboard": 4,
+ "about": "A cat witch's dice roguelike for the Apple II. Turn the phone sideways to play by touch: tap a die, then who it is for; between fights, tap a card twice, or SKIP; tap her faces to read them. BAG shows her kit, ? the rules, LOG what happened. Upright, the buttons under the screen show only what can be pressed now.",
+ "mockingboard": 5,
+ "mouse": true,
  "look": "color",
  "pad": [
   {
@@ -10,22 +11,37 @@
     {
      "label": "BAG",
      "key": "B",
-     "look": "green"
+     "look": "green",
+     "when": "fight || reward",
+     "live": "mine || reward"
     },
     {
      "label": "RULES",
      "key": "?",
-     "look": "green"
+     "look": "green",
+     "when": "fight",
+     "live": "mine"
+    },
+    {
+     "label": "LOG",
+     "key": "H",
+     "look": "green",
+     "when": "fight",
+     "live": "mine"
     },
     {
      "label": "MEOW",
      "key": "M",
-     "look": "orange"
+     "look": "orange",
+     "when": "fight",
+     "live": "mine"
     },
     {
      "label": "LET GO",
      "key": "ESC",
-     "look": "green"
+     "look": "green",
+     "when": "fight || reward",
+     "live": "(mine && (state.selected != 255 || state.looked != 255)) || (reward && picking)"
     }
    ]
   },
@@ -35,23 +51,64 @@
     {
      "label": "<",
      "key": "LEFT",
-     "look": "white"
+     "look": "white",
+     "when": "(fight && foes >= 2) || turns",
+     "live": "mine || turns"
     },
     {
      "label": "RE-ROLL",
      "key": "R",
-     "look": "white"
+     "look": "white",
+     "when": "fight",
+     "live": "mine && state.rerolls > 0",
+     "span": 2
     },
     {
      "label": "END TURN",
      "key": "E",
      "look": "white",
+     "when": "fight",
+     "live": "mine",
      "span": 2
+    },
+    {
+     "label": "SKIP",
+     "key": "S",
+     "look": "white",
+     "when": "reward && state.pick != state.Pick.door",
+     "span": 2,
+     "state_only": true
+    },
+    {
+     "label": "CLOSE",
+     "key": "ESC",
+     "look": "white",
+     "when": "page",
+     "span": 2,
+     "state_only": true
+    },
+    {
+     "label": "START",
+     "key": "RETURN",
+     "look": "white",
+     "when": "state.screen == state.Screen.title",
+     "span": 2,
+     "state_only": true
+    },
+    {
+     "label": "GO ON",
+     "key": "RETURN",
+     "look": "white",
+     "when": "over",
+     "span": 2,
+     "state_only": true
     },
     {
      "label": ">",
      "key": "RIGHT",
-     "look": "white"
+     "look": "white",
+     "when": "(fight && foes >= 2) || turns",
+     "live": "mine || turns"
     }
    ]
   },
@@ -61,17 +118,23 @@
     {
      "label": "ENEMY\n1",
      "key": "Z",
-     "look": "violet"
+     "look": "violet",
+     "when": "fight && state.actors.alive[1]",
+     "live": "mine"
     },
     {
      "label": "ENEMY\n2",
      "key": "X",
-     "look": "violet"
+     "look": "violet",
+     "when": "fight && state.actors.alive[2]",
+     "live": "mine"
     },
     {
      "label": "ENEMY\n3",
      "key": "C",
-     "look": "violet"
+     "look": "violet",
+     "when": "fight && state.actors.alive[3]",
+     "live": "mine"
     }
    ]
   },
@@ -81,221 +144,209 @@
     {
      "label": "DIE\n1",
      "key": "1",
-     "look": "card"
+     "look": "card",
+     "when": "fight && state.dice_n >= 1",
+     "live": "mine && !state.played[0] && state.held[0] == 255"
     },
     {
      "label": "DIE\n2",
      "key": "2",
-     "look": "card"
+     "look": "card",
+     "when": "fight && state.dice_n >= 2",
+     "live": "mine && !state.played[1] && state.held[1] == 255"
     },
     {
      "label": "DIE\n3",
      "key": "3",
-     "look": "card"
+     "look": "card",
+     "when": "fight && state.dice_n >= 3",
+     "live": "mine && !state.played[2] && state.held[2] == 255"
     },
     {
      "label": "DIE\n4",
      "key": "4",
-     "look": "card"
+     "look": "card",
+     "when": "fight && state.dice_n >= 4",
+     "live": "mine && !state.played[3] && state.held[3] == 255"
     },
     {
      "label": "DIE\n5",
      "key": "5",
-     "look": "card"
+     "look": "card",
+     "when": "fight && state.dice_n >= 5",
+     "live": "mine && !state.played[4] && state.held[4] == 255"
     },
     {
      "label": "DIE\n6",
      "key": "6",
-     "look": "card"
+     "look": "card",
+     "when": "fight && state.dice_n >= 6",
+     "live": "mine && !state.played[5] && state.held[5] == 255"
+    },
+    {
+     "label": "PICK\n1",
+     "key": "1",
+     "look": "card",
+     "when": "reward && battle/reward.choices >= 1",
+     "state_only": true
+    },
+    {
+     "label": "PICK\n2",
+     "key": "2",
+     "look": "card",
+     "when": "reward && battle/reward.choices >= 2",
+     "state_only": true
+    },
+    {
+     "label": "PICK\n3",
+     "key": "3",
+     "look": "card",
+     "when": "reward && battle/reward.choices >= 3",
+     "state_only": true
+    },
+    {
+     "label": "PICK\n4",
+     "key": "4",
+     "look": "card",
+     "when": "reward && battle/reward.choices >= 4",
+     "state_only": true
+    },
+    {
+     "label": "PICK\n5",
+     "key": "5",
+     "look": "card",
+     "when": "reward && battle/reward.choices >= 5",
+     "state_only": true
+    },
+    {
+     "label": "PICK\n6",
+     "key": "6",
+     "look": "card",
+     "when": "reward && battle/reward.choices >= 6",
+     "state_only": true
     }
    ]
   }
  ],
- "taps": [
-  {
-   "x": 0,
-   "y": 118,
-   "w": 35,
-   "h": 42,
-   "key": "1"
+ "names": {
+  "battle": "state.screen == state.Screen.battle",
+  "stage": "battle && state.page == state.Page.none",
+  "fight": "stage && (state.phase == state.Phase.rolling || state.phase == state.Phase.player || state.phase == state.Phase.acting || state.phase == state.Phase.enemies)",
+  "mine": "fight && state.phase != state.Phase.enemies && !(state.phase == state.Phase.acting && state.act_source == state.Source.move)",
+  "reward": "stage && state.phase == state.Phase.reward",
+  "page": "battle && state.page != state.Page.none && state.page != state.Page.won",
+  "turns": "battle && (state.page == state.Page.bag || state.page == state.Page.rules)",
+  "foes": "state.actors.alive[1] + state.actors.alive[2] + state.actors.alive[3]",
+  "over": "battle && (state.page == state.Page.won || (state.page == state.Page.none && state.phase == state.Phase.lost && state.timer > 56))",
+  "picking": "state.picked != 255 || state.pick == state.Pick.nap_slot"
+ },
+ "vars": {
+  "state.screen": {
+   "at": 4,
+   "bytes": 1
   },
-  {
-   "x": 35,
-   "y": 118,
-   "w": 35,
-   "h": 42,
-   "key": "2"
+  "state.page": {
+   "at": 18,
+   "bytes": 1
   },
-  {
-   "x": 70,
-   "y": 118,
-   "w": 35,
-   "h": 42,
-   "key": "3"
+  "state.phase": {
+   "at": 6,
+   "bytes": 1
   },
-  {
-   "x": 105,
-   "y": 118,
-   "w": 35,
-   "h": 42,
-   "key": "4"
+  "state.act_source": {
+   "at": 208,
+   "bytes": 1
   },
-  {
-   "x": 140,
-   "y": 118,
-   "w": 35,
-   "h": 42,
-   "key": "5"
+  "state.actors.alive": {
+   "at": 1664,
+   "bytes": 1,
+   "count": 4,
+   "step": 1
   },
-  {
-   "x": 175,
-   "y": 118,
-   "w": 35,
-   "h": 42,
-   "key": "6"
+  "state.timer": {
+   "at": 203,
+   "bytes": 1
   },
-  {
-   "x": 248,
-   "y": 121,
-   "w": 32,
-   "h": 9,
-   "key": "B"
+  "state.picked": {
+   "at": 207,
+   "bytes": 1
   },
-  {
-   "x": 248,
-   "y": 130,
-   "w": 32,
-   "h": 9,
-   "key": "?"
+  "state.pick": {
+   "at": 19,
+   "bytes": 1
   },
-  {
-   "x": 210,
-   "y": 118,
-   "w": 70,
-   "h": 27,
-   "key": "R"
+  "state.selected": {
+   "at": 16,
+   "bytes": 1
   },
-  {
-   "x": 210,
-   "y": 145,
-   "w": 70,
-   "h": 15,
-   "key": "E"
+  "state.looked": {
+   "at": 206,
+   "bytes": 1
   },
-  {
-   "x": 91,
-   "y": 0,
-   "w": 21,
-   "h": 118,
-   "key": "!"
+  "state.rerolls": {
+   "at": 9,
+   "bytes": 1
   },
-  {
-   "x": 112,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "\""
+  "state.dice_n": {
+   "at": 8,
+   "bytes": 1
   },
-  {
-   "x": 126,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "#"
+  "state.played": {
+   "at": 1750,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
   },
-  {
-   "x": 140,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "$"
+  "state.held": {
+   "at": 804,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
   },
-  {
-   "x": 154,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "%"
-  },
-  {
-   "x": 168,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "&"
-  },
-  {
-   "x": 182,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "'"
-  },
-  {
-   "x": 196,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "("
-  },
-  {
-   "x": 210,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": ")"
-  },
-  {
-   "x": 224,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "*"
-  },
-  {
-   "x": 238,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "+"
-  },
-  {
-   "x": 252,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": ","
-  },
-  {
-   "x": 266,
-   "y": 0,
-   "w": 14,
-   "h": 118,
-   "key": "-"
-  },
-  {
-   "x": 24,
-   "y": 8,
-   "w": 67,
-   "h": 110,
-   "key": "M"
-  },
-  {
-   "x": 0,
-   "y": 0,
-   "w": 280,
-   "h": 118,
-   "key": "."
-  },
-  {
-   "x": 0,
-   "y": 0,
-   "w": 280,
-   "h": 192,
-   "key": "ESC"
+  "battle/reward.choices": {
+   "at": 235,
+   "bytes": 1
   }
- ],
- "disk": "disk-b585d4a5.dsk",
- "version": "b585d4a5",
- "disk2": "disk2-758d914a.dsk"
+ },
+ "enums": {
+  "state.Screen.battle": 1,
+  "state.Page.none": 0,
+  "state.Phase.rolling": 0,
+  "state.Phase.player": 1,
+  "state.Phase.acting": 2,
+  "state.Phase.enemies": 3,
+  "state.Source.move": 1,
+  "state.Phase.reward": 6,
+  "state.Page.won": 4,
+  "state.Page.bag": 1,
+  "state.Page.rules": 2,
+  "state.Phase.lost": 5,
+  "state.Pick.nap_slot": 3,
+  "state.Pick.door": 4,
+  "state.Screen.title": 0
+ },
+ "check": {
+  "at": 32768,
+  "bytes": [
+   216,
+   8,
+   120,
+   44,
+   131,
+   192,
+   44,
+   131,
+   192,
+   162,
+   0,
+   181,
+   0,
+   157,
+   0,
+   191
+  ]
+ },
+ "disk": "disk-2180eb52.dsk",
+ "version": "2180eb52",
+ "disk2": "disk2-cadd1161.dsk"
 }
