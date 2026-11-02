@@ -177,6 +177,8 @@ std::string Program(const Half& aux, const Half& main) {
     (for g u8 0 20
         (dhgr_pixels.colour_mask (addr_of (at PIXELS (* g 7))) (addr_of (at masks (<< g 2)))))
     (dhgr_pixels.cells dhgr.PAGE2 0 191 5 (addr_of (at CELLS 0)) (addr_of (at masks 0)))
+    ; and in white, no masks
+    (dhgr_pixels.cells_white dhgr.PAGE2 0 188 5 (addr_of (at CELLS 0)))
     ; the aux half from the card's bank 1
     (dhgr.runs dhgr.PAGE2 dhgr.AUX 4 120 )" +
            std::to_string(kH) + R"( (as (ptr u8) 0xD400) dhgr.FROM_CARD1)
@@ -324,6 +326,7 @@ void RunDhgrRunsTests(TestResults& results) {
     for (int x = 0; x < 140; x++) {
         int bit = (((x / 4) * 5 % 16) >> (x % 4)) & 1;
         cells = cells && PixelAt(*a, 0x4000, x, 191) == (bit ? (x * 7 + x / 3) % 16 : 0);
+        cells = cells && PixelAt(*a, 0x4000, x, 188) == (bit ? 15 : 0);
     }
     CHECK(results, cells);
     // no tick lost: interrupts are off while the card's code runs, but for a moment a row

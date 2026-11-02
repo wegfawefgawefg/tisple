@@ -68,25 +68,34 @@ void Optimize(Program& program, const BuildOptions& options, OptOptions opt, Opt
 // the link with code in the card's bank 1: the fewest of the cheapest functions that make the
 // program fit (more of them only ever free more room, but for what they keep out of
 // $D000-$DFFF: a search on the count). be is the unlinked backend; the linked one replaces it
-LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& facts, Compiled& out,
+LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& all, Compiled& out,
                      std::vector<Diagnostic>& errors, Bank1Plan& chosen) {
-    std::size_t most = 0;
+    // the candidates in their order that fit the bank together: one too big for what is left
+    // is passed over for the smaller ones after it
+    Bank1Facts facts = all;
+    facts.order.clear();
     std::uint32_t bytes = 0;
-    while (most < facts.order.size()) {
-        std::uint32_t size = facts.bytes[static_cast<std::size_t>(facts.order[most])];
+    for (std::int32_t f : all.order) {
+        std::uint32_t size = all.bytes[static_cast<std::size_t>(f)];
         // far branches make code a little bigger in its own stretch
         if (bytes + size + size / 8 > kBank1End - kBank1Start) {
-            break;
+            continue;
         }
         bytes += size + size / 8;
-        most++;
+        facts.order.push_back(f);
     }
+    std::size_t most = facts.order.size();
     const Backend unlinked = be;
     auto attempt = [&](std::size_t count, std::vector<Diagnostic>& errs) {
         Bank1Plan plan = PlanBank1(unlinked, facts, count);
         in.bank1 = &plan;
         be = unlinked;
         LinkResult result = LinkProgram(be, in, true, out, errs);
+        if (std::getenv("TISPLE_FIT_NOTES") != nullptr) {
+            std::fprintf(stderr, "  bank 1: %zu functions, result %d%s%s\n", count,
+                         static_cast<int>(result), errs.empty() ? "" : ": ",
+                         errs.empty() ? "" : errs.back().message.c_str());
+        }
         chosen = plan;
         return result;
     };
@@ -95,12 +104,29 @@ LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& facts, Compile
     }
     std::vector<Diagnostic> errs;
     LinkResult full = attempt(most, errs);
+    std::size_t high = most; // fits
     if (full != LinkResult::kOk) {
-        errors.insert(errors.end(), errs.begin(), errs.end());
-        return full;
+        // all of them may keep too much out of $D000-$DFFF for the data: a count between fits
+        // when one does, so some along the way are tried, the fewest that fit kept
+        if (full != LinkResult::kNoRoom) {
+            errors.insert(errors.end(), errs.begin(), errs.end());
+            return full;
+        }
+        constexpr std::size_t kProbes = 8;
+        high = 0;
+        for (std::size_t k = 1; k < kProbes && high == 0; k++) {
+            std::size_t count = most * k / kProbes;
+            std::vector<Diagnostic> ignored;
+            if (count > 0 && attempt(count, ignored) == LinkResult::kOk) {
+                high = count;
+            }
+        }
+        if (high == 0) {
+            errors.insert(errors.end(), errs.begin(), errs.end());
+            return full;
+        }
     }
     std::size_t low = 0; // does not fit
-    std::size_t high = most;
     while (high - low > 1) {
         std::size_t mid = low + (high - low) / 2;
         std::vector<Diagnostic> ignored;

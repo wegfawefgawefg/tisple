@@ -11,6 +11,7 @@
 ;                                   16 bytes a block, ANDed with its bytes: all 255 for white,
 ;                                   or (colour_mask pixels at) for each group's 7 pixels'
 ;                                   colours, so each cell may have its own
+;   (dhgr_pixels.cells_white page col top blocks nibbles)  the same in white, faster
 ; For a hud drawn in whole pixels (text in colour pixels, badges, cards): the program builds a
 ; row of pixels, then this writes it. Per group the 4 bytes (aux, main, aux, main) are worked
 ; out with shifts and three small tables (a colour's low bits moved up into the next byte),
@@ -145,6 +146,40 @@
             (store (+ dst 7) (& (at MONO2 g3) (load (+ masks 14)))))
         (set nibbles (+ nibbles 7))
         (set masks (+ masks 16))
+        (set dst (+ dst 8))))
+
+; cells in white, no masks: as cells with every mask 255, 16 cycles a byte less (a line's
+; white blocks)
+(fn cells_white ((page u8) (col u8) (top u8) (blocks u8) (nibbles (ptr u8))) void
+    (let dst (ptr u8) (row_start page col top))
+    (for b u8 0 blocks
+        ; the block's 7 cells' bits, 4 a cell, as 4 groups of 7 pixels
+        (let c1 u8 (load (+ nibbles 1)))
+        (let g0 u8 (| (load nibbles) (<< (& c1 7) 4)))
+        (let c3 u8 (load (+ nibbles 3)))
+        (let g1 u8 (| (| (>> c1 3) (<< (load (+ nibbles 2)) 1)) (<< (& c3 3) 5)))
+        (let c5 u8 (load (+ nibbles 5)))
+        (let g2 u8 (| (| (>> c3 2) (<< (load (+ nibbles 4)) 2)) (<< (& c5 1) 6)))
+        (let g3 u8 (| (>> c5 1) (<< (load (+ nibbles 6)) 3)))
+        ; main memory's bytes of the 4 groups, then aux memory's
+        (store dst (at MONO1 g0))
+        (store (+ dst 1) (at MONO3 g0))
+        (store (+ dst 2) (at MONO1 g1))
+        (store (+ dst 3) (at MONO3 g1))
+        (store (+ dst 4) (at MONO1 g2))
+        (store (+ dst 5) (at MONO3 g2))
+        (store (+ dst 6) (at MONO1 g3))
+        (store (+ dst 7) (at MONO3 g3))
+        (with_aux false true
+            (store dst (at MONO0 g0))
+            (store (+ dst 1) (at MONO2 g0))
+            (store (+ dst 2) (at MONO0 g1))
+            (store (+ dst 3) (at MONO2 g1))
+            (store (+ dst 4) (at MONO0 g2))
+            (store (+ dst 5) (at MONO2 g2))
+            (store (+ dst 6) (at MONO0 g3))
+            (store (+ dst 7) (at MONO2 g3)))
+        (set nibbles (+ nibbles 7))
         (set dst (+ dst 8))))
 
 ; the mask of a group of 7 pixels of colours (bytes 0-15 at pixels) for cells: its 4 bytes
