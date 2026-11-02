@@ -97,7 +97,7 @@ constexpr uint64_t kScriptedKeyHoldCycles = 3 * kCyclesPerFrame;
 constexpr uint8_t kPaddleCentre = 127;
 
 constexpr uint32_t kSpeakerRingSize = 16384; // toggles kept for consumers; drain once a frame
-constexpr uint32_t kMaxScheduledKeys = 1024;
+constexpr uint32_t kMaxScheduledKeys = 8192;
 
 // display switches and the iie memory switches
 struct SoftSwitches {
