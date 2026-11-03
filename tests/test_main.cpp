@@ -51,11 +51,13 @@ int main() {
 
     // TISPLE_TEST_GROUP=emu runs only the cpu cores' tests (SingleStepTests, Dormann's);
     // =fuzz only the fuzzer (TISPLE_FUZZ, TISPLE_FUZZ_SEED: a burst); =cmos the 65C02 target's;
-    // =disk the disks' (images, booting, the reader, both drives); =mockingboard lib/mockingboard's
+    // =disk the disks' (images, booting, the reader, both drives); =mockingboard lib/mockingboard's;
+    // =unpack lib/unpack's and lib/dhgr's runs
     const char* group = std::getenv("TISPLE_TEST_GROUP");
-    bool one = group && (std::strcmp(group, "emu") == 0 || std::strcmp(group, "fuzz") == 0 ||
-                         std::strcmp(group, "cmos") == 0 || std::strcmp(group, "disk") == 0 ||
-                         std::strcmp(group, "mockingboard") == 0);
+    bool one =
+        group && (std::strcmp(group, "emu") == 0 || std::strcmp(group, "fuzz") == 0 ||
+                  std::strcmp(group, "cmos") == 0 || std::strcmp(group, "disk") == 0 ||
+                  std::strcmp(group, "mockingboard") == 0 || std::strcmp(group, "unpack") == 0);
     if (one) {
         if (std::strcmp(group, "mockingboard") == 0) {
             tisple_tests::RunMockingboardLibTests(results);
@@ -63,6 +65,11 @@ int main() {
             tisple_tests::RunMockingboardAuxTests(results);
             tisple_tests::RunMockingboardBendsTests(results);
             tisple_tests::RunMockingboardFadeTests(results);
+        } else if (std::strcmp(group, "unpack") == 0) {
+            tisple_tests::RunUnpackLibTests(results);
+            tisple_tests::RunUnpackIrqTests(results);
+            tisple_tests::RunUnpackCardTests(results);
+            tisple_tests::RunDhgrRunsTests(results);
         } else if (std::strcmp(group, "disk") == 0) {
             tisple_tests::RunDiskTests(results);
             tisple_tests::RunDiskReadTests(results);
@@ -162,6 +169,7 @@ int main() {
     tisple_tests::RunTextDemoTests(results);
     tisple_tests::RunUnpackLibTests(results);
     tisple_tests::RunUnpackIrqTests(results);
+    tisple_tests::RunUnpackCardTests(results);
     tisple_tests::RunDhgrLibTests(results);
     tisple_tests::RunDhgrRunsTests(results);
     tisple_tests::RunJoystickLibTests(results);

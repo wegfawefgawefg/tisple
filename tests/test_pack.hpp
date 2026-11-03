@@ -15,6 +15,7 @@ void RunPackTests(TestResults& results);
 void RunUnpackLibTests(TestResults& results);
 // the same and lib/dhgr's code under the Mockingboard's interrupts, with auxmem's guard
 void RunUnpackIrqTests(TestResults& results);
+void RunUnpackCardTests(TestResults& results);
 
 // a small deterministic generator
 struct TestRandom {

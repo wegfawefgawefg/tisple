@@ -291,6 +291,9 @@ with interrupts on:
   ticking, through the card's vector and Apple's two IIe roms; about 25 ticks
   land in reads and 25 in writes, none is lost, every byte arrives. The same
   program without the guard stops after its first tick.
+- With the guard, lib/unpack's card modes and lib/dhgr's runs let a waiting
+  tick in while they work in the aux language card (2026-11-03, docs/dhgr.md,
+  Ticks through the card), so a song plays on through a screen's load.
 
 A song in aux memory is copied into main memory to play. The handler reads the
 song playing, so the copy runs with interrupts off (or after `mb.stop`, or once

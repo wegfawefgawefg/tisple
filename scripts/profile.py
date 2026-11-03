@@ -20,8 +20,8 @@ FN = re.compile(r"^\(fn (\S+)")
 
 # code outside the listing, by where and address
 KNOWN = [
-    ("main aux", 0x1C00, 0x1D8A, "lib/unpack"),
-    ("main", 0x1D8A, 0x1DDD, "lib/auxcard"),
+    ("main aux", 0x1C00, 0x1DA6, "lib/unpack"),
+    ("main", 0x1DA6, 0x1DF3, "lib/auxcard"),
     ("main aux", 0x1E00, 0x1F11, "lib/dhgr runs"),
 ]
 
