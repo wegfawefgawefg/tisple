@@ -17,8 +17,13 @@ constexpr int kAddressBudget = 0x5000;
 } // namespace
 
 // the next good address field to the field bytes; carry clear with interrupts off (SEI from
-// its first mark on), or carry set after kAddressBudget nibbles with none, the I flag the
-// caller's. Interrupts stay as the caller has them while it looks
+// its first mark on), or carry set after kAddressBudget nibbles with none. Interrupts stay as
+// the caller has them while it looks, but from a field's epilogue (DE AA, which data never
+// holds) to the next field: the next address field's mark is a gap's sync bytes away (about
+// 800 cycles), so a tick that comes there waits for the sector instead of taking the time its
+// mark goes by in (a sector a turn later, or a turn for a table's last). A tick held from an
+// epilogue waits about 12,700 cycles at most, from the last sector's (the track's first gap
+// before the next) about 15,300: under a 60 a second tick's period, none lost
 void EmitReaderAddress(Reader& r, std::int32_t address) {
     Code6502& c = r.l.c;
     std::int32_t retry = c.Label("raddr.retry");
@@ -31,6 +36,8 @@ void EmitReaderAddress(Reader& r, std::int32_t address) {
     std::int32_t timeout = c.Label("raddr.timeout");
     std::int32_t first = c.Label("raddr.first");
     std::int32_t poll = c.Label("raddr.poll");
+    std::int32_t d5 = c.Label("raddr.d5");
+    std::int32_t epilogue = c.Label("raddr.de");
     c.Place(address);
     c.Imm(Mn::LDY, 0); // the count's low byte: Y is free until the field's bytes
     c.Imm(Mn::LDA, kAddressBudget >> 8);
@@ -56,7 +63,16 @@ void EmitReaderAddress(Reader& r, std::int32_t address) {
     c.Br(Mn::BEQ, timeout);
     c.Place(check);
     c.Imm(Mn::CPX, 0xD5);
+    c.Br(Mn::BEQ, d5);
+    c.Imm(Mn::CPX, 0xDE);
     c.Br(Mn::BNE, look);
+    c.Place(epilogue);
+    r.l.ReadLatch(epilogue);
+    c.Imm(Mn::CPX, 0xAA);
+    c.Br(Mn::BNE, check);
+    c.Op(Mn::SEI); // a field's end: the next mark is a gap away
+    c.Br(Mn::BEQ, look);
+    c.Place(d5);
     c.Op(Mn::SEI); // a tick from here would cost the field
     c.Place(aa);
     r.l.ReadLatch(aa);

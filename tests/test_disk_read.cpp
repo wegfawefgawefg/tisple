@@ -329,6 +329,7 @@ void RunDiskReadTests(TestResults& results) {
     RunDiskReadTwoTests(results);
     RunDiskHomesTests(results);
     RunDiskReadTimingTests(results);
+    RunDiskReadMusicTests(results);
     RunDiskStreamTests(results);
 }
 

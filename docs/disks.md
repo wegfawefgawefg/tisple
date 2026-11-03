@@ -167,7 +167,7 @@ an empty drive gives noise, which ends in `NO_DISK` (2.1 s from the start of the
   which tracks they take, marks them used in the DOS volume, and fails if the program's
   tracks reach them. Other builds hold no tables and warn that `disk.read` gives `NO_CARD`.
 - **The reader.** Our own 6502 code (src/disk/disk_reader.cpp, reader_read.cpp; MIT as well,
-  like the loader), 1,277 bytes at `$1700` (1,219 before the second disk), with its bounce page and tables in
+  like the loader), 1,279 bytes at `$1700` (1,219 before the second disk, 1,277 before the epilogue below), with its bounce page and tables in
   `$1400`-`$16FF`. lib/disk keeps `$1400`-`$1BFF` with two `:reserve` lets (`disk.work`,
   `disk.reader`), and the disk build puts the reader on the disk as one more segment, so it
   costs the program no bytes of its own; the loader writes the slot it booted from into it
@@ -213,16 +213,34 @@ field's first mark to the end of its data field, about 11,900 cycles, and while 
 sector into aux memory with RAMWRT on (about 4,300), and gives the caller's I flag back
 between and while it waits for the next sector, seeks and steps. A tick that comes while
 they are off waits; one tick can wait, so none is lost while the ticks are more than about
-12,000 cycles apart (85 a second). With lib/mockingboard's 60 a second, 98 ticks through a
-12 KB read were all taken, the latest 11,695 cycles (11 ms) late
-(tests/test_disk_read_timing.cpp): notes start up to 11 ms late while a sector is read. The
-reader needs no `(auxmem.guard)`: it never has RAMWRT on with interrupts on.
+15,300 cycles apart (below). With lib/mockingboard's 60 a second, 99 ticks through a 12 KB read were
+all taken, the latest 13,235 cycles (13 ms) late (tests/test_disk_read_timing.cpp): notes
+start up to 13 ms late while a sector is read. The reader needs no `(auxmem.guard)`: it never
+has RAMWRT on with interrupts on.
 
-A handler that does real work slows the reads: while the reader waits for an address field a
-tick's time can make it miss one and wait a sector more. Catwiz's fight load from the reward,
-with its battle song playing through it (2026-11-03, about 1,100 cycles a tick), went from 251
-to 294 frames, most of it in the reads (its picture's and runs' reads about a third longer);
-a song stopped at the end of its fade costs nothing (docs/mockingboard.md, Fades).
+**From a field's epilogue** (2026-11-03). A tick that runs while the reader looks for an address
+field takes that time from it: a song's tick (Catwiz's battle song, about 1,100 cycles) that
+covered the wanted sector's mark made the reader wait a sector more, or a whole turn for a
+table's last sector (a 2-sector song read took 13.5 frames for its second; Catwiz's fight from
+the reward went from 251 to 294 frames, the gaps between its steps 230,000 cycles with the
+ticks all landing in the search, `tisple machine --ticks`). Now it also turns interrupts off
+at a field's epilogue (`DE AA`, which data never holds): the next address field's mark is a
+gap's sync bytes away (20 of them, about 800 cycles; about 3,400 after a track's last sector,
+over the first gap), so a tick that comes there waits for the sector, at most about 15,300
+cycles, and only one that starts in the few hundred cycles before the epilogue and runs past
+the mark costs a sector. tests/test_disk_read_music.cpp, a 12 KB read into aux memory with a
+step of 1,500 cycles, then 24 reads of 512 bytes, under a six-voice song like Catwiz's:
+
+| | 12 KB | 24 x 512 bytes | ticks, the latest |
+| --- | ---: | ---: | ---: |
+| before, the song stopped | 1.477 s | 4.876 s | |
+| before, the song playing | 1.669 s | 5.024 s | 402, 11,723 cycles late |
+| now, the song stopped | 1.366 s | 4.787 s | |
+| now, the song playing | 1.366 s | 4.889 s | 375, 14,512 cycles late |
+
+Catwiz's fight from the reward is back to 251 frames with its song playing through. The 18
+bytes: the caller's flags back through one routine (`restore`, which keeps A) instead of in
+each of its nine places.
 
 ### The step function
 
