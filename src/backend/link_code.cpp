@@ -174,6 +174,9 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
         for (std::uint32_t size : group_size) {
             region->size = std::max(region->size, size);
         }
+        if (region->boot < spans.size()) {
+            region->size = std::max(region->size, SpanSize(items, spans[region->boot]));
+        }
     }
     std::uint32_t after = region != nullptr ? region->size : 0;
     std::size_t k = 0;
@@ -203,6 +206,10 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
             at[g] += SpanSize(items, spans[s]);
         }
         last = groups_end;
+        if (region->boot < spans.size()) {
+            places[region->boot] = CodePlace{stretches.size() + group_size.size(), region->at};
+            last = region->boot + 1;
+        }
     }
     frames_at = pc;
     // the language card's bank 1: the last stretch, its own

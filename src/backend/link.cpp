@@ -186,12 +186,22 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
     std::size_t mirror_end = out.spans.size();
-    AppendSpan(items, zp_image, out, -1, "zero-page image");
-    std::size_t image_span = out.spans.size() - 1;
+    // the zero-page image, which only the startup reads: in a program that runs once, in the
+    // overlay region, which holds no group yet then (RegionSpans::boot)
+    bool image_in_region = groups != nullptr && options.runs_once;
+    std::size_t image_span = out.spans.size();
+    if (!image_in_region) {
+        AppendSpan(items, zp_image, out, -1, "zero-page image");
+    }
     // each overlay group's code, laid out at the region
     RegionSpans region;
     if (groups != nullptr) {
         region = AppendGroupSpans(be, *groups, out);
+    }
+    if (image_in_region) {
+        image_span = out.spans.size();
+        region.boot = image_span;
+        AppendSpan(items, zp_image, out, -1, "zero-page image");
     }
     std::size_t first_bank1 = bank1 != nullptr ? out.spans.size() : SIZE_MAX;
     for (std::size_t f = 0; f < program.functions.size(); f++) {
@@ -282,9 +292,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             return LinkResult::kNoRoom;
         }
     }
-    // each group's code is a run of its own at the region: the region is reserved instead
+    // each group's code is a run of its own at the region (and the zero-page image, when it
+    // waits there): the region is reserved instead
     if (groups != nullptr) {
-        runs.resize(runs.size() - groups->members.size());
+        runs.resize(runs.size() - groups->members.size() - (image_in_region ? 1 : 0));
         runs.push_back(AddressRange{region.at, region.at + region.size});
     }
 
@@ -383,6 +394,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     }
     if (plan.mem_frames > 0) {
         cover(frames_at, frames_end);
+    }
+    if (image_in_region) {
+        cover(region.at, region.at + SpanSize(items, out.spans[image_span]));
     }
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const VarPlace& place = out.layout.vars[v];

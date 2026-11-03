@@ -236,6 +236,12 @@ link's part); BuildOptions::use_overlays.
   $D99F). Not bank 1: it holds 4 KB either way, and with bank 1 already full of cold
   functions a region there would push as many bytes of them back. Each group's code is laid
   out at the region's address; the binary has its bytes only in its image.
+- **What waits in the region at boot** (2026-11-03). A boot disk's program runs once
+  (BuildOptions::runs_once), and no group is in the region before main starts, so the
+  zero-page image, which only the startup reads, is laid out at the region's start and loads
+  there with the program (RegionSpans::boot): its bytes cost nothing resident. Catwiz: 107
+  bytes of the card. lib/auxmem's guard keeps its 108 bytes in aux memory the same way (the
+  install reads them once with `auxmem.read`, interrupts off), not in the card.
 - **Stubs.** `ov.r: JMP ov.r.load` for each root r, which the load points at r while its
   group is in: 3 cycles a call. `ov.r.load: JSR ov.g.enter / JMP r`. `ov.g.enter` pushes P, A,
   X and Y, points every other group's stubs at their loads, copies g's image (rt_a, rt_b and

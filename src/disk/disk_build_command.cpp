@@ -276,6 +276,8 @@ void UseBootDiskLayout(BuildOptions& options) {
     // the loader goes to the monitor if main returns: no zero page to keep for a caller, so
     // $BF00-$BFFF is the program's too
     options.save_zero_page = false;
+    // and it runs once: the zero-page image may wait in the empty overlay region
+    options.runs_once = true;
 }
 
 bool HasDiskFlag(int argc, char** argv) {
