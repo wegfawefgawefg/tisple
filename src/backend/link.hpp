@@ -15,7 +15,8 @@ struct LinkInput {
     const FramePlan* plan = nullptr;
     const std::vector<bool>* kept = nullptr; // by function: its code is in the program
     const std::vector<AsmItem>* runtime = nullptr;
-    const std::vector<bool>* source_tables = nullptr; // by var: FindAddressedConsts on the source
+    const std::vector<bool>* source_tables =
+        nullptr; // by var: FindAddressedConsts on the source (lets too)
     // the interrupt handler's entry (irq.hpp), empty without one; the same that saves the
     // card's bank, for code in bank 1
     const std::vector<AsmItem>* irq = nullptr;

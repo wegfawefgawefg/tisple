@@ -414,9 +414,23 @@ std::vector<bool> FindAddressedConsts(const Program& program) {
         }
     }
     AddSlotTargets(program, targets);
+    // the lets code names anywhere, reached or not
+    std::vector<bool> named(program.vars.size(), false);
+    for (std::size_t f = 0; f < count; f++) {
+        AnyExpr(program, program.functions[f].body, [&](const Expr& e) {
+            if (e.kind == ExprKind::VarRef) {
+                named[static_cast<std::size_t>(e.ref)] = true;
+            }
+            return false;
+        });
+    }
     for (std::size_t v = 0; v < program.vars.size(); v++) {
-        bool data = program.vars[v].kind == VarKind::Const;
-        addressed[v] = data && (addressed[v] || targets[v]);
+        VarKind kind = program.vars[v].kind;
+        bool used = addressed[v] || targets[v];
+        // a top-level let stays unless only unreached code names it: one no code names is
+        // memory the program keeps on purpose
+        addressed[v] = (kind == VarKind::Const && used) ||
+                       (kind == VarKind::Global && (used || read[v] || !named[v]));
     }
     return addressed;
 }

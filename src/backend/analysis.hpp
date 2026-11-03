@@ -51,7 +51,9 @@ void FoldConstants(Program& program);
 // functions, with no main) may use: an addr_of into one, or an address in the data they read
 // (a string in a table they read, and in that string's...). Run on the program as written,
 // these keep their memory: the interpreter needs their addresses even where the mid-level
-// passes folded every use away. A const it only reads by value it reads from its bytes
+// passes folded every use away. A const it only reads by value it reads from its bytes. And the
+// top-level lets, but those only functions not reached name: those are left out (a library's
+// state for a call the program never makes); a let no code names stays, as memory kept
 std::vector<bool> FindAddressedConsts(const Program& program);
 // kept grows to every var an address slot of a kept var points into, and theirs
 void AddSlotTargets(const Program& program, std::vector<bool>& kept);

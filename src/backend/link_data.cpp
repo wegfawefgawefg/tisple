@@ -39,10 +39,13 @@ TableUse FindTableUse(const Backend& be, const LinkInput& in) {
     std::vector<bool> any(count, false);
     for (std::size_t v = 0; v < count; v++) {
         const Var& var = program.vars[v];
-        binary[v] = var.kind != VarKind::Const || var.placement.has_address || named[v];
         // by the program as written: the vars the mid-level passes add come after its own
-        bool source =
-            in.source_tables != nullptr && v < in.source_tables->size() && (*in.source_tables)[v];
+        bool written = in.source_tables != nullptr && v < in.source_tables->size();
+        bool source = written && (*in.source_tables)[v];
+        // a top-level let stays unless only functions the program never reaches name it
+        bool let_kept =
+            var.kind != VarKind::Const && (var.kind != VarKind::Global || !written || source);
+        binary[v] = let_kept || var.placement.has_address || named[v];
         any[v] = binary[v] || source;
     }
     AddSlotTargets(program, binary);
