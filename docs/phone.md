@@ -113,11 +113,11 @@ copy what they name), so a game opts in with config alone, no code and no memory
   Posted every 20 s and as the page hides, as text/plain (a simple CORS request, no preflight),
   to an https endpoint (or http on 127.0.0.1 or localhost, for a test receiver). Nothing about
   the player: no address, browser or screen. Every failure is silent; at most 200 records wait.
-- Off: the bar's `stats` button (shown for a game with telemetry; dim when off) or
-  `?telemetry=off` (`=on` again), kept in localStorage; always off with Do Not Track or Global
-  Privacy Control. While on, the start's tap says "sends anonymous play stats. stats button:
-  off", and `web/pages.py` puts a line under the picker naming the games that send them and how
-  to stop them.
+- Off: the bar's `stats` button (for a game with telemetry, dim when off; only from 480 px across,
+  the bar has no room on a phone held upright), the line under "tap to start" ("sends anonymous
+  play stats: tap here to stop"; a tap on it does not start), or `?telemetry=off` (`=on` again);
+  kept in localStorage. Always off with Do Not Track or Global Privacy Control. `web/pages.py`
+  puts a line under the picker naming the games that send them and how to stop them.
 - Catwiz's receiver, report and events: its `tools/telemetry/` (README, "Play stats").
 - `publish.py --keep-default` publishes a test build without making it the game the player opens.
   The phone server serves the player of the checkout `serve.py` runs from: a player change is

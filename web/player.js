@@ -657,17 +657,25 @@ ui.buzz.addEventListener("click", () => {
     showBuzz();
     setStatus(state.buzz ? "buzz on: taps buzz" : "buzz off: taps are silent");
 });
-// the STATS button: anonymous play records on or off (telemetry.js), and the start's line
-// saying they are sent while they are
-const startNote = makeLabel("", 1, "note");
-ui.start.appendChild(startNote);
+// the STATS button: anonymous play records on or off (telemetry.js). The bar has no room for it
+// on a phone held upright (index.html shows it from 480 px across), so the start's tap has it
+// too, under "tap to start", saying what is sent: a tap there turns them off (or on) and does
+// not start
+const startStats = document.createElement("span");
+startStats.className = "stats";
+const startNote = makeLabel("", 1);
+startStats.appendChild(startNote);
+ui.start.appendChild(startStats);
 function showStats() {
     const t = telemetryShown();
     ui.stats.classList.toggle("off", !t.on);
-    startNote.hidden = !t.on;
-    setLabel(startNote, t.on ? "sends anonymous play stats. stats button: off" : "");
+    startStats.hidden = !t.has;
+    startStats.classList.toggle("off", !t.on);
+    setLabel(startNote, t.on ? "sends anonymous play stats: tap here to stop"
+                              : t.blocked ? "play stats off (" + t.blocked + ")"
+                                          : "play stats off: tap here to send them");
 }
-ui.stats.addEventListener("click", () => {
+function toggleStats() {
     const t = telemetryShown();
     if (t.blocked) {
         setStatus("play stats off: the browser asks for " + t.blocked);
@@ -676,6 +684,11 @@ ui.stats.addEventListener("click", () => {
     const on = telemetrySet(!t.on);
     showStats();
     setStatus(on ? "play stats on: anonymous, how far runs get" : "play stats off: nothing is sent");
+}
+ui.stats.addEventListener("click", toggleStats);
+startStats.addEventListener("pointerdown", (e) => {
+    e.stopPropagation(); // not the start
+    toggleStats();
 });
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");
