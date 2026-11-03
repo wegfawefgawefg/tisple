@@ -142,9 +142,10 @@ def stats_note(entries):
     if not names:
         return ""
     return (f'<p class="note">{" and ".join(names)} sends anonymous play stats (how far runs get, '
-            "fights, picks; no address, no browser details) to its author's server. The STATS "
-            "button on the player's bar, or <code>&amp;telemetry=off</code> on its address, turns "
-            "them off; Do Not Track and Global Privacy Control do too.</p>")
+            "fights, picks; no address, no browser details) to its author's server. A tap on the "
+            "line under \"tap to start\" (or the STATS button, on a wide screen), or "
+            "<code>&amp;telemetry=off</code> on the player's address, turns them off; Do Not "
+            "Track and Global Privacy Control do too.</p>")
 
 
 PICKER = """<!doctype html>
