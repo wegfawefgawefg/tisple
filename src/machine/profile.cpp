@@ -1,5 +1,7 @@
 #include "machine/profile.hpp"
 
+#include "machine/tick_log.hpp"
+
 #include <algorithm>
 #include <cstdio>
 
@@ -31,6 +33,14 @@ Where WhereFetched(const Apple2& a, uint16_t pc) {
 }
 
 } // namespace
+
+uint8_t FetchedFrom(const Apple2& a, uint16_t pc) {
+    return static_cast<uint8_t>(WhereFetched(a, pc));
+}
+
+const char* FetchedFromName(uint8_t where) {
+    return where < kWheres ? kWhereNames[where] : "?";
+}
 
 void StartProfile(Profile& profile, const Apple2& a, uint64_t from) {
     profile.apple = &a;
