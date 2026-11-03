@@ -15,9 +15,6 @@ namespace tisple {
 
 namespace {
 
-constexpr std::uint16_t kRamrdOn = 0xC003;
-constexpr std::uint16_t kRamrdOff = 0xC002;
-
 // a JSR, a JMP to a label, or a branch: control goes to the operand
 bool IsTransfer(const AsmItem& item) {
     if (item.kind != ItemKind::Ins) {
@@ -301,6 +298,13 @@ OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept
         for (std::size_t g = 0; g < out.bytes.size() && broken < 0; g++) {
             broken = out.bytes[g] < min_bytes ? static_cast<std::int32_t>(g) : -1;
         }
+        // the enter routine indexes the stubs with a byte, 3 bytes a root: the last groups
+        // past kMaxOverlayRoots are left out
+        std::size_t stubs = 0;
+        for (std::size_t g = 0; g < out.roots.size() && broken < 0; g++) {
+            stubs += out.roots[g].size();
+            broken = stubs > kMaxOverlayRoots ? static_cast<std::int32_t>(g) : -1;
+        }
         if (broken < 0) {
             return out;
         }
@@ -313,216 +317,6 @@ OverlayGroups FindOverlayGroups(const Backend& be, const std::vector<bool>& kept
                          out.bytes[static_cast<std::size_t>(broken)]);
         }
         planned.erase(planned.begin() + broken);
-    }
-}
-
-namespace {
-
-// lib/disk's reader (disk.tsp): its entry and the next sector's, its arguments in auxmem.from
-// (the table's record) and auxmem.to (where to), X the memory (0 main) and drive 2's bit
-constexpr std::uint16_t kReaderBegin = 0x1700;
-constexpr std::uint16_t kReaderNext = 0x1703;
-constexpr std::uint16_t kReaderFrom = 0x00FA;
-constexpr std::uint16_t kReaderTo = 0x00FC;
-constexpr std::uint8_t kReaderMore = 1;
-
-// group g's image read from the second disk into the region: its record's four bytes after a
-// jump over them, the reader started on them and run to the last sector, and on any error
-// (the disk out, a bad read) read again until it is all in: the code must be whole
-void ReadImage(Backend& be, const OverlayCode& code, std::size_t g, std::int32_t disk2_bit_sym,
-               std::vector<AsmItem>& out) {
-    std::string k = std::to_string(g);
-    std::int32_t record = NewSym(be, "ov." + k + ".record", SymRole::Label, -1);
-    std::int32_t retry = NewSym(be, "ov." + k + ".retry", SymRole::Label, -1);
-    std::int32_t more = NewSym(be, "ov." + k + ".more", SymRole::Label, -1);
-    std::int32_t got = NewSym(be, "ov." + k + ".got", SymRole::Label, -1);
-    out.push_back(MakeIns(Mn::JMP, Mode::Abs, SymValue(retry)));
-    out.push_back(MakeLabel(record));
-    for (int i = 0; i < 4; i++) {
-        out.push_back(MakeByte(SymValue(code.rec_sym[4 * g + static_cast<std::size_t>(i)])));
-    }
-    out.push_back(MakeLabel(retry));
-    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(record, 0, Part::Low)));
-    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderFrom)));
-    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(record, 0, Part::High)));
-    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderFrom + 1)));
-    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.region_sym, 0, Part::Low)));
-    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderTo)));
-    out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.region_sym, 0, Part::High)));
-    out.push_back(MakeIns(Mn::STA, Mode::Zp, Num(kReaderTo + 1)));
-    // main memory (0) and the drive the second disk is in (the record's $80 asks for it)
-    out.push_back(MakeIns(Mn::LDX, Mode::Abs, SymValue(disk2_bit_sym)));
-    out.push_back(MakeIns(Mn::JSR, Mode::Abs, Num(kReaderBegin)));
-    out.push_back(MakeLabel(more));
-    out.push_back(MakeIns(Mn::CMP, Mode::Imm, Num(kReaderMore)));
-    out.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(got)));
-    out.push_back(MakeIns(Mn::JSR, Mode::Abs, Num(kReaderNext)));
-    out.push_back(MakeIns(Mn::JMP, Mode::Abs, SymValue(more)));
-    out.push_back(MakeLabel(got));
-    out.push_back(MakeIns(Mn::CMP, Mode::Imm, Num(0)));
-    out.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(retry)));
-}
-
-} // namespace
-
-void RouteOverlays(Backend& be, const OverlayGroups& groups,
-                   const std::vector<std::vector<AsmItem>*>& pieces,
-                   const std::vector<std::int32_t>& piece_group, const std::vector<bool>& on_disk,
-                   std::int32_t disk2_bit_sym, OverlayCode& code) {
-    const Program& program = *be.program;
-    std::size_t count = program.functions.size();
-    std::size_t n = groups.roots.size();
-    code = OverlayCode();
-    code.stub.assign(count, -1);
-    code.region_sym = NewSym(be, "ov.region", SymRole::Data, -1);
-    std::vector<std::int32_t> load(count, -1);
-    std::vector<std::int32_t> enter(n, -1);
-    std::vector<std::int32_t> off(n, -1);
-    for (std::size_t g = 0; g < n; g++) {
-        std::string k = std::to_string(g);
-        enter[g] = NewSym(be, "ov." + k + ".enter", SymRole::Label, -1);
-        off[g] = NewSym(be, "ov." + k + ".off", SymRole::Label, -1);
-        code.image_sym.push_back(NewSym(be, "ov." + k + ".image", SymRole::Data, -1));
-        code.size_sym.push_back(NewSym(be, "ov." + k + ".size", SymRole::Data, -1));
-        code.on_disk.push_back(g < on_disk.size() && on_disk[g] && disk2_bit_sym >= 0);
-        for (int i = 0; i < 4; i++) {
-            code.rec_sym.push_back(
-                NewSym(be, "ov." + k + ".record" + std::to_string(i), SymRole::Data, -1));
-        }
-        for (std::int32_t r : groups.roots[g]) {
-            const std::string& name = program.functions[static_cast<std::size_t>(r)].name;
-            code.stub[static_cast<std::size_t>(r)] = NewSym(be, "ov." + name, SymRole::Label, -1);
-            load[static_cast<std::size_t>(r)] =
-                NewSym(be, "ov." + name + ".load", SymRole::Label, -1);
-        }
-    }
-    std::int32_t copy = NewSym(be, "ov.copy", SymRole::Label, -1);
-    std::vector<AsmItem>& out = code.stubs;
-    // the stubs, each with its load
-    for (std::size_t g = 0; g < n; g++) {
-        for (std::int32_t r : groups.roots[g]) {
-            std::size_t f = static_cast<std::size_t>(r);
-            out.push_back(MakeLabel(code.stub[f]));
-            out.push_back(MakeIns(Mn::JMP, Mode::Abs, SymValue(load[f])));
-            out.push_back(MakeLabel(load[f]));
-            out.push_back(MakeIns(Mn::JSR, Mode::Abs, SymValue(enter[g])));
-            out.push_back(MakeIns(Mn::JMP, Mode::Abs, SymValue(be.fn_sym[f])));
-        }
-    }
-    // a group's stubs pointed at its roots (on) or their loads (off)
-    auto point = [&](std::size_t g, bool on) {
-        for (std::int32_t r : groups.roots[g]) {
-            std::size_t f = static_cast<std::size_t>(r);
-            std::int32_t to = on ? be.fn_sym[f] : load[f];
-            out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(to, 0, Part::Low)));
-            out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(code.stub[f], 1)));
-            out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(to, 0, Part::High)));
-            out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(code.stub[f], 2)));
-        }
-    };
-    for (std::size_t g = 0; g < n; g++) {
-        out.push_back(MakeLabel(off[g]));
-        point(g, false);
-        out.push_back(MakeIns(Mn::RTS, Mode::Imp));
-    }
-    std::int32_t rt_a = be.rt_a;
-    std::int32_t rt_b = be.rt_b;
-    std::int32_t rt_r = be.rt_r;
-    for (std::size_t g = 0; g < n; g++) {
-        out.push_back(MakeLabel(enter[g]));
-        for (Mn mn : {Mn::PHP, Mn::PHA, Mn::TXA, Mn::PHA, Mn::TYA, Mn::PHA}) {
-            out.push_back(MakeIns(mn, Mode::Imp));
-        }
-        for (std::size_t h = 0; h < n; h++) {
-            if (h != g) {
-                out.push_back(MakeIns(Mn::JSR, Mode::Abs, SymValue(off[h])));
-            }
-        }
-        if (code.on_disk[g]) {
-            ReadImage(be, code, g, disk2_bit_sym, out);
-            point(g, true);
-            for (Mn mn : {Mn::PLA, Mn::TAY, Mn::PLA, Mn::TAX, Mn::PLA, Mn::PLP, Mn::RTS}) {
-                out.push_back(MakeIns(mn, Mode::Imp));
-            }
-            continue;
-        }
-        std::int32_t image = code.image_sym[g];
-        out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(image, 0, Part::Low)));
-        out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(rt_a)));
-        out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(image, 0, Part::High)));
-        out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(rt_a, 1)));
-        out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.region_sym, 0, Part::Low)));
-        out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(rt_b)));
-        out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.region_sym, 0, Part::High)));
-        out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(rt_b, 1)));
-        out.push_back(MakeIns(Mn::LDA, Mode::Imm, SymValue(code.size_sym[g], 0, Part::High)));
-        out.push_back(MakeIns(Mn::STA, Mode::Abs, SymValue(rt_r)));
-        out.push_back(MakeIns(Mn::LDX, Mode::Imm, SymValue(code.size_sym[g], 0, Part::Low)));
-        out.push_back(MakeIns(Mn::JSR, Mode::Abs, SymValue(copy)));
-        point(g, true);
-        for (Mn mn : {Mn::PLA, Mn::TAY, Mn::PLA, Mn::TAX, Mn::PLA, Mn::PLP, Mn::RTS}) {
-            out.push_back(MakeIns(mn, Mode::Imp));
-        }
-    }
-    // the copy: X whole pages, then rt_r bytes, from (rt_a) in aux memory to (rt_b)
-    std::vector<AsmItem>& c = code.copy;
-    std::int32_t page = NewSym(be, "ov.copy.page", SymRole::Label, -1);
-    std::int32_t byte = NewSym(be, "ov.copy.byte", SymRole::Label, -1);
-    std::int32_t tail = NewSym(be, "ov.copy.tail", SymRole::Label, -1);
-    std::int32_t last = NewSym(be, "ov.copy.last", SymRole::Label, -1);
-    std::int32_t done = NewSym(be, "ov.copy.done", SymRole::Label, -1);
-    c.push_back(MakeLabel(copy));
-    c.push_back(MakeIns(Mn::LDY, Mode::Imm, Num(0)));
-    c.push_back(MakeIns(Mn::CPX, Mode::Imm, Num(0)));
-    c.push_back(MakeIns(Mn::BEQ, Mode::Rel, SymValue(tail)));
-    c.push_back(MakeLabel(page));
-    c.push_back(MakeIns(Mn::PHP, Mode::Imp));
-    c.push_back(MakeIns(Mn::SEI, Mode::Imp));
-    c.push_back(MakeIns(Mn::STA, Mode::Abs, Num(kRamrdOn)));
-    c.push_back(MakeLabel(byte));
-    c.push_back(MakeIns(Mn::LDA, Mode::IndY, SymValue(rt_a)));
-    c.push_back(MakeIns(Mn::STA, Mode::IndY, SymValue(rt_b)));
-    c.push_back(MakeIns(Mn::INY, Mode::Imp));
-    c.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(byte)));
-    c.push_back(MakeIns(Mn::STA, Mode::Abs, Num(kRamrdOff)));
-    c.push_back(MakeIns(Mn::PLP, Mode::Imp));
-    c.push_back(MakeIns(Mn::INC, Mode::Abs, SymValue(rt_a, 1)));
-    c.push_back(MakeIns(Mn::INC, Mode::Abs, SymValue(rt_b, 1)));
-    c.push_back(MakeIns(Mn::DEX, Mode::Imp));
-    c.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(page)));
-    c.push_back(MakeLabel(tail));
-    c.push_back(MakeIns(Mn::LDY, Mode::Abs, SymValue(rt_r)));
-    c.push_back(MakeIns(Mn::BEQ, Mode::Rel, SymValue(done)));
-    c.push_back(MakeIns(Mn::PHP, Mode::Imp));
-    c.push_back(MakeIns(Mn::SEI, Mode::Imp));
-    c.push_back(MakeIns(Mn::STA, Mode::Abs, Num(kRamrdOn)));
-    c.push_back(MakeLabel(last));
-    c.push_back(MakeIns(Mn::DEY, Mode::Imp));
-    c.push_back(MakeIns(Mn::LDA, Mode::IndY, SymValue(rt_a)));
-    c.push_back(MakeIns(Mn::STA, Mode::IndY, SymValue(rt_b)));
-    c.push_back(MakeIns(Mn::TYA, Mode::Imp));
-    c.push_back(MakeIns(Mn::BNE, Mode::Rel, SymValue(last)));
-    c.push_back(MakeIns(Mn::STA, Mode::Abs, Num(kRamrdOff)));
-    c.push_back(MakeIns(Mn::PLP, Mode::Imp));
-    c.push_back(MakeLabel(done));
-    c.push_back(MakeIns(Mn::RTS, Mode::Imp));
-    // every call or jump to a root from outside its group to its stub
-    for (std::size_t p = 0; p < pieces.size(); p++) {
-        for (AsmItem& item : *pieces[p]) {
-            if (!IsTransfer(item) || item.value.sym < 0 || item.value.offset != 0) {
-                continue;
-            }
-            for (std::size_t g = 0; g < n; g++) {
-                if (static_cast<std::int32_t>(g) == piece_group[p]) {
-                    continue;
-                }
-                for (std::int32_t r : groups.roots[g]) {
-                    if (item.value.sym == be.fn_sym[static_cast<std::size_t>(r)]) {
-                        item.value = SymValue(code.stub[static_cast<std::size_t>(r)]);
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -549,15 +343,6 @@ bool PlaceOverlayImages(const std::vector<AddressRange>& taken, std::uint32_t si
         }
     }
     return false;
-}
-
-std::uint64_t OverlayDiskCycles(std::uint32_t bytes) {
-    return 115ull * bytes + 100000;
-}
-
-std::uint64_t OverlayLoadCycles(std::uint32_t bytes, std::size_t stubs) {
-    // 16 a byte, a page's set-up, the enter routine and 20 a stub patched
-    return 16ull * bytes + 40ull * (bytes / 256 + 1) + 80 + 20ull * stubs;
 }
 
 } // namespace tisple
