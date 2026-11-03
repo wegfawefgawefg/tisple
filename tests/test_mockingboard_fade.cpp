@@ -1,7 +1,8 @@
 // lib/mockingboard's fade: (mb.fade 15) takes the music's voices down a step every 4 ticks,
 // leaves the effect playing at its own volume and a voice on the hardware envelope as it is,
 // and stops the music once it is silent; (mb.fade_in 13) brings the next song in from 13 steps
-// down, a step every 4 ticks.
+// down, a step every 4 ticks. A song whose voices end (end in their lists) stops after its
+// notes, and a fade with nothing sounding is done at once.
 
 #include "machine/mockingboard.hpp"
 #include "test_mockingboard.hpp"
@@ -46,7 +47,38 @@ const char* kFade = R"(
     (mb.off))
 )";
 
+const char* kEnd = R"(
+(import mockingboard mb)
+(import mockingboard_player player)
+(import mockingboard_song tune)
+(tune.song sting
+    (pattern a "l8 v12 c4 e4")
+    (pattern b "l4 v10 g4 b4")
+    (voice 0 a end)
+    (voice 3 b end))
+(tune.song next (pattern a "l64 v12 g3") (voice 0 a))
+(let playing u8 0 :address 0x03C0)
+(let waited u8 0 :address 0x03C1)
+(fn irq () void :interrupt (mb.service))
+(fn main () void
+    (mb.init)
+    (mb.play (addr_of (at sting 0)))
+    (for i u8 0 30
+        (wait_cycles 17030))
+    (set playing (if (or (at player.playing 0) (at player.playing 3)) 1 2))
+    (mb.fade 15)
+    (while (not (mb.faded))
+        (wait_cycles 17030)
+        (set waited (+ waited 1)))
+    (mb.play (addr_of (at next 0)))
+    (mb.fade_in 0)
+    (for i u8 0 10
+        (wait_cycles 17030))
+    (mb.off))
+)";
+
 // the first tick from from on where voice v's volume is not want
+
 int Changes(const Voices& v, int voice, int from, uint8_t want) {
     for (int t = from; t < static_cast<int>(v.volume[voice].size()); t++) {
         if (v.volume[voice][t] != want) {
@@ -120,10 +152,35 @@ void FadeTests(TestResults& results) {
                 waited);
 }
 
+// the sting's two voices end after their notes (16 and 8 ticks) and go quiet; the fade after
+// is done at once, and the next song plays from the next tick
+void EndTests(TestResults& results) {
+    MbBuild b;
+    MbBuildText(results, "t.tsp", kEnd, b);
+    if (!b.ok) {
+        return;
+    }
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 4);
+    tisple::RunApple2(*a, 60 * kMbTick);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    CHECK(results, a->cpu.mem[0x03C0] == 2 && a->cpu.mem[0x03C1] == 0);
+    Voices v = ReadVoices(*a, FirstTick(*a), 45);
+    // voice 0 sounds through its 16 ticks, then 0; voice 3 its 8
+    CHECK(results, v.volume[0][2] == 12 && v.volume[3][2] == 10);
+    CHECK(results, v.volume[0][20] == 0 && v.volume[3][12] == 0);
+    uint16_t g3 = Period(Note('g', false, 3));
+    bool next = false;
+    for (int k = 30; k < 45; k++) {
+        next = next || (v.period[0][k] == g3 && v.volume[0][k] == 12);
+    }
+    CHECK(results, next);
+}
+
 } // namespace
 
 void RunMockingboardFadeTests(TestResults& results) {
     FadeTests(results);
+    EndTests(results);
 }
 
 } // namespace tisple_tests
