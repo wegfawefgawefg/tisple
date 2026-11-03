@@ -268,7 +268,7 @@
    "bytes": 1
   },
   "state.picked": {
-   "at": 65389,
+   "at": 65414,
    "bytes": 1
   },
   "state.pick": {
@@ -346,7 +346,7 @@
    201
   ]
  },
- "disk": "disk-a5d29657.dsk",
- "version": "a5d29657",
- "disk2": "disk2-0e914f10.dsk"
+ "disk": "disk-dcfc3bc2.dsk",
+ "version": "dcfc3bc2",
+ "disk2": "disk2-62307070.dsk"
 }
