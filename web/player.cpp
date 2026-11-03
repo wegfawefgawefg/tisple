@@ -1,18 +1,17 @@
 // The phone player's machine: tisple machine compiled to WebAssembly (web/build.sh), driven
 // by player.js one slice at a time. It boots a disk with our own roms, renders the screen to
-// RGBA for a canvas and the speaker, Mockingboard and disk drives to 16-bit samples for
-// WebAudio. While the disk motor is on, player.js runs it flat out, so a disk boots in a
-// moment, unless the drives' sound is on: then a disk loads at the Apple's speed, grinding.
+// RGBA for a canvas and the speaker, Mockingboard and disk drives to 16-bit stereo frames for
+// WebAudio (the card's first chip left, its second right; tp_stereo 0: the mono mix in both). While
+// the disk motor is on, player.js runs it flat out, so a disk boots in a moment, unless the drives'
+// sound is on: then a disk loads at the Apple's speed, grinding.
 
 #include "disk/image.hpp"
 #include "disk/machine_disks.hpp"
 #include "machine/apple2.hpp"
 #include "machine/disk2.hpp"
-#include "machine/drive_audio.hpp"
+#include "machine/machine_audio.hpp"
 #include "machine/mockingboard.hpp"
-#include "machine/mockingboard_audio.hpp"
 #include "machine/mouse.hpp"
-#include "machine/speaker_audio.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -29,24 +28,19 @@ struct Player {
     std::unique_ptr<Apple2> a;
     Framebuffer fb;
     std::vector<uint8_t> rgba = std::vector<uint8_t>(kScreenWidth * kScreenHeight * 4);
-    SpeakerRenderer speaker;
-    MockingboardRenderer chips;
-    DriveSoundRenderer drives;
+    MachineAudio sound;
     bool drive_sound = true;
-    std::vector<int16_t> samples;
-    std::vector<uint8_t> image; // the disk as a .dsk, for tp_disk_image
+    bool stereo = true;
+    std::vector<int16_t> samples; // stereo frames, left then right
+    std::vector<uint8_t> image;   // the disk as a .dsk, for tp_disk_image
     std::string error;
 };
 
 Player g_player;
 
 void StartAudio(Player& p) {
-    p.speaker = SpeakerRenderer();
-    p.speaker.next_toggle = p.a->speaker.toggle_count;
-    p.speaker.samples_done = SamplesForCycles(Cycles(*p.a));
-    p.chips = MockingboardRenderer();
-    StartMockingboardAudio(p.chips, *p.a);
-    StartDriveSound(p.drives, *p.a);
+    p.sound.speaker = SpeakerRenderer();
+    StartMachineAudio(p.sound, *p.a);
 }
 
 } // namespace
@@ -80,7 +74,7 @@ EMSCRIPTEN_KEEPALIVE int tp_boot(const uint8_t* disk, int size, const uint8_t* d
 }
 
 // runs the machine on; with sound, renders it into the sample buffer (tp_samples) and returns
-// how many samples, else drops it. 0 once the program has stopped
+// how many stereo frames (two samples each), else drops it. 0 once the program has stopped
 EMSCRIPTEN_KEEPALIVE int tp_run(int cycles, int sound) {
     Player& p = g_player;
     if (!p.a || p.a->stopped) {
@@ -92,21 +86,24 @@ EMSCRIPTEN_KEEPALIVE int tp_run(int cycles, int sound) {
         StartAudio(p);
         return 0;
     }
-    RenderSpeaker(p.speaker, *p.a, Cycles(*p.a), p.samples);
-    if (HasMockingboard(*p.a)) {
-        MixMockingboard(p.chips, *p.a, Cycles(*p.a), p.samples, 0);
+    RenderMachineAudio(p.sound, *p.a, Cycles(*p.a), p.drive_sound, p.stereo ? 2 : 1, p.samples);
+    if (!p.stereo) {
+        SpreadToStereo(p.samples, 0);
     }
-    if (p.drive_sound) {
-        MixDriveSound(p.drives, *p.a, Cycles(*p.a), p.samples, 0);
-    }
-    return static_cast<int>(p.samples.size());
+    return static_cast<int>(p.samples.size() / 2);
+}
+
+// the Mockingboard's chips left and right (1), or the mono mix in both channels (0), from
+// the next tp_run on
+EMSCRIPTEN_KEEPALIVE void tp_stereo(int on) {
+    g_player.stereo = on != 0;
 }
 
 // the drives' sound on (1) or off (0) in what tp_run renders
 EMSCRIPTEN_KEEPALIVE void tp_drive_sound(int on) {
     Player& p = g_player;
     if (on != 0 && !p.drive_sound && p.a) {
-        StartDriveSound(p.drives, *p.a); // from now, not from when it went off
+        StartDriveSound(p.sound.drives, *p.a); // from now, not from when it went off
     }
     p.drive_sound = on != 0;
 }

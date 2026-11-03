@@ -10,6 +10,12 @@ key presses.
   Apple's speed so it sounds like a Disk II: the boot's grind, the head stepping, the motor
   (docs/disks.md, "The drives' sound"); Catwiz takes about 11 s to load. Off, or with no
   sound running, loading runs flat out and silent as before.
+- The sound is stereo, as the Mockingboard is: its first AY on the left, its second on the
+  right, the speaker and the drives in both (the owner, 2026-11-03: stereo by default, with
+  a toggle). A line under "tap to start" ("stereo sound: tap here for mono"; a tap on it
+  switches and does not start) and the bar's `stereo` button (only from 480 px across, as
+  `stats`; it reads `mono`, dim, when mono) switch to the mono mix in both ears and back, at
+  once, while the game plays too; the browser remembers it (`tisple.stereo`).
 
 - `web/build.sh`: needs Emscripten (`source <emsdk>/emsdk_env.sh`); builds `web/dist`.
 - `web/publish.py NAME DISK CONFIG`: puts a disk in `~/.local/share/tisple/phone/games`
