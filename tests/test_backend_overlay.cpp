@@ -5,6 +5,7 @@
 // a load and in group code on the emulated IIe; and every one on the simulator and the
 // interpreter alike
 
+#include "backend/link_code.hpp"
 #include "backend/overlay.hpp"
 #include "machine/apple2.hpp"
 #include "test_backend.hpp"
@@ -363,9 +364,51 @@ void TestInterrupts(TestResults& results) {
     CheckDiff(results, d, "t.main", {});
 }
 
+// the region and the frames after the last span placed in order when the spans just before
+// the groups are early ones (the mirrored code, placed first below the origin): the region
+// goes where it fits, not past the end of a stretch
+void TestRegionAfterEarlySpans(TestResults& results) {
+    std::vector<tisple::AsmItem> items;
+    std::vector<tisple::FunctionSpan> spans;
+    auto span = [&](std::uint32_t bytes, std::int32_t group) {
+        tisple::AsmItem item = tisple::MakeByte(tisple::Num(0));
+        item.size = 16;
+        tisple::FunctionSpan s;
+        s.first = items.size();
+        items.insert(items.end(), bytes / 16, item);
+        s.end = items.size();
+        s.overlay_group = group;
+        spans.push_back(s);
+    };
+    span(16, -1);   // the startup
+    span(0xE0, -1); // resident code
+    span(0x40, -1); // early: the mirrored code
+    span(0x300, 0); // two groups
+    span(0x200, 1);
+    std::vector<tisple::AddressRange> stretches = {
+        {0x8000, 0x8100}, {0x6000, 0x6100}, {0xD000, 0xD800}};
+    tisple::EarlySpans early;
+    early.first = 2;
+    early.end = 3;
+    early.stretch = 1;
+    early.stretch_end = 2;
+    tisple::RegionSpans region;
+    region.first = 3;
+    region.end = 5;
+    std::vector<tisple::CodePlace> places;
+    std::uint32_t frames_at = 0;
+    bool placed = tisple::PlaceSpans(items, spans, stretches, 0x20, places, frames_at, SIZE_MAX,
+                                     early, &region);
+    CHECK(results, placed && places[2].address == 0x6000 && region.size == 0x300);
+    // the resident code and the region after it in the card, the frames after the region
+    CHECK(results, places[1].address == 0xD000 && region.at == 0xD0E0 && frames_at == 0xD3E0 &&
+                       frames_at + 0x20 <= 0xD800);
+}
+
 } // namespace
 
 void RunBackendOverlayTests(TestResults& results) {
+    TestRegionAfterEarlySpans(results);
     TestScreens(results);
     TestTakingTurns(results);
     TestKeptOut(results);
