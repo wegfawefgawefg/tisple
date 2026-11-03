@@ -132,7 +132,19 @@ def picker_html(entries):
             f'<a class="game" href="play.html?game={name}">'
             f'<img src="games/{name}/shot.png" alt="{title}" width="280" height="192">'
             f"<b>{title}</b><span>{about}</span></a>")
-    return PICKER.replace("{cards}", "\n".join(cards)).replace("{repo}", REPO)
+    return (PICKER.replace("{cards}", "\n".join(cards)).replace("{repo}", REPO)
+            .replace("{stats}", stats_note(entries)))
+
+
+# the games that send play records (game.json "telemetry", web/telemetry.js) say so, one line
+def stats_note(entries):
+    names = [html.escape(game.get("title", name)) for name, game in entries if game.get("telemetry")]
+    if not names:
+        return ""
+    return (f'<p class="note">{" and ".join(names)} sends anonymous play stats (how far runs get, '
+            "fights, picks; no address, no browser details) to its author's server. The STATS "
+            "button on the player's bar, or <code>&amp;telemetry=off</code> on its address, turns "
+            "them off; Do Not Track and Global Privacy Control do too.</p>")
 
 
 PICKER = """<!doctype html>
@@ -163,6 +175,7 @@ a { color: var(--accent); }
 .game img { width: 100%; height: auto; image-rendering: pixelated; background: #000; }
 .game b { text-transform: uppercase; letter-spacing: 1px; }
 .game span { color: var(--dim); font-size: 13px; }
+.note { font-size: 13px; margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -174,6 +187,7 @@ buttons, and a keyboard (arrows, return, letters) works too.</p>
 <div id="games">
 {cards}
 </div>
+{stats}
 </body>
 </html>
 """

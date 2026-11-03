@@ -89,6 +89,40 @@ key presses.
 - `?autostart` runs without the tap and without sound (so loading is flat out), for
   headless checks.
 
+## Play stats
+
+A game's config may ask for anonymous play records (`web/telemetry.js`, 2026-11-03, Catwiz):
+`"telemetry": {"endpoint": URL, "fields": {...}, "events": [...], "quit": [...]}`, conditions
+over the game's memory as the pad's (the same `names`, vars and enums; publish.py and pages.py
+copy what they name), so a game opts in with config alone, no code and no memory.
+
+- `fields`: a name for each value to report: a condition's number (`"state.actors.hp[0]"`,
+  `"state.phase == state.Phase.won"`), or a var named alone with more than one element, read as
+  the list (`"state.items"`). An event may also name a var directly.
+- `events`: `{"name", "when"}` fires as `when` starts to hold (also when it holds at the first
+  look); `{"name", "change": [conditions]}` whenever their values change (not at the first look),
+  with `"was"`: only when that held just before. `"fields"` are read as it fires, `"before"` as
+  they were just before (the frames before the change), `"entry"` as they were when the state it
+  leaves began. A state counts once two frames agree, as the pad's.
+- Built in: `open` (the start tap), `quit` (the page hidden or closed: the `quit` fields, sent at
+  once with `sendBeacon`; a session's last one is where it ended), `back` (shown again).
+- Each record: `e`, `t` (seconds since the page loaded), `dt` (since the record before), `gt`
+  (the machine's seconds, which stop while the page is hidden), `v`, `pre`, `entry`. A post:
+  `game`, `build` (the game.json version), `where` (`pages` or `phone`), `sid` (random, made
+  once a tab session, kept in sessionStorage), `load` (page loads in that session), `seq`, `recs`.
+  Posted every 20 s and as the page hides, as text/plain (a simple CORS request, no preflight),
+  to an https endpoint (or http on 127.0.0.1 or localhost, for a test receiver). Nothing about
+  the player: no address, browser or screen. Every failure is silent; at most 200 records wait.
+- Off: the bar's `stats` button (shown for a game with telemetry; dim when off) or
+  `?telemetry=off` (`=on` again), kept in localStorage; always off with Do Not Track or Global
+  Privacy Control. While on, the start's tap says "sends anonymous play stats. stats button:
+  off", and `web/pages.py` puts a line under the picker naming the games that send them and how
+  to stop them.
+- Catwiz's receiver, report and events: its `tools/telemetry/` (README, "Play stats").
+- `publish.py --keep-default` publishes a test build without making it the game the player opens.
+  The phone server serves the player of the checkout `serve.py` runs from: a player change is
+  live there once that checkout has it and `web/build.sh` ran.
+
 ## The web demo
 
 `web/pages.py OUT [--game NAME DISK CONFIG]...` builds the same player as a static site for
