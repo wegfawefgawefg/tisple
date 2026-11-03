@@ -53,6 +53,8 @@ void PrintMachineUsage() {
         "  --peek A[:N]        print N bytes (default 2, as a u16 too) at A after the run\n"
         "  --profile F.txt[@C] cycles by instruction address and memory, from cycle C to\n"
         "                      the end (tools/profile.py adds them up by function)\n"
+        "  --ticks F.txt       every interrupt the cpu takes: its cycle, how late (the line\n"
+        "                      low that long), and the code that was running when it fell\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled, F2: the\n"
         "                      look, F3: the drives' sound on and off, F4: stereo or mono)\n"
         "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
@@ -173,6 +175,8 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             if (!ParseScreenshot(argv[++i], args.profile)) {
                 return false;
             }
+        } else if (std::strcmp(arg, "--ticks") == 0 && has_value) {
+            args.ticks = argv[++i];
         } else if (std::strcmp(arg, "--wav") == 0 && has_value) {
             args.wav = argv[++i];
         } else if (std::strcmp(arg, "--rom") == 0 && has_value) {

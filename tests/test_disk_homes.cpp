@@ -1,4 +1,4 @@
-// the libraries' machine code at their fixed homes (lib/unpack at $1C00, lib/auxcard at $1D8A,
+// the libraries' machine code at their fixed homes (lib/unpack at $1C00, lib/auxcard at $1DA6,
 // lib/dhgr at $1E00): valued :address lets, which a boot disk's loader puts in place as segments
 // of their own (BuildOptions::homes_in_segments) and other builds' startup copies in from an
 // image. Either way the program unpacks, and each home holds its code in both memories after
@@ -85,7 +85,7 @@ void TestOnBootDisk(TestResults& results) {
     // the homes are segments: each of the three, loaded by the boot disk's loader
     int homes = 0;
     for (const tisple::MemorySegment& s : p.code.segments) {
-        homes += (s.address == 0x1C00 || s.address == 0x1D8A || s.address == 0x1E00) &&
+        homes += (s.address == 0x1C00 || s.address == 0x1DA6 || s.address == 0x1E00) &&
                          s.bank == tisple::MemoryBank::kMain
                      ? 1
                      : 0;

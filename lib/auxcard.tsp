@@ -14,28 +14,29 @@
 ; zero page and stack are as they were, the card's ram is in and its $FFFE vector reaches the
 ; handler (in a program not in the card, call points it at lib/auxmem's guard, so call
 ; (auxmem.guard) first, as for any aux memory code with interrupts on). lib/dhgr's runs does,
-; between rows.
+; between rows, and lib/unpack's card modes at each page out.
 
 (import auxmem)
 
-; our 6502 code at $1D8A in main memory, after lib/unpack's: the card's state pushed ($C011 bit
+; our 6502 code at $1DA6 in main memory, after lib/unpack's: the card's state pushed ($C011 bit
 ; 7: bank 2 in, $C012 bit 7: its ram in), the bank asked for in for reading and writing (two
 ; reads of $C083 or $C08B), for a program in the rom the ram's IRQ vector to the guard ($0340),
 ; the zero page arguments to aux memory's, ALTZP on, the call (its operand written by call),
-; ALTZP off, then the rom ($C082) or the bank that was in back
-(const HOME u16 0x1D8A)
-(const CALL u16 0x1DBC)   ; the JSR's operand
-(const SWITCH u16 0x1D95) ; and the two BITs' low bytes, $1D95 and $1D98: the bank to switch in
+; ALTZP off, then the rom ($C082) or the bank that was in back (one read: the card stays
+; written, as an odd read twice made it)
+(const HOME u16 0x1DA6)
+(const CALL u16 0x1DD8)   ; the JSR's operand
+(const SWITCH u16 0x1DB1) ; and the two BITs' low bytes, $1DB1 and $1DB4: the bank to switch in
 (const BANK2 u8 0x83)     ; banks by their switch: $C083 bank 2, $C08B bank 1, both ram read
 (const BANK1 u8 0x8B)     ; and written
-(const CODE_SIZE u8 83)
+(const CODE_SIZE u8 77)
 (const SWITCH_AT u8 11) ; SWITCH and CALL in the code, from HOME
 (const CALL_AT u8 50)
 
 ; the code at its home, loaded there with the program (a boot disk's loader puts it there;
 ; other builds' startup copies it in), so it costs no other bytes
-(let code (array u8 83)
-    (make (array u8 83)
+(let code (array u8 77)
+    (make (array u8 77)
         0x08 0x78 0xAD 0x11 0xC0 0x48 ; card: PHP / SEI / LDA $C011 / PHA
         0xAD 0x12 0xC0 0x48           ; LDA $C012 / PHA
         0x2C 0x83 0xC0 0x2C 0x83 0xC0 ; BIT $C083 / BIT $C083 (or $C08B: the bank asked for)
@@ -50,12 +51,10 @@
         0x8D 0x08 0xC0                ; STA $C008
         0x68 0x30 0x06                ; PLA / BMI was_ram
         0x68 0x2C 0x82 0xC0 0x28 0x60 ; PLA / BIT $C082 / PLP / RTS
-        0x68 0x30 0x08                ; was_ram: PLA / BMI was_2
-        0x2C 0x8B 0xC0 0x2C 0x8B 0xC0 ; BIT $C08B / BIT $C08B
-        0x28 0x60                     ; PLP / RTS
-        0x2C 0x83 0xC0 0x2C 0x83 0xC0 ; was_2: BIT $C083 / BIT $C083
-        0x28 0x60)                    ; PLP / RTS
-    :address 0x1D8A)
+        0x68 0x30 0x05                ; was_ram: PLA / BMI was_2
+        0x2C 0x8B 0xC0 0x28 0x60      ; BIT $C08B / PLP / RTS
+        0x2C 0x83 0xC0 0x28 0x60)     ; was_2: BIT $C083 / PLP / RTS
+    :address 0x1DA6)
 
 ; the code at addr run with ALTZP on (above), X = x_reg, bank BANK2 or BANK1 in
 ; (its bytes patched through code, which keeps it in the program)

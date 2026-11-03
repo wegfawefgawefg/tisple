@@ -218,6 +218,12 @@ they are off waits; one tick can wait, so none is lost while the ticks are more 
 (tests/test_disk_read_timing.cpp): notes start up to 11 ms late while a sector is read. The
 reader needs no `(auxmem.guard)`: it never has RAMWRT on with interrupts on.
 
+A handler that does real work slows the reads: while the reader waits for an address field a
+tick's time can make it miss one and wait a sector more. Catwiz's fight load from the reward,
+with its battle song playing through it (2026-11-03, about 1,100 cycles a tick), went from 251
+to 294 frames, most of it in the reads (its picture's and runs' reads about a third longer);
+a song stopped at the end of its fade costs nothing (docs/mockingboard.md, Fades).
+
 ### The step function
 
 - A `(fn () void)` of the program's; frames are safe, since the call is a plain pointer call

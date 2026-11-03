@@ -961,10 +961,10 @@ A global with `:address` and a value outside the program's memory (2026-11-01): 
 nowhere else (a boot disk merges segments that share a page, and holds 10); below `$0B00`,
 where the loader cannot write, and in every other build, the startup writes it, a run of 16
 bytes or more copied from an image in the startup. lib/unpack, lib/auxcard and lib/dhgr keep
-their machine code so at its homes (`$1C00`, `$1D8A`, `$1E00`), which freed 820 bytes of a boot
-disk program's memory (Catwiz). `TISPLE_DATA_NOTES=1 tisple build --disk ...` lists every
-global's bytes, address and memory; `TISPLE_FIT_NOTES=1` each try of the link at each squeeze
-and why it found no room.
+their machine code so at its homes (`$1C00`, `$1DA6`, `$1E00`; auxcard was at `$1D8A` until
+2026-11-03), which freed 820 bytes of a boot disk program's memory (Catwiz).
+`TISPLE_DATA_NOTES=1 tisple build --disk ...` lists every global's bytes, address and memory;
+`TISPLE_FIT_NOTES=1` each try of the link at each squeeze and why it found no room.
 
 ### Memory map
 

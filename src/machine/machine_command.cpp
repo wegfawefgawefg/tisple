@@ -13,6 +13,7 @@
 #include "machine/scripted_input.hpp"
 #include "machine/speaker_audio.hpp"
 #include "machine/taps.hpp"
+#include "machine/tick_log.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -107,6 +108,22 @@ uint64_t NextStop(const MachineArgs& args, const std::vector<bool>& taken, uint6
     return next;
 }
 
+// --profile and --ticks at once: each instruction to whichever is on
+struct TraceBoth {
+    Profile* profile = nullptr;
+    TickLog* ticks = nullptr;
+};
+
+void TraceStep(void* ctx, const Machine& m) {
+    TraceBoth& both = *static_cast<TraceBoth*>(ctx);
+    if (both.profile != nullptr) {
+        ProfileStep(both.profile, m);
+    }
+    if (both.ticks != nullptr) {
+        TickLogStep(both.ticks, m);
+    }
+}
+
 int RunHeadless(Apple2& a, const MachineArgs& args) {
     uint64_t start = Cycles(a);
     uint64_t end = start + args.cycles;
@@ -122,6 +139,10 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     if (profiling) {
         StartProfile(profile, a, args.profile.at_end ? start : args.profile.cycle);
     }
+    TickLog ticks;
+    StartTickLog(ticks, a);
+    TraceBoth both{profiling ? &profile : nullptr, args.ticks != nullptr ? &ticks : nullptr};
+    bool tracing = profiling || args.ticks != nullptr;
 
     auto began = std::chrono::steady_clock::now();
     size_t swapped = 0;
@@ -153,7 +174,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         chunk = chunk > kCyclesPerFrame ? kCyclesPerFrame : chunk;
         bool was_stopped = a.stopped;
         RunOutcome outcome =
-            profiling ? RunApple2Traced(a, chunk, ProfileStep, &profile) : RunApple2(a, chunk);
+            tracing ? RunApple2Traced(a, chunk, TraceStep, &both) : RunApple2(a, chunk);
         if (!was_stopped) {
             run_cycles += outcome.cycles;
         }
@@ -178,6 +199,10 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         ok = false;
     }
+    if (args.ticks != nullptr && !WriteTickLog(ticks, args.ticks, error)) {
+        std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
+        ok = false;
+    }
     if (args.save_snapshot != nullptr && !WriteFile(args.save_snapshot, SaveSnapshot(a))) {
         std::fprintf(stderr, "tisple machine: cannot write '%s'\n", args.save_snapshot);
         ok = false;
@@ -190,6 +215,9 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     }
     std::printf("cycles: %llu (%.2f frames)\n", static_cast<unsigned long long>(run_cycles),
                 static_cast<double>(run_cycles) / kCyclesPerFrame);
+    if (args.ticks != nullptr) {
+        std::printf("%s\n", DescribeTickLog(ticks).c_str());
+    }
     if (args.wav != nullptr) {
         std::printf("speaker: %llu toggles, %zu samples%s\n",
                     static_cast<unsigned long long>(a.speaker.toggle_count),

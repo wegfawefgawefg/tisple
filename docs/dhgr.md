@@ -104,8 +104,8 @@ the 6502 code did with calls (a step through the band, the source moved on) is i
   mask and `from` page are in aux memory (lets `:in aux`), for `dhgr.MAIN` in main memory.
   Sprite bytes made for an even column draw right at every even column. Nothing is clipped;
   `w` is 1-40.
-- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1F56` for `runs`
-  (below): about 33 KB of the 128; in main memory `$1D8A`-`$1DDC` for lib/auxcard. Text page 2
+- Reserved in both memories: both pages (`$2000`-`$5FFF`) and `$1E00`-`$1F50` for `runs`
+  (below): about 33 KB of the 128; in main memory `$1DA6`-`$1DF2` for lib/auxcard. Text page 2
   (`$0800`-`$0BFF`, both memories) only with `(import dhgr_text2)`, for a program that shows
   the mixed window's text with page 2 (examples/dhgr_demo); a full-screen one has that 2 KB
   (2026-10-30).
@@ -116,7 +116,7 @@ the 6502 code did with calls (a step through the band, the source moved on) is i
   are in both memories (the link copies them). `plot` reads tables that say which byte or two
   each of a group's 7 pixels falls in, and the colour's bits there, and changes an aux byte with
   `aux_rmw`.
-- `runs` stays our 6502 code, 273 bytes at `$1E00` in both memories, copied there the first
+- `runs` stays our 6502 code, 337 bytes at `$1E00` in both memories, copied there the first
   time: its runs in the aux language card are reached with ALTZP on, which switches zero page,
   where compiled code keeps its frames. It takes its arguments in auxmem's zero page
   (`$F2`-`$FE`) and X (the memory); a row's address is worked out once and then moved `$400` a
@@ -186,10 +186,47 @@ Added 2026-10-30 for Catwiz, whose sprites do not fit as whole boxes of picture 
   bytes end themselves; `dst` needs room for all of them. RAMWRT stays on the output's memory,
   RAMRD on the packed bytes' and on the output's while a match is copied, so packed bytes in
   aux memory can come out in main and the other way.
-- The unpacker is our own 394 bytes at `$1C00` in both memories (`$1C00`-`$1D89` reserved),
+- `unpack.aux_to_card dst src bank` and `main_to_card` put the bytes in the aux language card
+  (`dst` at `$D000`-`$FFF9`, `bank` `auxcard.BANK2` or `BANK1`), through lib/auxcard: ALTZP on,
+  interrupts off, but for the moments in Ticks through the card (below).
+- The unpacker is our own 422 bytes at `$1C00` in both memories (`$1C00`-`$1DA5` reserved),
   copied there the first time, aux memory's copy only once a mode needs it. It borrows
-  auxmem's zero page. 26 to 49 cycles a byte out (below): long runs are fast, short matches
-  and literals slow. With an interrupt handler, `(auxmem.guard)` first.
+  auxmem's zero page and `$FF` (`unpack.to_window`). 26 to 49 cycles a byte out (below): long
+  runs are fast, short matches and literals slow. With an interrupt handler, `(auxmem.guard)`
+  first.
+
+### Ticks through the card
+
+Added 2026-11-03, so Catwiz's music plays on while a screen's sprites unpack into the aux
+language card. ALTZP switches zero page, the stack and the card's ram together, so lib/auxcard
+runs the unpacker with interrupts off; until then a tick that came during a card unpack waited
+for its end and the ones after it were lost (Catwiz's fight load: 35 ticks lost in 6 unpacks,
+one held 283,664 cycles). Now the unpacker lets a waiting tick in, in a short window:
+
+- **When.** Each time the output reaches a new page, and every 32nd match (`to_window`: on
+  short matches a page can take longer than a tick, about 20,000 cycles at 78 a byte).
+- **The window** (`w_open`): ALTZP off, so main memory's zero page, stack and card are in, then
+  `CLI` / `NOP` / `SEI` and ALTZP on again; when the output is in bank 1, bank 2 is in meanwhile
+  (where a program's handler may be: its interrupt entry is not in `$D000`-`$DFFF`, its code
+  may be). RAMRD and RAMWRT stay as the copy has them: lib/auxmem's guard handles a tick that
+  lands with them on, as it does in a with_aux. The interrupt pushes onto main memory's stack
+  below where auxcard.call left it. lib/dhgr's `runs` does the same between rows.
+- **Only with the guard.** The window opens only with ALTZP on (the card modes) and the guard
+  installed (`$3FF` holds its page): without the guard a card unpack runs with interrupts off
+  throughout, as before, and out to main or aux memory the interrupt flag stays the caller's.
+- **Measured** (tests/test_unpack_card.cpp): a double hi-res picture's half (8 KB) into bank 2
+  and 4 KB of few-valued bytes (short matches, the unpacker's slowest) into bank 1 under
+  lib/mockingboard's 60 ticks a second: every tick taken (36), the latest 10,734 cycles late,
+  as late as a sector's read makes one (docs/disks.md, Interrupts); without the guard 2 ticks
+  in 36 periods, one 318,798 cycles late. In Catwiz, boot to the first fight: 686 ticks of 686,
+  the latest 12,884 cycles late (35 lost before).
+- **What it costs.** 8 cycles a match and about 20 a page in every unpack, any mode: 31.5 to
+  31.8 cycles a byte on the made-up pictures (1%). The unpacker grew 28 bytes: the windows
+  take 55 and 27 came back (the gamma code's three starts made one; Y, 0 between steps, for
+  the zeros). lib/auxcard and lib/dhgr's runs each give 6 back (one read of `$C083` or `$C08B`
+  to put a bank back keeps the card written, as the interrupt entry's does), so the homes take
+  16 bytes more, and zero page `$FF` goes to lib/unpack. A tick in an unpack costs the unpack the handler's time (Catwiz's battle song
+  about 1,100 cycles a tick, 6%).
 
 ### The format, by measurement
 

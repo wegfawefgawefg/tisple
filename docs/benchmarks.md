@@ -26,6 +26,12 @@ Code the listing does not show (lib/dhgr's runs, lib/unpack, code kept as byte a
 its memory and page; `with_aux` code run from aux memory counts as the listing's code at the
 same address.
 
+When interrupts are held off: `--ticks F.txt` writes a line for every interrupt the cpu takes
+from a card (the Mockingboard's tick): the cycle it was taken, how many cycles the line had
+been low by then, and the address (and memory) of the instruction running when it fell, the
+code that had them off. A tick later than its period has lost the one after it. The run's
+summary says how many and the latest.
+
 | Date | Commit | Program | Measure | Result |
 | --- | --- | --- | --- | --- |
 | 2026-10-26 | 09c9aba | life | generations in 10 M cycles | 10 |
