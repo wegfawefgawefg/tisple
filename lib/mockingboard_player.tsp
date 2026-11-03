@@ -231,63 +231,73 @@
             (let shape u8 (+ (at CHIP_BASE (at chip_of s)) 13))
             (send shape (at sent shape)))))
 
-; the bytes up to the next note, rest or tie
-(fn events ((s u8)) void
-    (let p (ptr u8) (at pos s))
-    (let i u8 (at index s))
-    (while true
-        (let b u8 (load (+ p i)))
-        (set i (+ i 1))
-        (if (< b tune.LENGTH)
-            (do
-                (set (at index s) i)
-                (sound s b)
-                (return)))
-        (if (= b tune.END)
-            (do
-                ; the effect's end: the next in line goes on at once, or the voice goes back
-                (if (= s FX)
-                    (do
-                        (if (= line_count 0)
-                            (do
-                                (end_effect)
-                                (return)))
-                        (start_effect)
-                        (set p (at pos s))
-                        (set i 0)
-                        (continue)))
-                (set p (next_pattern s))
-                (set (at pos s) p)
-                (set i 0)
-                (continue)))
-        (if (< b tune.VOLUME)
-            (do
-                (set (at length s) (- b 0x7F))
-                (continue)))
-        (if (< b tune.DECAY)
-            (do
-                (set (at volume s) (- b tune.VOLUME))
-                (continue)))
-        (if (< b tune.MIXER)
-            (do
-                (set (at decay s) (- b tune.DECAY))
-                (continue)))
-        (if (< b tune.NOISE)
-            (do
-                (set (at mix s) (- b tune.MIXER))
-                (continue)))
-        (let base u8 (at CHIP_BASE (at chip_of s)))
-        (if (= b tune.NOISE)
-            (do
-                (reg (+ base 6) (load (+ p i)))
-                (set i (+ i 1))
-                (continue)))
-        ; the envelope: shape (written by each note that follows), period low, high
-        (set (at sent (+ base 13)) (load (+ p i)))
-        (reg (+ base 11) (load (+ p (+ i 1))))
-        (reg (+ base 12) (load (+ p (+ i 2))))
-        (set i (+ i 3))
-        (set (at volume s) 16)))
+; the bytes up to the next note, rest or tie, from (events_fn events sound () () ()); lib/
+; mockingboard_bends makes its own with its sound, forms at the start (entry: a slot at a song's
+; or effect's first byte has index 0) and at the next effect's (restart), and its commands
+(macro events_fn (name sound_fn entry restart commands)
+    `(fn ,name
+        ((s u8))
+        void
+        (let p (ptr u8) (at pos s))
+        (let i u8 (at index s))
+        ,@entry
+        (while true
+            (let b u8 (load (+ p i)))
+            (set i (+ i 1))
+            (if (< b tune.LENGTH)
+                (do
+                    (set (at index s) i)
+                    (,sound_fn s b)
+                    (return)))
+            (if (= b tune.END)
+                (do
+                    ; the effect's end: the next in line goes on at once, or the voice goes back
+                    (if (= s FX)
+                        (do
+                            (if (= line_count 0)
+                                (do
+                                    (end_effect)
+                                    (return)))
+                            (start_effect)
+                            (set p (at pos s))
+                            (set i 0)
+                            ,@restart
+                            (continue)))
+                    (set p (next_pattern s))
+                    (set (at pos s) p)
+                    (set i 0)
+                    (continue)))
+            (if (< b tune.VOLUME)
+                (do
+                    (set (at length s) (- b 0x7F))
+                    (continue)))
+            (if (< b tune.DECAY)
+                (do
+                    (set (at volume s) (- b tune.VOLUME))
+                    (continue)))
+            (if (< b tune.MIXER)
+                (do
+                    (set (at decay s) (- b tune.DECAY))
+                    (continue)))
+            (if (< b tune.NOISE)
+                (do
+                    (set (at mix s) (- b tune.MIXER))
+                    (continue)))
+            ,@commands
+            (let base u8 (at CHIP_BASE (at chip_of s)))
+            (if (= b tune.NOISE)
+                (do
+                    (reg (+ base 6) (load (+ p i)))
+                    (set i (+ i 1))
+                    (continue)))
+            ; the envelope: shape (written by each note that follows), period low, high
+            (set (at sent (+ base 13)) (load (+ p i)))
+            (reg (+ base 11) (load (+ p (+ i 1))))
+            (reg (+ base 12) (load (+ p (+ i 2))))
+            (set i (+ i 3))
+            (set (at volume s) 16))))
+
+(events_fn events sound () () ())
 
 ; a note's level goes down 1 every decay ticks; written with send, not reg: it always changes
 (fn fade ((s u8)) void
@@ -304,30 +314,43 @@
     (if (at owns s)
         (send (at volume_at s) down)))
 
-; one timer interrupt: every slot that plays counts its note down, fading it, or reads on
-(fn tick () void
-    (if (not found)
-        (return))
-    (if (= (& (io_read u8 (+ page IFR)) 0x40) 0)
-        (return))
-    (io_read u8 (+ page T1C_L))
-    (if (and (!= line_count 0) (or cut (not fx_on)))
-        (start_effect))
-    (if any_stale
-        (do
-            (set any_stale false)
-            (for v u8 0 VOICES
-                (if (at stale v)
-                    (do
-                        (set (at stale v) false)
-                        (out (if (at owns v)
-                            v
-                            FX)))))))
-    (for s u8 0 SLOTS
-        (if (at playing s)
+; one timer interrupt: every slot that plays counts its note down, fading it, or reads on;
+; from (tick_fn tick events), and lib/mockingboard_bends's with its events and forms each tick
+; of a note after its first (moving)
+(macro tick_fn (name events_fn & moving)
+    (let fade_form `(if (!= (at decay s) 0)
+        (fade s)))
+    (let between (if (= (len moving) 0)
+        fade_form
+        `(do
+            ,fade_form
+            ,@moving)))
+    `(fn ,name
+        ()
+        void
+        (if (not found)
+            (return))
+        (if (= (& (io_read u8 (+ page IFR)) 0x40) 0)
+            (return))
+        (io_read u8 (+ page T1C_L))
+        (if (and (!= line_count 0) (or cut (not fx_on)))
+            (start_effect))
+        (if any_stale
             (do
-                (set (at wait s) (- (at wait s) 1))
-                (if (= (at wait s) 0)
-                    (events s)
-                    (if (!= (at decay s) 0)
-                        (fade s)))))))
+                (set any_stale false)
+                (for v u8 0 VOICES
+                    (if (at stale v)
+                        (do
+                            (set (at stale v) false)
+                            (out (if (at owns v)
+                                v
+                                FX)))))))
+        (for s u8 0 SLOTS
+            (if (at playing s)
+                (do
+                    (set (at wait s) (- (at wait s) 1))
+                    (if (= (at wait s) 0)
+                        (,events_fn s)
+                        ,between))))))
+
+(tick_fn tick events)

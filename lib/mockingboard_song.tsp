@@ -52,6 +52,9 @@
 (const MIXER u8 0xE0)
 (const NOISE u8 0xE4)
 (const ENVELOPE u8 0xE5)
+(const VIBRATO u8 0xE6) ; then its depth's shift (0 off), phase step and delay
+(const BEND u8 0xE7)    ; then $10 + k glide, $20 + k slide up, $30 + k slide down (0 none)
+(const DETUNE u8 0xE8)  ; then a u16 added to each note's period, low byte first (signed)
 (const END u8 0xFF)
 
 ; 2 to the 1/12, by Newton's method on r^12 = 2
@@ -129,6 +132,80 @@
         0
         (nth period 1)))
 
+; w depth:speed or w depth:speed:delay; w0 off. The depth 1-4 is the shift 7-4 of the note's
+; period (about 1/8, 1/4, 1/2, 1 semitone each way), the speed the ticks of one wobble (its
+; phase steps 256 / speed a tick), the delay the ticks of each note before it starts
+(macro vibrato_bytes (codes i where)
+    (let depth (number_at codes (+ i 1) ':' where "w"))
+    (let d (in_range (nth depth 0) 0 4 where "w's depth"))
+    (let after (nth depth 1))
+    (let colon (and (< after (len codes)) (= (nth codes after) ':')))
+    (if (= d 0)
+        (do
+            (if colon
+                (error "pattern " where ": w0 turns the vibrato off and takes nothing after it"))
+            (return (list (list VIBRATO 0 0 0) 0 after))))
+    (if (not colon)
+        (error "pattern " where ": w wants depth:speed, as w2:10, or depth:speed:delay"))
+    (let speed (number_at codes (+ after 1) ':' where "w's speed"))
+    (let ticks (in_range (nth speed 0) 2 64 where "w's speed"))
+    (let next (nth speed 1))
+    (let delay 0)
+    (if (and (< next (len codes)) (= (nth codes next) ':'))
+        (do
+            (let got (number_at codes (+ next 1) 0 where "w's delay"))
+            (set delay (in_range (nth got 0) 0 255 where "w's delay"))
+            (set next (nth got 1))))
+    (list (list VIBRATO (- 8 d) (/ (+ 256 (/ ticks 2)) ticks) delay) 0 next))
+
+; p speed (glide) or s+speed / s-speed (slide): the step a tick is the note's period shifted
+; right by 8 - speed, speed 1-7 (about 1/8 semitone a tick, doubling to about a fifth); p0 and
+; s0 turn either off
+(macro bend_bytes (codes i where label mode)
+    (let from (+ i 1))
+    (if (= label "s")
+        (do
+            (let sign (if (< from (len codes))
+                (nth codes from)
+                0))
+            (if (= sign '+')
+                (set mode 0x20))
+            (if (= sign '-')
+                (set mode 0x30))
+            (if (!= mode 0)
+                (set from (+ from 1)))))
+    (let got (number_at codes from 0 where label))
+    (let speed (in_range (nth got 0) 0 7 where label))
+    (if (and (= speed 0) (> mode 0x10))
+        (error "pattern " where ": s0 turns the slide off; s+n and s-n slide"))
+    (if (and (!= speed 0) (= mode 0))
+        (error "pattern " where ": s wants a direction, as s+3 (up) or s-3 (down)"))
+    (list
+        (list BEND (if (= speed 0)
+            0
+            (+ mode (- 8 speed))))
+        0
+        (nth got 1)))
+
+; t+n or t-n: each note's period n more (lower) or n less (higher), 1-64; t0 none. A unit is
+; about 3 cents at C3, 12 at A4 and 24 at A5: two voices a unit apart beat a few times a second
+(macro detune_bytes (codes i where)
+    (let from (+ i 1))
+    (let sign (if (< from (len codes))
+        (nth codes from)
+        0))
+    (let minus (= sign '-'))
+    (if (or minus (= sign '+'))
+        (set from (+ from 1)))
+    (let got (number_at codes from 0 where "t"))
+    (let n (in_range (nth got 0) 0 64 where "t"))
+    (if (and (!= n 0) (and (not minus) (!= sign '+')))
+        (error "pattern " where ": t wants a sign, as t+2 (lower) or t-2 (higher)"))
+    (let value (if minus
+        (- 65536 n)
+        n))
+    (list (list DETUNE (% value 256) (/ value 256)) 0 (nth got 1)))
+
 ; one token's bytes: (bytes sounds next), sounds 1 for a note, rest or tie
 (macro token_bytes (codes i where)
     (let c (nth codes i))
@@ -157,9 +234,13 @@
                 (let got (number_at codes (+ i 1) 0 where "n"))
                 (list (list NOISE (in_range (nth got 0) 0 31 where "n")) 0 (nth got 1))))
         ('h' (envelope_bytes codes i where))
+        ('w' (vibrato_bytes codes i where))
+        ('p' (bend_bytes codes i where "p" 0x10))
+        ('s' (bend_bytes codes i where "s" 0))
+        ('t' (detune_bytes codes i where))
         (_
             (error "pattern " where ": a token starts with the character code " c
-                "; write notes as c4 c#4 ..., then r - l v k m n h"))))
+                "; write notes as c4 c#4 ..., then r - l v k m n h w p s t"))))
 
 ; a pattern's text as bytes, the END after them
 (macro pattern_bytes (name text)

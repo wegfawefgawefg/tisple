@@ -27,6 +27,7 @@
 ; dropped) and plays when the ones before it are over.
 
 (import apple2 a2)
+(import mockingboard_bends bends)
 (import mockingboard_player player)
 (import mockingboard_song tune)
 (import random)
@@ -221,9 +222,12 @@
             (do
                 (set mixing (- b tune.MIXER))
                 (continue)))
-        (if (= b tune.NOISE)
+        ; the commands with bytes after them, the bends' too (no pitch moves on the speaker)
+        (if (or (= b tune.NOISE) (= b tune.BEND))
             (set p (+ p 1)))
-        (if (= b tune.ENVELOPE)
+        (if (= b tune.DETUNE)
+            (set p (+ p 2)))
+        (if (or (= b tune.ENVELOPE) (= b tune.VIBRATO))
             (set p (+ p 3)))))
 
 ; an effect (a pattern from mockingboard_song's effect) on a voice, 0-5: now if its priority is
@@ -268,6 +272,11 @@
 ; in the program's :interrupt handler
 (fn service () void
     (player.tick))
+
+; service's place in a program whose songs or effects use w, p or s (lib/mockingboard_bends):
+; pitch that moves. A program calls one of the two; service plays those commands' bytes wrong
+(fn service_bends () void
+    (bends.tick))
 
 ; the timer and its interrupts off, every voice quiet
 (fn off () void
