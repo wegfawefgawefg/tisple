@@ -54,6 +54,7 @@ void RunDiskReadFailTests(TestResults& results);
 void RunDiskReadTwoTests(TestResults& results);
 void RunDiskHomesTests(TestResults& results);
 void RunDiskReadTimingTests(TestResults& results);
+void RunDiskReadMusicTests(TestResults& results);
 void RunDiskStreamTests(TestResults& results);
 
 } // namespace tisple_tests

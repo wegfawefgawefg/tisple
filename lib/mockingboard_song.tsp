@@ -43,8 +43,10 @@
 ; a song: (pattern name "text") as many as it needs, then (voice n name ...) for each of the
 ; six voices it uses: 0-2 the first chip's three channels, 3-5 the second's. a voice plays its
 ; patterns in order, then again from the start, or from after the word loop if there is one:
-; (voice 2 intro loop verse verse chorus). voices with patterns of different lengths drift
-; against each other, and come back together after the lengths' common multiple.
+; (voice 2 intro loop verse verse chorus); or once, with the word end last: (voice 0 sting end)
+; stops the voice after its patterns (the tick does nothing more for it). voices with patterns
+; of different lengths drift against each other, and come back together after the lengths'
+; common multiple.
 ;
 ; the bytes (what the player reads):
 ;   $00-$5F note 0-95 (C1 + n semitones)   $60 rest   $61 tie
@@ -56,7 +58,7 @@
 ;   $FF the end of the pattern
 ; a song is a header of six u16 offsets (from the song's first byte; 0 for a silent voice),
 ; each to its voice's order list: u16 pattern offsets, then $0000 and the offset of the
-; entry to loop back to. then the patterns. an effect is one pattern.
+; entry to loop back to (0: the voice ends). then the patterns. an effect is one pattern.
 
 (import tables)
 
@@ -318,7 +320,12 @@
                 (for k 2 (len part)
                     (if (= (nth part k) 'loop)
                         (set loop_at (len order))
-                        (set order (append order (list (nth part k))))))
+                        (if (= (nth part k) 'end)
+                            (do
+                                (if (!= k (- (len part) 1))
+                                    (error "voice " v ": end goes last"))
+                                (set loop_at -1))
+                            (set order (append order (list (nth part k)))))))
                 (if (>= loop_at (len order))
                     (error "voice " v " has nothing to play after loop"))
                 (let new_voices (list))
@@ -368,7 +375,11 @@
                     (let which (index_of names (nth order k) v))
                     (set bytes (append bytes (low_high (nth pattern_at which)))))
                 (set bytes (append bytes (list 0 0)))
-                (set bytes (append bytes (low_high (+ (nth order_at v) (* 2 (nth loops v)))))))))
+                (set bytes
+                    (append bytes
+                        (low_high (if (< (nth loops v) 0)
+                            0
+                            (+ (nth order_at v) (* 2 (nth loops v))))))))))
     (for k 0 (len patterns)
         (set bytes (append bytes (nth patterns k))))
     ; :on disk takes a const (a program reads the song into memory with lib/disk, then plays it)

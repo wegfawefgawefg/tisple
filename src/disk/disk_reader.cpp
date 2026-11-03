@@ -431,9 +431,19 @@ void EmitNext(Reader& r, const ReaderLabels& at) {
     c.Mem(Mn::STA, r.Var(kRvEntry));
     c.Mem(Mn::LDA, r.Var(kRvResult));
     c.Place(leave); // the caller's flags back, A the result
-    c.Mem(Mn::STA, r.Var(kRvResult));
-    r.RestoreI();
-    c.Mem(Mn::LDA, r.Var(kRvResult));
+    c.Jump(Mn::JMP, r.restore);
+}
+
+// restore: the caller's P (kRvFlags) back, A kept: what each return to the caller and each end
+// of interrupts off goes through
+void EmitRestore(Reader& r) {
+    Code6502& c = r.l.c;
+    c.Place(r.restore);
+    c.Op(Mn::PHA);
+    c.Mem(Mn::LDA, r.Var(kRvFlags));
+    c.Op(Mn::PHA);
+    c.Op(Mn::PLP);
+    c.Op(Mn::PLA);
     c.Op(Mn::RTS);
 }
 
@@ -468,6 +478,7 @@ bool BuildDiskReader(std::uint16_t origin, std::vector<std::uint8_t>& out, std::
     at.track_setup = c.Label("track_setup");
     at.entry = c.Label("entry");
     at.entry_read = c.Label("entry_read");
+    r.restore = c.Label("restore");
     for (int i = 0; i < 2; i++) {
         at.signature[i] = c.Label("signature");
     }
@@ -480,6 +491,7 @@ bool BuildDiskReader(std::uint16_t origin, std::vector<std::uint8_t>& out, std::
     EmitPlace(r, at);
     EmitReaderTables(r, at.tables);
     EmitNext(r, at);
+    EmitRestore(r);
     std::vector<AsmItem> routines = c.as.items;
     c.as.items.clear();
     c.Jump(Mn::JMP, at.begin);

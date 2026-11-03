@@ -89,10 +89,10 @@ struct Reader {
     }
 
     // the caller's I flag back (A and the flags change)
+    // the caller's flags back (restore, EmitRestore), its I flag among them; A kept
+    std::int32_t restore = -1;
     void RestoreI() {
-        l.c.Mem(Mn::LDA, Var(kRvFlags));
-        l.c.Op(Mn::PHA);
-        l.c.Op(Mn::PLP);
+        l.c.Jump(Mn::JSR, restore);
     }
 };
 

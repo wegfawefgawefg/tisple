@@ -218,13 +218,23 @@
     (set (at owns fx_voice) true)
     (out fx_voice))
 
-; a voice's next pattern from its order list, round to its loop at the end
+; a voice's next pattern from its order list, round to its loop at the end; or at the end of
+; a voice whose list ends (end: its loop entry 0) the voice stops, quiet, and the tick does no
+; more for it (a stinger played once costs nothing after)
 (fn next_pattern ((v u8)) (ptr u8)
     (let o (ptr u8) (at order v))
     (let off u16 (word o))
     (if (= off 0)
         (do
-            (set o (+ song (word (+ o 2))))
+            (let back u16 (word (+ o 2)))
+            (if (= back 0)
+                (do
+                    (set (at playing v) false)
+                    (set (at level v) 0)
+                    (set (at stale v) true)
+                    (set any_stale true)
+                    (return (addr_of (at end_mark 0)))))
+            (set o (+ song back))
             (set off (word o))))
     (set (at order v) (+ o 2))
     (+ song off))
@@ -285,6 +295,8 @@
                     (set p (next_pattern s))
                     (set (at pos s) p)
                     (set i 0)
+                    (if (not (at playing s))
+                        (return))
                     (continue)))
             (if (< b tune.VOLUME)
                 (do

@@ -5,7 +5,8 @@
 ;   (mb.play (addr_of (at music 0)))          ; a song from lib/mockingboard_song
 ;   (mb.effect (addr_of (at zap 0)) 2 5)      ; an effect on voice 2, priority 5
 ;   (mb.stop)                ; the music off; effects go on
-;   (mb.fade 15)             ; the music down to silent over 1 s, then stopped; (mb.faded)
+;   (mb.fade 15)             ; the music down to silent over 1 s, then stopped (at once when
+;                            ; no voice plays); (mb.faded)
 ;   (mb.fade_in 15)          ; and from silent up to full
 ;   (mb.off)                 ; before main returns: the timer off, the chips quiet
 ; mb.found says whether there is a card, mb.slot where. With no card the music and effects are
@@ -182,7 +183,13 @@
 ; step every 4 ticks from the next tick on. At 15 the music stops, as stop does. A voice on the
 ; hardware envelope stays as it is until then. play keeps the fade where it is
 (fn fade ((to u8)) void
-    (set player.hush_to (<< to 2)))
+    (set player.hush_to (<< to 2))
+    ; no music voice playing (a song whose voices have ended, or none yet): done at once, so a
+    ; song can start at once
+    (for v u8 0 player.VOICES
+        (if (at player.playing v)
+            (return)))
+    (set player.hush player.hush_to))
 
 ; the music from steps down at once, then up to as the song has it: (mb.play s) (mb.fade_in 15)
 ; brings a song in from silence

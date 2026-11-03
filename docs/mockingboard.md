@@ -130,6 +130,10 @@ A song is patterns, then a `voice` line for each voice it uses:
     (voice 3 intro loop b b c)) ; intro once, then b b c over and over
 ```
 
+`end` last plays a voice's patterns once (2026-11-03, for stingers): `(voice 0 sting end)`.
+At its list's end the voice stops, quiet, and the tick does no more for it; once every voice
+has ended the music is stopped, as `(mb.stop)` leaves it, and a fade is done at once (Fades).
+
 Each voice runs its own order list, so patterns of different lengths drift
 against each other and line up again after their common multiple. That is
 how the demo works: an arpeggio of 12 pulses on voice 1 and the same with a
@@ -248,6 +252,11 @@ next one fades in, and the game goes on meanwhile.
   the volume its pattern gives it, and so does a voice on the hardware
   envelope (`h`, volume 16), which has no level to lower: it plays as written
   until the fade's end stops it.
+- With no music voice playing (every voice of a song with `end` has ended, or none
+  started), `(mb.fade to)` puts `hush` at its goal at once (2026-11-03): a song after a
+  finished stinger starts at the next look instead of after a second of fading silence.
+  tests/test_mockingboard_fade.cpp: a song whose two voices end after 16 and 8 ticks goes
+  quiet, the fade after it is done at once, the next song plays from the next tick.
 - `mb.faded` is `hush` at its goal. A program that replaces a song waits for it
   after `(mb.fade 15)` before it copies the next song over the one playing
   (Songs in aux memory, below); Catwiz's main loop looks once a pass.
