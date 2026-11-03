@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Puts a disk on the phone player: the next reload on the phone plays it.
 
-    web/publish.py NAME DISK CONFIG [--disk2 DISK2] [--home ~/.local/share/tisple/phone]
+    web/publish.py NAME DISK CONFIG [--disk2 DISK2] [--keep-default] [--home ~/.local/share/tisple/phone]
 
 CONFIG is the game's player config, kept with the game (docs/phone.md), e.g.
     {"title": "Catwiz", "mockingboard": 4,
      "pad": [{"size": "big", "keys": [{"label": "END TURN", "key": "E", "look": "white"}]}],
      "taps": [{"x": 240, "y": 126, "w": 40, "h": 17, "key": "E"}]}
 A key is a character, a number, or RETURN ESC SPACE LEFT RIGHT UP DOWN TAB DELETE.
-The game becomes the default one the player opens. --disk2: a program with tables on a
+The game becomes the default one the player opens (not with --keep-default). --disk2: a program with tables on a
 second disk (tisple build writes it beside the first) plays with it in drive 2.
 A pad key's "when" (and "live") conditions name the game's vars: their addresses come from
 the build's DISK.vars.json (docs/phone.md, "The pad follows the game").
@@ -36,11 +36,21 @@ def fnv1a32(data):
 
 
 def conditions(game):
-    """every condition in the config: the names' and each pad key's when and live"""
+    """every condition in the config: the names', each pad key's when and live, and the
+    telemetry's fields and events (web/telemetry.js)"""
     out = list(game.get("names", {}).values())
     for row in game.get("pad", []):
         for key in row.get("keys", []):
             out += [key[f] for f in ("when", "live") if f in key]
+    tel = game.get("telemetry", {})
+    fields = tel.get("fields", {})
+    used = list(tel.get("quit", []))
+    for event in tel.get("events", []):
+        out += [event[f] for f in ("when", "was") if f in event]
+        change = event.get("change", [])
+        out += change if isinstance(change, list) else [change]
+        used += event.get("fields", []) + event.get("before", []) + event.get("entry", [])
+    out += [fields.get(name, name) for name in dict.fromkeys(used)]
     return out
 
 
@@ -88,6 +98,8 @@ def main():
     parser.add_argument("config")
     parser.add_argument("--disk2")
     parser.add_argument("--home", default=os.path.expanduser("~/.local/share/tisple/phone"))
+    parser.add_argument("--keep-default", action="store_true",
+                        help="the player still opens the default game it had (a test build)")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -127,7 +139,8 @@ def main():
             index = json.load(f)
     if args.name not in index["games"]:
         index["games"].append(args.name)
-    index["default"] = args.name
+    if not args.keep_default or "default" not in index:
+        index["default"] = args.name
     with open(index_path, "w") as f:
         json.dump(index, f, indent=1)
     print(f"{args.name}: build {game['version']}")
