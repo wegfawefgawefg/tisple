@@ -5,6 +5,8 @@
 ;   (mb.play (addr_of (at music 0)))          ; a song from lib/mockingboard_song
 ;   (mb.effect (addr_of (at zap 0)) 2 5)      ; an effect on voice 2, priority 5
 ;   (mb.stop)                ; the music off; effects go on
+;   (mb.fade 15)             ; the music down to silent over 1 s, then stopped; (mb.faded)
+;   (mb.fade_in 15)          ; and from silent up to full
 ;   (mb.off)                 ; before main returns: the timer off, the chips quiet
 ; mb.found says whether there is a card, mb.slot where. With no card the music and effects are
 ; silent; (mb.speaker_effect (addr_of (at zap 0))) plays an effect on the speaker instead, while
@@ -101,7 +103,9 @@
     (set (at player.owns player.FX) false)
     (set player.fx_on false)
     (set player.line_count 0)
-    (set player.cut false))
+    (set player.cut false)
+    (set player.hush 0)
+    (set player.hush_to 0))
 
 ; timer 1 of the first 6522 free-running every rate cycles, its interrupt on
 (fn start_timer () void
@@ -173,6 +177,22 @@
         (set (at player.stale v) true))
     (set player.any_stale true)
     (cli))
+
+; the music (not the effects) toward to steps down, 0-15: 15 silent, 0 as the song has it, a
+; step every 4 ticks from the next tick on. At 15 the music stops, as stop does. A voice on the
+; hardware envelope stays as it is until then. play keeps the fade where it is
+(fn fade ((to u8)) void
+    (set player.hush_to (<< to 2)))
+
+; the music from steps down at once, then up to as the song has it: (mb.play s) (mb.fade_in 15)
+; brings a song in from silence
+(fn fade_in ((from u8)) void
+    (set player.hush (<< from 2))
+    (set player.hush_to 0))
+
+; whether the fade has got where it goes
+(fn faded () bool
+    (= player.hush player.hush_to))
 
 ; the speaker's square wave for ticks ticks at the AY's period: 8 period cycles each half
 (fn buzz ((tone u16) (ticks u8) (noisy bool)) void

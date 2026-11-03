@@ -72,6 +72,11 @@ tisple run examples/mockingboard_demo.tsp --mockingboard 4 \
 - `(mb.effect_playing)` is true while an effect plays or waits. A sound that
   only matters now is dropped rather than queued with
   `(if (not (mb.effect_playing)) (mb.effect ...))`.
+- `(mb.fade 15)` takes the music down to silence, a volume step every 4 ticks
+  (15 steps: 1 s), then stops it; `(mb.fade_in 13)` after `(mb.play song)`
+  starts the song 13 steps down and brings it up to full, a step every 4 ticks;
+  `(mb.faded)` is true once the fade is where it goes. Effects keep their own
+  volume (Fades, below).
 - `(mb.set_rate cycles)` changes the tick from the next one on.
 - `(mb.off)` before main returns: timer and interrupts off, every voice quiet.
   Without it the card goes on interrupting into whatever runs next.
@@ -219,6 +224,48 @@ their bytes as other commands. A program calls one or the other.
   note start that works out steps: a 7-step shift loop, 16-bit work and the
   first write). The test song with all four on: 831 on average, 6455 at most.
 
+## Fades
+
+Added 2026-11-03 for Catwiz's song changes: the song before fades out, the
+next one fades in, and the game goes on meanwhile.
+
+- The player keeps `hush`, 0-60, and the volume each music voice gets is its
+  level less `hush / 4`, 0 at the least: a fade is 15 volume steps of about
+  3 dB, 4 ticks each, so 1 s from full to silent. `(mb.fade to)` sets where
+  `hush` goes (`to` 0-15 steps); every tick moves it 1 nearer, and every 4th
+  tick of a fade writes every voice's volume again (fading in, 3 ticks after
+  the step: a note or decay in between takes the new step at once).
+- At 15 steps (`hush` 60) the music stops, as `(mb.stop)` does: a faded song
+  costs the tick nothing more, which matters while a disk loads (a song playing
+  on silently took the time between sectors from lib/disk's reader and made
+  Catwiz's fight loads about 20 frames longer). `(mb.fade to)` below 15 is a
+  duck that goes on playing.
+- `(mb.fade_in from)` puts `hush` at `from` steps at once and fades up to 0:
+  `(mb.play song) (mb.fade_in 13)` after a fade to 15. A song whose loudest
+  voice is `v13` is silent at 13 steps, so starting the fade there skips 8
+  silent ticks. `play` keeps the fade as it is; `init` resets it to none.
+- Only the music is faded. The effect playing (on the voice it borrows) keeps
+  the volume its pattern gives it, and so does a voice on the hardware
+  envelope (`h`, volume 16), which has no level to lower: it plays as written
+  until the fade's end stops it.
+- `mb.faded` is `hush` at its goal. A program that replaces a song waits for it
+  after `(mb.fade 15)` before it copies the next song over the one playing
+  (Songs in aux memory, below); Catwiz's main loop looks once a pass.
+
+What it costs (tests/test_mockingboard_fade.cpp checks the steps, the effect,
+the envelope's voice, the stop and the fade in): the tick's fade step and
+`heard` (the level less the fade, in `out` and the decay's write) are in
+every program that plays music, called or not: about 140 bytes in a small
+program (3168 to 3310 bytes for test_mockingboard_line's card effects), 250 in
+another (the bends' test song with `service`, 3424 to 3680, with
+`service_bends` 4350 to 4544). The tick with no fade going costs about 125
+cycles more on average (the demo: 1004 to 1132, median 770 to 893, most 5653
+to 5852): the compare each tick and a call for every volume write. During a
+fade every 4th tick also rewrites the six voices' registers. `fade`,
+`fade_in` and `faded` are only in a program that calls them. In Catwiz the
+fade cost about 120 bytes of code in all (its build, before and after: code
+44479 to 44629 bytes, language card 12277 to 12270, its bank 1 3545 to 3675).
+
 ## Songs in aux memory, copies while it plays
 
 The handler runs from main memory, and lib/auxmem's copies switch main memory
@@ -246,7 +293,8 @@ with interrupts on:
   program without the guard stops after its first tick.
 
 A song in aux memory is copied into main memory to play. The handler reads the
-song playing, so the copy runs with interrupts off (or after `mb.stop`):
+song playing, so the copy runs with interrupts off (or after `mb.stop`, or once
+`(mb.fade 15)` is done):
 
 ```scheme
 (tune.song title ... :in aux)
