@@ -3,10 +3,11 @@
 ; from main set them with interrupts off, and nothing here is called from main, so the
 ; handler has its own copy of every function it runs.
 ;
-; Each tick: answer the 6522, start the next effect waiting in line if its turn has come, then
-; step the six music voices and the effect. A register is written when what a voice wants in it
-; differs from what was written last; a write is six 6522 accesses at page plus a constant,
-; which the compiler makes accesses to fixed addresses (it patches them when init sets page).
+; Each tick: answer the 6522, step the music's fade, start the next effect waiting in line if
+; its turn has come, then step the six music voices and the effect. A register is written when
+; what a voice wants in it differs from what was written last; a write is six 6522 accesses at
+; page plus a constant, which the compiler makes accesses to fixed addresses (it patches them
+; when init sets page).
 
 (import mockingboard_song tune)
 
@@ -66,7 +67,14 @@
 (let line_count u8 0)
 (let cut bool false)
 
-(let stale (array bool 6)) ; voices to work out again: their owner changed
+; the music's fade (mockingboard.fade): hush goes 1 a tick toward hush_to, and takes the six
+; voices' levels hush / 4 steps down: 0 as written, SILENT (15 steps) for any song, so 1 s from
+; full to silent, about 3 dB every 4 ticks. The effect's level stays as written
+(const SILENT u8 60)
+(let hush u8 0)
+(let hush_to u8 0)
+
+(let stale (array bool 6)) ; voices to work out again: their owner changed, or the fade stepped
 (let any_stale bool false)
 (let end_mark (array u8 1) (make (array u8 1) 0xFF)) ; where play points a voice first
 
@@ -131,6 +139,17 @@
     (if (!= (at sent i) value)
         (send i value)))
 
+; what slot s's level sounds as: the music's hush / 4 steps lower (under 0 silent); the effect's,
+; and the hardware envelope's (16, which has no level to lower), as it is
+(fn heard ((s u8)) u8
+    (let l u8 (at level s))
+    (if (or (= s FX) (= l 16))
+        (return l))
+    (set l (- l (>> hush 2)))
+    (if (>= l 0x80)
+        0
+        l))
+
 (fn word ((p (ptr u8))) u16
     (| (as u16 (load p)) (<< (as u16 (load (+ p 1))) 8)))
 
@@ -144,7 +163,7 @@
     (reg (+ t 1) (as u8 (>> p 8)))
     (let on bool (at playing s))
     (reg (at volume_at s) (if on
-        (at level s)
+        (heard s)
         0))
     (let m u8 (if on
         (at mix s)
@@ -312,7 +331,7 @@
     (let down u8 (- l 1))
     (set (at level s) down)
     (if (at owns s)
-        (send (at volume_at s) down)))
+        (send (at volume_at s) (heard s))))
 
 ; one timer interrupt: every slot that plays counts its note down, fading it, or reads on;
 ; from (tick_fn tick events), and lib/mockingboard_bends's with its events and forms each tick
@@ -333,6 +352,21 @@
         (if (= (& (io_read u8 (+ page IFR)) 0x40) 0)
             (return))
         (io_read u8 (+ page T1C_L))
+        ; the fade a tick nearer hush_to; every 4th tick every voice's level written again
+        ; (fading in, 3 ticks after the step: notes and decays take it at once). At SILENT the
+        ; music stops, as mockingboard.stop does, so a faded song costs the tick nothing
+        (if (!= hush hush_to)
+            (do
+                (if (< hush hush_to)
+                    (set hush (+ hush 1))
+                    (set hush (- hush 1)))
+                (if (= (& hush 3) 0)
+                    (do
+                        (for v u8 0 VOICES
+                            (if (= hush SILENT)
+                                (set (at playing v) false))
+                            (set (at stale v) true))
+                        (set any_stale true)))))
         (if (and (!= line_count 0) (or cut (not fx_on)))
             (start_effect))
         (if any_stale

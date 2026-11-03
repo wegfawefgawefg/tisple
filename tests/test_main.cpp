@@ -62,6 +62,7 @@ int main() {
             tisple_tests::RunMockingboardLineTests(results);
             tisple_tests::RunMockingboardAuxTests(results);
             tisple_tests::RunMockingboardBendsTests(results);
+            tisple_tests::RunMockingboardFadeTests(results);
         } else if (std::strcmp(group, "disk") == 0) {
             tisple_tests::RunDiskTests(results);
             tisple_tests::RunDiskReadTests(results);
@@ -157,6 +158,7 @@ int main() {
     tisple_tests::RunMockingboardLineTests(results);
     tisple_tests::RunMockingboardAuxTests(results);
     tisple_tests::RunMockingboardBendsTests(results);
+    tisple_tests::RunMockingboardFadeTests(results);
     tisple_tests::RunTextDemoTests(results);
     tisple_tests::RunUnpackLibTests(results);
     tisple_tests::RunUnpackIrqTests(results);
