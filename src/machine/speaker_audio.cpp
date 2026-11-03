@@ -68,7 +68,8 @@ void RenderSpeaker(SpeakerRenderer& r, const Apple2& a, uint64_t cycle, std::vec
     }
 }
 
-bool WriteWav(const std::string& path, const std::vector<int16_t>& samples, std::string& error) {
+bool WriteWav(const std::string& path, const std::vector<int16_t>& samples, int channels,
+              std::string& error) {
     uint32_t data_bytes = static_cast<uint32_t>(samples.size() * 2);
     std::vector<uint8_t> bytes;
     bytes.reserve(44 + data_bytes);
@@ -78,10 +79,10 @@ bool WriteWav(const std::string& path, const std::vector<int16_t>& samples, std:
     PutTag(bytes, "fmt ");
     PutLe32(bytes, 16);
     PutLe16(bytes, 1); // pcm
-    PutLe16(bytes, 1); // mono
+    PutLe16(bytes, static_cast<uint32_t>(channels));
     PutLe32(bytes, kAudioRate);
-    PutLe32(bytes, kAudioRate * 2);
-    PutLe16(bytes, 2);
+    PutLe32(bytes, static_cast<uint32_t>(kAudioRate * 2 * channels)); // bytes a second
+    PutLe16(bytes, static_cast<uint32_t>(2 * channels));              // bytes a frame
     PutLe16(bytes, 16);
     PutTag(bytes, "data");
     PutLe32(bytes, data_bytes);

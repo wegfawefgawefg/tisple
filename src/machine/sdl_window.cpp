@@ -1,7 +1,7 @@
 // `tisple machine --window`: the machine at real speed in an SDL3 window, with keyboard,
-// speaker, Mockingboard and disk drive audio, the mouse card, and a game controller as the
-// joystick (sdl_gamepad.cpp). built only with TISPLE_SDL.
-// it never raises itself, and closing the window returns at once.
+// speaker, Mockingboard (in stereo, or mono: F4) and disk drive audio, the mouse card, and a game
+// controller as the joystick (sdl_gamepad.cpp). built only with TISPLE_SDL. it never raises itself,
+// and closing the window returns at once.
 //
 // the mouse: while the pointer is over the window, its motion moves the card's mouse (one
 // hi-res pixel per two screen pixels at scale 1). it is never grabbed until a click into the
@@ -11,12 +11,9 @@
 // click puts the card's mouse where it is and presses the button (PointMouse), as a tap does
 // on the phone player.
 
-#include "machine/drive_audio.hpp"
-#include "machine/mockingboard.hpp"
-#include "machine/mockingboard_audio.hpp"
+#include "machine/machine_audio.hpp"
 #include "machine/mouse.hpp"
 #include "machine/sdl_gamepad.hpp"
-#include "machine/speaker_audio.hpp"
 #include "machine/window.hpp"
 
 #include <SDL3/SDL.h>
@@ -41,6 +38,7 @@ struct WindowState {
     bool vsync = false;
     bool turbo = false;
     bool drive_sound = true;
+    bool stereo = true; // false: the mono mix, the same in both channels
     VideoLook look = VideoLook::kColor;
     bool reported_stop = false;
     bool mouse_captured = false;
@@ -48,40 +46,35 @@ struct WindowState {
     float mouse_dx = 0;    // motion not yet passed on: under one apple pixel
     float mouse_dy = 0;
     Framebuffer fb;
-    SpeakerRenderer speaker;
-    MockingboardRenderer chips;
-    DriveSoundRenderer drives;
-    std::vector<int16_t> samples;
+    MachineAudio sound;
+    std::vector<int16_t> samples; // stereo frames
     // real-time pacing: apple cycle base_cycle was due at host time base_ns
     uint64_t base_ns = 0;
     uint64_t base_cycle = 0;
 };
 
+// the stream is always stereo, so F4 switches without reopening it
 uint32_t BytesForMs(int ms) {
-    return static_cast<uint32_t>(kAudioRate * 2 * ms / 1000);
+    return static_cast<uint32_t>(kAudioRate * 4 * ms / 1000);
 }
 
 void PushSilence(WindowState& w, int ms) {
-    int16_t level = w.samples.empty() ? 0 : w.samples.back();
-    std::vector<int16_t> pad(static_cast<size_t>(kAudioRate * ms / 1000), level);
+    size_t n = w.samples.size();
+    int16_t left = n >= 2 ? w.samples[n - 2] : 0;
+    int16_t right = n >= 2 ? w.samples[n - 1] : 0;
+    std::vector<int16_t> pad;
+    for (int i = 0; i < kAudioRate * ms / 1000; i++) {
+        pad.push_back(left);
+        pad.push_back(right);
+    }
     SDL_PutAudioStreamData(w.audio, pad.data(), static_cast<int>(pad.size() * 2));
-}
-
-void SkipAudio(WindowState& w, const Apple2& a) {
-    w.speaker.next_toggle = a.speaker.toggle_count;
-    w.speaker.samples_done = SamplesForCycles(Cycles(a));
-    StartMockingboardAudio(w.chips, a);
-    StartDriveSound(w.drives, a);
 }
 
 void FeedAudio(WindowState& w, const Apple2& a) {
     w.samples.clear();
-    RenderSpeaker(w.speaker, a, Cycles(a), w.samples);
-    if (HasMockingboard(a)) {
-        MixMockingboard(w.chips, a, Cycles(a), w.samples, 0);
-    }
-    if (w.drive_sound) {
-        MixDriveSound(w.drives, a, Cycles(a), w.samples, 0);
+    RenderMachineAudio(w.sound, a, Cycles(a), w.drive_sound, w.stereo ? 2 : 1, w.samples);
+    if (!w.stereo) {
+        SpreadToStereo(w.samples, 0);
     }
     if (w.audio == nullptr) {
         return;
@@ -105,6 +98,9 @@ void UpdateTitle(WindowState& w, const Apple2& a, const WindowOptions& options) 
     }
     if (!w.drive_sound) {
         title += "  [drive sound off]";
+    }
+    if (!w.stereo) {
+        title += "  [mono]";
     }
     if (w.look != VideoLook::kColor) {
         title += std::string("  [") + VideoLookName(w.look) + "]";
@@ -302,7 +298,12 @@ bool HandleEvent(WindowState& w, Apple2& a, const WindowOptions& options, const 
         }
         if (key == SDLK_F3 && !e.key.repeat) {
             w.drive_sound = !w.drive_sound;
-            StartDriveSound(w.drives, a); // back on: from now, not from when it went off
+            StartDriveSound(w.sound.drives, a); // back on: from now, not from when it went off
+            UpdateTitle(w, a, options);
+            return true;
+        }
+        if (key == SDLK_F4 && !e.key.repeat) {
+            w.stereo = !w.stereo;
             UpdateTitle(w, a, options);
             return true;
         }
@@ -356,7 +357,7 @@ void RunForHostTime(WindowState& w, Apple2& a, const WindowOptions& options) {
         while (SDL_GetTicksNS() - now_ns < kTurboSliceNs && Cycles(a) < limit && !a.stopped) {
             RunApple2(a, kCyclesPerFrame);
         }
-        SkipAudio(w, a);
+        StartMachineAudio(w.sound, a);
         w.base_ns = SDL_GetTicksNS();
         w.base_cycle = Cycles(a);
         return;
@@ -436,7 +437,7 @@ bool Open(WindowState& w, const WindowOptions& options) {
     SDL_SetTextureScaleMode(w.texture, SDL_SCALEMODE_NEAREST);
     SDL_StartTextInput(w.window);
 
-    SDL_AudioSpec spec = {SDL_AUDIO_S16, 1, kAudioRate};
+    SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, kAudioRate};
     w.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
     if (w.audio == nullptr) {
         std::fprintf(stderr, "tisple machine: no audio (%s); running silent\n", SDL_GetError());
@@ -453,11 +454,12 @@ int RunMachineWindow(Apple2& a, const WindowOptions& options) {
     WindowState w;
     w.look = options.look;
     w.drive_sound = options.drive_sound;
+    w.stereo = options.stereo;
     if (!Open(w, options)) {
         Close(w);
         return 1;
     }
-    SkipAudio(w, a);
+    StartMachineAudio(w.sound, a);
     UpdateTitle(w, a, options);
     w.base_ns = SDL_GetTicksNS();
     w.base_cycle = Cycles(a);

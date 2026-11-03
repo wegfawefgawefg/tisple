@@ -457,7 +457,8 @@ time), at most 2 s behind. Stepping at a real drive's pace (Apple's ROM, DOS
 2 ms, so its grind plays over the next 1.5 s as Apple's would, and the
 loader's first steps sound that much late. Levels: knocks peak at 0.1-0.2 of
 full scale, ticks 0.04-0.1, the motor about -41 dBFS; the speaker's square is
-0.35. `--no-drive-sound` leaves it out; F3 toggles it in the window; on the
+0.35. The drives sit in the middle of the stereo, in both channels, as the
+speaker does. `--no-drive-sound` leaves it out; F3 toggles it in the window; on the
 phone it is the `disk` button. Headless runs without `--wav` only pay for the
 log (a few stores per step).
 

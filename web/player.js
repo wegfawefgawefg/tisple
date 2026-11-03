@@ -9,7 +9,9 @@
 // off until it is pressed (the owner, 2026-10-31: opt in): on, a disk loads at the Apple's
 // speed and sounds like a Disk II; off, it loads flat out and silent. A game whose game.json
 // has "telemetry" sends anonymous play records (telemetry.js), the bar's STATS button turns
-// them off and on.
+// them off and on. The sound is stereo, as the Mockingboard is (its first chip left, its
+// second right, the speaker and drives in both); the line under "tap to start" and the bar's
+// STEREO button switch it to mono and back, at once, remembered in this browser.
 
 "use strict";
 
@@ -28,6 +30,7 @@ const ui = {
     disk: document.getElementById("disk"),
     buzz: document.getElementById("buzz"),
     stats: document.getElementById("stats"),
+    sound: document.getElementById("sound"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -51,7 +54,16 @@ const state = {
     logs: true,       // false on a static site: nowhere to post them
     buzz: true,       // a short buzz on each tap (the bar's BUZZ button turns it off)
     diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
+    stereo: true,     // the Mockingboard's chips left and right; false: the mono mix in both (the owner, 2026-11-03: stereo by default, a toggle)
 };
+
+// the stereo setting, kept in this browser when it can be
+const STEREO_KEY = "tisple.stereo";
+try {
+    state.stereo = localStorage.getItem(STEREO_KEY) !== "mono";
+} catch (err) {
+    // no storage: stereo, as by default
+}
 
 // the disk button's setting, kept in this browser when it can be
 const DISK_SOUND_KEY = "tisple.diskSound";
@@ -82,6 +94,7 @@ const words = {
     disk: makeLabel("disk", 2),
     buzz: makeLabel("buzz", 2),
     stats: makeLabel("stats", 2),
+    sound: makeLabel(state.stereo ? "stereo" : "mono", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -230,7 +243,8 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", () => release());
 
-// sound: an AudioWorklet plays a queue of samples the machine made
+// sound: an AudioWorklet plays a queue of stereo frames the machine made, each chunk its
+// samples interleaved left, right (player.cpp tp_run; in mono both are the same)
 
 const WORKLET = `
 class Feed extends AudioWorkletProcessor {
@@ -242,8 +256,9 @@ class Feed extends AudioWorkletProcessor {
             this.queue.push(e.data);
             let total = -this.offset;
             for (const q of this.queue) total += q.length;
-            // more than 0.25 s behind: drop the oldest so sound stays with the picture
-            while (total > 11025 && this.queue.length > 1) {
+            // more than 0.25 s behind (in samples, two a frame): drop the oldest so sound
+            // stays with the picture
+            while (total > 22050 && this.queue.length > 1) {
                 total -= this.queue[0].length - this.offset;
                 this.queue.shift();
                 this.offset = 0;
@@ -251,14 +266,17 @@ class Feed extends AudioWorkletProcessor {
         };
     }
     process(inputs, outputs) {
-        const out = outputs[0][0];
-        for (let i = 0; i < out.length; i++) {
+        const left = outputs[0][0];
+        const right = outputs[0][1] || left;
+        for (let i = 0; i < left.length; i++) {
             if (this.queue.length === 0) {
-                out[i] = 0;
+                left[i] = right[i] = 0;
                 continue;
             }
             const q = this.queue[0];
-            out[i] = q[this.offset++];
+            left[i] = q[this.offset];
+            right[i] = q[this.offset + 1];
+            this.offset += 2;
             if (this.offset >= q.length) {
                 this.queue.shift();
                 this.offset = 0;
@@ -278,23 +296,27 @@ async function startAudio() {
     if (state.audio.audioWorklet) {
         const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
         await state.audio.audioWorklet.addModule(url);
-        state.worklet = new AudioWorkletNode(state.audio, "feed");
+        state.worklet = new AudioWorkletNode(state.audio, "feed", { outputChannelCount: [2] });
         state.worklet.connect(state.audio.destination);
         return;
     }
     // plain http (no secure context, no AudioWorklet): the older ScriptProcessor, same queue
     state.fallback = { queue: [], offset: 0 };
-    const node = state.audio.createScriptProcessor(1024, 0, 1);
+    const node = state.audio.createScriptProcessor(1024, 0, 2);
     node.onaudioprocess = (e) => {
-        const out = e.outputBuffer.getChannelData(0);
+        const left = e.outputBuffer.getChannelData(0);
+        const right = e.outputBuffer.getChannelData(1);
         const f = state.fallback;
-        for (let i = 0; i < out.length; i++) {
+        for (let i = 0; i < left.length; i++) {
             if (f.queue.length === 0) {
-                out[i] = 0;
+                left[i] = right[i] = 0;
                 continue;
             }
-            out[i] = f.queue[0][f.offset++];
-            if (f.offset >= f.queue[0].length) {
+            const q = f.queue[0];
+            left[i] = q[f.offset];
+            right[i] = q[f.offset + 1];
+            f.offset += 2;
+            if (f.offset >= q.length) {
                 f.queue.shift();
                 f.offset = 0;
             }
@@ -306,7 +328,7 @@ async function startAudio() {
         f.queue.push(pcm);
         let total = -f.offset;
         for (const q of f.queue) total += q.length;
-        while (total > 11025 && f.queue.length > 1) {
+        while (total > 22050 && f.queue.length > 1) {
             total -= f.queue[0].length - f.offset;
             f.queue.shift();
             f.offset = 0;
@@ -324,13 +346,14 @@ async function startAudioOrNot() {
     }
 }
 
+// count stereo frames: twice as many samples, left and right
 function sendSamples(count) {
     if (!state.worklet || count === 0) {
         return;
     }
     const ptr = state.m._tp_samples() >> 1;
-    const pcm = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
+    const pcm = new Float32Array(count * 2);
+    for (let i = 0; i < count * 2; i++) {
         pcm[i] = state.m.HEAP16[ptr + i] / 32768;
     }
     state.worklet.port.postMessage(pcm, [pcm.buffer]);
@@ -584,6 +607,7 @@ async function boot() {
         setStatus("no mouse: the mockingboard is in its slot 4");
     }
     showDiskSound();
+    showStereo();
     setStatus(state.game.version ? "build " + state.game.version : "");
     requestAnimationFrame(tick);
     // ?autostart: run without the tap and without sound (headless checks)
@@ -689,6 +713,41 @@ ui.stats.addEventListener("click", toggleStats);
 startStats.addEventListener("pointerdown", (e) => {
     e.stopPropagation(); // not the start
     toggleStats();
+});
+// stereo or mono: the bar's button (only from 480 px across, as STATS) and a line under "tap to
+// start", as the play stats have (a tap on it switches, and does not start). It switches at
+// once, while the game plays too
+const startSound = document.createElement("span");
+startSound.className = "sound";
+const startSoundNote = makeLabel("", 1);
+startSound.appendChild(startSoundNote);
+ui.start.appendChild(startSound);
+function showStereo() {
+    setLabel(words.sound, state.stereo ? "stereo" : "mono");
+    ui.sound.classList.toggle("off", !state.stereo);
+    startSound.classList.toggle("off", !state.stereo);
+    setLabel(startSoundNote, state.stereo ? "stereo sound: tap here for mono"
+                                          : "mono sound: tap here for stereo");
+    if (state.m) {
+        state.m._tp_stereo(state.stereo ? 1 : 0);
+    }
+}
+showStereo();
+function toggleStereo() {
+    state.stereo = !state.stereo;
+    try {
+        localStorage.setItem(STEREO_KEY, state.stereo ? "stereo" : "mono");
+    } catch (err) {
+        // not kept: this page only
+    }
+    showStereo();
+    setStatus(state.stereo ? "stereo: the mockingboard's chips left and right"
+                           : "mono: all the sound in both ears");
+}
+ui.sound.addEventListener("click", toggleStereo);
+startSound.addEventListener("pointerdown", (e) => {
+    e.stopPropagation(); // not the start
+    toggleStereo();
 });
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");

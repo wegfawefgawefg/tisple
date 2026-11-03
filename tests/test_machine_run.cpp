@@ -1,5 +1,6 @@
 // running the built-in apple iie: stops, roms, slot cards, snapshots, keys, speaker
 
+#include "machine/machine_audio.hpp"
 #include "machine/png.hpp"
 #include "machine/slots.hpp"
 #include "machine/speaker_audio.hpp"
@@ -182,6 +183,18 @@ void TestScriptedKeys(TestResults& results) {
     CHECK(results, r.cycles > 5000 && r.cycles < 5100);
 }
 
+// a WAV file's first 44 bytes: its RIFF and fmt headers
+static std::vector<uint8_t> ReadWavHeader(const std::string& path) {
+    std::vector<uint8_t> bytes(44);
+    FILE* file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) {
+        return {};
+    }
+    bytes.resize(std::fread(bytes.data(), 1, bytes.size(), file));
+    std::fclose(file);
+    return bytes;
+}
+
 void TestSpeakerWav(TestResults& results) {
     auto a = MachineWithFile("machine_speaker.bin");
     if (a == nullptr) {
@@ -209,8 +222,16 @@ void TestSpeakerWav(TestResults& results) {
     std::string name = "tisple_test_" + std::to_string(getpid()) + ".wav";
     std::string path = (std::filesystem::temp_directory_path() / name).string();
     std::string error;
-    CHECK(results, tisple::WriteWav(path, samples, error));
+    CHECK(results, tisple::WriteWav(path, samples, 1, error));
     CHECK(results, std::filesystem::file_size(path) == 44 + samples.size() * 2);
+    // stereo: the header says two channels and four bytes a frame
+    std::vector<int16_t> frames = samples;
+    tisple::SpreadToStereo(frames, 0);
+    CHECK(results, tisple::WriteWav(path, frames, 2, error));
+    std::vector<uint8_t> wav = ReadWavHeader(path);
+    CHECK(results, wav.size() == 44 && wav[22] == 2 && wav[32] == 4);
+    CHECK(results, wav[28] + (wav[29] << 8) + (wav[30] << 16) == tisple::kAudioRate * 4);
+    CHECK(results, std::filesystem::file_size(path) == 44 + samples.size() * 4);
     std::filesystem::remove(path);
 }
 

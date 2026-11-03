@@ -18,9 +18,12 @@ void PrintMachineUsage() {
         "                      RETURN ESC LEFT RIGHT UP DOWN SPACE TAB DELETE COMMA\n"
         "  --screenshot F.png[@C]  save the screen at cycle C (default: at the end)\n"
         "  --wav F.wav         save the speaker, the Mockingboard's sound chips when it is in,\n"
-        "                      and the disk drives' sound (steps, the motor)\n"
+        "                      and the disk drives' sound (steps, the motor), in stereo: the\n"
+        "                      card's first chip left, its second right, the rest in both\n"
+        "  --mono-sound        --wav and the window in one channel, everything mixed in it\n"
         "  --no-drive-sound    leave the drives' sound out of --wav and the window\n"
-        "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color)\n"
+        "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color;\n"
+        "                      --mono is the picture: the sound is --mono-sound)\n"
         "  --rom F             a 12 or 16 KB rom image; with no program, reset through it\n"
         "  --disk F | --disk2 F  a disk ii in slot 6 with F (.dsk .do .po .nib) in drive 1 / 2;\n"
         "                      with no program and no --rom, boot it with our boot rom\n"
@@ -51,7 +54,7 @@ void PrintMachineUsage() {
         "  --profile F.txt[@C] cycles by instruction address and memory, from cycle C to\n"
         "                      the end (tools/profile.py adds them up by function)\n"
         "  --window [--scale N]  run in a window at real speed (F1: unthrottled, F2: the\n"
-        "                      look, F3: the drives' sound on and off)\n"
+        "                      look, F3: the drives' sound on and off, F4: stereo or mono)\n"
         "  --taps F              in the window, clicks press keys from F's \"taps\" boxes\n"
         "                      (with \"mouse\": true in F, a click is the mouse card's mouse\n"
         "                      there, pressed)\n"
@@ -101,6 +104,8 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.window = true;
         } else if (std::strcmp(arg, "--no-drive-sound") == 0) {
             args.drive_sound = false;
+        } else if (std::strcmp(arg, "--mono-sound") == 0) {
+            args.mono_sound = true;
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number) || number > 0xBFFF) {
                 return false;

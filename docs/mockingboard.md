@@ -22,8 +22,10 @@ tisple run examples/mockingboard_demo.tsp --mockingboard 4 \
   unless the program runs in the language card (its startup writes the card's
   `$FFFE`). With no rom and no card ram, the first interrupt jumps to `$FFFF`
   and the run stops.
-- `--wav F.wav` saves the speaker and both sound chips mixed to one channel
-  (the card is stereo). The window plays them too.
+- `--wav F.wav` saves the speaker and both sound chips in stereo, as the card
+  is: the first AY on the left, the second on the right, the speaker (and the
+  drives) in both. `--mono-sound` mixes all of it into one channel, as before
+  stereo. The window plays them too (F4: stereo or mono).
 
 ## A program
 

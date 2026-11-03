@@ -21,6 +21,7 @@ SOURCES=(
     src/machine/disk2.cpp
     src/machine/disk2_rom.cpp
     src/machine/drive_audio.cpp
+    src/machine/machine_audio.cpp
     src/machine/font.cpp
     src/machine/input.cpp
     src/machine/memory_map.cpp
