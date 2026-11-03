@@ -10,8 +10,8 @@
 // speed and sounds like a Disk II; off, it loads flat out and silent. A game whose game.json
 // has "telemetry" sends anonymous play records (telemetry.js), the bar's STATS button turns
 // them off and on. The sound is stereo, as the Mockingboard is (its first chip left, its
-// second right, the speaker and drives in both); the line under "tap to start" and the bar's
-// STEREO button switch it to mono and back, at once, remembered in this browser.
+// second right, the speaker and drives in both); the bar's STEREO button switches it to mono
+// and back, at once, remembered in this browser.
 
 "use strict";
 
@@ -104,6 +104,11 @@ const words = {
 for (const key of Object.keys(words)) {
     ui[key].appendChild(words[key]);
 }
+// on a phone held upright the bar has room for "log", not "send log" (index.html: .long, .short)
+words.send.classList.add("long");
+const sendNarrow = makeLabel("log", 2);
+sendNarrow.classList.add("short");
+ui.send.appendChild(sendNarrow);
 
 function setStatus(text) {
     setLabel(words.status, text);
@@ -681,23 +686,11 @@ ui.buzz.addEventListener("click", () => {
     showBuzz();
     setStatus(state.buzz ? "buzz on: taps buzz" : "buzz off: taps are silent");
 });
-// the STATS button: anonymous play records on or off (telemetry.js). The bar has no room for it
-// on a phone held upright (index.html shows it from 480 px across), so the start's tap has it
-// too, under "tap to start", saying what is sent: a tap there turns them off (or on) and does
-// not start
-const startStats = document.createElement("span");
-startStats.className = "stats";
-const startNote = makeLabel("", 1);
-startStats.appendChild(startNote);
-ui.start.appendChild(startStats);
+// the STATS button: anonymous play records on or off (telemetry.js), from 480 px across (the
+// owner, 2026-11-03: anonymous game-improvement data, nothing on the start's tap about it)
 function showStats() {
     const t = telemetryShown();
     ui.stats.classList.toggle("off", !t.on);
-    startStats.hidden = !t.has;
-    startStats.classList.toggle("off", !t.on);
-    setLabel(startNote, t.on ? "sends anonymous play stats: tap here to stop"
-                              : t.blocked ? "play stats off (" + t.blocked + ")"
-                                          : "play stats off: tap here to send them");
 }
 function toggleStats() {
     const t = telemetryShown();
@@ -710,24 +703,10 @@ function toggleStats() {
     setStatus(on ? "play stats on: anonymous, how far runs get" : "play stats off: nothing is sent");
 }
 ui.stats.addEventListener("click", toggleStats);
-startStats.addEventListener("pointerdown", (e) => {
-    e.stopPropagation(); // not the start
-    toggleStats();
-});
-// stereo or mono: the bar's button (only from 480 px across, as STATS) and a line under "tap to
-// start", as the play stats have (a tap on it switches, and does not start). It switches at
-// once, while the game plays too
-const startSound = document.createElement("span");
-startSound.className = "sound";
-const startSoundNote = makeLabel("", 1);
-startSound.appendChild(startSoundNote);
-ui.start.appendChild(startSound);
+// stereo or mono: the bar's button, at every width; it switches at once, while the game plays too
 function showStereo() {
     setLabel(words.sound, state.stereo ? "stereo" : "mono");
     ui.sound.classList.toggle("off", !state.stereo);
-    startSound.classList.toggle("off", !state.stereo);
-    setLabel(startSoundNote, state.stereo ? "stereo sound: tap here for mono"
-                                          : "mono sound: tap here for stereo");
     if (state.m) {
         state.m._tp_stereo(state.stereo ? 1 : 0);
     }
@@ -745,10 +724,6 @@ function toggleStereo() {
                            : "mono: all the sound in both ears");
 }
 ui.sound.addEventListener("click", toggleStereo);
-startSound.addEventListener("pointerdown", (e) => {
-    e.stopPropagation(); // not the start
-    toggleStereo();
-});
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");
     ui.side.classList.toggle("kb", ui.keyboard.classList.contains("open"));

@@ -12,10 +12,10 @@ key presses.
   sound running, loading runs flat out and silent as before.
 - The sound is stereo, as the Mockingboard is: its first AY on the left, its second on the
   right, the speaker and the drives in both (the owner, 2026-11-03: stereo by default, with
-  a toggle). A line under "tap to start" ("stereo sound: tap here for mono"; a tap on it
-  switches and does not start) and the bar's `stereo` button (only from 480 px across, as
-  `stats`; it reads `mono`, dim, when mono) switch to the mono mix in both ears and back, at
-  once, while the game plays too; the browser remembers it (`tisple.stereo`).
+  a toggle). The bar's `stereo` button (at every width; it reads `mono`, dim, when mono)
+  switches to the mono mix in both ears and back, at once, while the game plays too; the
+  browser remembers it (`tisple.stereo`). Nothing about it on the start's tap (the owner,
+  2026-11-03: not dead centre on the title).
 
 - `web/build.sh`: needs Emscripten (`source <emsdk>/emsdk_env.sh`); builds `web/dist`.
 - `web/publish.py NAME DISK CONFIG`: puts a disk in `~/.local/share/tisple/phone/games`
@@ -120,8 +120,8 @@ copy what they name), so a game opts in with config alone, no code and no memory
   to an https endpoint (or http on 127.0.0.1 or localhost, for a test receiver). Nothing about
   the player: no address, browser or screen. Every failure is silent; at most 200 records wait.
 - Off: the bar's `stats` button (for a game with telemetry, dim when off; only from 480 px across,
-  the bar has no room on a phone held upright), the line under "tap to start" ("sends anonymous
-  play stats: tap here to stop"; a tap on it does not start), or `?telemetry=off` (`=on` again);
+  the bar has no room on a phone held upright), or `?telemetry=off` (`=on` again); nothing on the
+  start's tap (the owner, 2026-11-03: anonymous game-improvement data, no need to show it);
   kept in localStorage. Always off with Do Not Track or Global Privacy Control. `web/pages.py`
   puts a line under the picker naming the games that send them and how to stop them.
 - Catwiz's receiver, report and events: its `tools/telemetry/` (README, "Play stats").
