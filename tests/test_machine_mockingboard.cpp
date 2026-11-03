@@ -1,8 +1,10 @@
 // the Mockingboard: its 6522s' timers, flags and IRQ level on their own; the IRQ line and
 // the counter through the 6502 on the machine; the AY-3-8910s' registers through the 6522
-// ports, read back, and the rendered sound's pitch
+// ports, read back, and the rendered sound's pitch; stereo: each chip on its own side, the
+// speaker in both, and mono their sum
 
 #include "machine/ay8910.hpp"
+#include "machine/machine_audio.hpp"
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
 #include "machine/slots.hpp"
@@ -202,7 +204,7 @@ std::vector<int16_t> RenderTone(int chip, int channel, uint16_t period, uint8_t 
     at = WritePsg(*a, at, chip, 7, mixer);
     WritePsg(*a, at, chip, static_cast<uint8_t>(8 + channel), volume);
     std::vector<int16_t> samples;
-    tisple::MixMockingboard(r, *a, static_cast<uint64_t>(tisple::kCpuHz), samples, 0);
+    tisple::MixMockingboard(r, *a, static_cast<uint64_t>(tisple::kCpuHz), samples, 0, 1);
     return samples;
 }
 
@@ -238,6 +240,126 @@ void PsgTests(TestResults& results) {
     double off = Loudness(RenderTone(0, 0, 256, 0x3F, 15));
     double quiet = Loudness(RenderTone(0, 0, 256, 0x3E, 0));
     CHECK(results, loud > 1000.0 && off < 10.0 && quiet < 10.0);
+}
+
+// what StereoTests plays: chip 0's tone A, chip 1's tone C, the speaker's square, each when on
+struct StereoParts {
+    bool chip0 = false;
+    bool chip1 = false;
+    bool speaker = false;
+};
+
+// a second of the parts through RenderMachineAudio in channels (no drives' sound)
+std::vector<int16_t> RenderParts(StereoParts parts, int channels) {
+    std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
+    tisple::InsertMockingboard(*a, kSlot);
+    tisple::MachineAudio sound;
+    tisple::StartMachineAudio(sound, *a);
+    uint64_t at = InitPsgs(*a, 100);
+    // the same writes at the same cycles every time, so the tones keep their phase: a part
+    // that is off has volume 0
+    at = WritePsg(*a, at, 0, 0, 0x00); // period 256
+    at = WritePsg(*a, at, 0, 1, 0x01);
+    at = WritePsg(*a, at, 0, 7, 0x3E);
+    at = WritePsg(*a, at, 0, 8, parts.chip0 ? 15 : 0);
+    at = WritePsg(*a, at, 1, 4, 100); // period 100
+    at = WritePsg(*a, at, 1, 5, 0);
+    at = WritePsg(*a, at, 1, 7, 0x3B);
+    at = WritePsg(*a, at, 1, 10, parts.chip1 ? 12 : 0);
+    uint64_t end = static_cast<uint64_t>(tisple::kCpuHz);
+    if (parts.speaker) {
+        // a click every 940 cycles: a square of about 544 Hz
+        for (uint64_t cycle = 1000; cycle < end; cycle += 940) {
+            a->speaker.toggles[a->speaker.toggle_count % tisple::kSpeakerRingSize] = cycle;
+            a->speaker.toggle_count++;
+        }
+    }
+    std::vector<int16_t> out;
+    // in slices, as the window and --wav render it
+    for (uint64_t cycle = at + 17030; cycle < end; cycle += 17030) {
+        tisple::RenderMachineAudio(sound, *a, cycle, false, channels, out);
+    }
+    tisple::RenderMachineAudio(sound, *a, end, false, channels, out);
+    return out;
+}
+
+// channel c (0 left, 1 right) of stereo frames
+std::vector<int16_t> Side(const std::vector<int16_t>& frames, int c) {
+    std::vector<int16_t> out;
+    for (size_t i = static_cast<size_t>(c); i < frames.size(); i += 2) {
+        out.push_back(frames[i]);
+    }
+    return out;
+}
+
+// the largest difference between two runs of samples, or a big number when their sizes differ
+int MostApart(const std::vector<int16_t>& x, const std::vector<int16_t>& y) {
+    if (x.size() != y.size()) {
+        return 1 << 20;
+    }
+    int most = 0;
+    for (size_t i = 0; i < x.size(); i++) {
+        int d = x[i] - y[i];
+        most = d < 0 ? (-d > most ? -d : most) : (d > most ? d : most);
+    }
+    return most;
+}
+
+void StereoTests(TestResults& results) {
+    std::vector<int16_t> left_only = RenderParts({true, false, false}, 2);
+    std::vector<int16_t> right_only = RenderParts({false, true, false}, 2);
+    std::vector<int16_t> speaker = RenderParts({false, false, true}, 2);
+    std::vector<int16_t> mono_speaker = RenderParts({false, false, true}, 1);
+    size_t frames = tisple::SamplesForCycles(static_cast<uint64_t>(tisple::kCpuHz));
+    CHECK(results, left_only.size() == frames * 2 && mono_speaker.size() == frames);
+
+    // a write to chip 0 sounds only on the left, at its pitch; one to chip 1 only on the right
+    double want_left = tisple::kCpuHz / (16.0 * 256);
+    double want_right = tisple::kCpuHz / (16.0 * 100);
+    CHECK(results, Loudness(Side(left_only, 0)) > 1000.0 && Loudness(Side(left_only, 1)) < 1.0);
+    CHECK(results, Loudness(Side(right_only, 1)) > 1000.0 && Loudness(Side(right_only, 0)) < 1.0);
+    CHECK(results, std::fabs(Pitch(Side(left_only, 0)) - want_left) < 2.0);
+    CHECK(results, std::fabs(Pitch(Side(right_only, 1)) - want_right) < 3.0);
+    // each at the level it has in mono
+    std::vector<int16_t> mono_left = RenderParts({true, false, false}, 1);
+    std::vector<int16_t> mono_right = RenderParts({false, true, false}, 1);
+    CHECK(results, MostApart(Side(left_only, 0), mono_left) <= 1);
+    CHECK(results, MostApart(Side(right_only, 1), mono_right) <= 1);
+
+    // the speaker in the middle: the same in both, and as it is in mono
+    CHECK(results, Loudness(mono_speaker) > 1000.0);
+    CHECK(results, Side(speaker, 0) == Side(speaker, 1) && Side(speaker, 0) == mono_speaker);
+
+    // all three: each side the speaker and its chip, and mono the sum of all of them, as the
+    // one channel was before stereo
+    std::vector<int16_t> all = RenderParts({true, true, true}, 2);
+    std::vector<int16_t> mono_all = RenderParts({true, true, true}, 1);
+    // (each render has the speaker's cone at rest at the start, settling: a chip's part is its
+    // render less that of a silent machine)
+    std::vector<int16_t> silent = RenderParts({false, false, false}, 1);
+    std::vector<int16_t> left_sum, right_sum, sum;
+    for (size_t i = 0; i < frames; i++) {
+        int left = mono_left[i] - silent[i];
+        int right = mono_right[i] - silent[i];
+        left_sum.push_back(static_cast<int16_t>(mono_speaker[i] + left));
+        right_sum.push_back(static_cast<int16_t>(mono_speaker[i] + right));
+        sum.push_back(static_cast<int16_t>(mono_speaker[i] + left + right));
+    }
+    int left_apart = MostApart(Side(all, 0), left_sum);
+    int right_apart = MostApart(Side(all, 1), right_sum);
+    int mono_apart = MostApart(mono_all, sum);
+    // each part truncates to a whole sample on its own: a step or two apart
+    bool summed = left_apart <= 2 && right_apart <= 2 && mono_apart <= 3;
+    CHECK(results, summed);
+    if (!summed) {
+        std::fprintf(stderr, "stereo: left %d, right %d, mono %d steps from the parts' sums\n",
+                     left_apart, right_apart, mono_apart);
+    }
+
+    // a stereo frame's speaker part is mono's: the spread keeps every sample, in order
+    std::vector<int16_t> spread = mono_speaker;
+    tisple::SpreadToStereo(spread, 0);
+    CHECK(results, spread == speaker);
 }
 
 // a 6502 program on the machine with the timer's IRQ through the card's ram vector at $FFFE.
@@ -311,6 +433,7 @@ void RunMachineMockingboardTests(TestResults& results) {
     Timer2Tests(results);
     PortTests(results);
     PsgTests(results);
+    StereoTests(results);
     IrqTests(results);
 }
 

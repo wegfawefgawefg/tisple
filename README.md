@@ -161,7 +161,8 @@ enhanced IIe and the IIc. Details in [`docs/language.md`](docs/language.md).
   and font, so nothing of Apple's is needed or shipped; it boots Apple's ROMs if you have
   them.
 - **`tisple run`** compiles (milliseconds for these programs) and opens the window;
-  headless with `--frames`, `--keys`, `--mouse`, `--screenshot`, `--wav`.
+  headless with `--frames`, `--keys`, `--mouse`, `--screenshot`, `--wav` (stereo, as the
+  Mockingboard is; `--mono-sound` for one channel).
 - **Self-booting disks.** `tisple build --disk` writes a `.dsk` with our own loader and no
   DOS, which loads the program into main memory, the language card and aux memory;
   `tisple disk` edits DOS 3.3 images. They boot in the emulator with our ROM and with

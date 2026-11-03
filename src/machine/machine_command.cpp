@@ -4,6 +4,7 @@
 #include "machine/disk2.hpp"
 #include "machine/drive_audio.hpp"
 #include "machine/machine_args.hpp"
+#include "machine/machine_audio.hpp"
 #include "machine/mockingboard.hpp"
 #include "machine/mockingboard_audio.hpp"
 #include "machine/mouse.hpp"
@@ -110,14 +111,10 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     uint64_t start = Cycles(a);
     uint64_t end = start + args.cycles;
     std::vector<bool> taken(args.screenshots.size(), false);
-    SpeakerRenderer speaker;
-    speaker.next_toggle = a.speaker.toggle_count;
-    speaker.samples_done = SamplesForCycles(start);
-    MockingboardRenderer chips;
-    StartMockingboardAudio(chips, a);
-    DriveSoundRenderer drives;
-    StartDriveSound(drives, a);
-    std::vector<int16_t> samples;
+    MachineAudio audio;
+    StartMachineAudio(audio, a);
+    int channels = args.mono_sound ? 1 : 2;
+    std::vector<int16_t> samples; // frames of channels
     bool ok = true;
     uint64_t run_cycles = 0;
     bool profiling = !args.profile.path.empty();
@@ -161,14 +158,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
             run_cycles += outcome.cycles;
         }
         if (args.wav != nullptr && !was_stopped) {
-            size_t first = samples.size();
-            RenderSpeaker(speaker, a, Cycles(a), samples);
-            if (HasMockingboard(a)) {
-                MixMockingboard(chips, a, Cycles(a), samples, first);
-            }
-            if (args.drive_sound) {
-                MixDriveSound(drives, a, Cycles(a), samples, first);
-            }
+            RenderMachineAudio(audio, a, Cycles(a), args.drive_sound, channels, samples);
         }
     }
     double seconds =
@@ -180,7 +170,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
         }
     }
     std::string error;
-    if (args.wav != nullptr && !WriteWav(args.wav, samples, error)) {
+    if (args.wav != nullptr && !WriteWav(args.wav, samples, channels, error)) {
         std::fprintf(stderr, "tisple machine: %s\n", error.c_str());
         ok = false;
     }
@@ -201,15 +191,16 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     std::printf("cycles: %llu (%.2f frames)\n", static_cast<unsigned long long>(run_cycles),
                 static_cast<double>(run_cycles) / kCyclesPerFrame);
     if (args.wav != nullptr) {
-        std::printf("speaker: %llu toggles, %zu samples\n",
-                    static_cast<unsigned long long>(a.speaker.toggle_count), samples.size());
+        std::printf("speaker: %llu toggles, %zu samples%s\n",
+                    static_cast<unsigned long long>(a.speaker.toggle_count),
+                    samples.size() / channels, channels == 2 ? " (stereo)" : " (mono)");
     }
-    if (args.wav != nullptr && args.drive_sound && drives.next_event > 0) {
+    if (args.wav != nullptr && args.drive_sound && audio.drives.next_event > 0) {
         std::printf("drive sound: %llu steps and knocks, %llu of them late (the head was "
                     "busy), %llu dropped\n",
-                    static_cast<unsigned long long>(drives.impacts),
-                    static_cast<unsigned long long>(drives.late),
-                    static_cast<unsigned long long>(drives.dropped));
+                    static_cast<unsigned long long>(audio.drives.impacts),
+                    static_cast<unsigned long long>(audio.drives.late),
+                    static_cast<unsigned long long>(audio.drives.dropped));
     }
     if (seconds > 0 && run_cycles > 0) {
         double rate = static_cast<double>(run_cycles) / seconds;
@@ -337,6 +328,7 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         options.scale = args.scale;
         options.look = args.look;
         options.drive_sound = args.drive_sound;
+        options.stereo = !args.mono_sound;
         if (args.taps != nullptr &&
             !LoadTaps(args.taps, options.taps, options.point_mouse, error)) {
             std::fprintf(stderr, "tisple machine: %s\n", error.c_str());

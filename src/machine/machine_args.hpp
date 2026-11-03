@@ -44,6 +44,7 @@ struct MachineArgs {
     VideoLook look = VideoLook::kColor;
     bool window = false;
     bool drive_sound = true; // the disk drives' sound in the window and --wav
+    bool mono_sound = false; // --mono-sound: one channel in the window and --wav, not stereo
     int scale = 2;
     const char* taps = nullptr; // a game's player config: clicks press its tap boxes' keys
     std::vector<ScreenshotArg> screenshots;

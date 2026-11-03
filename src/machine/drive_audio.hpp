@@ -20,8 +20,8 @@
 // than two seconds behind, they are dropped. so steps at any real drive's pace sound at their
 // cycle, and our own boot rom, which waits for nothing (80 phases in 2 ms), grinds for a second
 // and a half like Apple's (the steps that follow it then sound late).
-// both drives sound the same, into the one channel; all of it sits below the speaker and the
-// Mockingboard.
+// both drives sound the same, into the one channel (the middle of the stereo, as the speaker);
+// all of it sits below the speaker and the Mockingboard.
 
 #include "machine/apple2.hpp"
 

@@ -17,7 +17,8 @@ int RunMachineCommand(int argc, char** argv, MachineWindowFn window);
 
 // for `tisple run`: the binary is already in memory, with the segments of a program that
 // did not fit one file; argv holds only machine flags
-// (--cycles, --frames, --keys, --screenshot, --wav, --mono, --window, --scale, --rom, ...).
+// (--cycles, --frames, --keys, --screenshot, --wav, --mono-sound, --mono, --window, --scale,
+// --rom, ...).
 // A program built for the 65C02 (target) is refused on a machine whose cpu is the 6502
 int RunMachineOnBinary(const std::vector<uint8_t>& binary, uint16_t origin,
                        const std::vector<MemorySegment>& segments, int argc, char** argv,

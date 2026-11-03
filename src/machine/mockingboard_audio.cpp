@@ -55,7 +55,7 @@ void StartMockingboardAudio(MockingboardRenderer& r, const Apple2& a) {
 }
 
 void MixMockingboard(MockingboardRenderer& r, const Apple2& a, uint64_t cycle,
-                     std::vector<int16_t>& out, size_t first) {
+                     std::vector<int16_t>& out, size_t first, int channels) {
     uint64_t count = a.slots.mockingboard.log_count;
     if (count - r.next_write > kPsgLogSize) {
         r.dropped += count - kPsgLogSize - r.next_write;
@@ -65,26 +65,35 @@ void MixMockingboard(MockingboardRenderer& r, const Apple2& a, uint64_t cycle,
     size_t at = first;
     while (r.samples_done < target) {
         double end = static_cast<double>(r.samples_done + 1) * kCyclesPerSample;
-        // the average of the chips' ticks that end inside this sample
-        double sum = 0;
+        // the average of each chip's ticks that end inside this sample
+        double sums[2] = {0, 0};
         int ticks = 0;
         while (static_cast<double>((r.ticks_done + 1) * kCyclesPerTick) <= end) {
             ApplyWrites(r, a, (r.ticks_done + 1) * kCyclesPerTick);
-            sum += AySynthTick(r.chips[0]) + AySynthTick(r.chips[1]);
+            sums[0] += AySynthTick(r.chips[0]);
+            sums[1] += AySynthTick(r.chips[1]);
             ticks++;
             r.ticks_done++;
         }
-        double in = ticks > 0 ? sum / ticks : r.last_in;
-        double filtered = in - r.last_in + kHighPass * r.last_out;
-        r.last_in = in;
-        r.last_out = filtered;
-        double sample = filtered * kChannelVolume;
-        if (at < out.size()) {
-            out[at] = Clamp(out[at] + sample);
-        } else {
-            out.push_back(Clamp(sample));
+        double sides[2];
+        for (int chip = 0; chip < 2; chip++) {
+            double in = ticks > 0 ? sums[chip] / ticks : r.last_in[chip];
+            double filtered = in - r.last_in[chip] + kHighPass * r.last_out[chip];
+            r.last_in[chip] = in;
+            r.last_out[chip] = filtered;
+            sides[chip] = filtered * kChannelVolume;
         }
-        at++;
+        if (channels == 1) {
+            sides[0] += sides[1];
+        }
+        for (int c = 0; c < channels; c++) {
+            if (at < out.size()) {
+                out[at] = Clamp(out[at] + sides[c]);
+            } else {
+                out.push_back(Clamp(sides[c]));
+            }
+            at++;
+        }
         r.samples_done++;
     }
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-// speaker toggles to 16-bit mono samples, and WAV files
+// speaker toggles to 16-bit mono samples, and WAV files (machine_audio.hpp mixes the rest in)
 
 #include "machine/apple2.hpp"
 
@@ -27,6 +27,8 @@ void RenderSpeaker(SpeakerRenderer& r, const Apple2& a, uint64_t cycle, std::vec
 
 uint64_t SamplesForCycles(uint64_t cycles);
 
-bool WriteWav(const std::string& path, const std::vector<int16_t>& samples, std::string& error);
+// samples as frames of channels (1, or 2: left, right)
+bool WriteWav(const std::string& path, const std::vector<int16_t>& samples, int channels,
+              std::string& error);
 
 } // namespace tisple
