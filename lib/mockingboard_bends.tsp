@@ -132,7 +132,12 @@
     (if (!= f (at player.period s))
         (do
             (set (at player.period s) f)
-            (player.out s))))
+            ; the tone's two registers, if the slot has the voice
+            (if (at player.owns s)
+                (do
+                    (let t u8 (at player.tone_at s))
+                    (player.reg t (as u8 f))
+                    (player.reg (+ t 1) (as u8 (>> f 8))))))))
 
 (player.events_fn events sound
     ((if (= i 0)

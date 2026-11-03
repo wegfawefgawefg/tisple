@@ -1147,6 +1147,11 @@ What the optimiser does with it (src/opt/const_data.cpp, consts_eval.cpp):
   address, the reference interpreter (which runs that program on the compiled
   layout) gets it at an address inside the code, memory it never otherwise
   touches; the binary has no bytes of it.
+- A top-level `let` that only functions the program never reaches name (from
+  `main` and the handler, in the program as written) is not in the binary
+  either: a library's state for a call the program never makes (2026-11-03,
+  lib/mockingboard_bends). A `let` no code names at all stays, as memory the
+  program keeps on purpose, and so does one with an `:address`.
 
 ## Exact delays
 

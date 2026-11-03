@@ -23,8 +23,22 @@
 ;   n8             the noise period, 0-31 (the chip's: its three voices share it)
 ;   h14:600        the hardware envelope: shape 14, period 600 (the chip's); notes after it
 ;                  follow the envelope instead of the volume, and restart it
-; a voice keeps its length, volume, decay and mixer from one pattern to the next. play
-; starts every voice at l8 v12 k0 m1; an effect at l1 v15 k0 m1.
+; pitch that moves (lib/mockingboard_bends): only a program whose handler calls
+; mockingboard.service_bends plays these; mockingboard.service plays their bytes wrong
+;   w2:10          vibrato: depth 1-4 (about 1/8, 1/4, 1/2, 1 semitone each way), speed the
+;   w2:10:12       ticks of one wobble, 2-64; then the ticks of each note before it starts,
+;                  0-255 (0 if not given); w0 off. from the next note on
+;   p4             glide: each note slides from the pitch before it to its own, a step a tick
+;                  of its period >> (8 - speed), speed 1-7 (about 1/8 semitone a tick, doubling
+;                  up to about a fifth); p0 off
+;   s+4 s-4        slide: each note goes up (s+) or down (s-) from its own pitch for as long
+;                  as it sounds, a step a tick as p's, to the end of the periods; s0 off. p and
+;                  s are one setting: the last one written holds
+;   t+2 t-2        detune: each note's period 1-64 more (lower) or less (higher); t0 none.
+;                  a unit is about 3 cents at C3, 12 at A4: two voices on the same line a
+;                  unit apart beat against each other, a chorus
+; a voice keeps its length, volume, decay, mixer, w, p or s and t from one pattern to the
+; next. play starts every voice at l8 v12 k0 m1 w0 p0 t0; an effect at l1 v15 k0 m1 w0 p0 t0.
 ;
 ; a song: (pattern name "text") as many as it needs, then (voice n name ...) for each of the
 ; six voices it uses: 0-2 the first chip's three channels, 3-5 the second's. a voice plays its
@@ -36,6 +50,9 @@
 ;   $00-$5F note 0-95 (C1 + n semitones)   $60 rest   $61 tie
 ;   $80-$BF length (byte - $7F) ticks      $C0-$CF volume   $D0-$DF decay
 ;   $E0-$E3 mixer   $E4 n noise period   $E5 s lo hi envelope shape s, period lo + 256 hi
+;   $E6 k r d vibrato: the shift k (8 - depth, 0 off), phase step r (256 / speed), delay d
+;   $E7 b bend: 0 none, $10 + k glide, $20 + k slide up, $30 + k down (k = 8 - speed)
+;   $E8 lo hi detune, a signed u16 added to each note's period
 ;   $FF the end of the pattern
 ; a song is a header of six u16 offsets (from the song's first byte; 0 for a silent voice),
 ; each to its voice's order list: u16 pattern offsets, then $0000 and the offset of the

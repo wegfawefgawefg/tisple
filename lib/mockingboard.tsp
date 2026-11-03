@@ -34,6 +34,9 @@
 
 (let found bool false)
 (let slot u8 0)
+
+; the bytes after each command from tune.NOISE on (n h w p/s t), for speaker_effect
+(const OPERANDS (array u8 5) (make (array u8 5) 1 3 3 1 2))
 (let rate u16 17030) ; cycles a tick
 
 (fn slot_page ((n u8)) u16
@@ -223,12 +226,8 @@
                 (set mixing (- b tune.MIXER))
                 (continue)))
         ; the commands with bytes after them, the bends' too (no pitch moves on the speaker)
-        (if (or (= b tune.NOISE) (= b tune.BEND))
-            (set p (+ p 1)))
-        (if (= b tune.DETUNE)
-            (set p (+ p 2)))
-        (if (or (= b tune.ENVELOPE) (= b tune.VIBRATO))
-            (set p (+ p 3)))))
+        (if (>= b tune.NOISE)
+            (set p (+ p (at OPERANDS (- b tune.NOISE)))))))
 
 ; an effect (a pattern from mockingboard_song's effect) on a voice, 0-5: now if its priority is
 ; higher than the one playing (which it cuts off), else after the ones playing and waiting.

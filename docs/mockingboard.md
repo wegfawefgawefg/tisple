@@ -56,7 +56,8 @@ tisple run examples/mockingboard_demo.tsp --mockingboard 4 \
   frame, 59.9 a second). `mb.found` and `mb.slot` say what it found.
 - The program's `:interrupt` handler must call `(mb.service)`. It reads the
   6522's flags first and does nothing if the timer did not interrupt, so the
-  handler can poll other devices too.
+  handler can poll other devices too. `(mb.service_bends)` in its place also
+  plays vibrato, glides, slides and detune (Pitch that moves, below).
 - `(mb.play song)` starts a song from the beginning; `(mb.stop)` silences the
   music (an effect playing goes on).
 - `(mb.effect sound voice priority)` plays an effect on voice 0-5 from the
@@ -140,6 +141,9 @@ The bytes:
 | `$E0`-`$E3` | mixer |
 | `$E4` n | noise period |
 | `$E5` s lo hi | envelope shape s, period lo + 256 hi |
+| `$E6` k r d | vibrato: shift k (8 - depth; 0 off), phase step r (256 / speed), delay d |
+| `$E7` b | bend: 0 none, `$10` + k glide, `$20` + k slide up, `$30` + k slide down (k = 8 - speed) |
+| `$E8` lo hi | detune: a signed u16 added to each note's period |
 | `$FF` | end of the pattern |
 
 A song starts with six u16 offsets from its first byte, 0 for a silent voice,
@@ -147,6 +151,71 @@ each to its voice's order list: u16 pattern offsets, then `$0000` and the
 offset of the entry to loop back to. The patterns follow. A pattern is at most
 255 bytes and must hold a note, rest or tie (the macros check both). An effect
 is one pattern.
+
+## Pitch that moves: w, p, s, t
+
+Added 2026-11-03 (lib/mockingboard_bends). Only a program whose handler calls
+`(mb.service_bends)` in place of `(mb.service)` plays these; `service` reads
+their bytes as other commands. A program calls one or the other.
+
+| Token | Meaning |
+| --- | --- |
+| `w2:10` `w2:10:12` | vibrato: depth 1-4, speed 2-64, delay 0-255 (0 if left out); `w0` off |
+| `p4` | glide: each note slides from the pitch before it to its own; speed 1-7; `p0` off |
+| `s+4` `s-4` | slide: each note goes up or down from its own pitch while it sounds; speed 1-7; `s0` off |
+| `t+2` `t-2` | detune: each note's period 1-64 more (lower) or less (higher); `t0` none |
+
+- Steps scale with the note: the vibrato's amount is the note's period >> (8 -
+  depth), so depth 1-4 is about 1/8, 1/4, 1/2 and 1 semitone each way on any
+  note; a glide's or slide's step a tick is the period >> (8 - speed), at least
+  1: speed 1 about 1/8 semitone a tick, each one up doubling it, 7 about a
+  fifth. The step is the new note's, worked out once when it starts.
+- Vibrato: a triangle of two heights, half the amount and the amount, a
+  quarter of a wobble each, above the note then below. Speed is the ticks of
+  one wobble (10 is 6 Hz); under 4 it is more a trill. Delay: the ticks of each
+  note before it wobbles. It changes from the next note on.
+- Glide: from what the voice played last (rests between are fine); the first
+  note after `play`, or of an effect, has nothing to glide from. It takes as
+  many ticks as the interval needs at that speed: `p5` a fourth in about 3
+  ticks, `p3` about 14.
+- Slide: on to the end of the periods (0 up, 4095 down) and it stays there:
+  drum and timpani drops (`s-1` to `s-3`), lasers (`s-5` on a high note), sirens
+  with `s+`. A tie goes on sliding. `p` and `s` are one setting: the last
+  written holds.
+- Detune: in period units, so about 3 cents at C3, 12 at A4, 24 at A5. The same
+  line on two voices a unit apart beats a few to a dozen times a second, a
+  chorus (lib's demo song a_waltz_vib in Catwiz has it). Keep it below the
+  note's period on high notes.
+- A voice keeps w, p or s and t from one pattern to the next, like its length;
+  `play` and `effect` start each voice with none.
+- Past 12 bits (a deep vibrato on C1) the vibrato is left off for that tick.
+
+### What it costs
+
+- A program that calls `service` has none of it. The player's `events` and
+  `tick` are templates (`events_fn`, `tick_fn`) that service's copies make byte
+  for byte as before; the bends make their own with more in them. The state
+  (16 bytes a slot, 112 in all) is lets only the bends' functions name, and the
+  link leaves out a let only unreached functions name (docs/language.md,
+  Static data). Catwiz's disks come out byte for byte the same with the
+  branch's player as without it (and 4 bytes smaller than before the link
+  change, from lets of its own libraries' unused calls). One thing is left:
+  the compiler gives every function a frame, reached or not, so a small
+  program's frames take 6-20 bytes more memory (the demo's 20, its image 48
+  bytes more for the layout around them); Catwiz's are shared and do not grow.
+- A program that calls `service_bends`: about 930-970 bytes more (the bends'
+  song in tests/test_mockingboard_bends.cpp: 3424 bytes with `service`, 4350
+  with `service_bends`; 974 more where the program fills memory and the size
+  budget tightens), of which 112 are the state. Catwiz does not have that room
+  today.
+- The tick (that test's numbers): every playing slot checks one flag a tick
+  when nothing moves. The demo's song (no w, p, s or t) with `service_bends`:
+  1178 cycles on average (1004 with `service`), median 863 (770), at most 6767
+  (5653: its first tick, every voice starting a note). One voice alone: a note
+  held 317 cycles a tick, the same with `w4:10` 604 (about 290 a wobbling or
+  sliding voice); a note every tick 1025, with `w2:10 p3` set 1631 (about 600 a
+  note start that works out steps: a 7-step shift loop, 16-bit work and the
+  first write). The test song with all four on: 831 on average, 6455 at most.
 
 ## Songs in aux memory, copies while it plays
 
@@ -291,3 +360,10 @@ runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
   every call (a register write is a `JSR`), and each register is compared
   before it is written, about 25 cycles even when it has not changed.
 - The AY's volume table is a 3 dB curve, not a measured one.
+- Frames for functions nothing reaches: the compiler still gives each one a
+  frame, so the bends' unreached functions take 6-20 bytes of a small
+  program's memory (Pitch that moves). Leaving them out would follow the lets'
+  rule, in src/backend/frames.cpp.
+- The bends in Catwiz: about 950 bytes it does not have. Smaller would mean
+  fewer 16-bit steps (an 8-bit stride, the vibrato's amount kept as it is) or
+  dropping glide or detune.

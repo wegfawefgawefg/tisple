@@ -186,6 +186,49 @@ void DemoCostTests(TestResults& results, TickCost& cost) {
     CHECK(results, cost.count > 590);
 }
 
+// one voice's tick with service_bends: a long note held or wobbling, a note every tick plain
+// or with vibrato and a glide; the average over 200 ticks
+uint64_t OneVoiceTick(TestResults& results, const char* pattern) {
+    std::string text = std::string(R"(
+(import mockingboard mb)
+(import mockingboard_song tune)
+(tune.song one (pattern a ")") +
+                       pattern + R"(") (voice 0 a))
+(fn irq () void :interrupt (mb.service_bends))
+(fn main () void
+    (mb.init)
+    (mb.play (addr_of (at one 0)))
+    (while true))
+)";
+    MbBuild b;
+    MbBuildText(results, "t.tsp", text, b);
+    if (!b.ok) {
+        return 0;
+    }
+    std::unique_ptr<tisple::Apple2> a = MbStart(b, 4);
+    TickCost cost;
+    cost.entry = b.code.irq_direct;
+    tisple::RunApple2Traced(*a, 210 * kMbTick, MeasureTick, &cost);
+    CHECK(results, cost.count > 200);
+    uint64_t total = 0;
+    for (size_t k = 5; k < 205 && k < cost.each.size(); k++) {
+        total += cost.each[k];
+    }
+    return total / 200;
+}
+
+void SlotCostTests(TestResults& results) {
+    uint64_t held = OneVoiceTick(results, "l64 v12 c4");
+    uint64_t wobbling = OneVoiceTick(results, "l64 v12 w4:10 c4");
+    uint64_t plain = OneVoiceTick(results, "l1 v12 c4 d4");
+    uint64_t bent = OneVoiceTick(results, "l1 v12 w2:10 p3 c4 d4");
+    CHECK(results, wobbling > held && bent > plain);
+    std::printf("mockingboard: one voice's tick with service_bends: a note held %llu cycles, "
+                "wobbling %llu; a note each tick %llu, with w and p set %llu\n",
+                static_cast<unsigned long long>(held), static_cast<unsigned long long>(wobbling),
+                static_cast<unsigned long long>(plain), static_cast<unsigned long long>(bent));
+}
+
 struct BadSong {
     const char* text;
     const char* says;
@@ -252,6 +295,7 @@ void RunMockingboardBendsTests(TestResults& results) {
     BendsTests(results, cost);
     BytesTests(results);
     ErrorTests(results);
+    SlotCostTests(results);
     TickCost demo;
     DemoCostTests(results, demo);
     if (cost.count == 0 || demo.count == 0) {
