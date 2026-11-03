@@ -246,7 +246,7 @@
    "bytes": 1
   },
   "state.page": {
-   "at": 18,
+   "at": 19,
    "bytes": 1
   },
   "state.phase": {
@@ -254,7 +254,7 @@
    "bytes": 1
   },
   "state.act_source": {
-   "at": 208,
+   "at": 210,
    "bytes": 1
   },
   "state.actors.alive": {
@@ -264,31 +264,31 @@
    "step": 1
   },
   "state.timer": {
-   "at": 203,
+   "at": 204,
    "bytes": 1
   },
   "state.picked": {
-   "at": 207,
+   "at": 65389,
    "bytes": 1
   },
   "state.pick": {
-   "at": 19,
+   "at": 209,
    "bytes": 1
   },
   "state.selected": {
-   "at": 16,
+   "at": 17,
    "bytes": 1
   },
   "state.looked": {
-   "at": 206,
+   "at": 208,
    "bytes": 1
   },
   "state.rerolls": {
-   "at": 9,
+   "at": 10,
    "bytes": 1
   },
   "state.dice_n": {
-   "at": 8,
+   "at": 9,
    "bytes": 1
   },
   "state.played": {
@@ -338,15 +338,15 @@
    131,
    192,
    162,
-   0,
-   181,
-   0,
+   40,
+   189,
+   91,
+   231,
    157,
-   0,
-   191
+   201
   ]
  },
- "disk": "disk-2180eb52.dsk",
- "version": "2180eb52",
- "disk2": "disk2-cadd1161.dsk"
+ "disk": "disk-a5d29657.dsk",
+ "version": "a5d29657",
+ "disk2": "disk2-0e914f10.dsk"
 }
