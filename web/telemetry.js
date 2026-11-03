@@ -33,7 +33,8 @@
 // preflight), every FLUSH_MS and as the page hides. Nothing else: no address, no browser, no
 // screen. Off with the bar's STATS button or ?telemetry=off (kept in localStorage; on again with
 // ?telemetry=on), and always off with Do Not Track or Global Privacy Control. Every failure is
-// silent and loses at most the records: the game never waits on it.
+// silent and loses at most the records (a post that fails to arrive is tried again with the
+// next, at most TELEMETRY_KEEP records waiting): the game never waits on it.
 
 "use strict";
 
@@ -279,10 +280,17 @@ function telSend(beacon) {
         if (beacon && navigator.sendBeacon) {
             sent = navigator.sendBeacon(tel.config.endpoint, new Blob([body], { type: "text/plain" }));
         } else {
+            // a post that did not get there (no network, the server down or busy) puts its
+            // records back for the next; one refused as junk (4xx) is dropped
+            const back = () => telRequeue(recs);
             fetch(tel.config.endpoint, { method: "POST", body, keepalive: true, mode: "cors",
                                          credentials: "omit",
                                          headers: { "Content-Type": "text/plain" } })
-                .catch(() => {});
+                .then((r) => {
+                    if (r.status === 429 || r.status >= 500) {
+                        back();
+                    }
+                }, back);
             sent = true;
         }
     } catch (err) {
@@ -290,6 +298,16 @@ function telSend(beacon) {
     }
     if (sent) {
         tel.pending.splice(0, recs.length);
+    }
+}
+
+function telRequeue(recs) {
+    if (!tel.on) {
+        return;
+    }
+    tel.pending = recs.concat(tel.pending);
+    if (tel.pending.length > TELEMETRY_KEEP) {
+        tel.pending.splice(0, tel.pending.length - TELEMETRY_KEEP);
     }
 }
 
