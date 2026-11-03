@@ -388,20 +388,7 @@ function compileConditions(game) {
     if (!game.vars) {
         return false;
     }
-    const done = {};
-    const busy = {};
-    const named = (name) => {
-        if (!done[name]) {
-            if (busy[name]) {
-                throw new Error("the name " + name + " uses itself");
-            }
-            busy[name] = true;
-            const e = compileCondition(game.names[name], game, named);
-            done[name] = e;
-        }
-        const e = done[name];
-        return (read) => e(read);
-    };
+    const named = conditionNames(game);
     try {
         for (const key of pad.keys) {
             key.when = key.spec.when !== undefined ? compileCondition(key.spec.when, game, named) : null;

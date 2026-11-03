@@ -7,7 +7,9 @@
 // games button goes back to the picker. The buttons, the bar's letters and the layout are
 // pad.js's. The disk button turns the drives' sound on and off (remembered in this browser),
 // off until it is pressed (the owner, 2026-10-31: opt in): on, a disk loads at the Apple's
-// speed and sounds like a Disk II; off, it loads flat out and silent.
+// speed and sounds like a Disk II; off, it loads flat out and silent. A game whose game.json
+// has "telemetry" sends anonymous play records (telemetry.js), the bar's STATS button turns
+// them off and on.
 
 "use strict";
 
@@ -25,6 +27,7 @@ const ui = {
     look: document.getElementById("look"),
     disk: document.getElementById("disk"),
     buzz: document.getElementById("buzz"),
+    stats: document.getElementById("stats"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -78,6 +81,7 @@ const words = {
     look: makeLabel(LOOKS[0], 2),
     disk: makeLabel("disk", 2),
     buzz: makeLabel("buzz", 2),
+    stats: makeLabel("stats", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -429,9 +433,9 @@ function draw() {
     ctx2d.putImageData(image, 0, 0);
 }
 
-// the game's state for the pad (pad.js padFollow): its memory once it is running, which is
-// once its first bytes are in memory and the disk has stopped after the boot; until the
-// bytes change again (a reboot)
+// the game's state for the pad (pad.js padFollow) and the play records (telemetry.js): its
+// memory once it is running, which is once its first bytes are in memory and the disk has
+// stopped after the boot; until the bytes change again (a reboot)
 let gameRunning = false;
 
 function readRam(address, aux) {
@@ -440,7 +444,7 @@ function readRam(address, aux) {
 
 function followGame() {
     const check = state.game.check;
-    if (!check || !pad.follows) {
+    if (!check || !(pad.follows || tel.events.length)) {
         return;
     }
     let loaded = true;
@@ -452,7 +456,10 @@ function followGame() {
     } else if (!state.m._tp_disk_busy()) {
         gameRunning = true;
     }
-    padFollow(gameRunning ? readRam : null);
+    if (pad.follows) {
+        padFollow(gameRunning ? readRam : null);
+    }
+    telemetryFrame(gameRunning ? readRam : null);
 }
 
 function tick(now) {
@@ -547,6 +554,11 @@ async function boot() {
     }
     document.title = state.game.title || name;
     padSetup(state.game, press, release);
+    const telemetry = telemetrySetup(state.game, {
+        game: name, build: state.game.version, where: index.static ? "pages" : "phone",
+        cycles: () => (state.m ? state.m._tp_cycles() : 0), hz: CPU_HZ });
+    ui.stats.hidden = !telemetry;
+    showStats();
     const fetchDisk = async (file) =>
         new Uint8Array(await (await fetch("games/" + name + "/" + file,
                                           { cache: "no-store" })).arrayBuffer());
@@ -579,6 +591,7 @@ async function boot() {
         ui.start.style.display = "none";
         state.last = performance.now();
         state.running = true;
+        telemetryOpen();
     }
 }
 
@@ -607,6 +620,7 @@ ui.start.addEventListener("pointerdown", async () => {
     await startAudioOrNot();
     state.last = performance.now();
     state.running = true;
+    telemetryOpen();
 });
 ui.look.addEventListener("click", () => {
     state.look = (state.look + 1) % LOOKS.length;
@@ -642,6 +656,39 @@ ui.buzz.addEventListener("click", () => {
     }
     showBuzz();
     setStatus(state.buzz ? "buzz on: taps buzz" : "buzz off: taps are silent");
+});
+// the STATS button: anonymous play records on or off (telemetry.js). The bar has no room for it
+// on a phone held upright (index.html shows it from 480 px across), so the start's tap has it
+// too, under "tap to start", saying what is sent: a tap there turns them off (or on) and does
+// not start
+const startStats = document.createElement("span");
+startStats.className = "stats";
+const startNote = makeLabel("", 1);
+startStats.appendChild(startNote);
+ui.start.appendChild(startStats);
+function showStats() {
+    const t = telemetryShown();
+    ui.stats.classList.toggle("off", !t.on);
+    startStats.hidden = !t.has;
+    startStats.classList.toggle("off", !t.on);
+    setLabel(startNote, t.on ? "sends anonymous play stats: tap here to stop"
+                              : t.blocked ? "play stats off (" + t.blocked + ")"
+                                          : "play stats off: tap here to send them");
+}
+function toggleStats() {
+    const t = telemetryShown();
+    if (t.blocked) {
+        setStatus("play stats off: the browser asks for " + t.blocked);
+        return;
+    }
+    const on = telemetrySet(!t.on);
+    showStats();
+    setStatus(on ? "play stats on: anonymous, how far runs get" : "play stats off: nothing is sent");
+}
+ui.stats.addEventListener("click", toggleStats);
+startStats.addEventListener("pointerdown", (e) => {
+    e.stopPropagation(); // not the start
+    toggleStats();
 });
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");
