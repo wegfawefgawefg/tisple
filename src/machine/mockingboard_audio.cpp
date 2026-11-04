@@ -3,6 +3,8 @@
 #include "machine/mockingboard.hpp"
 #include "machine/speaker_audio.hpp"
 
+#include <cmath>
+
 namespace tisple {
 
 namespace {
@@ -54,8 +56,24 @@ void StartMockingboardAudio(MockingboardRenderer& r, const Apple2& a) {
     }
 }
 
+void StereoGains(double width, double& left, double& right) {
+    if (width < 0.0) {
+        width = 0.0;
+    }
+    if (width > 1.0) {
+        width = 1.0;
+    }
+    // the pan angle: 0 hard left, pi/4 the middle
+    double angle = (1.0 - width) * std::atan(1.0);
+    left = std::cos(angle);
+    right = std::sin(angle);
+}
+
 void MixMockingboard(MockingboardRenderer& r, const Apple2& a, uint64_t cycle,
-                     std::vector<int16_t>& out, size_t first, int channels) {
+                     std::vector<int16_t>& out, size_t first, int channels, double width) {
+    double near_gain = 1.0;
+    double far_gain = 0.0;
+    StereoGains(width, near_gain, far_gain);
     uint64_t count = a.slots.mockingboard.log_count;
     if (count - r.next_write > kPsgLogSize) {
         r.dropped += count - kPsgLogSize - r.next_write;
@@ -85,6 +103,11 @@ void MixMockingboard(MockingboardRenderer& r, const Apple2& a, uint64_t cycle,
         }
         if (channels == 1) {
             sides[0] += sides[1];
+        } else {
+            double left = sides[0] * near_gain + sides[1] * far_gain;
+            double right = sides[0] * far_gain + sides[1] * near_gain;
+            sides[0] = left;
+            sides[1] = right;
         }
         for (int c = 0; c < channels; c++) {
             if (at < out.size()) {

@@ -130,6 +130,7 @@ int RunHeadless(Apple2& a, const MachineArgs& args) {
     std::vector<bool> taken(args.screenshots.size(), false);
     MachineAudio audio;
     StartMachineAudio(audio, a);
+    audio.stereo_width = args.stereo_width;
     int channels = args.mono_sound ? 1 : 2;
     std::vector<int16_t> samples; // frames of channels
     bool ok = true;
@@ -357,6 +358,7 @@ int RunWithArgs(const std::vector<uint8_t>* program, const std::vector<MemorySeg
         options.look = args.look;
         options.drive_sound = args.drive_sound;
         options.stereo = !args.mono_sound;
+        options.stereo_width = args.stereo_width;
         if (args.taps != nullptr &&
             !LoadTaps(args.taps, options.taps, options.point_mouse, error)) {
             std::fprintf(stderr, "tisple machine: %s\n", error.c_str());

@@ -1,7 +1,8 @@
 // The phone player's machine: tisple machine compiled to WebAssembly (web/build.sh), driven
 // by player.js one slice at a time. It boots a disk with our own roms, renders the screen to
 // RGBA for a canvas and the speaker, Mockingboard and disk drives to 16-bit stereo frames for
-// WebAudio (the card's first chip left, its second right; tp_stereo 0: the mono mix in both). While
+// WebAudio (the card's first chip to the left, its second to the right, kDefaultStereoWidth apart;
+// tp_stereo 0: the mono mix in both). While
 // the disk motor is on, player.js runs it flat out, so a disk boots in a moment, unless the drives'
 // sound is on: then a disk loads at the Apple's speed, grinding.
 

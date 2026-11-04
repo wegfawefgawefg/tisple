@@ -4,6 +4,7 @@
 // which is only built when SDL3 is (cmake option TISPLE_SDL).
 
 #include "machine/apple2.hpp"
+#include "machine/mockingboard_audio.hpp"
 #include "machine/taps.hpp"
 
 #include <string>
@@ -12,11 +13,12 @@
 namespace tisple {
 
 struct WindowOptions {
-    int scale = 2;                      // window size in multiples of 560 x 384
-    VideoLook look = VideoLook::kColor; // F2 cycles color, ntsc, mono
-    bool drive_sound = true;            // the disk drives' sound; F3 turns it on and off
-    bool stereo = true;                 // the Mockingboard's chips left and right; F4: mono
-    uint64_t max_cycles = 0;            // 0: run until the window closes
+    int scale = 2;                             // window size in multiples of 560 x 384
+    VideoLook look = VideoLook::kColor;        // F2 cycles color, ntsc, mono
+    bool drive_sound = true;                   // the disk drives' sound; F3 turns it on and off
+    bool stereo = true;                        // the Mockingboard's chips left and right; F4: mono
+    double stereo_width = kDefaultStereoWidth; // how far apart they are in stereo, 0-1
+    uint64_t max_cycles = 0;                   // 0: run until the window closes
     std::string title = "Tisple ][";
     std::vector<Tap> taps; // --taps: clicks press these keys instead of moving the mouse card
     // --taps with "mouse": true: a click puts the mouse card's mouse there and presses it

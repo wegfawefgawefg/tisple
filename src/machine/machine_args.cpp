@@ -3,6 +3,7 @@
 #include "machine/scripted_input.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace tisple {
@@ -19,7 +20,10 @@ void PrintMachineUsage() {
         "  --screenshot F.png[@C]  save the screen at cycle C (default: at the end)\n"
         "  --wav F.wav         save the speaker, the Mockingboard's sound chips when it is in,\n"
         "                      and the disk drives' sound (steps, the motor), in stereo: the\n"
-        "                      card's first chip left, its second right, the rest in both\n"
+        "                      card's first chip to the left, its second to the right, the\n"
+        "                      rest in the middle\n"
+        "  --stereo-width W    how far apart the card's chips are, 0-1: 0 both in the middle,\n"
+        "                      1 hard left and right (default 0.5)\n"
         "  --mono-sound        --wav and the window in one channel, everything mixed in it\n"
         "  --no-drive-sound    leave the drives' sound out of --wav and the window\n"
         "  --ntsc | --mono     composite ntsc look, or a monochrome monitor (default: flat color;\n"
@@ -80,6 +84,17 @@ bool ParseScreenshot(const char* text, ScreenshotArg& shot) {
     return !shot.path.empty() && ParseCycle(arg.substr(at + 1), shot.cycle);
 }
 
+// a stereo width: a decimal number from 0 to 1, all of text
+bool ParseWidth(const char* text, double& out) {
+    char* end = nullptr;
+    double width = std::strtod(text, &end);
+    if (end == text || *end != '\0' || !(width >= 0.0 && width <= 1.0)) {
+        return false;
+    }
+    out = width;
+    return true;
+}
+
 } // namespace
 
 Cpu MachineCpu(const Apple2& a, const MachineArgs& args) {
@@ -108,6 +123,10 @@ bool ParseMachineArgs(int argc, char** argv, bool want_program, MachineArgs& arg
             args.drive_sound = false;
         } else if (std::strcmp(arg, "--mono-sound") == 0) {
             args.mono_sound = true;
+        } else if (std::strcmp(arg, "--stereo-width") == 0 && has_value) {
+            if (!ParseWidth(argv[++i], args.stereo_width)) {
+                return false;
+            }
         } else if (std::strcmp(arg, "--origin") == 0 && has_value) {
             if (!ParseNumber(argv[++i], number) || number > 0xBFFF) {
                 return false;
