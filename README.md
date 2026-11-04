@@ -220,6 +220,6 @@ hi-res and packed data, [`races.md`](docs/races.md) the compiler races,
 ## License
 
 GPL-3.0-or-later (`LICENSE`), with a runtime exception: the startup and runtime code the
-compiler puts into your programs, the disk loader and lib/disk's reader are also MIT, so
-programs built with Tisple can use any license. See `COPYRIGHT`. Code under
+compiler puts into your programs, the libraries under `lib/`, the disk loader and lib/disk's
+reader are also MIT, so programs built with Tisple can use any license. See `COPYRIGHT`. Code under
 `third_party/` keeps its own license.
