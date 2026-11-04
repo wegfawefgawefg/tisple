@@ -1,7 +1,7 @@
 // the Mockingboard: its 6522s' timers, flags and IRQ level on their own; the IRQ line and
 // the counter through the 6502 on the machine; the AY-3-8910s' registers through the 6522
 // ports, read back, and the rendered sound's pitch; stereo: each chip on its own side, the
-// speaker in both, and mono their sum
+// speaker in both, and mono their sum; the stereo width: how far to each side a chip is
 
 #include "machine/ay8910.hpp"
 #include "machine/machine_audio.hpp"
@@ -204,7 +204,7 @@ std::vector<int16_t> RenderTone(int chip, int channel, uint16_t period, uint8_t 
     at = WritePsg(*a, at, chip, 7, mixer);
     WritePsg(*a, at, chip, static_cast<uint8_t>(8 + channel), volume);
     std::vector<int16_t> samples;
-    tisple::MixMockingboard(r, *a, static_cast<uint64_t>(tisple::kCpuHz), samples, 0, 1);
+    tisple::MixMockingboard(r, *a, static_cast<uint64_t>(tisple::kCpuHz), samples, 0, 1, 1.0);
     return samples;
 }
 
@@ -249,12 +249,14 @@ struct StereoParts {
     bool speaker = false;
 };
 
-// a second of the parts through RenderMachineAudio in channels (no drives' sound)
-std::vector<int16_t> RenderParts(StereoParts parts, int channels) {
+// a second of the parts through RenderMachineAudio in channels (no drives' sound), the chips
+// width apart in stereo (1: hard left and right)
+std::vector<int16_t> RenderParts(StereoParts parts, int channels, double width = 1.0) {
     std::unique_ptr<tisple::Apple2> a = tisple::NewApple2();
     tisple::InsertMockingboard(*a, kSlot);
     tisple::MachineAudio sound;
     tisple::StartMachineAudio(sound, *a);
+    sound.stereo_width = width;
     uint64_t at = InitPsgs(*a, 100);
     // the same writes at the same cycles every time, so the tones keep their phase: a part
     // that is off has volume 0
@@ -362,6 +364,46 @@ void StereoTests(TestResults& results) {
     CHECK(results, spread == speaker);
 }
 
+// the stereo width: chip 0's tone alone is in the right by tan((1 - w) * pi/4) of the left
+// (0 at 1, 0.41 at 0.5, 1 at 0), as loud at every width (left^2 + right^2 its mono level^2),
+// the speaker in the middle at every width, and the mono mix the same whatever the width
+void StereoWidthTests(TestResults& results) {
+    CHECK(results, tisple::MachineAudio{}.stereo_width == 0.5);
+    double mono = Loudness(RenderParts({true, false, false}, 1));
+    const double widths[] = {0.0, 0.5, 1.0};
+    for (double width : widths) {
+        std::vector<int16_t> frames = RenderParts({true, false, false}, 2, width);
+        double left = Loudness(Side(frames, 0));
+        double right = Loudness(Side(frames, 1));
+        double ratio = right / left;
+        double want = std::tan((1.0 - width) * std::atan(1.0));
+        double power = std::sqrt(left * left + right * right);
+        bool panned = std::fabs(ratio - want) < 0.01 && std::fabs(power / mono - 1.0) < 0.01;
+        CHECK(results, panned);
+        if (!panned) {
+            std::fprintf(stderr,
+                         "stereo width %.1f: left %.1f, right %.1f (%.3f, want %.3f), "
+                         "power %.1f, mono %.1f\n",
+                         width, left, right, ratio, want, power, mono);
+        }
+        // chip 1 is the mirror: as far into the left as chip 0 is into the right
+        std::vector<int16_t> other = RenderParts({false, true, false}, 2, width);
+        double other_ratio = Loudness(Side(other, 0)) / Loudness(Side(other, 1));
+        CHECK(results, std::fabs(other_ratio - want) < 0.01);
+        std::vector<int16_t> speaker = RenderParts({false, false, true}, 2, width);
+        CHECK(results, Side(speaker, 0) == Side(speaker, 1));
+        CHECK(results,
+              RenderParts({true, true, true}, 1, width) == RenderParts({true, true, true}, 1, 1.0));
+    }
+    // out of range is held to 0-1
+    double left = 0.0;
+    double right = 0.0;
+    tisple::StereoGains(2.0, left, right);
+    CHECK(results, left == 1.0 && right == 0.0);
+    tisple::StereoGains(-1.0, left, right);
+    CHECK(results, std::fabs(left - right) < 1e-12);
+}
+
 // a 6502 program on the machine with the timer's IRQ through the card's ram vector at $FFFE.
 // its handler counts in $10 and answers only every other time, so the line stays low and the
 // cpu comes straight back in: a level, not a request
@@ -434,6 +476,7 @@ void RunMachineMockingboardTests(TestResults& results) {
     PortTests(results);
     PsgTests(results);
     StereoTests(results);
+    StereoWidthTests(results);
     IrqTests(results);
 }
 

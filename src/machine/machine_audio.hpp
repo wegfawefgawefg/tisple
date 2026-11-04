@@ -2,8 +2,9 @@
 
 // all the machine's sound as 16-bit frames, for --wav, the window and the phone player: the
 // speaker and the disk drives in the middle (the same in both channels), the Mockingboard's
-// first AY on the left and its second on the right, as the card's two outputs are. in mono
-// all of it goes to the one channel, as it did before stereo.
+// first AY to the left and its second to the right, stereo_width apart (1: hard left and
+// right, as the card's two outputs are). in mono all of it goes to the one channel, as it did
+// before stereo.
 
 #include "machine/apple2.hpp"
 #include "machine/drive_audio.hpp"
@@ -21,6 +22,7 @@ struct MachineAudio {
     SpeakerRenderer speaker;
     MockingboardRenderer chips;
     DriveSoundRenderer drives;
+    double stereo_width = kDefaultStereoWidth; // the chips' spread in stereo, 0-1: StereoGains
 };
 
 // start rendering at the machine's present cycle: what came before is skipped. the speaker's

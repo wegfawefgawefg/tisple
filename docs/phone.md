@@ -10,9 +10,9 @@ key presses.
   Apple's speed so it sounds like a Disk II: the boot's grind, the head stepping, the motor
   (docs/disks.md, "The drives' sound"); Catwiz takes about 11 s to load. Off, or with no
   sound running, loading runs flat out and silent as before.
-- The sound is stereo, as the Mockingboard is: its first AY on the left, its second on the
-  right, the speaker and the drives in both (the owner, 2026-11-03: stereo by default, with
-  a toggle). The bar's `stereo` button (at every width; it reads `mono`, dim, when mono)
+- The sound is stereo, as the Mockingboard is: its first AY to the left, its second to the
+  right, at the default width 0.5 (docs/mockingboard.md), the speaker and the drives in both
+  (the owner, 2026-11-03: stereo by default, with a toggle). The bar's `stereo` button (at every width; it reads `mono`, dim, when mono)
   switches to the mono mix in both ears and back, at once, while the game plays too; the
   browser remembers it (`tisple.stereo`). Nothing about it on the start's tap (the owner,
   2026-11-03: not dead centre on the title).

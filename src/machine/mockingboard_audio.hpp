@@ -3,9 +3,11 @@
 // the Mockingboard's two AY-3-8910s as 16-bit samples, mixed into the speaker's. the
 // machine only logs each register write with its cycle; this replays the log through two
 // AySynths at the chip clock / 8 (about 128 kHz) and box-filters down to kAudioRate. the card
-// is stereo, as this is by default: the first AY on the left, the second on the right. in
-// mono both go to the one channel. each chip has a high-pass like the speaker's to take off
-// its DC (the filter is linear, so the two summed are the one the mono mix had on their sum).
+// is stereo, as this is by default: the first AY to the left, the second to the right, by
+// the stereo width (1: hard left and right, as the card's two outputs are; 0: both in the
+// middle). in mono both go to the one channel. each chip has a high-pass like the speaker's to
+// take off its DC (the filter is linear, so the two summed are the one the mono mix had on
+// their sum).
 
 #include "machine/apple2.hpp"
 #include "machine/ay8910.hpp"
@@ -15,6 +17,10 @@
 #include <vector>
 
 namespace tisple {
+
+// how far apart the chips are by default: halfway (the owner, 2026-11-04: hard left and right
+// is too far)
+constexpr double kDefaultStereoWidth = 0.5;
 
 // consumer-side state, like SpeakerRenderer: not part of the machine
 struct MockingboardRenderer {
@@ -32,8 +38,14 @@ void StartMockingboardAudio(MockingboardRenderer& r, const Apple2& a);
 
 // adds the chips' sound up to cycle into out[first ...], the frames the speaker and drives
 // have just made for the same cycles (any they did not, it appends). channels 2: frames of
-// left and right, the first chip on the left, the second on the right; 1: both in the one
+// left and right, the first chip to the left, the second to the right, width apart (0-1, see
+// StereoGains); 1: both in the one, and width does nothing
 void MixMockingboard(MockingboardRenderer& r, const Apple2& a, uint64_t cycle,
-                     std::vector<int16_t>& out, size_t first, int channels);
+                     std::vector<int16_t>& out, size_t first, int channels, double width);
+
+// the first chip's gains into the left and the right at width (0-1); the second's are the
+// mirror. equal power: left^2 + right^2 is 1 at every width, so a chip is as loud at any
+// width as it was hard-panned. 1: left 1, right 0; 0.5: 0.92, 0.38; 0: both 0.71
+void StereoGains(double width, double& left, double& right);
 
 } // namespace tisple

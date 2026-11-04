@@ -23,9 +23,15 @@ tisple run examples/mockingboard_demo.tsp --mockingboard 4 \
   `$FFFE`). With no rom and no card ram, the first interrupt jumps to `$FFFF`
   and the run stops.
 - `--wav F.wav` saves the speaker and both sound chips in stereo, as the card
-  is: the first AY on the left, the second on the right, the speaker (and the
+  is: the first AY to the left, the second to the right, the speaker (and the
   drives) in both. `--mono-sound` mixes all of it into one channel, as before
   stereo. The window plays them too (F4: stereo or mono).
+- `--stereo-width W` (0-1, default 0.5) is how far apart the chips are, in
+  `--wav`, the window and (at the default) the phone player: 1 is hard left and
+  right, as the card's outputs are; 0 both in the middle (the owner,
+  2026-11-04: hard-panned is too far, about half). Equal power: a chip's gains
+  are cos and sin of (1 - W) * pi/4 into its own side and the other, so it is
+  as loud at any width (0.5: 0.92 and 0.38). The mono mix is unchanged by it.
 
 ## A program
 

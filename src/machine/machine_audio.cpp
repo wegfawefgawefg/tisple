@@ -23,7 +23,7 @@ void RenderMachineAudio(MachineAudio& m, const Apple2& a, uint64_t cycle, bool d
         SpreadToStereo(out, first);
     }
     if (HasMockingboard(a)) {
-        MixMockingboard(m.chips, a, cycle, out, first, channels);
+        MixMockingboard(m.chips, a, cycle, out, first, channels, m.stereo_width);
     }
 }
 

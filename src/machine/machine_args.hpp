@@ -4,6 +4,7 @@
 
 #include "disk/machine_disks.hpp"
 #include "machine/apple2.hpp"
+#include "machine/mockingboard_audio.hpp"
 
 #include <cstdint>
 #include <string>
@@ -45,6 +46,7 @@ struct MachineArgs {
     bool window = false;
     bool drive_sound = true; // the disk drives' sound in the window and --wav
     bool mono_sound = false; // --mono-sound: one channel in the window and --wav, not stereo
+    double stereo_width = kDefaultStereoWidth; // --stereo-width: the chips' spread, 0-1
     int scale = 2;
     const char* taps = nullptr; // a game's player config: clicks press its tap boxes' keys
     std::vector<ScreenshotArg> screenshots;

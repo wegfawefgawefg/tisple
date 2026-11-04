@@ -455,6 +455,7 @@ int RunMachineWindow(Apple2& a, const WindowOptions& options) {
     w.look = options.look;
     w.drive_sound = options.drive_sound;
     w.stereo = options.stereo;
+    w.sound.stereo_width = options.stereo_width;
     if (!Open(w, options)) {
         Close(w);
         return 1;
