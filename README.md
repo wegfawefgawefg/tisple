@@ -223,3 +223,10 @@ GPL-3.0-or-later (`LICENSE`), with a runtime exception: the startup and runtime 
 compiler puts into your programs, the libraries under `lib/`, the disk loader and lib/disk's
 reader are also MIT, so programs built with Tisple can use any license. See `COPYRIGHT`. Code under
 `third_party/` keeps its own license.
+
+## Contributing
+
+Not taking pull requests; bug reports and ideas in issues are welcome. If a contribution is ever
+accepted, by sending it you agree that it is under this project's license, and you also grant
+wegfawefgawefg a perpetual, worldwide, irrevocable, royalty-free license to use, change,
+relicense and sell it under any terms, without asking you again.
