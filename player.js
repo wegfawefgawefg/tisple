@@ -11,7 +11,9 @@
 // has "telemetry" sends anonymous play records (telemetry.js), the bar's STATS button turns
 // them off and on. The sound is stereo, as the Mockingboard is (its first chip left, its
 // second right, the speaker and drives in both); the bar's STEREO button switches it to mono
-// and back, at once, remembered in this browser.
+// and back, at once, remembered in this browser. The bar's - and + set the volume in steps of
+// 10%, the percent between them mutes and unmutes, both remembered in this browser; from 480 px
+// across (a phone held upright has its volume keys, and the bar no room).
 
 "use strict";
 
@@ -31,6 +33,9 @@ const ui = {
     buzz: document.getElementById("buzz"),
     stats: document.getElementById("stats"),
     sound: document.getElementById("sound"),
+    voldown: document.getElementById("voldown"),
+    vol: document.getElementById("vol"),
+    volup: document.getElementById("volup"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -55,7 +60,23 @@ const state = {
     buzz: true,       // a short buzz on each tap (the bar's BUZZ button turns it off)
     diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
     stereo: true,     // the Mockingboard's chips left and right; false: the mono mix in both (the owner, 2026-11-03: stereo by default, a toggle)
+    volume: 100,      // percent, in steps of 10 (the owner, 2026-11-04: -, + and a mute button)
+    muted: false,
+    gain: null,       // GainNode: the sound on its way out
 };
+
+// the volume and mute, kept in this browser when they can be
+const VOLUME_KEY = "tisple.volume";
+const MUTED_KEY = "tisple.muted";
+try {
+    const v = parseInt(localStorage.getItem(VOLUME_KEY), 10);
+    if (v >= 0 && v <= 100) {
+        state.volume = Math.round(v / 10) * 10;
+    }
+    state.muted = localStorage.getItem(MUTED_KEY) === "on";
+} catch (err) {
+    // no storage: full and not muted, as by default
+}
 
 // the stereo setting, kept in this browser when it can be
 const STEREO_KEY = "tisple.stereo";
@@ -95,6 +116,9 @@ const words = {
     buzz: makeLabel("buzz", 2),
     stats: makeLabel("stats", 2),
     sound: makeLabel(state.stereo ? "stereo" : "mono", 2),
+    voldown: makeLabel("-", 2),
+    vol: makeLabel("100%", 2),
+    volup: makeLabel("+", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -298,11 +322,14 @@ async function startAudio() {
     // resume inside the tap itself: after an await, some browsers (Brave) no longer count the
     // gesture and keep the context suspended
     state.audio.resume();
+    state.gain = state.audio.createGain();
+    state.gain.connect(state.audio.destination);
+    showVolume();
     if (state.audio.audioWorklet) {
         const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
         await state.audio.audioWorklet.addModule(url);
         state.worklet = new AudioWorkletNode(state.audio, "feed", { outputChannelCount: [2] });
-        state.worklet.connect(state.audio.destination);
+        state.worklet.connect(state.gain);
         return;
     }
     // plain http (no secure context, no AudioWorklet): the older ScriptProcessor, same queue
@@ -327,7 +354,7 @@ async function startAudio() {
             }
         }
     };
-    node.connect(state.audio.destination);
+    node.connect(state.gain);
     state.worklet = { port: { postMessage: (pcm) => {
         const f = state.fallback;
         f.queue.push(pcm);
@@ -724,6 +751,40 @@ function toggleStereo() {
                            : "mono: all the sound in both ears");
 }
 ui.sound.addEventListener("click", toggleStereo);
+// the volume: the percent's square as the gain, so each step of 10 sounds about as big as the
+// next; muted, the percent shows "mute" dimmed and the gain is 0
+function showVolume() {
+    setLabel(words.vol, state.muted ? "mute" : state.volume + "%");
+    ui.vol.classList.toggle("off", state.muted);
+    ui.voldown.classList.toggle("off", state.volume === 0);
+    ui.volup.classList.toggle("off", state.volume === 100);
+    if (state.gain) {
+        const v = state.muted ? 0 : state.volume / 100;
+        state.gain.gain.setValueAtTime(v * v, state.audio.currentTime);
+    }
+}
+showVolume();
+function keepVolume() {
+    try {
+        localStorage.setItem(VOLUME_KEY, String(state.volume));
+        localStorage.setItem(MUTED_KEY, state.muted ? "on" : "off");
+    } catch (err) {
+        // not kept: this page only
+    }
+}
+function stepVolume(by) {
+    state.volume = Math.max(0, Math.min(100, state.volume + by));
+    state.muted = false;
+    keepVolume();
+    showVolume();
+}
+ui.voldown.addEventListener("click", () => stepVolume(-10));
+ui.volup.addEventListener("click", () => stepVolume(10));
+ui.vol.addEventListener("click", () => {
+    state.muted = !state.muted;
+    keepVolume();
+    showVolume();
+});
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");
     ui.side.classList.toggle("kb", ui.keyboard.classList.contains("open"));

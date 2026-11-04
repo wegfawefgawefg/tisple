@@ -68,6 +68,8 @@ canvas {
 /* the bar's STATS button only where the bar has room for it */
 @media (max-width: 479px) {
     #bar #stats { display: none; }
+    /* a phone held upright has its own volume keys, and no room on the bar for these */
+    #bar #voldown, #bar #vol, #bar #volup { display: none; }
     /* tighter, so the rest fit a phone held upright */
     #bar { gap: 3px; padding: 0 4px; }
     #bar .btn { padding: 0 3px; }
@@ -140,6 +142,9 @@ body.wide.no-pad #side:not(.kb) { display: none; }
     <span class="btn" id="buzz"></span>
     <span class="btn" id="stats" hidden></span>
     <span class="btn" id="sound"></span>
+    <span class="btn" id="voldown"></span>
+    <span class="btn" id="vol"></span>
+    <span class="btn" id="volup"></span>
     <span class="btn" id="look"></span>
     <span class="btn" id="kb"></span>
     <span class="btn" id="send"></span>
