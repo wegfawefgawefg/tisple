@@ -31,7 +31,20 @@ bool PlaceGroupImages(Backend& be, const Program& program, const Layout& layout,
 std::vector<std::int32_t> ItemGroups(std::size_t items, const std::vector<FunctionSpan>& spans,
                                      const RegionSpans& region);
 
-// the overlay copy's writes of $C003 and $C002 (Compiled::aux_switches)
+// the lets :in aux with no value, of kClearedAuxBytes or more, by var id: in a program that
+// runs once with overlay groups the startup clears them (EmitAuxClear) instead of the disk
+// loading their zeros, and they go past the rest of aux memory (LayoutOptions::aux_high)
+constexpr std::uint32_t kClearedAuxBytes = 0x400;
+std::vector<bool> AuxClearedLets(const Program& program);
+
+// the clearing, at label `clear`: each of those lets' bytes zeroed in aux memory (RAMWRT on
+// around each, interrupts off), 11 cycles a byte. Its own span, kAuxClearSpan, at the region
+constexpr const char* kAuxClearSpan = "aux clearing";
+void EmitAuxClear(Backend& be, const std::vector<bool>& cleared, std::int32_t clear,
+                  std::vector<AsmItem>& out);
+
+// the overlay copy's writes of $C003 and $C002 and the aux clearing's of $C005 and $C004
+// (Compiled::aux_switches)
 std::vector<std::uint16_t> OverlayAuxSwitches(const std::vector<AsmItem>& items,
                                               const std::vector<FunctionSpan>& spans);
 

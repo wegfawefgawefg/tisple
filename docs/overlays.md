@@ -240,7 +240,9 @@ link's part); BuildOptions::use_overlays.
   (BuildOptions::runs_once), and no group is in the region before main starts, so the
   zero-page image, which only the startup reads, is laid out at the region's start and loads
   there with the program (RegionSpans::boot): its bytes cost nothing resident. Catwiz: 107
-  bytes of the card. lib/auxmem's guard keeps its 108 bytes in aux memory the same way (the
+  bytes of the card. The startup's clearing of big lets `:in aux` with no value waits there
+  too (link_overlay.hpp EmitAuxClear; docs/disks.md): a JSR of the startup's is all it
+  costs resident. lib/auxmem's guard keeps its 108 bytes in aux memory the same way (the
   install reads them once with `auxmem.read`, interrupts off), not in the card.
 - **Stubs.** `ov.r: JMP ov.r.load` for each root r, which the load points at r while its
   group is in: 3 cycles a call. The stubs are one block of JMPs, in group order.

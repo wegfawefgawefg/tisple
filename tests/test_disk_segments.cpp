@@ -389,8 +389,36 @@ void TestTenSegmentLoader(TestResults& results) {
 
 } // namespace
 
+// main memory's segments one after another that take fewer tracks as one: $0B00-$13FF, lib/disk's
+// reader's place and the homes at $1C00 and $1E00 load as one segment of 21 pages in 2 tracks,
+// zeros over what is between them; $6000 stays apart (it would take more tracks)
+void TestSegmentsMergedForTracks(TestResults& results) {
+    std::vector<MemorySegment> segments;
+    segments.push_back(Noise(MemoryBank::kMain, 0x6000, 0x0100, 5));
+    segments[0].bytes[0] = 0x60; // RTS at the entry
+    segments.push_back(Noise(MemoryBank::kMain, 0x0B00, 0x0900, 6));
+    segments.push_back(Noise(MemoryBank::kMain, 0x1700, 0x0500, 7));
+    segments.push_back(Noise(MemoryBank::kMain, 0x1C00, 0x0200, 8));
+    segments.push_back(Noise(MemoryBank::kMain, 0x1E00, 0x0156, 9));
+    auto disk = std::make_unique<tisple::DiskSectors>();
+    tisple::BootDiskInfo info;
+    std::string error;
+    CHECK(results, tisple::MakeBootDisk(segments, 0x6000, *disk, info, error));
+    CHECK(results, info.segments == 2 && info.last_track == 3);
+    std::unique_ptr<tisple::Apple2> a = MachineWithDisk(*disk);
+    a->cpu.mem[0x1400] = 0xAA;
+    a->cpu.mem[0x16FF] = 0xAA;
+    BootToStop(*a, info.return_pc);
+    CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    for (const MemorySegment& s : segments) {
+        CHECK(results, Loaded(*a, s));
+    }
+    CHECK(results, a->cpu.mem[0x1400] == 0 && a->cpu.mem[0x16FF] == 0);
+}
+
 void RunDiskSegmentTests(TestResults& results) {
     TestSegmentsBoot(results);
+    TestSegmentsMergedForTracks(results);
     TestBank1Boot(results);
     TestCompiledRegionsBoot(results, 0);
     TestCompiledRegionsBoot(results, 1);

@@ -174,9 +174,11 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
         for (std::uint32_t size : group_size) {
             region->size = std::max(region->size, size);
         }
-        if (region->boot < spans.size()) {
-            region->size = std::max(region->size, SpanSize(items, spans[region->boot]));
+        std::uint32_t boot = 0;
+        for (std::size_t s = region->boot; s < region->boot_end && s < spans.size(); s++) {
+            boot += SpanSize(items, spans[s]);
         }
+        region->size = std::max(region->size, boot);
     }
     std::uint32_t after = region != nullptr ? region->size : 0;
     // the last span placed in order has the region and the frames after it (an early span is
@@ -213,9 +215,11 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
             at[g] += SpanSize(items, spans[s]);
         }
         last = groups_end;
-        if (region->boot < spans.size()) {
-            places[region->boot] = CodePlace{stretches.size() + group_size.size(), region->at};
-            last = region->boot + 1;
+        std::uint32_t boot_at = region->at;
+        for (std::size_t s = region->boot; s < region->boot_end && s < spans.size(); s++) {
+            places[s] = CodePlace{stretches.size() + group_size.size(), boot_at};
+            boot_at += SpanSize(items, spans[s]);
+            last = s + 1;
         }
     }
     frames_at = pc;
