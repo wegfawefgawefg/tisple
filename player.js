@@ -7,7 +7,11 @@
 // games button goes back to the picker. The buttons, the bar's letters and the layout are
 // pad.js's. The disk button turns the drives' sound on and off (remembered in this browser),
 // off until it is pressed (the owner, 2026-10-31: opt in): on, a disk loads at the Apple's
-// speed and sounds like a Disk II; off, it loads flat out and silent.
+// speed and sounds like a Disk II; off, it loads flat out and silent. A game whose game.json
+// has "telemetry" sends anonymous play records (telemetry.js), the bar's STATS button turns
+// them off and on. The sound is stereo, as the Mockingboard is (its first chip left, its
+// second right, the speaker and drives in both); the bar's STEREO button switches it to mono
+// and back, at once, remembered in this browser.
 
 "use strict";
 
@@ -25,6 +29,8 @@ const ui = {
     look: document.getElementById("look"),
     disk: document.getElementById("disk"),
     buzz: document.getElementById("buzz"),
+    stats: document.getElementById("stats"),
+    sound: document.getElementById("sound"),
     kb: document.getElementById("kb"),
     send: document.getElementById("send"),
     games: document.getElementById("games"),
@@ -48,7 +54,16 @@ const state = {
     logs: true,       // false on a static site: nowhere to post them
     buzz: true,       // a short buzz on each tap (the bar's BUZZ button turns it off)
     diskSound: true, // the drives' sound, and loading at the Apple's speed to hear it (on by default: the owner, 2026-11-01)
+    stereo: true,     // the Mockingboard's chips left and right; false: the mono mix in both (the owner, 2026-11-03: stereo by default, a toggle)
 };
+
+// the stereo setting, kept in this browser when it can be
+const STEREO_KEY = "tisple.stereo";
+try {
+    state.stereo = localStorage.getItem(STEREO_KEY) !== "mono";
+} catch (err) {
+    // no storage: stereo, as by default
+}
 
 // the disk button's setting, kept in this browser when it can be
 const DISK_SOUND_KEY = "tisple.diskSound";
@@ -78,6 +93,8 @@ const words = {
     look: makeLabel(LOOKS[0], 2),
     disk: makeLabel("disk", 2),
     buzz: makeLabel("buzz", 2),
+    stats: makeLabel("stats", 2),
+    sound: makeLabel(state.stereo ? "stereo" : "mono", 2),
     kb: makeLabel("abc", 2),
     send: makeLabel("send log", 2),
     games: makeLabel("games", 2),
@@ -87,6 +104,11 @@ const words = {
 for (const key of Object.keys(words)) {
     ui[key].appendChild(words[key]);
 }
+// on a phone held upright the bar has room for "log", not "send log" (index.html: .long, .short)
+words.send.classList.add("long");
+const sendNarrow = makeLabel("log", 2);
+sendNarrow.classList.add("short");
+ui.send.appendChild(sendNarrow);
 
 function setStatus(text) {
     setLabel(words.status, text);
@@ -226,7 +248,8 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", () => release());
 
-// sound: an AudioWorklet plays a queue of samples the machine made
+// sound: an AudioWorklet plays a queue of stereo frames the machine made, each chunk its
+// samples interleaved left, right (player.cpp tp_run; in mono both are the same)
 
 const WORKLET = `
 class Feed extends AudioWorkletProcessor {
@@ -238,8 +261,9 @@ class Feed extends AudioWorkletProcessor {
             this.queue.push(e.data);
             let total = -this.offset;
             for (const q of this.queue) total += q.length;
-            // more than 0.25 s behind: drop the oldest so sound stays with the picture
-            while (total > 11025 && this.queue.length > 1) {
+            // more than 0.25 s behind (in samples, two a frame): drop the oldest so sound
+            // stays with the picture
+            while (total > 22050 && this.queue.length > 1) {
                 total -= this.queue[0].length - this.offset;
                 this.queue.shift();
                 this.offset = 0;
@@ -247,14 +271,17 @@ class Feed extends AudioWorkletProcessor {
         };
     }
     process(inputs, outputs) {
-        const out = outputs[0][0];
-        for (let i = 0; i < out.length; i++) {
+        const left = outputs[0][0];
+        const right = outputs[0][1] || left;
+        for (let i = 0; i < left.length; i++) {
             if (this.queue.length === 0) {
-                out[i] = 0;
+                left[i] = right[i] = 0;
                 continue;
             }
             const q = this.queue[0];
-            out[i] = q[this.offset++];
+            left[i] = q[this.offset];
+            right[i] = q[this.offset + 1];
+            this.offset += 2;
             if (this.offset >= q.length) {
                 this.queue.shift();
                 this.offset = 0;
@@ -274,23 +301,27 @@ async function startAudio() {
     if (state.audio.audioWorklet) {
         const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
         await state.audio.audioWorklet.addModule(url);
-        state.worklet = new AudioWorkletNode(state.audio, "feed");
+        state.worklet = new AudioWorkletNode(state.audio, "feed", { outputChannelCount: [2] });
         state.worklet.connect(state.audio.destination);
         return;
     }
     // plain http (no secure context, no AudioWorklet): the older ScriptProcessor, same queue
     state.fallback = { queue: [], offset: 0 };
-    const node = state.audio.createScriptProcessor(1024, 0, 1);
+    const node = state.audio.createScriptProcessor(1024, 0, 2);
     node.onaudioprocess = (e) => {
-        const out = e.outputBuffer.getChannelData(0);
+        const left = e.outputBuffer.getChannelData(0);
+        const right = e.outputBuffer.getChannelData(1);
         const f = state.fallback;
-        for (let i = 0; i < out.length; i++) {
+        for (let i = 0; i < left.length; i++) {
             if (f.queue.length === 0) {
-                out[i] = 0;
+                left[i] = right[i] = 0;
                 continue;
             }
-            out[i] = f.queue[0][f.offset++];
-            if (f.offset >= f.queue[0].length) {
+            const q = f.queue[0];
+            left[i] = q[f.offset];
+            right[i] = q[f.offset + 1];
+            f.offset += 2;
+            if (f.offset >= q.length) {
                 f.queue.shift();
                 f.offset = 0;
             }
@@ -302,7 +333,7 @@ async function startAudio() {
         f.queue.push(pcm);
         let total = -f.offset;
         for (const q of f.queue) total += q.length;
-        while (total > 11025 && f.queue.length > 1) {
+        while (total > 22050 && f.queue.length > 1) {
             total -= f.queue[0].length - f.offset;
             f.queue.shift();
             f.offset = 0;
@@ -320,13 +351,14 @@ async function startAudioOrNot() {
     }
 }
 
+// count stereo frames: twice as many samples, left and right
 function sendSamples(count) {
     if (!state.worklet || count === 0) {
         return;
     }
     const ptr = state.m._tp_samples() >> 1;
-    const pcm = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
+    const pcm = new Float32Array(count * 2);
+    for (let i = 0; i < count * 2; i++) {
         pcm[i] = state.m.HEAP16[ptr + i] / 32768;
     }
     state.worklet.port.postMessage(pcm, [pcm.buffer]);
@@ -429,9 +461,9 @@ function draw() {
     ctx2d.putImageData(image, 0, 0);
 }
 
-// the game's state for the pad (pad.js padFollow): its memory once it is running, which is
-// once its first bytes are in memory and the disk has stopped after the boot; until the
-// bytes change again (a reboot)
+// the game's state for the pad (pad.js padFollow) and the play records (telemetry.js): its
+// memory once it is running, which is once its first bytes are in memory and the disk has
+// stopped after the boot; until the bytes change again (a reboot)
 let gameRunning = false;
 
 function readRam(address, aux) {
@@ -440,7 +472,7 @@ function readRam(address, aux) {
 
 function followGame() {
     const check = state.game.check;
-    if (!check || !pad.follows) {
+    if (!check || !(pad.follows || tel.events.length)) {
         return;
     }
     let loaded = true;
@@ -452,7 +484,10 @@ function followGame() {
     } else if (!state.m._tp_disk_busy()) {
         gameRunning = true;
     }
-    padFollow(gameRunning ? readRam : null);
+    if (pad.follows) {
+        padFollow(gameRunning ? readRam : null);
+    }
+    telemetryFrame(gameRunning ? readRam : null);
 }
 
 function tick(now) {
@@ -547,6 +582,11 @@ async function boot() {
     }
     document.title = state.game.title || name;
     padSetup(state.game, press, release);
+    const telemetry = telemetrySetup(state.game, {
+        game: name, build: state.game.version, where: index.static ? "pages" : "phone",
+        cycles: () => (state.m ? state.m._tp_cycles() : 0), hz: CPU_HZ });
+    ui.stats.hidden = !telemetry;
+    showStats();
     const fetchDisk = async (file) =>
         new Uint8Array(await (await fetch("games/" + name + "/" + file,
                                           { cache: "no-store" })).arrayBuffer());
@@ -572,6 +612,7 @@ async function boot() {
         setStatus("no mouse: the mockingboard is in its slot 4");
     }
     showDiskSound();
+    showStereo();
     setStatus(state.game.version ? "build " + state.game.version : "");
     requestAnimationFrame(tick);
     // ?autostart: run without the tap and without sound (headless checks)
@@ -579,6 +620,7 @@ async function boot() {
         ui.start.style.display = "none";
         state.last = performance.now();
         state.running = true;
+        telemetryOpen();
     }
 }
 
@@ -607,6 +649,7 @@ ui.start.addEventListener("pointerdown", async () => {
     await startAudioOrNot();
     state.last = performance.now();
     state.running = true;
+    telemetryOpen();
 });
 ui.look.addEventListener("click", () => {
     state.look = (state.look + 1) % LOOKS.length;
@@ -643,6 +686,44 @@ ui.buzz.addEventListener("click", () => {
     showBuzz();
     setStatus(state.buzz ? "buzz on: taps buzz" : "buzz off: taps are silent");
 });
+// the STATS button: anonymous play records on or off (telemetry.js), from 480 px across (the
+// owner, 2026-11-03: anonymous game-improvement data, nothing on the start's tap about it)
+function showStats() {
+    const t = telemetryShown();
+    ui.stats.classList.toggle("off", !t.on);
+}
+function toggleStats() {
+    const t = telemetryShown();
+    if (t.blocked) {
+        setStatus("play stats off: the browser asks for " + t.blocked);
+        return;
+    }
+    const on = telemetrySet(!t.on);
+    showStats();
+    setStatus(on ? "play stats on: anonymous, how far runs get" : "play stats off: nothing is sent");
+}
+ui.stats.addEventListener("click", toggleStats);
+// stereo or mono: the bar's button, at every width; it switches at once, while the game plays too
+function showStereo() {
+    setLabel(words.sound, state.stereo ? "stereo" : "mono");
+    ui.sound.classList.toggle("off", !state.stereo);
+    if (state.m) {
+        state.m._tp_stereo(state.stereo ? 1 : 0);
+    }
+}
+showStereo();
+function toggleStereo() {
+    state.stereo = !state.stereo;
+    try {
+        localStorage.setItem(STEREO_KEY, state.stereo ? "stereo" : "mono");
+    } catch (err) {
+        // not kept: this page only
+    }
+    showStereo();
+    setStatus(state.stereo ? "stereo: the mockingboard's chips left and right"
+                           : "mono: all the sound in both ears");
+}
+ui.sound.addEventListener("click", toggleStereo);
 ui.kb.addEventListener("click", () => {
     ui.keyboard.classList.toggle("open");
     ui.side.classList.toggle("kb", ui.keyboard.classList.contains("open"));

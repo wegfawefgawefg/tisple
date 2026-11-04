@@ -135,6 +135,40 @@ function compileCondition(text, game, named) {
     return e;
 }
 
+// the config's "names" compiled as they are used (each once), for compileCondition's named:
+// a name that uses itself throws
+function conditionNames(game) {
+    const done = {};
+    const busy = {};
+    const named = (name) => {
+        if (!done[name]) {
+            if (busy[name]) {
+                throw new Error("the name " + name + " uses itself");
+            }
+            busy[name] = true;
+            done[name] = compileCondition(game.names[name], game, named);
+        }
+        const e = done[name];
+        return (read) => e(read);
+    };
+    return named;
+}
+
+// a value to report (telemetry.js): a var named alone with more than one element reads as the
+// list of them all (state.items), anything else as a condition's number
+function compileField(text, game, named) {
+    const v = game.vars && game.vars[text];
+    if (v && (v.count || 1) > 1) {
+        const reads = [];
+        for (let i = 0; i < v.count; i++) {
+            reads.push(varRead(v, () => i));
+        }
+        return (read) => reads.map((r) => r(read));
+    }
+    return compileCondition(text, game, named);
+}
+
 if (typeof module !== "undefined") {
-    module.exports = { compileCondition, condTokens }; // node, for the tests (tests/web)
+    // node, for checks: node -e 'const c = require("./web/conditions.js")'
+    module.exports = { compileCondition, compileField, conditionNames, condTokens };
 }

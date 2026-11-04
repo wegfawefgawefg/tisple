@@ -238,11 +238,143 @@
   "turns": "battle && (state.page == state.Page.bag || state.page == state.Page.rules)",
   "foes": "state.actors.alive[1] + state.actors.alive[2] + state.actors.alive[3]",
   "over": "battle && (state.page == state.Page.won || (state.page == state.Page.none && state.phase == state.Phase.lost && state.timer > 56))",
-  "picking": "state.picked != 255 || state.pick == state.Pick.nap_slot"
+  "picking": "state.picked != 255 || state.pick == state.Pick.rest",
+  "in_fight": "battle && (state.phase == state.Phase.rolling || state.phase == state.Phase.player || state.phase == state.Phase.acting || state.phase == state.Phase.enemies)",
+  "fight_over": "battle && (state.phase == state.Phase.won || state.phase == state.Phase.lost)",
+  "run_over": "battle && (state.page == state.Page.won || state.phase == state.Phase.lost)",
+  "choosing": "battle && state.phase == state.Phase.reward && !battle/reward.fresh"
+ },
+ "telemetry": {
+  "endpoint": "https://45.77.123.14/catwiz-telemetry",
+  "fields": {
+   "screen": "state.screen",
+   "phase": "state.phase",
+   "page": "state.page",
+   "stage": "state.stage",
+   "fight": "state.fight",
+   "next_fight": "state.next_fight",
+   "turn": "state.turn",
+   "hp": "state.actors.hp[0]",
+   "hp_kept": "state.hero_hp",
+   "hp_most": "state.hero_max",
+   "kinds": "state.actors.kind",
+   "alive": "state.actors.alive",
+   "hps": "state.actors.hp",
+   "won": "state.phase == state.Phase.won",
+   "run_won": "state.page == state.Page.won",
+   "items": "state.items",
+   "levels": "state.levels",
+   "charms": "state.charms",
+   "step": "state.pick",
+   "picked": "state.picked",
+   "choices": "battle/reward.choices",
+   "offer": "battle/reward.choice",
+   "offer_slot": "battle/reward.choice_slot"
+  },
+  "events": [
+   {
+    "name": "title",
+    "when": "state.screen == state.Screen.title"
+   },
+   {
+    "name": "run_start",
+    "when": "battle"
+   },
+   {
+    "name": "fight_start",
+    "when": "in_fight",
+    "fields": [
+     "stage",
+     "fight",
+     "turn",
+     "hp",
+     "hp_most",
+     "kinds",
+     "alive",
+     "hps"
+    ]
+   },
+   {
+    "name": "fight_end",
+    "when": "fight_over",
+    "fields": [
+     "won",
+     "stage",
+     "fight",
+     "turn",
+     "hp",
+     "hp_most",
+     "kinds",
+     "alive",
+     "hps"
+    ]
+   },
+   {
+    "name": "pick",
+    "change": [
+     "choosing",
+     "state.pick"
+    ],
+    "was": "choosing",
+    "entry": [
+     "hp_kept",
+     "hp_most",
+     "items",
+     "levels",
+     "charms"
+    ],
+    "before": [
+     "step",
+     "picked",
+     "choices",
+     "offer",
+     "offer_slot"
+    ],
+    "fields": [
+     "step",
+     "stage",
+     "fight",
+     "next_fight",
+     "hp_kept",
+     "hp_most",
+     "items",
+     "levels",
+     "charms"
+    ]
+   },
+   {
+    "name": "run_end",
+    "when": "run_over",
+    "fields": [
+     "run_won",
+     "stage",
+     "fight",
+     "turn",
+     "hp",
+     "hp_most",
+     "kinds",
+     "alive",
+     "hps",
+     "items",
+     "levels",
+     "charms"
+    ]
+   }
+  ],
+  "quit": [
+   "screen",
+   "phase",
+   "page",
+   "step",
+   "stage",
+   "fight",
+   "turn",
+   "hp"
+  ]
  },
  "vars": {
   "state.screen": {
-   "at": 4,
+   "at": 3,
    "bytes": 1
   },
   "state.page": {
@@ -254,7 +386,7 @@
    "bytes": 1
   },
   "state.act_source": {
-   "at": 210,
+   "at": 209,
    "bytes": 1
   },
   "state.actors.alive": {
@@ -264,15 +396,19 @@
    "step": 1
   },
   "state.timer": {
-   "at": 204,
+   "at": 203,
    "bytes": 1
   },
   "state.picked": {
-   "at": 65414,
+   "at": 208,
    "bytes": 1
   },
   "state.pick": {
-   "at": 209,
+   "at": 207,
+   "bytes": 1
+  },
+  "battle/reward.fresh": {
+   "at": 65468,
    "bytes": 1
   },
   "state.selected": {
@@ -280,7 +416,7 @@
    "bytes": 1
   },
   "state.looked": {
-   "at": 208,
+   "at": 206,
    "bytes": 1
   },
   "state.rerolls": {
@@ -304,8 +440,74 @@
    "step": 1
   },
   "battle/reward.choices": {
-   "at": 235,
+   "at": 237,
    "bytes": 1
+  },
+  "state.stage": {
+   "at": 7,
+   "bytes": 1
+  },
+  "state.fight": {
+   "at": 204,
+   "bytes": 1
+  },
+  "state.turn": {
+   "at": 65439,
+   "bytes": 1
+  },
+  "state.actors.hp": {
+   "at": 1676,
+   "bytes": 1,
+   "count": 4,
+   "step": 1
+  },
+  "state.hero_max": {
+   "at": 65430,
+   "bytes": 1
+  },
+  "state.actors.kind": {
+   "at": 1668,
+   "bytes": 1,
+   "count": 4,
+   "step": 1
+  },
+  "state.next_fight": {
+   "at": 65428,
+   "bytes": 1
+  },
+  "state.hero_hp": {
+   "at": 65429,
+   "bytes": 1
+  },
+  "state.items": {
+   "at": 768,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
+  },
+  "state.levels": {
+   "at": 774,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
+  },
+  "state.charms": {
+   "at": 780,
+   "bytes": 1,
+   "count": 4,
+   "step": 1
+  },
+  "battle/reward.choice": {
+   "at": 1756,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
+  },
+  "battle/reward.choice_slot": {
+   "at": 65319,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
   }
  },
  "enums": {
@@ -321,8 +523,9 @@
   "state.Page.bag": 1,
   "state.Page.rules": 2,
   "state.Phase.lost": 5,
-  "state.Pick.nap_slot": 3,
-  "state.Pick.door": 4,
+  "state.Pick.rest": 2,
+  "state.Phase.won": 4,
+  "state.Pick.door": 3,
   "state.Screen.title": 0
  },
  "check": {
@@ -338,15 +541,15 @@
    131,
    192,
    162,
-   40,
+   41,
    189,
-   91,
-   231,
+   242,
+   230,
    157,
-   201
+   200
   ]
  },
- "disk": "disk-dcfc3bc2.dsk",
- "version": "dcfc3bc2",
- "disk2": "disk2-62307070.dsk"
+ "disk": "disk-425b9db1.dsk",
+ "version": "425b9db1",
+ "disk2": "disk2-4f49dd63.dsk"
 }
