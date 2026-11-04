@@ -727,7 +727,7 @@ function toggleStats() {
     }
     const on = telemetrySet(!t.on);
     showStats();
-    setStatus(on ? "play stats on: anonymous, how far runs get" : "play stats off: nothing is sent");
+    setStatus(on ? "play stats on: anonymous, how runs go and what is played" : "play stats off: nothing is sent");
 }
 ui.stats.addEventListener("click", toggleStats);
 // stereo or mono: the bar's button, at every width; it switches at once, while the game plays too
