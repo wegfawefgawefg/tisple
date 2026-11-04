@@ -108,8 +108,8 @@ enum class VarKind : std::uint8_t {
     Local,
 };
 
-// :address, :align, :boundary and :in aux on a top-level let or const table, :reserve on a
-// let, :on disk, :interleave and :strings aux on a const table; 0 means not given
+// :address, :align, :boundary, :in aux and :in bank1 on a top-level let or const table, :reserve on
+// a let, :on disk, :interleave and :strings aux on a const table; 0 means not given
 struct Placement {
     bool has_address = false;
     std::uint16_t address = 0;
@@ -119,6 +119,10 @@ struct Placement {
     // by name where RAMRD is surely on (check/aux_rules.cpp). The string tables a const :in aux
     // and a :strings aux one have are in_aux too
     bool in_aux = false;
+    // :in bank1: a let with no value in the language card's bank 1 ($D000-$DFFF), which the
+    // link places at the bank's top, below its code's room; reached through pointers with bank
+    // 1 switched in (docs/language.md, Placement)
+    bool in_bank1 = false;
     bool strings_aux = false; // :strings aux: the strings written in a const table's value
     bool reserve = false;     // :reserve: memory the program reaches by address; not a variable
     bool on_disk = false;     // :on disk: the bytes live on the boot disk; the var is their record

@@ -2,6 +2,7 @@
 
 #include "backend/card_bank.hpp"
 
+#include "backend/card_data.hpp"
 #include "backend/frames.hpp"
 #include "backend/irq.hpp"
 
@@ -90,7 +91,9 @@ void ScanItem(Scan& s, std::size_t f, const AsmItem& item) {
         bool absolute =
             item.kind == ItemKind::Ins && (item.mode == Mode::Abs || item.mode == Mode::AbsX ||
                                            item.mode == Mode::AbsY || item.mode == Mode::Ind);
-        if (code || (absolute && address >= kBank1Start && address < kBank1End)) {
+        // (and a switch of the card's own: it would switch its own code out, card_data.hpp)
+        if (code || (absolute && address >= kBank1Start && address < kBank1End) ||
+            SwitchesCard(item)) {
             Bar(s, self);
         }
         return;
@@ -181,10 +184,15 @@ Bank1Facts FindBank1Facts(const Backend& be, const std::vector<bool>& kept,
     s.barred.assign(count, false);
     s.facts = &facts;
     std::vector<bool> handler = HandlerFunctions(program);
+    // code that may run with bank 1 switched in by the program itself (card_data.hpp)
+    std::vector<bool> switched = CardSwitchers(be, kept, runtime);
     for (std::size_t f = 0; f < count; f++) {
         const Function& fn = program.functions[f];
         bool entry = std::find(be.entries.begin(), be.entries.end(),
                                static_cast<std::int32_t>(f)) != be.entries.end();
+        if (switched[f]) {
+            s.barred[f] = true;
+        }
         // code that runs with the aux switches on stays where both memories have it
         bool aux = IsAuxFunction(be.aux, static_cast<std::int32_t>(f));
         // code in an overlay group runs in the overlay region

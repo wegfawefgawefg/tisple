@@ -315,3 +315,24 @@ Not built: images on the boot disk, data only a
 group reads in its image (Catwiz: 190 bytes), a region in bank 1, and a name on `:overlay`
 to put marked roots in one group (the fight's phases as one group would need 10 KB of aux
 memory Catwiz does not have).
+
+## Built: data in bank 1, and code that switches the card (2026-11-04)
+
+src/backend/card_data.cpp. For Catwiz's songs (main memory full, bank 1 with 1.8 KB free).
+
+- **Lets `:in bank1`** (no value) take the bank's top, the first declared lowest; bank 1's code
+  stretch ends below them, and the choice of bank 1 functions counts only the room they leave
+  (LinkBank1: a candidate fits by its real bytes, and with lets there the three counts under the
+  most are tried before the probes, since the most may not fit the shorter bank). The startup
+  and the disk never write them; a program with them always links with the card.
+- **Card switchers**: a function whose own code has an absolute `$C080-$C08F` operand (`$C080,X`
+  is a slot's I/O and does not count), plus every function called from its code between a read
+  of `$C088-$C08F` and the next of `$C080-$C087`, plus what those call (FindCardSwitching; calls
+  of the runtime there put the runtime with them). That code goes right after the startup with
+  the bank stubs and the interrupt entry (Bank1Resident checks they and the frames are out of
+  `$D000-$DFFF`), is barred from bank 1 and overlay groups, and the variables it names are
+  avoiders. Such a program, or one with lets in bank 1, has the banked interrupt entry even
+  with no code in bank 1.
+- Catwiz (2026-11-04): the songs' 1,790 bytes in bank 1, code there as before (15 functions,
+  2,241 bytes, about 92,020 cycles a run); the handler, lib/disk's `read_card_with` (in
+  `meter.read_as`) and `waiting.start` are the switched code.
