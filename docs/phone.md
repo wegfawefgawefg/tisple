@@ -16,6 +16,10 @@ key presses.
   switches to the mono mix in both ears and back, at once, while the game plays too; the
   browser remembers it (`tisple.stereo`). Nothing about it on the start's tap (the owner,
   2026-11-03: not dead centre on the title).
+- The volume (the owner, 2026-11-04): the bar's `-` and `+` in steps of 10%, the percent
+  between them mutes (it reads `mute`, dim) and unmutes; the gain is the percent squared, so
+  each step sounds about as big. Remembered (`tisple.volume`, `tisple.muted`). From 480 px
+  across only: a phone held upright has its volume keys, and its bar no room.
 
 - `web/build.sh`: needs Emscripten (`source <emsdk>/emsdk_env.sh`); builds `web/dist`.
 - `web/publish.py NAME DISK CONFIG`: puts a disk in `~/.local/share/tisple/phone/games`
