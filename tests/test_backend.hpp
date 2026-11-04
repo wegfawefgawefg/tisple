@@ -86,6 +86,7 @@ void RunMockingboardLineTests(TestResults& results);
 void RunMockingboardAuxTests(TestResults& results);
 // lib/mockingboard_bends: vibrato, glide, slides and detune (test_mockingboard_bends.cpp)
 void RunMockingboardBendsTests(TestResults& results);
+void RunMockingboardBendsSmallTests(TestResults& results);
 // lib/mockingboard's fade: the music down and stopped, the next song in
 // (test_mockingboard_fade.cpp)
 void RunMockingboardFadeTests(TestResults& results);

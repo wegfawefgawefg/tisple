@@ -33,6 +33,7 @@
 
 (import apple2 a2)
 (import mockingboard_bends bends)
+(import mockingboard_bends_small bends_small)
 (import mockingboard_player player)
 (import mockingboard_song tune)
 (import random)
@@ -345,6 +346,14 @@
 
 (fn service_bends_bank1 () void
     (bends.tick_bank1))
+
+; service_bends' smaller place (lib/mockingboard_bends_small): w, p and t as service_bends plays
+; them, no s (its notes hold their pitch)
+(fn service_bends_small () void
+    (bends_small.tick))
+
+(fn service_bends_small_bank1 () void
+    (bends_small.tick_bank1))
 
 ; the timer and its interrupts off, every voice quiet
 (fn off () void

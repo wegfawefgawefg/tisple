@@ -64,6 +64,7 @@ int main() {
             tisple_tests::RunMockingboardLineTests(results);
             tisple_tests::RunMockingboardAuxTests(results);
             tisple_tests::RunMockingboardBendsTests(results);
+            tisple_tests::RunMockingboardBendsSmallTests(results);
             tisple_tests::RunMockingboardFadeTests(results);
             tisple_tests::RunBank1DataTests(results);
         } else if (std::strcmp(group, "unpack") == 0) {
@@ -169,6 +170,7 @@ int main() {
     tisple_tests::RunMockingboardLineTests(results);
     tisple_tests::RunMockingboardAuxTests(results);
     tisple_tests::RunMockingboardBendsTests(results);
+    tisple_tests::RunMockingboardBendsSmallTests(results);
     tisple_tests::RunMockingboardFadeTests(results);
     tisple_tests::RunTextDemoTests(results);
     tisple_tests::RunUnpackLibTests(results);

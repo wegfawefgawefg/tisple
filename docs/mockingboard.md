@@ -234,6 +234,30 @@ their bytes as other commands. A program calls one or the other.
   note start that works out steps: a 7-step shift loop, 16-bit work and the
   first write). The test song with all four on: 831 on average, 6455 at most.
 
+### The smaller player: w, p and t
+
+Added 2026-11-04 for Catwiz's rest song (a_waltz_vib), lib/mockingboard_bends_small:
+`(mb.service_bends_small)` or `(mb.service_bends_small_bank1)` in the handler plays w, p and t
+exactly as `service_bends` does, the same periods on the same ticks, and reads an `s` without
+playing it (the note holds its pitch). tests/test_mockingboard_bends_small.cpp plays a song with
+a_waltz_vib's tune doubled a unit apart, its late vibrato and its glide, every depth, speed and
+glide speed and detunes both ways (720 ticks), and an effect with them, through both players and
+compares every voice's period, volume and mixer tick for tick.
+
+- What it leaves out of the bends: the slide (no goal at the ends of the periods), the detune
+  as a word (t's -64 to 64 is its low byte, signed), one shift loop for both of a note's steps
+  (one loop for each instead), the period's own register writes (`player.out`, which writes the
+  same registers: the volume and mixer it also looks at have not changed), and the glide's two
+  ways (its stride is signed, toward 0, and stops where off changes sign).
+- Bytes: the test's song 4960 with `service_bends`, 4704 with `service_bends_small`. At the
+  tightest size budget (squeeze 10) the handler's code is 1,513 bytes against the plain
+  player's 786 (`service` 229, `events` 557) and the bends' 1,600: about 730 bytes more than the
+  plain player, the bends' about 815. The lets are 105 bytes (the bends' 112).
+- In Catwiz (2026-11-04) it does not fit either: main memory and the card had about 120 bytes
+  free and it needs about 850 more of code and frames (the build's fit notes, at 17 functions
+  in bank 1) and its lets. Built for the 65C02 (954 bytes smaller) with its lets moved by hand to
+  free scratch, Catwiz fits with it at 17 functions in bank 1 (12 without it).
+
 ## Fades
 
 Added 2026-11-03 for Catwiz's song changes: the song before fades out, the
@@ -467,6 +491,5 @@ runs at about 212x; with `--wav` the two AYs' synthesis brings it to about
   frame, so the bends' unreached functions take 6-20 bytes of a small
   program's memory (Pitch that moves). Leaving them out would follow the lets'
   rule, in src/backend/frames.cpp.
-- The bends in Catwiz: about 950 bytes it does not have. Smaller would mean
-  fewer 16-bit steps (an 8-bit stride, the vibrato's amount kept as it is) or
-  dropping glide or detune.
+- The bends in Catwiz: about 950 bytes it does not have; the smaller player (w, p and t, no s)
+  about 850 and its lets (The smaller player, above).
