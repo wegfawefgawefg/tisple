@@ -269,7 +269,17 @@
    "picked": "state.picked",
    "choices": "battle/reward.choices",
    "offer": "battle/reward.choice",
-   "offer_slot": "battle/reward.choice_slot"
+   "offer_slot": "battle/reward.choice_slot",
+   "dice": "state.hand",
+   "faces": "state.face_of",
+   "dice_n": "state.dice_n",
+   "rerolls": "state.rerolls",
+   "acting": "state.phase == state.Phase.acting",
+   "source": "state.act_source",
+   "row": "state.act_row",
+   "by": "state.act_by",
+   "on": "state.act_on",
+   "intents": "state.actors.move"
   },
   "events": [
    {
@@ -292,6 +302,45 @@
      "kinds",
      "alive",
      "hps"
+    ]
+   },
+   {
+    "name": "roll",
+    "change": "state.phase == state.Phase.rolling",
+    "was": "state.phase == state.Phase.rolling",
+    "fields": [
+     "fight",
+     "turn",
+     "dice_n",
+     "dice",
+     "faces",
+     "rerolls",
+     "hp",
+     "hps",
+     "intents"
+    ]
+   },
+   {
+    "name": "act",
+    "change": [
+     "state.phase == state.Phase.acting",
+     "state.act_source",
+     "state.act_row",
+     "state.act_by",
+     "state.act_on"
+    ],
+    "was": "in_fight",
+    "fields": [
+     "acting",
+     "source",
+     "row",
+     "by",
+     "on",
+     "fight",
+     "turn",
+     "hp",
+     "hps",
+     "alive"
     ]
    },
    {
@@ -443,6 +492,18 @@
    "at": 237,
    "bytes": 1
   },
+  "state.act_row": {
+   "at": 65440,
+   "bytes": 1
+  },
+  "state.act_by": {
+   "at": 1784,
+   "bytes": 1
+  },
+  "state.act_on": {
+   "at": 1785,
+   "bytes": 1
+  },
   "state.stage": {
    "at": 7,
    "bytes": 1
@@ -467,6 +528,24 @@
   },
   "state.actors.kind": {
    "at": 1668,
+   "bytes": 1,
+   "count": 4,
+   "step": 1
+  },
+  "state.hand": {
+   "at": 822,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
+  },
+  "state.face_of": {
+   "at": 816,
+   "bytes": 1,
+   "count": 6,
+   "step": 1
+  },
+  "state.actors.move": {
+   "at": 1696,
    "bytes": 1,
    "count": 4,
    "step": 1
