@@ -53,7 +53,15 @@ tisple disk new|list|put|get|delete IMAGE ...           # DOS 3.3 files
   (2026-10-30: two reserved rows of text page 2 split page `$0B` in three, and
   each load cleared the others' bytes there); segments whose bytes overlap are an
   error. Aux memory's pieces less than 4 pages apart, from `$0800` up, are one
-  segment already (2026-10-31, docs/language.md, Memory map). The rest of the disk
+  segment already (2026-10-31, docs/language.md, Memory map). Main memory's and the
+  card's segments one after another are one when that takes no more tracks (2026-11-03,
+  boot_disk.cpp MergeForTracks: a segment less, a seek less, and the tracks' rounding),
+  with zeros over what is between: lets with no value, lib/disk's work, free memory. In a
+  program with overlay groups, the lets `:in aux` with no value of 1 KB or more go to the
+  top of aux memory, on no segment, and the startup clears them (its code waits in the
+  overlay region with the zero-page image, docs/overlays.md): 11 cycles a byte against a
+  disk's turn for every 8 pages. Catwiz: 10 segments to 6, 22 tracks to 17, the title up
+  156 frames sooner. The rest of the disk
   is an empty DOS 3.3 volume with the program's tracks marked in use, so `tisple disk put` can add files, and
   its catalog on track 17 survives a program of any size.
 - Size limits (2026-10-29; the table for every build is in docs/language.md,

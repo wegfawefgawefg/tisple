@@ -349,6 +349,35 @@ void PlaceAuto(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
                  where);
 }
 
+// a let :in aux with no value, from the top of aux memory down: the highest start where it
+// fits. Lets that ask for an alignment, a boundary or their tables in pages go as usual
+void PlaceHigh(Placer& pl, std::int32_t id, VarPlace& place, bool per_plane) {
+    const Var& var = pl.program->vars[static_cast<std::size_t>(id)];
+    bool asked = var.placement.align > 1 || var.placement.boundary != 0 ||
+                 PageTables(pl, id, place, per_plane).tables != 0;
+    std::uint32_t start = kAuxDataEnd - std::min<std::uint32_t>(place.size, kAuxDataEnd);
+    while (!asked && start >= kAuxDataStart) {
+        std::uint32_t end = start + place.size;
+        std::uint32_t below = start;
+        for (const AddressRange& range : pl.options->aux_reserved) {
+            below = start < range.end && range.start < end ? std::min(below, range.start) : below;
+        }
+        for (const Used& used : pl.aux_used) {
+            below = start < used.end && used.start < end ? std::min(below, used.start) : below;
+        }
+        if (below == start) {
+            place.address = static_cast<std::uint16_t>(start);
+            pl.aux_used.push_back(Used{start, end, id});
+            return;
+        }
+        if (below < place.size) {
+            break;
+        }
+        start = below - place.size;
+    }
+    PlaceAuto(pl, id, place, per_plane);
+}
+
 } // namespace
 
 namespace {
@@ -419,6 +448,9 @@ bool LayoutOnce(const Program& program, const LayoutOptions& options, Layout& ou
     auto avoids = [&](std::size_t i) {
         return packed && i < options.avoiders.size() && options.avoiders[i];
     };
+    auto blank_aux = [&](std::size_t i) {
+        return i < options.aux_high.size() && options.aux_high[i] && out.vars[i].size > 0;
+    };
     for (int pass = 0; pass < 4; pass++) {
         bool want_globals = pass < 2;
         bool want_avoiders = pass % 2 == 0;
@@ -427,7 +459,7 @@ bool LayoutOnce(const Program& program, const LayoutOptions& options, Layout& ou
             const Var& var = program.vars[i];
             bool global = var.function < 0;
             if (var.placement.has_address || IsPreset(options, i) || global != want_globals ||
-                avoids(i) != want_avoiders || out.vars[i].size == 0) {
+                avoids(i) != want_avoiders || out.vars[i].size == 0 || blank_aux(i)) {
                 continue;
             }
             order.push_back(i);
@@ -439,6 +471,11 @@ bool LayoutOnce(const Program& program, const LayoutOptions& options, Layout& ou
         }
         for (std::size_t i : order) {
             PlaceAuto(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);
+        }
+    }
+    for (std::size_t i = 0; i < program.vars.size(); i++) {
+        if (blank_aux(i)) {
+            PlaceHigh(pl, static_cast<std::int32_t>(i), out.vars[i], per_plane[i]);
         }
     }
     if (errors.size() != before) {
@@ -456,8 +493,8 @@ bool LayoutProgram(const Program& program, const LayoutOptions& options, Layout&
                    std::vector<Diagnostic>& errors) {
     std::vector<Diagnostic> first;
     bool ok = LayoutOnce(program, options, out, first, false);
-    bool avoiders = std::find(options.avoiders.begin(), options.avoiders.end(), true) !=
-                    options.avoiders.end();
+    bool avoiders =
+        std::find(options.avoiders.begin(), options.avoiders.end(), true) != options.avoiders.end();
     if (ok || !out.no_room || !avoiders) {
         errors.insert(errors.end(), first.begin(), first.end());
         return ok;

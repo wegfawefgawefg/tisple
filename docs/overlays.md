@@ -236,11 +236,24 @@ link's part); BuildOptions::use_overlays.
   $D99F). Not bank 1: it holds 4 KB either way, and with bank 1 already full of cold
   functions a region there would push as many bytes of them back. Each group's code is laid
   out at the region's address; the binary has its bytes only in its image.
+- **What waits in the region at boot** (2026-11-03). A boot disk's program runs once
+  (BuildOptions::runs_once), and no group is in the region before main starts, so the
+  zero-page image, which only the startup reads, is laid out at the region's start and loads
+  there with the program (RegionSpans::boot): its bytes cost nothing resident. Catwiz: 107
+  bytes of the card. The startup's clearing of big lets `:in aux` with no value waits there
+  too (link_overlay.hpp EmitAuxClear; docs/disks.md): a JSR of the startup's is all it
+  costs resident. lib/auxmem's guard keeps its 108 bytes in aux memory the same way (the
+  install reads them once with `auxmem.read`, interrupts off), not in the card.
 - **Stubs.** `ov.r: JMP ov.r.load` for each root r, which the load points at r while its
-  group is in: 3 cycles a call. `ov.r.load: JSR ov.g.enter / JMP r`. `ov.g.enter` pushes P, A,
-  X and Y, points every other group's stubs at their loads, copies g's image (rt_a, rt_b and
-  rt_r, the runtime's scratch, which no call keeps live), points g's stubs at its roots, and
-  pulls them back. 6 bytes a root and about 45 a group, plus the copy (51 bytes).
+  group is in: 3 cycles a call. The stubs are one block of JMPs, in group order.
+  `ov.r.load: JSR ov.g.enter / JMP r`; `ov.g.enter: PHP / PHA / LDA #g / JMP ov.enter`. One
+  `ov.enter` for every group (since 2026-11-03; it was one a group, about 75 bytes each): it
+  pushes X and Y, copies the off template over the block (every stub at its load), loads g by
+  its row of four small tables (its image in aux memory, its pages and bytes after, or its
+  disk record), copies g's part of the on template (its stubs at their roots), and pulls them
+  back. 9 bytes a root (stub, load, and the two templates' 6), 7 a group and 4 of tables,
+  about 100 for ov.enter, plus the copy (51 bytes). At most 85 roots in all (the block is
+  indexed by a byte); groups past that are left out. Catwiz: 590 bytes of stubs to 334.
 - **Interrupts.** No handler code is in a group. The copy turns RAMRD on for a page at a time
   with interrupts off (PHP / SEI ... PLP): a tick waits at most a page's 4,100 cycles, and the
   handler never runs with RAMRD on, so no auxmem.guard is needed. The copy is the one piece

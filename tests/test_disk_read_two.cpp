@@ -231,6 +231,9 @@ const char* kDiskOverlayProgram = R"(
 (let total u16 0 :address 0x0300)
 (let got (array u8 4) :address 0x0310)
 (let seed u8 0)
+(let step u8 37)
+(let blank (array u8 2000) :in aux)
+(let blank_at (ptr u8) (addr_of (at blank 0)))
 (fn add ((x u8) (y u8)) u8 (+ (* x 3) y))
 (fn red ((x u8)) u8 :overlay_disk2 (set (at out 0) (add x 1)) (+ (at out 0) 7))
 (fn green ((x u8)) u8 :overlay_disk2 (set (at out 1) (add x 2)) (^ (at out 1) 0x55))
@@ -239,7 +242,7 @@ const char* kDiskOverlayProgram = R"(
     (set (at got 3) (disk.read (addr_of (at got 0)) (addr_of (at T0 0)) disk.MAIN))
     (for i u8 0 5
         (set total (+ total (as u16 (red i))))
-        (set seed (+ seed 37))
+        (set seed (+ seed step))
         (set total (+ total (as u16 (green seed))))
         (set total (+ total (blue i)))))
 )";
@@ -268,8 +271,33 @@ void TestDiskOverlays(TestResults& results) {
     tisple::DiskSectors disk2;
     tisple::MakeDisk2(tables, disk2);
     std::unique_ptr<tisple::Apple2> a = BootTwo(p, disk2, false);
+    for (uint32_t i = 0x8000; i < 0xC000; i++) {
+        a->aux[i] = kUntouched;
+    }
     uint64_t took = RunDiskProgram(*a, kDiskReadBudget);
     CHECK(results, a->stop_reason == tisple::MachineStop::kReturned);
+    // blank, 2000 bytes :in aux with no value: on no segment, at the top of aux memory, and
+    // zero once the startup (its clearing in the region) has run
+    std::int32_t blank = -1;
+    for (size_t v = 0; v < p.program.vars.size(); v++) {
+        blank = p.program.vars[v].name == "t.blank" ? static_cast<std::int32_t>(v) : blank;
+    }
+    CHECK(results, blank >= 0);
+    if (blank >= 0) {
+        uint32_t at = p.code.layout.vars[static_cast<size_t>(blank)].address;
+        CHECK(results, at == 0xC000 - 2000);
+        bool zero = true;
+        for (uint32_t i = 0; i < 2000; i++) {
+            zero = zero && a->aux[at + i] == 0;
+        }
+        CHECK(results, zero && a->aux[at - 1] == kUntouched);
+        bool loaded = false;
+        for (const tisple::MemorySegment& s : p.code.segments) {
+            loaded =
+                loaded || (s.bank == tisple::MemoryBank::kAux && s.address + s.bytes.size() > at);
+        }
+        CHECK(results, !loaded);
+    }
     uint32_t want = 0;
     uint32_t seed = 0;
     for (uint32_t i = 0; i < 5; i++) {
@@ -284,6 +312,16 @@ void TestDiskOverlays(TestResults& results) {
                        a->cpu.mem[0x0313] == tisple::kReaderDone);
     std::string listing = tisple::ListProgram(p.program, p.code);
     CHECK(results, listing.find("read from the second disk") != std::string::npos);
+    // the zero-page image (step's 37) waits in the overlay region, which no group is in yet
+    // when the startup reads it: a boot disk's program runs once
+    bool image_in_region = false;
+    for (const tisple::FunctionSpan& span : p.code.spans) {
+        const tisple::AsmItem& first = p.code.as.items[span.first];
+        image_in_region =
+            image_in_region || (span.name == "zero-page image" && first.address == built.region &&
+                                span.end > span.first + 1);
+    }
+    CHECK(results, image_in_region);
     std::printf("overlays from disk 2: 15 calls taking turns, 10 reads, total %u, %.1f s from "
                 "power on\n",
                 total, static_cast<double>(took) / 1023000.0);

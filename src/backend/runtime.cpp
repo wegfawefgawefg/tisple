@@ -393,6 +393,9 @@ void EmitStartup(Backend& be, const StartupPlan& plan, std::vector<AsmItem>& out
         w.Br(Mn::BNE, copy);
         i += n;
     }
+    if (plan.clear_sym >= 0) {
+        w.Mem(Mn::JSR, plan.clear_sym);
+    }
     for (std::int32_t patch : plan.io_patches) {
         w.Mem(Mn::JSR, patch);
     }

@@ -174,15 +174,27 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
         for (std::uint32_t size : group_size) {
             region->size = std::max(region->size, size);
         }
+        std::uint32_t boot = 0;
+        for (std::size_t s = region->boot; s < region->boot_end && s < spans.size(); s++) {
+            boot += SpanSize(items, spans[s]);
+        }
+        region->size = std::max(region->size, boot);
     }
     std::uint32_t after = region != nullptr ? region->size : 0;
+    // the last span placed in order has the region and the frames after it (an early span is
+    // placed already: the one before it then)
+    auto is_early = [&](std::size_t s) { return early_on && s >= early.first && s < early.end; };
+    std::size_t tail = last;
+    while (tail > 0 && is_early(tail - 1)) {
+        tail--;
+    }
     std::size_t k = 0;
     std::uint32_t pc = stretches.empty() ? 0 : stretches[0].start;
     for (std::size_t s = 0; s < last; s++) {
-        if (early_on && s >= early.first && s < early.end) {
+        if (is_early(s)) {
             continue;
         }
-        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == last ? after + mem_frames : 0);
+        std::uint32_t need = SpanSize(items, spans[s]) + (s + 1 == tail ? after + mem_frames : 0);
         while (k < count && pc + need > stretches[k].end) {
             k++;
             pc = k < count ? stretches[k].start : 0;
@@ -203,6 +215,12 @@ bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpa
             at[g] += SpanSize(items, spans[s]);
         }
         last = groups_end;
+        std::uint32_t boot_at = region->at;
+        for (std::size_t s = region->boot; s < region->boot_end && s < spans.size(); s++) {
+            places[s] = CodePlace{stretches.size() + group_size.size(), boot_at};
+            boot_at += SpanSize(items, spans[s]);
+            last = s + 1;
+        }
     }
     frames_at = pc;
     // the language card's bank 1: the last stretch, its own
@@ -422,7 +440,8 @@ bool LayOutRuns(Assembly& as, const std::vector<FunctionSpan>& spans,
         if (!same_run) {
             AddError(errors, Loc(),
                      "internal: a branch at " + HexAddress(item.address) +
-                         " leaves its function's code");
+                         " leaves its function's code (to " +
+                         as.symbols[static_cast<std::size_t>(item.value.sym)].name + ")");
             return false;
         }
     }

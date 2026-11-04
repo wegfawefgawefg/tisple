@@ -79,6 +79,51 @@ MemorySegment Merged(const MemorySegment& a, const MemorySegment& b) {
     return out;
 }
 
+// the pages a segment takes on the disk, and its tracks: each starts a track of its own
+uint32_t SegmentPages(const MemorySegment& s) {
+    uint32_t end = s.address + static_cast<uint32_t>(s.bytes.size());
+    return (end - (s.address & 0xFF00u) + 0xFF) / 0x100;
+}
+
+uint32_t SegmentTracks(const MemorySegment& s) {
+    return (SegmentPages(s) + kSectorsPerTrack - 1) / kSectorsPerTrack;
+}
+
+// segments of main memory or the card one after another, merged when one segment takes no
+// more tracks than the two (zeros over what is between: a program's segments hold all its
+// bytes with values; between them are lets with no value, lib/disk's work, free memory, which
+// the program fills at run time). A segment less, a seek less and the tracks' rounding
+void MergeForTracks(std::vector<MemorySegment>& merged) {
+    for (bool again = true; again;) {
+        again = false;
+        for (size_t i = 0; i < merged.size() && !again; i++) {
+            const MemorySegment& a = merged[i];
+            if (a.bank == MemoryBank::kAux) {
+                continue;
+            }
+            // the next segment of the same memory above it
+            size_t next = SIZE_MAX;
+            for (size_t j = 0; j < merged.size(); j++) {
+                const MemorySegment& b = merged[j];
+                bool above = b.bank == a.bank && b.address > a.address;
+                if (above && (next == SIZE_MAX || b.address < merged[next].address)) {
+                    next = j;
+                }
+            }
+            if (next == SIZE_MAX) {
+                continue;
+            }
+            MemorySegment both = Merged(a, merged[next]);
+            if (SegmentTracks(both) > SegmentTracks(a) + SegmentTracks(merged[next])) {
+                continue;
+            }
+            merged[i] = both;
+            merged.erase(merged.begin() + static_cast<std::ptrdiff_t>(next));
+            again = true;
+        }
+    }
+}
+
 bool BytesOverlap(const MemorySegment& a, const MemorySegment& b) {
     uint32_t a_end = a.address + static_cast<uint32_t>(a.bytes.size());
     uint32_t b_end = b.address + static_cast<uint32_t>(b.bytes.size());
@@ -93,8 +138,9 @@ bool SharePage(const MemorySegment& a, const MemorySegment& b) {
 
 // the segments as the disk holds them: the loader writes whole pages, so segments of one
 // memory that share a page become one, with zeros between them (else each would clear the
-// others' bytes there); the aux ones first, so that a main page can hold their sectors
-// before the copy
+// others' bytes there); main memory's and the card's merged where that saves tracks
+// (MergeForTracks); the aux ones first, so that a main page can hold their sectors before
+// the copy
 std::vector<MemorySegment> DiskSegments(const std::vector<MemorySegment>& segments) {
     std::vector<MemorySegment> merged;
     for (const MemorySegment& segment : segments) {
@@ -110,6 +156,7 @@ std::vector<MemorySegment> DiskSegments(const std::vector<MemorySegment>& segmen
         }
         merged.push_back(s);
     }
+    MergeForTracks(merged);
     std::vector<MemorySegment> out;
     for (const MemorySegment& s : merged) {
         if (s.bank == MemoryBank::kAux) {

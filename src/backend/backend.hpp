@@ -63,6 +63,10 @@ struct BuildOptions {
     // limit); a boot disk has nothing to return to (its loader goes to the monitor), so it
     // keeps those 256 bytes for the program (UseBootDiskLayout)
     bool save_zero_page = true;
+    // the program runs once from where it loaded (a boot disk: UseBootDiskLayout), so data
+    // only the startup reads, the zero-page image, may sit in the overlay region, which no
+    // group has been copied into before main starts
+    bool runs_once = false;
     // functions never inlined, by qualified name (the race times from t.init's return to
     // t.checksum's entry)
     std::vector<std::string> no_inline;

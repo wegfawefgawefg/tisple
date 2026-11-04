@@ -59,7 +59,9 @@
 ; off, has the entry return to it instead of to the interrupted code (a return address and
 ; flags pushed for its RTI), puts them back and returns there. Its install routine, run once
 ; with interrupts off, points its jump where $3FE points (the handler's entry), $3FE (and the
-; card's $FFFE when the card's ram is in) to it, and copies $0340-$03FF to aux memory.
+; card's $FFFE when the card's ram is in) to it, and copies $0340-$03FF to aux memory. Its
+; bytes are kept in aux memory, where they cost nothing in main memory or the card: the
+; install reads them once.
 (const GUARD_HOME u16 0x0340)
 (const GUARD_SIZE u8 108)
 (const INSTALL u16 0x0373)
@@ -93,7 +95,8 @@
         0x8D 0x05 0xC0 0xA0 0x00      ; aux: STA $C005 / LDY #0: RAMWRT on
         0xB9 0x40 0x03 0x99 0x40 0x03 ; copy: LDA $0340,Y / STA $0340,Y
         0xC8 0xC0 0xC0 0xD0 0xF5      ; INY / CPY #192 / BNE copy
-        0x8D 0x04 0xC0 0x60))         ; STA $C004 / RTS: RAMWRT off
+        0x8D 0x04 0xC0 0x60)          ; STA $C004 / RTS: RAMWRT off
+    :in aux)
 
 (let guarded bool false)
 
@@ -105,9 +108,7 @@
     (if guarded
         (return))
     (sei)
-    (let home (ptr u8) (as (ptr u8) GUARD_HOME))
-    (for i u8 0 GUARD_SIZE
-        (store (+ home i) (at GUARD i)))
+    (read (as (ptr u8) GUARD_HOME) (addr_of (at GUARD 0)) (as u16 GUARD_SIZE))
     (jsr INSTALL)
     (set guarded true)
     (cli))

@@ -67,6 +67,11 @@ struct EarlySpans {
 struct RegionSpans {
     std::size_t first = SIZE_MAX;
     std::size_t end = SIZE_MAX;
+    // spans only the startup reads or runs (the zero-page image, the aux clearing), or none:
+    // [boot, boot_end), laid out from the region's start, loading there with the program,
+    // since no group is in before main runs
+    std::size_t boot = SIZE_MAX;
+    std::size_t boot_end = SIZE_MAX;
     std::uint32_t at = 0;
     std::uint32_t size = 0;
 };
@@ -77,7 +82,8 @@ struct RegionSpans {
 // another in the last stretch, which no other span uses, and the frames follow the span before.
 // early's spans go first, at the start of their stretch, when they fit there. With region, the
 // overlay region follows the resident spans (the frames after it), and each group's spans are
-// laid out from its start, a run of their own (stretch index past the stretches given)
+// laid out from its start, a run of their own (stretch index past the stretches given); the
+// boot spans after them are one more such run, at the region's start too
 bool PlaceSpans(const std::vector<AsmItem>& items, const std::vector<FunctionSpan>& spans,
                 const std::vector<AddressRange>& stretches, std::uint32_t mem_frames,
                 std::vector<CodePlace>& places, std::uint32_t& frames_at,

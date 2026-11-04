@@ -15,14 +15,16 @@
 //
 //     ov.r:       JMP ov.r.load         JMP r while r's group is in (3 cycles a call)
 //     ov.r.load:  JSR ov.g.enter / JMP r
+//     ov.g.enter: PHP / PHA / LDA #g / JMP ov.enter       per group
 //
-//   and per group:
+//   The stubs are one block of JMPs in group order (overlay_route.cpp). The one enter routine
+//   for every group:
 //
-//     ov.g.enter: PHP / PHA / TXA / PHA / TYA / PHA      the call's registers and flags
-//                 JSR ov.h.off for every other group h    their stubs back to their loads
-//                 the image's address, the region's, its pages and the bytes after
-//                 JSR ov.copy
-//                 each of g's stubs to JMP its root
+//     ov.enter:   X and Y pushed, and g           the call's registers and flags kept
+//                 the off template over the block every stub back at its load
+//                 by g's row of the tables: its image's address, the region's, its pages and
+//                 the bytes after, JSR ov.copy; or its disk record to lib/disk's reader
+//                 g's part of the on template     its stubs to JMP their roots
 //                 PLA / TAY / PLA / TAX / PLA / PLP / RTS
 //
 //   ov.copy copies whole pages (LDA (rt_a),Y / STA (rt_b),Y, 16 cycles a byte) and then the
@@ -57,6 +59,8 @@ constexpr const char* kOverlayCopySpan = "overlay copy";
 
 // a group smaller than this frees less than its stubs and load take
 constexpr std::uint32_t kMinGroupBytes = 256;
+// the most roots all groups have together (3 bytes of stubs each, indexed by a byte)
+constexpr std::size_t kMaxOverlayRoots = 85;
 
 // the plan's groups in the kept code; those that cannot be overlaid as planned, or have fewer
 // than min_bytes of code, left out

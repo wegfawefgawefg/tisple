@@ -33,7 +33,7 @@ bool BySwitch(const SimRunner& run) {
 std::uint8_t IoRead(void* ctx, std::uint16_t address) {
     SimRunner& run = *static_cast<SimRunner*>(ctx);
     if (address < 0xC000) {
-        return run.aux[address]; // RAMRD on
+        return run.ramrd ? run.aux[address] : run.machine->mem[address];
     }
     // slot rom space, not the program's I/O: with data at $D000 in the card, an index from
     // below it ((at a (- i 1)) is a-1,Y) crosses a page, and the NMOS cpu's dummy read of the
@@ -64,12 +64,17 @@ void SwitchRamrd(SimRunner& run, bool on) {
 void IoWrite(void* ctx, std::uint16_t address, std::uint8_t value) {
     SimRunner& run = *static_cast<SimRunner*>(ctx);
     if (address < 0xC000) {
-        run.machine->mem[address] = value; // RAMRD on, RAMWRT off
+        (run.ramwrt ? run.aux[address] : run.machine->mem[address]) = value;
         return;
     }
     std::uint16_t at = static_cast<std::uint16_t>(run.machine->cpu.PC - 3);
     if ((address == 0xC002 || address == 0xC003) && run.aux_switch_at[at]) {
         SwitchRamrd(run, address == 0xC003);
+        return;
+    }
+    if ((address == 0xC004 || address == 0xC005) && run.aux_switch_at[at]) {
+        run.ramwrt = address == 0xC005;
+        SetHook(run);
         return;
     }
     run.io.push_back(IoAccess{address, value, true});
@@ -96,6 +101,7 @@ void Load(SimRunner& run, const Compiled& compiled) {
     }
     run.aux.assign(0x10000, 0);
     run.ramrd = false;
+    run.ramwrt = false;
     run.aux_switch_at.assign(0x10000, false);
     for (std::uint16_t at : compiled.aux_switches) {
         run.aux_switch_at[at] = true;
@@ -121,7 +127,7 @@ void Load(SimRunner& run, const Compiled& compiled) {
 // the I/O page, and with RAMRD on $0200-$BFFF too
 void SetHook(SimRunner& run) {
     IoHook hook;
-    hook.base = run.ramrd ? 0x0200 : 0xC000;
+    hook.base = run.ramrd || run.ramwrt ? 0x0200 : 0xC000;
     hook.size = 0xD000 - hook.base;
     hook.read = IoRead;
     hook.write = IoWrite;

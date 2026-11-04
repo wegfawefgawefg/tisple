@@ -57,6 +57,10 @@ struct LayoutOptions {
     // $D000-$DFFF, for what code in the card's bank 1 reads: backend/card_bank.hpp)
     std::vector<bool> avoiders;
     AddressRange avoid;
+    // by var id: a let :in aux with no value placed from the top of aux memory down, after the
+    // others, so that it lies past what a boot disk loads (the startup clears it instead:
+    // backend/link_overlay.hpp, EmitAuxClear)
+    std::vector<bool> aux_high;
 };
 
 struct VarPlace {

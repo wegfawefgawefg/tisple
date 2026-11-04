@@ -33,12 +33,14 @@ constexpr std::uint32_t kAuxGapFloor = 0x0800; // below, aux memory's text page
 // every :in aux let's and const's bytes and the mirrored ranges: runs of them, a new segment
 // after a gap of 4 pages or more
 void AuxSegments(const Program& program, const Layout& layout, const std::vector<std::uint8_t>& aux,
-                 const std::vector<AddressRange>& mirrored, std::vector<MemorySegment>& out) {
+                 const std::vector<AddressRange>& mirrored, std::vector<MemorySegment>& out,
+                 const std::vector<bool>* cleared) {
     std::vector<AddressRange> pieces = mirrored;
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const Var& var = program.vars[v];
         const VarPlace& place = layout.vars[v];
         bool untouched = var.placement.has_address && var.init.empty();
+        untouched = untouched || (cleared != nullptr && v < cleared->size() && (*cleared)[v]);
         if (var.placement.in_aux && !untouched && place.size > 0) {
             pieces.push_back(AddressRange{place.address, place.address + place.size});
         }

@@ -93,6 +93,17 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             sp.io_patches.push_back(be.fn_sym[static_cast<std::size_t>(f)]);
         }
     }
+    // in a program that runs once with overlay groups, what only the startup needs waits in
+    // the region (RegionSpans::boot): the zero-page image, and the clearing of the big lets
+    // :in aux with no value, which then load from no disk (AuxClearedLets)
+    bool image_in_region = in.overlays != nullptr && in.overlays->Any() && options.runs_once;
+    std::vector<bool> cleared =
+        image_in_region ? AuxClearedLets(program) : std::vector<bool>(program.vars.size(), false);
+    std::vector<AsmItem> aux_clear;
+    if (std::find(cleared.begin(), cleared.end(), true) != cleared.end()) {
+        sp.clear_sym = NewSym(be, "boot.clear", SymRole::Label, -1);
+        EmitAuxClear(be, cleared, sp.clear_sym, aux_clear);
+    }
     std::vector<std::pair<std::uint16_t, std::vector<std::uint8_t>>> homes;
     if (!StartupStores(be, options.origin, data_end, sp.stores, errors,
                        options.homes_in_segments ? &homes : nullptr, options.low_start)) {
@@ -186,12 +197,25 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         }
     }
     std::size_t mirror_end = out.spans.size();
-    AppendSpan(items, zp_image, out, -1, "zero-page image");
-    std::size_t image_span = out.spans.size() - 1;
+    // the zero-page image, which only the startup reads: in a program that runs once, in the
+    // overlay region, which holds no group yet then (RegionSpans::boot)
+    std::size_t image_span = out.spans.size();
+    if (!image_in_region) {
+        AppendSpan(items, zp_image, out, -1, "zero-page image");
+    }
     // each overlay group's code, laid out at the region
     RegionSpans region;
     if (groups != nullptr) {
         region = AppendGroupSpans(be, *groups, out);
+    }
+    if (image_in_region) {
+        image_span = out.spans.size();
+        region.boot = image_span;
+        AppendSpan(items, zp_image, out, -1, "zero-page image");
+        if (!aux_clear.empty()) {
+            AppendSpan(items, aux_clear, out, -1, kAuxClearSpan);
+        }
+        region.boot_end = out.spans.size();
     }
     std::size_t first_bank1 = bank1 != nullptr ? out.spans.size() : SIZE_MAX;
     for (std::size_t f = 0; f < program.functions.size(); f++) {
@@ -282,9 +306,10 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             return LinkResult::kNoRoom;
         }
     }
-    // each group's code is a run of its own at the region: the region is reserved instead
+    // each group's code is a run of its own at the region (and the zero-page image, when it
+    // waits there): the region is reserved instead
     if (groups != nullptr) {
-        runs.resize(runs.size() - groups->members.size());
+        runs.resize(runs.size() - groups->members.size() - (image_in_region ? 1 : 0));
         runs.push_back(AddressRange{region.at, region.at + region.size});
     }
 
@@ -320,6 +345,8 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         lo.dropped[v] = lo.dropped[v] || use.interp_only[v];
     }
     lo.reserved = runs;
+    // the lets the startup clears go past the rest of aux memory, out of its segments
+    lo.aux_high = cleared;
     lo.reserved.push_back(AddressRange{frames_at, frames_end});
     lo.reserved.push_back(AddressRange{data_end, options.limit});
     std::vector<AddressRange> mirror = SpanRanges(items, out.spans, mirror_first, mirror_end);
@@ -383,6 +410,13 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     }
     if (plan.mem_frames > 0) {
         cover(frames_at, frames_end);
+    }
+    if (image_in_region) {
+        std::uint32_t boot = 0;
+        for (std::size_t s = region.boot; s < region.boot_end; s++) {
+            boot += SpanSize(items, out.spans[s]);
+        }
+        cover(region.at, region.at + boot);
     }
     for (std::size_t v = 0; v < program.vars.size(); v++) {
         const VarPlace& place = out.layout.vars[v];
@@ -480,7 +514,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             aux_pieces.push_back(image);
         }
     }
-    AuxSegments(program, out.layout, aux, aux_pieces, out.segments);
+    AuxSegments(program, out.layout, aux, aux_pieces, out.segments, &cleared);
 
     // a bank 1 function is called through its forward stub (none: only bank 1 calls it), an
     // overlay group's root through its stub (its other functions have none)

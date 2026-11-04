@@ -174,17 +174,88 @@ std::vector<std::uint16_t> OverlayAuxSwitches(const std::vector<AsmItem>& items,
                                               const std::vector<FunctionSpan>& spans) {
     std::vector<std::uint16_t> out;
     for (const FunctionSpan& span : spans) {
-        for (std::size_t i = span.first; i < span.end && span.name == kOverlayCopySpan; i++) {
+        bool copy = span.name == kOverlayCopySpan;
+        bool clear = span.name == kAuxClearSpan;
+        for (std::size_t i = span.first; i < span.end && (copy || clear); i++) {
             const AsmItem& item = items[i];
             std::uint32_t address = static_cast<std::uint32_t>(item.value.offset);
             bool ramrd = address == 0xC002 || address == 0xC003;
+            bool ramwrt = address == 0xC004 || address == 0xC005;
             if (item.kind == ItemKind::Ins && item.value.sym < 0 && item.mode == Mode::Abs &&
-                ramrd) {
+                ((copy && ramrd) || (clear && ramwrt))) {
                 out.push_back(item.address);
             }
         }
     }
     return out;
+}
+
+std::vector<bool> AuxClearedLets(const Program& program) {
+    std::vector<bool> out(program.vars.size(), false);
+    for (std::size_t v = 0; v < program.vars.size(); v++) {
+        const Var& var = program.vars[v];
+        bool blank = var.kind == VarKind::Global && var.function < 0 && var.placement.in_aux &&
+                     var.init.empty() && !var.placement.has_address;
+        out[v] = blank && TypeOf(program, var.type).size >= kClearedAuxBytes;
+    }
+    return out;
+}
+
+void EmitAuxClear(Backend& be, const std::vector<bool>& cleared, std::int32_t clear,
+                  std::vector<AsmItem>& out) {
+    const Program& program = *be.program;
+    std::int32_t zero = NewSym(be, "boot.zero", SymRole::Label, -1);
+    std::int32_t page = NewSym(be, "boot.zero.page", SymRole::Label, -1);
+    std::int32_t tail = NewSym(be, "boot.zero.tail", SymRole::Label, -1);
+    std::int32_t last = NewSym(be, "boot.zero.last", SymRole::Label, -1);
+    std::int32_t done = NewSym(be, "boot.zero.done", SymRole::Label, -1);
+    auto ins = [&](Mn mn, Mode mode, AsmValue value) { out.push_back(MakeIns(mn, mode, value)); };
+    auto imp = [&](Mn mn) { out.push_back(MakeIns(mn, Mode::Imp)); };
+    out.push_back(MakeLabel(clear));
+    imp(Mn::PHP);
+    imp(Mn::SEI);
+    for (std::size_t v = 0; v < cleared.size(); v++) {
+        if (!cleared[v]) {
+            continue;
+        }
+        std::int32_t sym = be.var_sym[v];
+        std::uint32_t size = TypeOf(program, program.vars[v].type).size;
+        ins(Mn::LDA, Mode::Imm, SymValue(sym, 0, Part::Low));
+        ins(Mn::STA, Mode::Abs, SymValue(be.rt_a));
+        ins(Mn::LDA, Mode::Imm, SymValue(sym, 0, Part::High));
+        ins(Mn::STA, Mode::Abs, SymValue(be.rt_a, 1));
+        ins(Mn::LDX, Mode::Imm, Num(static_cast<std::int32_t>(size >> 8)));
+        ins(Mn::LDY, Mode::Imm, Num(static_cast<std::int32_t>(size & 0xFF)));
+        ins(Mn::JSR, Mode::Abs, SymValue(zero));
+    }
+    imp(Mn::PLP);
+    imp(Mn::RTS);
+    // (rt_a): X whole pages, then Y bytes, zeroed with RAMWRT on (rt_a and rt_r are in zero
+    // page, which RAMWRT does not switch)
+    out.push_back(MakeLabel(zero));
+    ins(Mn::STY, Mode::Abs, SymValue(be.rt_r));
+    ins(Mn::LDA, Mode::Imm, Num(0));
+    imp(Mn::TAY);
+    ins(Mn::STA, Mode::Abs, Num(0xC005));
+    ins(Mn::CPX, Mode::Imm, Num(0));
+    ins(Mn::BEQ, Mode::Rel, SymValue(tail));
+    out.push_back(MakeLabel(page));
+    ins(Mn::STA, Mode::IndY, SymValue(be.rt_a));
+    imp(Mn::INY);
+    ins(Mn::BNE, Mode::Rel, SymValue(page));
+    ins(Mn::INC, Mode::Abs, SymValue(be.rt_a, 1));
+    imp(Mn::DEX);
+    ins(Mn::BNE, Mode::Rel, SymValue(page));
+    out.push_back(MakeLabel(tail));
+    ins(Mn::LDY, Mode::Abs, SymValue(be.rt_r));
+    ins(Mn::BEQ, Mode::Rel, SymValue(done));
+    out.push_back(MakeLabel(last));
+    imp(Mn::DEY);
+    ins(Mn::STA, Mode::IndY, SymValue(be.rt_a));
+    ins(Mn::BNE, Mode::Rel, SymValue(last));
+    out.push_back(MakeLabel(done));
+    ins(Mn::STA, Mode::Abs, Num(0xC004));
+    imp(Mn::RTS);
 }
 
 } // namespace tisple
