@@ -250,6 +250,18 @@ Catwiz's fight from the reward is back to 251 frames with its song playing throu
 bytes: the caller's flags back through one routine (`restore`, which keeps A) instead of in
 each of its nine places.
 
+### Into the language card's bank 1
+
+`disk.read_card` and `disk.read_card_with` (2026-11-04) are `read` and `read_with` that also
+take `disk.BANK1`: the table's bytes go to a let `:in bank1` (docs/language.md, Bank 1 data).
+The reader is unchanged (it has one byte to spare): it reads as to main memory, and lib/disk
+switches bank 1 in around each `jsr` to the reader's next (`BIT $C08B`) and bank 2 back after,
+so the step between sectors runs with bank 2 as always; a tick meanwhile goes through the
+interrupt entry that puts bank 2 in. `read` and `read_with` have no code for it, so a program
+that never reads into bank 1 builds as before. tests/test_bank1_data.cpp: 1,536 bytes read into
+bank 1 under a song played from there, bank 2 untouched, 15 ticks of 15 due, the latest about
+10,500 cycles late.
+
 ### The step function
 
 - A `(fn () void)` of the program's; frames are safe, since the call is a plain pointer call

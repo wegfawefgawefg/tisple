@@ -1,4 +1,5 @@
 #include "backend/aux_link.hpp"
+#include "backend/card_data.hpp"
 #include "backend/cmos.hpp"
 #include "backend/dispatch.hpp"
 #include "backend/frames.hpp"
@@ -75,13 +76,18 @@ LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& all, Compiled&
     Bank1Facts facts = all;
     facts.order.clear();
     std::uint32_t bytes = 0;
+    // and the code itself within what the lets :in bank1 leave at the bank's top
+    // (card_data.hpp); the link places it exactly
+    std::uint32_t real = 0;
+    std::uint32_t room = kBank1End - kBank1Start - Bank1DataBytes(*be.program, be.shapes);
     for (std::int32_t f : all.order) {
         std::uint32_t size = all.bytes[static_cast<std::size_t>(f)];
         // far branches make code a little bigger in its own stretch
-        if (bytes + size + size / 8 > kBank1End - kBank1Start) {
+        if (bytes + size + size / 8 > kBank1End - kBank1Start || real + size > room) {
             continue;
         }
         bytes += size + size / 8;
+        real += size;
         facts.order.push_back(f);
     }
     std::size_t most = facts.order.size();
@@ -112,8 +118,17 @@ LinkResult LinkBank1(Backend& be, LinkInput in, const Bank1Facts& all, Compiled&
             errors.insert(errors.end(), errs.begin(), errs.end());
             return full;
         }
+        // with lets :in bank1 the bank's code room is short, and the most may not fit it:
+        // the few counts just under the most first
         constexpr std::size_t kProbes = 8;
         high = 0;
+        bool data = Bank1DataBytes(*unlinked.program, unlinked.shapes) > 0;
+        for (std::size_t k = 1; k <= 3 && data && k < most && high == 0; k++) {
+            std::vector<Diagnostic> ignored;
+            if (attempt(most - k, ignored) == LinkResult::kOk) {
+                high = most - k;
+            }
+        }
         for (std::size_t k = 1; k < kProbes && high == 0; k++) {
             std::size_t count = most * k / kProbes;
             std::vector<Diagnostic> ignored;
@@ -239,6 +254,21 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
     // with it, then with code in its bank 1
     bool card_allowed = options.use_card && CardAllowed(program, be.shapes);
     bool bank1_allowed = card_allowed && options.use_bank1 && (bank1 || options.bank1_test > 0);
+    // lets :in bank1 need the card's ram in, so the link without the card is not tried
+    bool bank1_data = Bank1DataBytes(program, be.shapes) > 0;
+    if (bank1_data && !card_allowed) {
+        for (const Var& var : program.vars) {
+            if (var.placement.in_bank1) {
+                AddError(errors, var.loc,
+                         var.name +
+                             " is :in bank1, the language card's, but the program cannot have "
+                             "the card's ram in (it reads the rom at $D000 or above: a jsr, "
+                             "io_read, io_write, constant pointer or :address there)");
+                break;
+            }
+        }
+        return LinkResult::kError;
+    }
     Backend unlinked;
     if (card_allowed) {
         unlinked = be;
@@ -252,7 +282,9 @@ LinkResult CompileAt(const Program& source, const BuildOptions& given, Compiled&
         in.bank1 = &banks;
         result = LinkProgram(be, in, true, out, link_errors);
     } else {
-        result = LinkProgram(be, in, false, out, link_errors);
+        if (!bank1_data) {
+            result = LinkProgram(be, in, false, out, link_errors);
+        }
         if (result == LinkResult::kNoRoom && card_allowed) {
             be = unlinked;
             link_errors.clear();

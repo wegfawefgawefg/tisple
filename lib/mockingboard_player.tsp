@@ -3,6 +3,13 @@
 ; from main set them with interrupts off, and nothing here is called from main, so the
 ; handler has its own copy of every function it runs.
 ;
+; A song may be in the language card's bank 1 (mockingboard.play_bank1, a let :in bank1), for a
+; handler that calls mockingboard.service_bank1 (tick_bank1): then a music voice's events run
+; with bank 1 switched in (banked_fn), and bank 2 back after, which the handler runs with
+; otherwise (a build whose code switches the card puts bank 2 in for every tick). Tisple keeps
+; the code that runs while it is in, and what that code names, out of $D000-$DFFF; the
+; effects' bytes are read with bank 2 in. tick has none of this.
+;
 ; Each tick: answer the 6522, step the music's fade, start the next effect waiting in line if
 ; its turn has come, then step the six music voices and the effect. A register is written when
 ; what a voice wants in it differs from what was written last; a write is six 6522 accesses at
@@ -41,9 +48,10 @@
 
 ; what plays: the music's six voices and the effect, each a slot
 (let song (ptr u8))
-(let order (array (ptr u8) 6)) ; each voice's next order list entry
-(let pos (array (ptr u8) 7))   ; each slot's pattern
-(let index (array u8 7))       ; and the next byte in it
+(let from_bank1 (array bool 7)) ; by slot: its bytes are in the card's bank 1 (a song's there)
+(let order (array (ptr u8) 6))  ; each voice's next order list entry
+(let pos (array (ptr u8) 7))    ; each slot's pattern
+(let index (array u8 7))        ; and the next byte in it
 (let playing (array bool 7))
 (let wait (array u8 7)) ; ticks left of the note
 (let length (array u8 7))
@@ -153,6 +161,11 @@
 (fn word ((p (ptr u8))) u16
     (| (as u16 (load p)) (<< (as u16 (load (+ p 1))) 8)))
 
+; the card's switches: a read of BANK1_IN puts its bank 1 at $D000 (ram, read and written as
+; the startup's two reads of $C083 let it be), one of BANK2_IN bank 2 back
+(const BANK1_IN u16 0xC08B)
+(const BANK2_IN u16 0xC083)
+
 ; a slot's period, level and mixer into its voice's registers, if it has the voice
 (fn out ((s u8)) void
     (if (not (at owns s))
@@ -260,6 +273,20 @@
             (let shape u8 (+ (at CHIP_BASE (at chip_of s)) 13))
             (send shape (at sent shape)))))
 
+; a slot's events (from banked_fn events_bank1 events): reads them, with the card's bank 1
+; switched in for a music voice of a song there and bank 2 back after
+(macro banked_fn (name reads_fn)
+    `(fn ,name
+        ((s u8))
+        void
+        (if (not (at from_bank1 s))
+            (do
+                (,reads_fn s)
+                (return)))
+        (io_read u8 BANK1_IN)
+        (,reads_fn s)
+        (io_read u8 BANK2_IN)))
+
 ; the bytes up to the next note, rest or tie, from (events_fn events sound () () ()); lib/
 ; mockingboard_bends makes its own with its sound, forms at the start (entry: a slot at a song's
 ; or effect's first byte has index 0) and at the next effect's (restart), and its commands
@@ -329,6 +356,7 @@
             (set (at volume s) 16))))
 
 (events_fn events sound () () ())
+(banked_fn events_bank1 events)
 
 ; a note's level goes down 1 every decay ticks; written with send, not reg: it always changes
 (fn fade ((s u8)) void
@@ -364,15 +392,20 @@
         (if (= (& (io_read u8 (+ page IFR)) 0x40) 0)
             (return))
         (io_read u8 (+ page T1C_L))
-        ; the fade a tick nearer hush_to; every 4th tick every voice's level written again
-        ; (fading in, 3 ticks after the step: notes and decays take it at once). At SILENT the
-        ; music stops, as mockingboard.stop does, so a faded song costs the tick nothing
+        ; the fade a tick nearer hush_to; every 4th tick, as hush / 4 changes, every voice's
+        ; level written again (going down a step at hush 4n, up one at 4n + 3: fading in from
+        ; play, the first such tick is the song's first, which writes every voice anyway). At
+        ; SILENT the music stops, as mockingboard.stop does, so a faded song costs the tick
+        ; nothing
         (if (!= hush hush_to)
             (do
+                (let edge u8 0)
                 (if (< hush hush_to)
                     (set hush (+ hush 1))
-                    (set hush (- hush 1)))
-                (if (= (& hush 3) 0)
+                    (do
+                        (set hush (- hush 1))
+                        (set edge 3)))
+                (if (= (& hush 3) edge)
                     (do
                         (for v u8 0 VOICES
                             (if (= hush SILENT)
@@ -391,7 +424,10 @@
                             (out (if (at owns v)
                                 v
                                 FX)))))))
-        (for s u8 0 SLOTS
+        ; the slots from the effect's down to voice 0 (a count down to 0 is the cheapest loop)
+        (let s u8 SLOTS)
+        (while (!= s 0)
+            (set s (- s 1))
             (if (at playing s)
                 (do
                     (set (at wait s) (- (at wait s) 1))
@@ -400,3 +436,4 @@
                         ,between))))))
 
 (tick_fn tick events)
+(tick_fn tick_bank1 events_bank1)

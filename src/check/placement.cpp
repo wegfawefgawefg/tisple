@@ -22,17 +22,20 @@ bool FoldOption(Checker& ck, const Node& node, const std::string& label, std::ui
     return true;
 }
 
-// :in names the one region there is besides main memory
+// :in names a region besides main memory: aux memory, or the language card's bank 1
 void ReadIn(Checker& ck, Var& var, const Node& key, const Node* value) {
-    if (!value || value->kind != NodeKind::Symbol || value->text != "aux") {
-        Err(ck, value ? *value : key, ":in takes aux, the one named region; write :in aux");
+    bool known = value && value->kind == NodeKind::Symbol &&
+                 (value->text == "aux" || value->text == "bank1");
+    if (!known) {
+        Err(ck, value ? *value : key,
+            ":in takes aux (aux memory) or bank1 (the language card's bank 1); write :in aux");
         return;
     }
-    if (var.placement.in_aux) {
+    if (var.placement.in_aux || var.placement.in_bank1) {
         Err(ck, key, ":in is given twice; keep one");
         return;
     }
-    var.placement.in_aux = true;
+    (value->text == "aux" ? var.placement.in_aux : var.placement.in_bank1) = true;
 }
 
 // :strings aux: the strings written in a const table's value live in aux memory
@@ -148,7 +151,8 @@ int ReadOption(Checker& ck, Var& var, const Node& key, const Node* value) {
     if (name != ":address" && name != ":align" && name != ":boundary") {
         Err(ck, key,
             name + " is not a placement option; use :address, :align, :boundary, :in aux, "
-                   ":reserve, or on a const table :on disk, :interleave and :strings aux");
+                   ":in bank1, :reserve, or on a const table :on disk, :interleave and "
+                   ":strings aux");
         return 2;
     }
     if (!value) {
@@ -173,6 +177,29 @@ void CheckAuxAddress(Checker& ck, const Node& form, const Var& var) {
             form.items[1].text +
                 " is in aux memory at an :address outside $0200-$BFFF, which lib/auxmem "
                 "cannot reach; move it");
+    }
+}
+
+// :in bank1: room the link places at the top of the card's bank 1, which the startup never
+// writes, so no value; and no other placement: the link picks its address
+void CheckBank1Options(Checker& ck, const Node& form, const Var& var, bool has_value) {
+    const Placement& place = var.placement;
+    if (!place.in_bank1) {
+        return;
+    }
+    const std::string& name = form.items[1].text;
+    if (has_value) {
+        Err(ck, form,
+            name + " is :in bank1, which the startup never writes, so it has no value; fill "
+                   "it while the program runs (lib/disk reads into it)");
+    }
+    if (place.has_address || place.align != 0 || place.boundary != 0 || place.reserve) {
+        Err(ck, form,
+            name + " is :in bank1, placed by the link at the top of the bank; drop :address, "
+                   ":align, :boundary and :reserve");
+    }
+    if (var.type > kErrorType && TypeOf(*ck.out, var.type).size > 0x1000) {
+        Err(ck, form, name + " is bigger than the language card's bank 1 (4096 bytes)");
     }
 }
 
@@ -203,6 +230,7 @@ void CheckRegionOptions(Checker& ck, const Node& form, const Var& var, bool has_
                    "drop the value or :reserve");
     }
     CheckAuxAddress(ck, form, var);
+    CheckBank1Options(ck, form, var, has_value);
 }
 
 bool CheckConstOptions(Checker& ck, const Node& form, const Node& option, const Var& var) {
@@ -210,6 +238,12 @@ bool CheckConstOptions(Checker& ck, const Node& form, const Node& option, const 
     const std::string& name = form.items[1].text;
     if (place.reserve) {
         Err(ck, option, ":reserve is for top-level lets; make " + name + " a let");
+        return false;
+    }
+    if (place.in_bank1) {
+        Err(ck, option,
+            ":in bank1 is for lets with no value, filled while the program runs; make " + name +
+                " a let, or put the table :in aux");
         return false;
     }
     // :in aux with :on disk: the bytes on the disk, the record in aux memory (a program copies

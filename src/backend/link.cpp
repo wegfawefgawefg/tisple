@@ -7,6 +7,7 @@
 #include "backend/link.hpp"
 
 #include "backend/aux_link.hpp"
+#include "backend/card_data.hpp"
 #include "backend/link_code.hpp"
 #include "backend/link_data.hpp"
 #include "backend/link_overlay.hpp"
@@ -126,10 +127,22 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     const Bank1Plan* bank1 =
         card && in.bank1 != nullptr && in.bank1->bytes > 0 ? in.bank1 : nullptr;
     auto in_bank1 = [&](std::size_t f) { return bank1 != nullptr && bank1->functions[f]; };
+    // lets :in bank1 at the bank's top, and the functions that switch the card themselves
+    // (card_data.hpp): with either, the interrupt entry that puts bank 2 in, and the switchers
+    // right after the startup with it, out of $D000-$DFFF
+    std::uint32_t bank1_data = Bank1DataBytes(program, be.shapes);
+    std::vector<std::int32_t> bank1_at = Bank1DataAddresses(program, be.shapes);
+    if (bank1_data > 0 && !card) {
+        return LinkResult::kNoRoom; // the lets need the card's ram in
+    }
+    CardSwitching switching = FindCardSwitching(be, *in.kept, *in.runtime);
+    const std::vector<bool>& switchers = switching.functions;
+    bool any_switcher = std::find(switchers.begin(), switchers.end(), true) != switchers.end();
+    bool banked = bank1 != nullptr || (card && (bank1_data > 0 || any_switcher));
     std::vector<AsmItem> runtime = *in.runtime;
     std::vector<AsmItem> irq;
     if (sp.irq_entry >= 0) {
-        irq = bank1 != nullptr ? *in.irq_banked : *in.irq;
+        irq = banked ? *in.irq_banked : *in.irq;
     }
     // overlay groups: every call of a root from outside its group through its stub
     const OverlayGroups* groups =
@@ -149,34 +162,53 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     AppendSpan(items, startup, out, -1, "startup");
     if (bank1 != nullptr) {
         AppendSpan(items, stubs, out, -1, "bank stubs");
-        if (!irq.empty()) {
-            AppendSpan(items, irq, out, -1, "interrupt entry");
-        }
     }
-    std::size_t resident_spans = out.spans.size();
-    if (groups != nullptr) {
-        AppendSpan(items, ov.stubs, out, -1, kOverlayStubsSpan);
+    if (banked && !irq.empty()) {
+        AppendSpan(items, irq, out, -1, "interrupt entry");
+    }
+    std::vector<bool> mirrored = MirroredFunctions(be, *in.kept, bank1);
+    auto early_switcher = [&](std::size_t f) {
+        return card && switchers[f] && (*in.kept)[f] && !in_bank1(f) && !mirrored[f] &&
+               group_of(f) < 0;
+    };
+    for (std::size_t f = 0; f < program.functions.size(); f++) {
+        if (early_switcher(f)) {
+            AppendSpan(items, be.code[f], out, static_cast<std::int32_t>(f),
+                       program.functions[f].name);
+        }
     }
     // code with_aux may run with RAMRD on last, with the runtime when it calls it: what the
     // link copies to aux memory (aux_link.hpp), at the code's end, where the language card
     // (which needs no copy) or the end of a stretch splits aux memory the least
     std::vector<AsmItem> tables;
     EmitRuntimeTables(be, tables);
-    std::vector<bool> mirrored = MirroredFunctions(be, *in.kept, bank1);
     bool runtime_mirrored = MirrorsRuntime(be, mirrored);
+    // the runtime called while bank 1 is in goes with the switchers (in main memory, mirrored)
+    bool runtime_early = card && switching.runtime && !runtime_mirrored;
+    if (runtime_early) {
+        AppendSpan(items, runtime, out, -1, "runtime");
+        if (!tables.empty()) {
+            AppendSpan(items, tables, out, -1, "runtime tables");
+        }
+    }
+    std::size_t resident_spans = out.spans.size();
+    if (groups != nullptr) {
+        AppendSpan(items, ov.stubs, out, -1, kOverlayStubsSpan);
+    }
     for (std::size_t f = 0; f < program.functions.size(); f++) {
-        if ((*in.kept)[f] && !in_bank1(f) && !mirrored[f] && group_of(f) < 0) {
+        if ((*in.kept)[f] && !in_bank1(f) && !mirrored[f] && group_of(f) < 0 &&
+            !early_switcher(f)) {
             AppendSpan(items, be.code[f], out, static_cast<std::int32_t>(f),
                        program.functions[f].name);
         }
     }
-    if (!runtime_mirrored) {
+    if (!runtime_mirrored && !runtime_early) {
         AppendSpan(items, runtime, out, -1, "runtime");
     }
-    if (!irq.empty() && bank1 == nullptr) {
+    if (!irq.empty() && !banked) {
         AppendSpan(items, irq, out, -1, "interrupt entry");
     }
-    if (!tables.empty() && !runtime_mirrored) {
+    if (!tables.empty() && !runtime_mirrored && !runtime_early) {
         AppendSpan(items, tables, out, -1, "runtime tables");
     }
     std::size_t mirror_first = out.spans.size();
@@ -238,7 +270,7 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     // stretch's code is made far, and the code placed again with its bigger size
     std::vector<AddressRange> stretches = FreeStretches(be, options, data_end, card);
     if (bank1 != nullptr) {
-        stretches.push_back(AddressRange{kBank1Start, kBank1End});
+        stretches.push_back(AddressRange{kBank1Start, kBank1End - bank1_data});
     }
     // the stretches main memory and the card's bank 2 have, which data may fill too
     std::size_t shared = stretches.size() - (bank1 != nullptr ? 1 : 0);
@@ -302,9 +334,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     if (bank1 != nullptr) {
         bank1_run = runs.back();
         runs.pop_back();
-        if (!Bank1Resident(places, resident_spans, frames_at, frames_end, errors)) {
-            return LinkResult::kNoRoom;
-        }
+    }
+    if (banked && !Bank1Resident(places, resident_spans, frames_at, frames_end, errors)) {
+        return LinkResult::kNoRoom;
     }
     // each group's code is a run of its own at the region (and the zero-page image, when it
     // waits there): the region is reserved instead
@@ -331,6 +363,9 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
         if ((frame || zp_global) && sym.defined) {
             lo.preset[v] = static_cast<std::int32_t>(sym.value);
         }
+        if (bank1_at[v] >= 0) {
+            lo.preset[v] = bank1_at[v]; // its own bank: bank 2's bytes there stay free
+        }
     }
     // consts only the interpreter reads go inside the code, so the binary has no bytes of them
     TableUse use = FindTableUse(be, in);
@@ -340,6 +375,26 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
     if (bank1 != nullptr) {
         lo.avoiders = bank1->avoiders;
         lo.avoid = AddressRange{kBank1Start, kBank1End};
+    }
+    // what a function that switches bank 1 in itself names stays out of $D000-$DFFF too
+    if (card && any_switcher) {
+        lo.avoiders.resize(program.vars.size(), false);
+        lo.avoid = AddressRange{kBank1Start, kBank1End};
+        for (std::size_t f = 0; f < program.functions.size(); f++) {
+            if (!switchers[f]) {
+                continue;
+            }
+            for (const AsmItem& item : be.code[f]) {
+                std::int32_t sym = item.value.sym;
+                if (sym < 0) {
+                    continue;
+                }
+                const SymInfo& info = be.info[static_cast<std::size_t>(sym)];
+                if (info.role == SymRole::Var && info.owner >= 0) {
+                    lo.avoiders[static_cast<std::size_t>(info.owner)] = true;
+                }
+            }
+        }
     }
     for (std::size_t v = 0; v < program.vars.size() && interp_fits; v++) {
         lo.dropped[v] = lo.dropped[v] || use.interp_only[v];
@@ -425,8 +480,8 @@ LinkResult LinkProgram(Backend& be, const LinkInput& in, bool card, Compiled& ou
             DefineSymbol(be.as, sym, place.address);
         }
         const Var& var = program.vars[v];
-        if (place.interp_only) {
-            continue;
+        if (place.interp_only || var.placement.in_bank1) {
+            continue; // bank 1's room: never written by the startup or the disk
         }
         WriteVarInit(program, out.layout, static_cast<std::int32_t>(v),
                      var.placement.in_aux ? aux : memory);

@@ -23,7 +23,7 @@ std::int32_t VarAt(const Program& program, const Layout& layout, std::uint32_t a
         const VarPlace& place = layout.vars[v];
         // aux memory is another address space; :reserve memory is reached only by address
         const Placement& kept = program.vars[v].placement;
-        if (kept.in_aux || kept.reserve) {
+        if (kept.in_aux || kept.in_bank1 || kept.reserve) {
             continue;
         }
         if (place.size > 0 && address >= place.address && address < place.address + place.size) {

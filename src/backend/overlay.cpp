@@ -3,6 +3,7 @@
 #include "backend/overlay.hpp"
 
 #include "backend/aux_code.hpp"
+#include "backend/card_data.hpp"
 #include "backend/irq.hpp"
 
 #include <algorithm>
@@ -65,6 +66,8 @@ Code ReadCode(const Backend& be, const std::vector<bool>& kept, const std::vecto
         }
     }
     std::vector<bool> handler = HandlerFunctions(program);
+    // code that switches the card itself stays after the startup (card_data.hpp)
+    std::vector<bool> switchers = CardSwitchers(be, kept, runtime);
     std::vector<bool> entry(count, false);
     for (std::int32_t e : be.entries) {
         if (e >= 0) {
@@ -79,7 +82,8 @@ Code ReadCode(const Backend& be, const std::vector<bool>& kept, const std::vecto
         bool aux = IsAuxFunction(be.aux, id) || IsMirroredFunction(be.aux, id);
         c.always[f] = id == program.main || id == program.handler || entry[f] || fn.dispatcher ||
                       fn.io_patch >= 0;
-        c.barred[f] = !kept[f] || be.code[f].empty() || handler[f] || c.always[f] || aux;
+        c.barred[f] =
+            !kept[f] || be.code[f].empty() || handler[f] || c.always[f] || aux || switchers[f];
     }
     // what the startup and the runtime name is reached too
     for (const std::vector<AsmItem>* piece : {&startup, &runtime}) {

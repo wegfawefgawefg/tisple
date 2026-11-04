@@ -166,15 +166,17 @@ void DeclarationTests(TestResults& results) {
                 "t.tsp:1:27: placement options (:address, :align, :boundary, :in, :reserve) are "
                 "for top-level lets; move x out of the function");
     ExpectError(results, "(let x u8 0 :in zero_page)",
-                "t.tsp:1:17: :in takes aux, the one named region; write :in aux");
+                "t.tsp:1:17: :in takes aux (aux memory) or bank1 (the language card's bank 1); "
+                "write :in aux");
     ExpectError(results, "(let x u8 0 :in)",
-                "t.tsp:1:13: :in takes aux, the one named region; write :in aux");
+                "t.tsp:1:13: :in takes aux (aux memory) or bank1 (the language card's bank 1); "
+                "write :in aux");
     ExpectError(results, "(let x u8 0 :in aux :in aux)",
                 "t.tsp:1:21: :in is given twice; keep one");
     ExpectError(results, "(let x u8 0 :nearby 1)",
                 "t.tsp:1:13: :nearby is not a placement option; use :address, :align, "
-                ":boundary, :in aux, :reserve, or on a const table :on disk, :interleave and "
-                ":strings aux");
+                ":boundary, :in aux, :in bank1, :reserve, or on a const table :on disk, "
+                ":interleave and :strings aux");
     // :reserve: room at a fixed address the program reaches with pointers
     ExpectError(results, "(let page (array u8 8192) :reserve)",
                 "t.tsp:1:1: :reserve keeps memory at a fixed address; give it one: (let page "

@@ -243,8 +243,13 @@ next one fades in, and the game goes on meanwhile.
   level less `hush / 4`, 0 at the least: a fade is 15 volume steps of about
   3 dB, 4 ticks each, so 1 s from full to silent. `(mb.fade to)` sets where
   `hush` goes (`to` 0-15 steps); every tick moves it 1 nearer, and every 4th
-  tick of a fade writes every voice's volume again (fading in, 3 ticks after
-  the step: a note or decay in between takes the new step at once).
+  tick of a fade, the one where `hush / 4` changes, writes every voice's volume
+  again (fading out at `hush` 4n, fading in at 4n + 3; until 2026-11-04 a fade
+  in wrote them 3 ticks after the step, and only notes and decays took it at
+  once). A fade in right after `play` so has its first rewrite on the song's
+  first tick, which writes every voice anyway: one heavy tick fewer, and in
+  Catwiz's first fight load the 6-voice rewrite no longer lands on the address
+  field of a sector it wants (it cost two turns of the disk, 24 frames).
 - At 15 steps (`hush` 60) the music stops, as `(mb.stop)` does: a faded song
   costs the tick nothing more, which matters while a disk loads (a song playing
   on silently took the time between sectors from lib/disk's reader and made
@@ -324,6 +329,36 @@ song playing, so the copy runs with interrupts off (or after `mb.stop`, or once
 ```
 
 The player cannot read aux memory itself (What is left).
+
+## Songs in bank 1
+
+Added 2026-11-04 for Catwiz, whose main memory was full (docs/language.md, Bank 1 data):
+
+```scheme
+(let room (array u8 1790) :in bank1)                       ; the card's bank 1, at its top
+(fn irq () void :interrupt (mb.service_bank1))             ; or service_bends_bank1
+(disk.read_card_with (addr_of (at room 0)) SONG disk.BANK1 step)  ; a song :on disk2 there
+(mb.play_bank1 (addr_of (at room 0)))
+```
+
+- `play_bank1` is `play` with bank 1 in for the header's reads and every music voice marked
+  (`player.from_bank1`). `service_bank1` (`tick_bank1`) reads a marked voice's events, the bytes
+  up to its next note, with bank 1 in and bank 2 back after (`banked_fn`); the effect's slot is
+  never marked, so effects are read with bank 2 in, wherever they are. `service` and
+  `service_bends` have none of this code and play a bank 1 song wrong. After `play_bank1` a
+  song played with `play` is read the same way: fine in main memory or `$E000` up, not in bank
+  2's `$D000-$DFFF`.
+- The events and what they call run with bank 1 in, so Tisple keeps them, and what they name,
+  out of `$D000-$DFFF` (they are handler code: never in bank 1 or a group anyway), and the build
+  has the interrupt entry that puts bank 2 in for the handler.
+- Cost: a music event 15 cycles more (the mark's test and two switches), about 8 cycles a tick
+  on average; the slot loop now counts down (2026-11-04), which saved about 14 a tick for every
+  program. tests/test_bank1_data.cpp: the same song from main memory and from bank 1 gives the
+  same voices tick for tick (an effect on top included); a tick from main memory 1000 cycles
+  on average (6864 at most), from bank 1 1008 (6922); before the count down 1012 (6864). In
+  Catwiz's first fight, over 300 frames, the handler took 1,124 cycles a tick, was 1,131.
+- Nothing is copied to start a song: Catwiz's song start went from about 8,000 cycles with
+  interrupts off to about 1,000.
 
 ## What a tick costs
 

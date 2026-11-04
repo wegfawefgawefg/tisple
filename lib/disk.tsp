@@ -5,6 +5,11 @@
 ; then (import disk) and
 ;   (disk.read dst (addr_of (at FOREST 0)) disk.AUX)      the table's bytes to aux memory at dst
 ;   (disk.read dst (addr_of (at MAP 0)) disk.MAIN)        or to main memory
+;   (disk.read_card (addr_of (at room 0)) (addr_of (at MAP 0)) disk.BANK1)  or to a let :in
+;                                                          bank1, the language card's bank 1
+;   (disk.read_card_with dst table bank step)              (read_card and read_card_with take
+;                                                          any bank; read and read_with have
+;                                                          no code for BANK1)
 ;   (disk.read_with dst table disk.AUX step)              step, a (fn () void), after each
 ;                                                          sector but the last
 ;   (const LEVELS (array u8 9000) (make ...) :on disk2)   ; on the second disk: from drive 2,
@@ -30,6 +35,13 @@
 
 (const MAIN u8 0)
 (const AUX u8 1)
+; the language card's bank 1 ($D000-$DFFF: a let :in bank1), for read_card and read_card_with:
+; the reader reads as to main memory with bank 1 switched in for each sector, bank 2 back after
+; (code that calls them is never in bank 1). A tick meanwhile runs with bank 2 in (the build's
+; interrupt entry puts it in and back), and step between sectors with bank 2 as always
+(const BANK1 u8 4)
+(const CARD_BANK1 u16 0xC08B) ; a read: the card's bank 1 at $D000, ram read and written
+(const CARD_BANK2 u16 0xC083) ; bank 2
 
 (const DONE u8 0)
 (const MORE u8 1)
@@ -71,4 +83,30 @@
     (while (= status MORE)
         (step)
         (set status (jsr NEXT)))
+    status)
+
+; the next sector, into bank 1 for BANK1 (the reader's main memory mode: X bit 2 is not its)
+(macro next_card (bank)
+    `(if (= ,bank BANK1)
+        (do
+            (io_read u8 CARD_BANK1)
+            (let status u8 (jsr NEXT))
+            (io_read u8 CARD_BANK2)
+            status)
+        (jsr NEXT)))
+
+; read and read_with with bank BANK1 too
+(fn read_card ((dst (ptr u8)) (table (ptr u8)) (bank u8)) u8
+    (let status u8 (start dst table bank))
+    (while (= status MORE)
+        (set status (next_card bank)))
+    status)
+
+(fn read_card_with ((dst (ptr u8)) (table (ptr u8)) (bank u8) (step (fn () void))) u8
+    (let status u8 (start dst table bank))
+    (if (= status MORE)
+        (set status (next_card bank)))
+    (while (= status MORE)
+        (step)
+        (set status (next_card bank)))
     status)

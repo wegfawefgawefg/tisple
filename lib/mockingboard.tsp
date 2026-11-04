@@ -3,6 +3,8 @@
 ;   (fn irq () void :interrupt (mb.service)) ; the program's handler: every tick runs here
 ;   (mb.init)                ; find the card, reset it, start the tick (60 a second)
 ;   (mb.play (addr_of (at music 0)))          ; a song from lib/mockingboard_song
+;   (mb.play_bank1 (addr_of (at room 0)))     ; one in the card's bank 1 (a let :in bank1),
+;                                             ; with (mb.service_bank1) in the handler
 ;   (mb.effect (addr_of (at zap 0)) 2 5)      ; an effect on voice 2, priority 5
 ;   (mb.stop)                ; the music off; effects go on
 ;   (mb.fade 15)             ; the music down to silent over 1 s, then stopped (at once when
@@ -169,6 +171,37 @@
     (set player.any_stale true)
     (cli))
 
+; a song in the language card's bank 1 (a let :in bank1, which lib/disk reads into with
+; disk.read_card_with), for a handler that calls service_bank1: play's, with bank 1 in for the
+; header's reads (they call nothing, and what this names stays out of $D000-$DFFF) and each
+; music voice marked to be read with bank 1 in. From then on every song plays that way, play's
+; too: with service_bank1, songs in main memory work (bank 1 in does not hide them), songs in
+; bank 2's $D000-$DFFF do not
+(fn play_bank1 ((song (ptr u8))) void
+    (if (not found)
+        (return))
+    (sei)
+    (set player.song song)
+    (io_read u8 player.BANK1_IN)
+    (for v u8 0 player.VOICES
+        (let h (ptr u8) (+ song (<< v 1)))
+        (let off u16 (| (as u16 (load h)) (<< (as u16 (load (+ h 1))) 8)))
+        (set (at player.playing v) (!= off 0))
+        (set (at player.from_bank1 v) true)
+        (set (at player.order v) (+ song off))
+        (set (at player.pos v) (addr_of (at player.end_mark 0)))
+        (set (at player.index v) 0)
+        (set (at player.wait v) 1)
+        (set (at player.length v) 8)
+        (set (at player.volume v) 12)
+        (set (at player.level v) 0)
+        (set (at player.decay v) 0)
+        (set (at player.mix v) 1)
+        (set (at player.stale v) (= off 0)))
+    (io_read u8 player.BANK2_IN)
+    (set player.any_stale true)
+    (cli))
+
 (fn stop () void
     (if (not found)
         (return))
@@ -303,6 +336,15 @@
 ; pitch that moves. A program calls one of the two; service plays those commands' bytes wrong
 (fn service_bends () void
     (bends.tick))
+
+; service's place, or service_bends', in a program that plays songs from the language card's
+; bank 1 (play_bank1): the other two play them wrong. A voice's events, the bytes up to its next
+; note, are read with bank 1 in (15 cycles more each time: docs/mockingboard.md)
+(fn service_bank1 () void
+    (player.tick_bank1))
+
+(fn service_bends_bank1 () void
+    (bends.tick_bank1))
 
 ; the timer and its interrupts off, every voice quiet
 (fn off () void

@@ -937,6 +937,7 @@ The linker checks them and fails the build if one can't hold.
 | `:align 256` | start on a multiple of 256 |
 | `:boundary 256` | whole object inside one 256-byte block; for a split table, each byte table |
 | `:in aux` | a `let` in aux memory, reached only through pointers in a `with_aux` or `lib/auxmem` (2026-10-27); a `const` table in aux memory, its strings too, read by name only where RAMRD is surely on (2026-10-31, Aux memory code) |
+| `:in bank1` | a `let` with no value in the language card's bank 1 (`$D000-$DFFF`), placed by the link at the bank's top (the first declared lowest) with bank 1's code below it; never written by the startup or the disk; reached only through pointers with bank 1 switched in: `disk.read_card_with ... disk.BANK1`, `mockingboard.play_bank1` (2026-11-04, Bank 1 data below) |
 | `:strings aux` | on a `const` table: the string literals written in its value live in aux memory; the table stays in main memory (2026-10-31, Aux memory code) |
 | `:reserve` | with `:address` and no value: memory the program reaches by address, kept out of the layout (2026-10-27) |
 | `:on disk` | a const `(array u8 n)` that lives on the boot disk, not in memory; its name holds where, for `lib/disk` (2026-10-30, [`disks.md`](disks.md), Disk tables) |
@@ -988,10 +989,10 @@ order:
    returns (`BIT $C082`). A computed `jsr` or pointer is not checked: it is
    taken to reach slot firmware (as the mouse library's `jsr` does) or the
    program's own memory, never the ROM.
-5. Bank 1 of the language card, `$D000`-`$DFFF` (4 KB), for code only (2026-10-30), when the
+5. Bank 1 of the language card, `$D000`-`$DFFF` (4 KB), for code (2026-10-30), when the
    program still does not fit: whole functions, the coldest for their bytes, called through
    stubs that switch banks, and nothing bank 1 code reads kept in bank 2's `$D000`-`$DFFF`
-   (docs/overlays.md, Built).
+   (docs/overlays.md, Built); below the lets `:in bank1`, which take its top (2026-11-04).
 4. Lets and const tables `:in aux`, and the strings of const tables `:in aux` and
    `:strings aux`: aux memory `$0800`-`$BFFF` (46 KB), apart from all of the
    above and from the code and const data `with_aux` code may run and read with
@@ -1045,6 +1046,30 @@ without a vocabulary of screen names in the compiler. A plain `:address` let
 with no value already kept its bytes; `:reserve` adds only that code reaches
 them by address. A program that fits from its origin never reaches the screens,
 so the rule matters once a program spills below `$6000`.
+
+Bank 1 data (2026-11-04). `(let room (array u8 1790) :in bank1)` keeps room at the top of the
+card's bank 1, for a program that uses the card (one that reads the rom at `$D000` gets an
+error). Code names it only as the root of an `addr_of`, like an aux let. The program reaches it
+with bank 1 switched in by its own reads of `$C08B` (bank 1) and `$C083` (bank 2 back):
+
+```scheme
+(io_read u8 0xC08B)
+(store (+ (addr_of (at room 0)) i) b)
+(io_read u8 0xC083)
+```
+
+A function whose code reads or writes `$C080-$C08F` itself (a card switcher), every function it
+calls between its switch to bank 1 and back, and what those call, are code that may run with
+bank 1 in: the link places it right after the startup (outside `$D000-$DFFF`), never in bank 1
+or an overlay group, and keeps the variables it names out of `$D000-$DFFF`; a program with such
+code (or a bank 1 let) has the interrupt entry that puts bank 2 in for the handler. What it
+reaches through pointers while bank 1 is in must be the bank 1 lets or outside `$D000-$DFFF`:
+the compiler cannot see that. `TISPLE_SWITCH_NOTES=1` lists that code. The interpreter and the
+simulator do not switch on a program's own reads of `$C08x` (they are I/O to compare), so a
+differential test of such code passes only when nothing else lies at those addresses; test it on
+the emulated machine. lib/disk reads into bank 1 (`disk.read_card`, `read_card_with` with
+`disk.BANK1`), lib/mockingboard plays a song there (`play_bank1`, `service_bank1`):
+docs/mockingboard.md, Songs in bank 1.
 
 Aux data. `(let doc (array u8 30000) (make ...) :in aux)` is the whole language
 change: code names `doc` only as the root of an `addr_of`, and an `at`, `set`

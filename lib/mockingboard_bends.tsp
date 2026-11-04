@@ -161,5 +161,10 @@
                 (set i (+ i 2))
                 (continue)))))
 
+(player.banked_fn events_bank1 events)
+
 (player.tick_fn tick events (if (at moving s)
+    (move s)))
+
+(player.tick_fn tick_bank1 events_bank1 (if (at moving s)
     (move s)))

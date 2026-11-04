@@ -316,6 +316,12 @@ void CheckRegionUses(Checker& ck) {
                          ")) inside a with_aux that reads, or copy it with "
                          "(auxmem.read (addr_of buffer) (addr_of " +
                          name + ") count)");
+        } else if (var.placement.in_bank1 && !under_addr_of[i]) {
+            AddError(*ck.errors, e.loc,
+                     name +
+                         " is in the language card's bank 1, which code reaches only through "
+                         "pointers with bank 1 switched in: (addr_of (at " +
+                         name + " 0)), for lib/disk or lib/mockingboard");
         }
     }
 }
